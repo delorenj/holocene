@@ -13,10 +13,9 @@
 
 ### Code
 
-```markdown
 ---
-modified: 2025-11-06T18:14:18-05:00
----
+
+## modified: 2025-11-06T18:14:18-05:00
 
 # Holocene: The Master Plan
 
@@ -60,7 +59,7 @@ modified: 2025-11-06T18:14:18-05:00
 
 - **Frontend**: React + Vite + TypeScript + shadcn/ui + Tailwind → Fast UI with rich interactivity.
 - **Backend**: Postgres + Redis → Reliable, self-hosted state & snapshot store.
-- **Auth**: Email/password + GitHub OAuth → Secure, flexible login for teams.
+- **Auth**: GitHub OAuth → Secure, flexible login for teams.
 - **Docs/Reports**: Markdown & PDF export → Lightweight daily summaries.
 
 Each tech choice reinforces performance, clarity, and self-hosted sovereignty.
@@ -160,58 +159,3 @@ Each tech choice reinforces performance, clarity, and self-hosted sovereignty.
 
 - **Don’t make me think**: Momentum scores, agent ranks, and decision impact are immediately scannable.
 - **Design for scanning**: Cards, grids, and brief headlines use visual hierarchy and typography to guide attention.
-- **Kind interactions**: Rollbacks, errors, and autonomy flags are handled gently—not judgmentally.
-- **Consistent scaffolding**: Same layout logic across overview and drill-down; muscle memory is rewarded.
-
----
-
-### 🔐 Security & Compliance
-
-- All state and telemetry are **self-hosted** → minimizes third-party risk.
-- Role-based access (founder, PM, engineer) → restricts sensitive decision editing.
-- Optional GitHub OAuth with scoped permissions.
-- Activity logs for decision changes & rollbacks.
-
----
-
-### 🛣 Phased Roadmap
-
-**MVP**
-
-- Portfolio Overview
-- Decision Radar
-- Agent Constellation (basic)
-- Project Drill-down
-- AM/PM Brief generation
-
-**V1**
-
-- Plan vs. Commitment Drift
-- Rollback/autonomy management
-- Saved Views (Lovable Cloud sync)
-- Risk Detection logic
-
-**V2**
-
-- Natural language query (“What changed most on Project X this week?”)
-- AI-generated decision rationale drafts
-- Multi-portfolio switching
-- Custom brief templates
-
----
-
-### ⚠️ Risks & Mitigations
-
-- **Too much data, not enough signal** → mitigate with momentum scores, ranked lists, and brief narratives.
-- **Overload in agent graphs** → solve with filters, daily deltas, and smart grouping.
-- **AI hallucination risk** in briefs → surface diffs alongside outputs; keep human-in-the-loop.
-
----
-
-### 🌱 Future Expansion Ideas
-
-- **Integrate with GitHub, Plane, and Obsidian** to auto-ingest activity.
-- **Personal agent analytics** (“Where am I most effective?”)
-- **Postmortem generation** from decision chains + failure events.
-- **Mobile briefing companion** for founders on the move.
-```
