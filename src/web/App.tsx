@@ -1,133 +1,11 @@
 import React, { useMemo, useState } from 'react';
-
-type StreamStatus = 'active' | 'blocked' | 'queued' | 'done';
-
-type PlaneLink = {
-  workspace: string;
-  project: string;
-  issueIds: string[];
-  url: string;
-};
-
-type Workstream = {
-  id: string;
-  title: string;
-  status: StreamStatus;
-  lastActivityAt: string;
-  needsResponse: boolean;
-  responseReason?: string;
-  unblockScore: number;
-  moneyScore: number;
-  activeOwners: string[];
-  componentTags: string[];
-  planeLinks: PlaneLink[];
-};
+import { usePlaneWorkstreams, type Workstream, type StreamStatus } from './hooks/usePlaneWorkstreams';
+import { AgentGraph } from './components/agent-graph';
 
 type RankedWorkstream = Workstream & {
   recencyBoost: number;
   priorityScore: number;
 };
-
-const MOCK_STREAMS: Workstream[] = [
-  {
-    id: 'ws-team-infra-dispatch',
-    title: 'Team Infra Auto-Dispatch',
-    status: 'active',
-    lastActivityAt: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
-    needsResponse: true,
-    responseReason: 'Approve M2.5 Plane writeback behavior',
-    unblockScore: 82,
-    moneyScore: 55,
-    activeOwners: ['Cack', 'bloodbank', 'candybar'],
-    componentTags: ['bloodbank', 'candybar', 'plane'],
-    planeLinks: [
-      {
-        workspace: '33god',
-        project: 'board',
-        issueIds: ['PERTH-9003'],
-        url: 'https://plane.delo.sh',
-      },
-    ],
-  },
-  {
-    id: 'ws-curi-deploy',
-    title: 'Curi Secure OpenClaw Delivery',
-    status: 'active',
-    lastActivityAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    needsResponse: true,
-    responseReason: 'Telegram pairing verification from Pete',
-    unblockScore: 60,
-    moneyScore: 92,
-    activeOwners: ['Jarad', 'Cack'],
-    componentTags: ['deployment', 'security', 'telegram'],
-    planeLinks: [
-      {
-        workspace: 'curi',
-        project: 'ops',
-        issueIds: ['CURI-1'],
-        url: 'https://plane.delo.sh',
-      },
-    ],
-  },
-  {
-    id: 'ws-agentic-ux',
-    title: 'Agentic UX + Holocene MVP',
-    status: 'queued',
-    lastActivityAt: new Date(Date.now() - 1000 * 60 * 75).toISOString(),
-    needsResponse: false,
-    unblockScore: 70,
-    moneyScore: 88,
-    activeOwners: ['Jarad'],
-    componentTags: ['holocene', 'ux', 'mobile-first'],
-    planeLinks: [
-      {
-        workspace: '33god',
-        project: 'holocene',
-        issueIds: ['HLC-1'],
-        url: 'https://plane.delo.sh',
-      },
-    ],
-  },
-  {
-    id: 'ws-intelliforia-patches',
-    title: 'Intelliforia Stability Patches',
-    status: 'blocked',
-    lastActivityAt: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
-    needsResponse: true,
-    responseReason: 'Need scope call before touching additional pages',
-    unblockScore: 66,
-    moneyScore: 73,
-    activeOwners: ['Jarad'],
-    componentTags: ['rethink', 'extension'],
-    planeLinks: [
-      {
-        workspace: 'intelliforia',
-        project: 'chrome-extension',
-        issueIds: ['CWS-015'],
-        url: 'https://plane.internal.intelliforia.com',
-      },
-    ],
-  },
-  {
-    id: 'ws-memory-hardening',
-    title: 'LanceDB Memory Hardening',
-    status: 'done',
-    lastActivityAt: new Date(Date.now() - 1000 * 60 * 400).toISOString(),
-    needsResponse: false,
-    unblockScore: 40,
-    moneyScore: 35,
-    activeOwners: ['Cack'],
-    componentTags: ['openclaw', 'memory'],
-    planeLinks: [
-      {
-        workspace: '33god',
-        project: 'board',
-        issueIds: ['PERTH-14'],
-        url: 'https://plane.delo.sh',
-      },
-    ],
-  },
-];
 
 const statusStyle: Record<StreamStatus, string> = {
   active: 'bg-emerald-100 text-emerald-700',
@@ -208,13 +86,17 @@ const StreamCard: React.FC<{
 
       <div className="flex items-center justify-between">
         <div className="flex -space-x-1">
-          {stream.activeOwners.map((owner) => (
-            <span
-              key={owner}
-              title={owner}
-              className={`inline-block h-3 w-3 rounded-full ring-2 ring-white ${ownerLightStyle[stream.status]}`}
-            />
-          ))}
+          {stream.activeOwners.length > 0 ? (
+            stream.activeOwners.map((owner) => (
+              <span
+                key={owner}
+                title={owner}
+                className={`inline-block h-3 w-3 rounded-full ring-2 ring-white ${ownerLightStyle[stream.status]}`}
+              />
+            ))
+          ) : (
+            <span className="text-xs text-slate-400">Unassigned</span>
+          )}
         </div>
         {stream.needsResponse ? (
           <span className="rounded-md bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">Needs response</span>
@@ -242,7 +124,25 @@ const MobileScreen: React.FC<{
   );
 };
 
+const LoadingCard: React.FC = () => (
+  <div className="animate-pulse rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="mb-3 h-4 w-3/4 rounded bg-slate-200" />
+    <div className="mb-2 h-3 w-1/2 rounded bg-slate-100" />
+    <div className="h-3 w-1/3 rounded bg-slate-100" />
+  </div>
+);
+
+const ErrorCard: React.FC<{ message: string }> = ({ message }) => (
+  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+    <p className="font-semibold">Failed to load tickets</p>
+    <p className="mt-1 text-xs">{message}</p>
+  </div>
+);
+
+type TabId = 'workstreams' | 'agent-graph';
+
 export const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabId>('workstreams');
   const [selected, setSelected] = useState<RankedWorkstream | null>(null);
   const [backlogInput, setBacklogInput] = useState('');
   const [backlogItems, setBacklogItems] = useState<string[]>([
@@ -250,7 +150,9 @@ export const App: React.FC = () => {
     'Draft default response-needed heuristics',
   ]);
 
-  const ranked = useMemo(() => computeRanked(MOCK_STREAMS), []);
+  const { data: workstreams, isLoading, error } = usePlaneWorkstreams();
+
+  const ranked = useMemo(() => computeRanked(workstreams ?? []), [workstreams]);
   const needsResponse = useMemo(() => ranked.filter((stream) => stream.needsResponse), [ranked]);
   const impactRanked = useMemo(
     () => [...ranked].sort((a, b) => b.unblockScore + b.moneyScore - (a.unblockScore + a.moneyScore)),
@@ -267,12 +169,66 @@ export const App: React.FC = () => {
     setBacklogInput('');
   };
 
+  const tabs: { id: TabId; label: string; icon: string }[] = [
+    { id: 'workstreams', label: 'Workstreams', icon: '📋' },
+    { id: 'agent-graph', label: 'Agent Graph', icon: '🔮' },
+  ];
+
+  // Agent Graph tab is full-screen dark
+  if (activeTab === 'agent-graph') {
+    return (
+      <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
+        <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-slate-800 bg-slate-950/95 px-4 py-2 backdrop-blur">
+          <h1 className="text-lg font-bold text-slate-200">Holocene</h1>
+          <nav className="flex gap-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-slate-800 text-slate-100'
+                    : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300'
+                }`}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </nav>
+        </header>
+        <div className="flex-1 overflow-hidden">
+          <AgentGraph />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:px-6">
-        <h1 className="text-xl font-bold">Holocene Control Tower</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold">Holocene Control Tower</h1>
+          <nav className="flex gap-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
         <p className="text-xs text-slate-500">
           Plane is system-of-record. Holocene is system-of-focus. Swipe on mobile, dashboard on web.
+          {workstreams && <span className="ml-2 text-emerald-600">● {workstreams.length} tickets loaded</span>}
         </p>
       </header>
 
@@ -282,13 +238,29 @@ export const App: React.FC = () => {
             title="Now"
             subtitle="Ranked by response urgency + unblock + money + recency"
           >
-            {ranked.map((stream) => (
-              <StreamCard key={stream.id} stream={stream} onOpen={setSelected} />
-            ))}
+            {isLoading ? (
+              <>
+                <LoadingCard />
+                <LoadingCard />
+                <LoadingCard />
+              </>
+            ) : error ? (
+              <ErrorCard message={error instanceof Error ? error.message : 'Unknown error'} />
+            ) : ranked.length > 0 ? (
+              ranked.map((stream) => (
+                <StreamCard key={stream.id} stream={stream} onOpen={setSelected} />
+              ))
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                No tickets found
+              </div>
+            )}
           </MobileScreen>
 
           <MobileScreen title="Needs Response" subtitle="Things waiting on you right now">
-            {needsResponse.length > 0 ? (
+            {isLoading ? (
+              <LoadingCard />
+            ) : needsResponse.length > 0 ? (
               needsResponse.map((stream) => <StreamCard key={stream.id} stream={stream} onOpen={setSelected} />)
             ) : (
               <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">No response-needed items 🎉</div>
@@ -296,9 +268,16 @@ export const App: React.FC = () => {
           </MobileScreen>
 
           <MobileScreen title="Impact" subtitle="Weighted by unblock + monetary potential">
-            {impactRanked.map((stream) => (
-              <StreamCard key={stream.id} stream={stream} onOpen={setSelected} />
-            ))}
+            {isLoading ? (
+              <>
+                <LoadingCard />
+                <LoadingCard />
+              </>
+            ) : (
+              impactRanked.map((stream) => (
+                <StreamCard key={stream.id} stream={stream} onOpen={setSelected} />
+              ))
+            )}
           </MobileScreen>
 
           <MobileScreen title="Backlog Capture" subtitle="Fast input for uncategorized ideas/tasks">
@@ -341,7 +320,7 @@ export const App: React.FC = () => {
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-bold">{selected.title}</h3>
-                <p className="text-xs text-slate-500">Workstream drilldown shell (M0)</p>
+                <p className="text-xs text-slate-500">PERTH-{selected.sequenceId} • Priority: {selected.priority}</p>
               </div>
               <button
                 type="button"
@@ -369,17 +348,19 @@ export const App: React.FC = () => {
               </div>
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Active Owners</p>
-                <p className="mt-1 text-sm font-medium text-slate-900">{selected.activeOwners.join(', ')}</p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {selected.activeOwners.length > 0 ? selected.activeOwners.join(', ') : 'Unassigned'}
+                </p>
               </div>
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 p-3">
-              <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Plane Links</p>
+              <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Plane Link</p>
               <ul className="space-y-2 text-sm">
                 {selected.planeLinks.map((link) => (
                   <li key={`${link.workspace}-${link.project}-${link.issueIds.join('-')}`}>
                     <a href={link.url} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:underline">
-                      {link.workspace}/{link.project}
+                      Open in Plane →
                     </a>
                     <span className="ml-2 text-slate-500">{link.issueIds.join(', ')}</span>
                   </li>

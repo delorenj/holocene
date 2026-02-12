@@ -21,8 +21,29 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 11819,
     host: true,
+    allowedHosts: ['holocene.delo.sh'],
+    proxy: {
+      '/api/plane': {
+        target: 'https://plane.delo.sh',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/plane/, ''),
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setHeader('x-api-key', process.env.VITE_PLANE_33GOD_API_KEY || '');
+          });
+        },
+      },
+      '/ws': {
+        target: 'http://localhost:8682',
+        ws: true,
+      },
+    },
+  },
+  preview: {
+    host: true,
+    allowedHosts: ['holocene.delo.sh'],
   },
   build: {
     outDir: 'dist',
