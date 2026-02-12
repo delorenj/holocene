@@ -24,8 +24,9 @@ export function useBloodbankStream(url = WS_URL) {
     if (!mountedRef.current) return;
 
     try {
-      // Build absolute URL if relative
-      const absUrl = url.startsWith('ws') ? url : `ws://${window.location.host}${url}`;
+      // Build absolute URL if relative, respecting TLS
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const absUrl = url.startsWith('ws') ? url : `${protocol}//${window.location.host}${url}`;
       const ws = new WebSocket(absUrl);
       wsRef.current = ws;
 
