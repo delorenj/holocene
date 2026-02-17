@@ -69,7 +69,7 @@ export class Container {
     }
 
     // Create new instance
-    const instance = this.createInstance<T>(registration.definition);
+    const instance = this.createInstance<T>(registration.definition as ServiceDefinition<T>);
 
     // Cache singleton instance
     if (registration.lifetime === ServiceLifetime.SINGLETON) {
