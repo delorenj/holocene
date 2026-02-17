@@ -27,8 +27,14 @@ FROM nginx:alpine
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx configuration as template
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+
+# Startup script: envsubst the Plane API key into nginx config, then start nginx
+RUN printf '#!/bin/sh\n\
+sed "s|PLANE_API_KEY_PLACEHOLDER|${PLANE_33GOD_API_KEY:-}|g" \
+  /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf\n\
+exec nginx -g "daemon off;"\n' > /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
@@ -37,5 +43,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Expose port
 EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start with envsubst then nginx
+CMD ["/docker-entrypoint.sh"]
