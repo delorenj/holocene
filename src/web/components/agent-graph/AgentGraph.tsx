@@ -11,7 +11,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import AgentNode, { type AgentNodeData } from './AgentNode';
-import { useBloodbankStream, type BloodbankEvent } from './useBloodbankStream';
+import { useBloodbankStream, type BloodbankEvent } from '../../hooks/useBloodbankStream';
 
 // ---------------------------------------------------------------------------
 // Agent metadata
