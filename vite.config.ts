@@ -36,7 +36,7 @@ export default defineConfig({
         },
       },
       '/ws': {
-        target: 'http://localhost:8682',
+        target: 'http://localhost:8683',
         ws: true,
       },
     },

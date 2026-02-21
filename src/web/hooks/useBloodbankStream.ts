@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  BLOODBANK_STREAM_WS_URL,
+  BLOODBANK_STREAM_WS_FALLBACK,
+} from '../config/stream';
 
 export type BloodbankEvent = {
-  type: 'event' | 'ping';
+  type: 'event' | 'ping' | 'welcome';
   routing_key?: string;
   envelope?: {
     event_id: string;
@@ -11,7 +15,7 @@ export type BloodbankEvent = {
   };
 };
 
-const WS_URL = import.meta.env.VITE_BLOODBANK_WS_URL ?? '/ws/events';
+const WS_URL = BLOODBANK_STREAM_WS_URL;
 
 export function useBloodbankStream(url = WS_URL) {
   const [events, setEvents] = useState<BloodbankEvent[]>([]);
@@ -19,24 +23,34 @@ export function useBloodbankStream(url = WS_URL) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const attemptRef = useRef(0);
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
 
     try {
+      const targetUrl = attemptRef.current % 2 === 0 ? url : BLOODBANK_STREAM_WS_FALLBACK;
+
       // Build absolute URL if relative, respecting TLS
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const absUrl = url.startsWith('ws') ? url : `${protocol}//${window.location.host}${url}`;
+      const absUrl = targetUrl.startsWith('ws')
+        ? targetUrl
+        : `${protocol}//${window.location.host}${targetUrl}`;
+
       const ws = new WebSocket(absUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (mountedRef.current) setConnected(true);
+        if (mountedRef.current) {
+          setConnected(true);
+          attemptRef.current = 0;
+        }
       };
 
       ws.onclose = () => {
         if (mountedRef.current) {
           setConnected(false);
+          attemptRef.current += 1;
           reconnectTimer.current = setTimeout(connect, 3000);
         }
       };
@@ -58,6 +72,7 @@ export function useBloodbankStream(url = WS_URL) {
     } catch {
       // connection failed, retry
       if (mountedRef.current) {
+        attemptRef.current += 1;
         reconnectTimer.current = setTimeout(connect, 3000);
       }
     }
