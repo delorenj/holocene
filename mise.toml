@@ -1,0 +1,47 @@
+# Holocene — mise.toml
+# Agents: run `mise build` here. Everything else is handled.
+
+[tasks.build]
+description = "Build Holocene: npm install + Vite build + Docker image"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "▸ holocene: installing deps..."
+pnpm install --frozen-lockfile --silent 2>/dev/null || pnpm install --silent
+echo "▸ holocene: vite build..."
+pnpm run build
+echo "▸ holocene: building Docker image..."
+cd {{ config_root }}/..
+docker compose build holocene
+echo "✅ holocene: built"
+"""
+
+[tasks.deploy]
+description = "Deploy Holocene: rebuild + restart container"
+depends = ["build"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+cd {{ config_root }}/..
+echo "▸ holocene: deploying..."
+docker compose up -d holocene
+echo "✅ holocene: deployed"
+"""
+
+[tasks.dev]
+description = "Run Holocene Vite dev server (hot reload, no Docker)"
+run = "pnpm run dev"
+raw = true
+
+[tasks.test]
+description = "Run Holocene tests"
+run = "pnpm run test"
+
+[tasks.lint]
+description = "Lint Holocene"
+run = "pnpm run lint"
+
+[tasks.logs]
+description = "Tail Holocene container logs"
+run = "docker logs -f 33god-holocene"
+raw = true
