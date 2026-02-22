@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useBloodbankStream, type BloodbankEvent } from '../../hooks/useBloodbankStream';
+import { useEventHistory } from '../../hooks/useEventHistory';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -277,11 +278,23 @@ const Toolbar: React.FC<ToolbarProps> = ({
   );
 };
 
-const EmptyState: React.FC<{ panelVisible: boolean }> = ({ panelVisible }) => {
+const EmptyState: React.FC<{ panelVisible: boolean; loading?: boolean }> = ({
+  panelVisible,
+  loading,
+}) => {
   if (!panelVisible) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-slate-500">
         Events panel hidden
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-slate-500">
+        <span className="animate-pulse text-2xl">📡</span>
+        <p>Loading event history…</p>
       </div>
     );
   }
@@ -299,7 +312,8 @@ const EmptyState: React.FC<{ panelVisible: boolean }> = ({ panelVisible }) => {
 // ---------------------------------------------------------------------------
 
 export const EventsPanel: React.FC = () => {
-  const { events, connected, clearEvents } = useBloodbankStream();
+  const { events: liveEvents, connected, clearEvents } = useBloodbankStream();
+  const { events: historicalEvents, loading: historyLoading } = useEventHistory({ limit: 100 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [panelVisible, setPanelVisible] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -310,7 +324,31 @@ export const EventsPanel: React.FC = () => {
   const [isHovering, setIsHovering] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const summarized = useMemo(() => events.map((event, idx) => deriveSummary(event, idx)), [events]);
+  // Merge live + historical events, deduplicate by event_id, sort newest first
+  const mergedEvents = useMemo(() => {
+    const seen = new Set<string>();
+    const all: BloodbankEvent[] = [];
+
+    // Live events take priority (they're newer)
+    for (const ev of liveEvents) {
+      const id = ev.envelope?.event_id;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      all.push(ev);
+    }
+
+    // Then backfill with historical
+    for (const ev of historicalEvents) {
+      const id = ev.envelope?.event_id;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      all.push(ev);
+    }
+
+    return all;
+  }, [liveEvents, historicalEvents]);
+
+  const summarized = useMemo(() => mergedEvents.map((event, idx) => deriveSummary(event, idx)), [mergedEvents]);
 
   // Extract unique agents and event types for filter dropdowns
   const { availableAgents, availableEventTypes } = useMemo(() => {
@@ -447,7 +485,7 @@ export const EventsPanel: React.FC = () => {
         className="flex-1 overflow-y-auto"
       >
         {!panelVisible || filteredEvents.length === 0 ? (
-          <EmptyState panelVisible={panelVisible} />
+          <EmptyState panelVisible={panelVisible} loading={historyLoading} />
         ) : (
           filteredEvents.map((event) => (
             <EventRow
@@ -460,11 +498,19 @@ export const EventsPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Active filters indicator */}
-      {panelVisible && (searchQuery || agentFilter || eventTypeFilter || timeRangeFilter) && (
+      {/* Status bar: always show event counts */}
+      {panelVisible && (
         <div className="border-t border-slate-800 bg-slate-900/50 px-4 py-2 text-xs text-slate-400">
-          Showing {filteredEvents.length} of {summarized.length} events
-          {searchQuery && <span className="ml-2">• Search: "{searchQuery}"</span>}
+          {filteredEvents.length !== summarized.length
+            ? `Showing ${filteredEvents.length} of ${summarized.length} events`
+            : `${summarized.length} events`}
+          {liveEvents.length > 0 && (
+            <span className="ml-2 text-emerald-400">• {liveEvents.length} live</span>
+          )}
+          {historicalEvents.length > 0 && (
+            <span className="ml-2 text-blue-400">• {historicalEvents.length} from history</span>
+          )}
+          {searchQuery && <span className="ml-2">• Search: &ldquo;{searchQuery}&rdquo;</span>}
           {agentFilter && <span className="ml-2">• Agent: {agentFilter}</span>}
           {eventTypeFilter && <span className="ml-2">• Type: {eventTypeFilter}</span>}
           {timeRangeFilter && <span className="ml-2">• Time: {timeRangeFilter}</span>}
