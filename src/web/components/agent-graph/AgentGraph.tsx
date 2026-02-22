@@ -1,10 +1,14 @@
-import React, { useMemo, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
+  useNodesState,
+  useEdgesState,
   type Node,
   type Edge,
   type NodeTypes,
+  type OnNodesChange,
+  type OnEdgesChange,
   MarkerType,
   BackgroundVariant,
 } from '@xyflow/react';
@@ -22,24 +26,22 @@ type AgentMeta = {
   name: string;
   emoji: string;
   role: string;
-  /** Directory name under /avatars/ mount */
   avatarDir: string;
-  /** Preferred filename inside that dir (falls back to original.png) */
   avatarFile: string;
 };
 
 const AGENTS: AgentMeta[] = [
-  { id: 'cack',         name: 'Cack',          emoji: '👹', role: 'Main · Sysops Gremlin',    avatarDir: 'Cack',          avatarFile: 'themed.png' },
-  { id: 'grolf',        name: 'Grolf',         emoji: '🪨', role: 'Eng · Director of Eng',    avatarDir: 'Grolf',         avatarFile: 'Grolf.png' },
-  { id: 'rererere',     name: 'Rererere',      emoji: '🪼', role: 'Work · Purple Jellyfish',  avatarDir: 'Rererere',      avatarFile: 'Rererere.png' },
-  { id: 'lenoon',       name: 'Lenoon',        emoji: '🦎', role: 'Infra · Salamander',       avatarDir: 'Lenoon',        avatarFile: 'original.png' },
-  { id: 'tonny',        name: 'Tonny',         emoji: '🤡', role: 'Family · Tim & Eric',      avatarDir: 'Tonny',         avatarFile: 'avatar.png' },
-  { id: 'tongy',        name: 'Tongy',         emoji: '🐉', role: 'Family · Sidekick',        avatarDir: 'Tongy',         avatarFile: 'original.png' },
-  { id: 'rar',          name: 'Rar',           emoji: '🦖', role: 'Work · Builder',            avatarDir: 'Rar',           avatarFile: 'Rar.png' },
-  { id: 'pepe',         name: 'Pepe',          emoji: '🐸', role: 'Vibes · Cultural Attaché',  avatarDir: 'Pepe',          avatarFile: 'original.png' },
-  { id: 'lalathing',    name: 'LalaTheThing',  emoji: '👾', role: 'Creative · Chaos Agent',   avatarDir: 'LalaTheThing',  avatarFile: 'original.png' },
-  { id: 'momothecat',   name: 'MomoTheCat',    emoji: '🐱', role: 'QA · Feline Inspector',    avatarDir: 'MomoTheCat',    avatarFile: 'original.png' },
-  { id: 'yi',           name: 'Yi',            emoji: '🧿', role: 'Mobile · Node Agent',      avatarDir: '',              avatarFile: '' },
+  { id: 'cack',       name: 'Cack',         emoji: '👹', role: 'Main · Sysops Gremlin',   avatarDir: 'Cack',         avatarFile: 'themed.png' },
+  { id: 'grolf',      name: 'Grolf',        emoji: '🪨', role: 'Eng · Director of Eng',   avatarDir: 'Grolf',        avatarFile: 'Grolf.png' },
+  { id: 'rererere',   name: 'Rererere',     emoji: '🪼', role: 'Work · Purple Jellyfish', avatarDir: 'Rererere',     avatarFile: 'Rererere.png' },
+  { id: 'lenoon',     name: 'Lenoon',       emoji: '🦎', role: 'Infra · Salamander',      avatarDir: 'Lenoon',       avatarFile: 'original.png' },
+  { id: 'tonny',      name: 'Tonny',        emoji: '🤡', role: 'Family · Tim & Eric',     avatarDir: 'Tonny',        avatarFile: 'avatar.png' },
+  { id: 'tongy',      name: 'Tongy',        emoji: '🐉', role: 'Family · Sidekick',       avatarDir: 'Tongy',        avatarFile: 'original.png' },
+  { id: 'rar',        name: 'Rar',          emoji: '🦖', role: 'Work · Builder',           avatarDir: 'Rar',          avatarFile: 'Rar.png' },
+  { id: 'pepe',       name: 'Pepe',         emoji: '🐸', role: 'Vibes · Cultural Attaché', avatarDir: 'Pepe',         avatarFile: 'original.png' },
+  { id: 'lalathing',  name: 'LalaTheThing', emoji: '👾', role: 'Creative · Chaos Agent',  avatarDir: 'LalaTheThing', avatarFile: 'original.png' },
+  { id: 'momothecat', name: 'MomoTheCat',   emoji: '🐱', role: 'QA · Feline Inspector',   avatarDir: 'MomoTheCat',   avatarFile: 'original.png' },
+  { id: 'yi',         name: 'Yi',           emoji: '🧿', role: 'Mobile · Node Agent',     avatarDir: '',             avatarFile: '' },
 ];
 
 function avatarUrl(agent: AgentMeta): string | null {
@@ -48,15 +50,18 @@ function avatarUrl(agent: AgentMeta): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Layout — arrange agents in a 2-column grid left of Bloodbank hub
+// Radial layout — agents in a ring around center Bloodbank hub
 // ---------------------------------------------------------------------------
-function agentPosition(index: number): { x: number; y: number } {
-  const col = index % 2;
-  const row = Math.floor(index / 2);
-  return { x: 60 + col * 200, y: 40 + row * 130 };
-}
+const CENTER = { x: 500, y: 400 };
+const RADIUS = 320;
 
-const BLOODBANK_POS = { x: 560, y: 300 };
+function radialPosition(index: number, total: number): { x: number; y: number } {
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2; // start at top
+  return {
+    x: CENTER.x + RADIUS * Math.cos(angle) - 80, // offset for node width
+    y: CENTER.y + RADIUS * Math.sin(angle) - 50, // offset for node height
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Colour mapping for event types
@@ -108,23 +113,71 @@ function matchTicketsToAgents(
   return map;
 }
 
-// ---------------------------------------------------------------------------
-// Status derivation — RULE: no "working" without active ticket
-// ---------------------------------------------------------------------------
-function deriveStatus(
-  hasRecentEvent: boolean,
-  hasActiveTicket: boolean,
-): AgentStatus {
+function deriveStatus(hasRecentEvent: boolean, hasActiveTicket: boolean): AgentStatus {
   if (hasActiveTicket) return 'working';
-  if (hasRecentEvent) return 'idle';     // active but no ticket = idle
+  if (hasRecentEvent) return 'idle';
   return 'idle';
 }
 
-// ---------------------------------------------------------------------------
-// Custom node types registration
-// ---------------------------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: NodeTypes = { agent: AgentNode as any };
+
+// ---------------------------------------------------------------------------
+// Build initial nodes + edges (only once)
+// ---------------------------------------------------------------------------
+function buildInitialNodes(): Node[] {
+  const agentNodes: Node[] = AGENTS.map((a, i) => ({
+    id: a.id,
+    type: 'agent',
+    position: radialPosition(i, AGENTS.length),
+    data: {
+      label: a.name,
+      emoji: a.emoji,
+      role: a.role,
+      avatarUrl: avatarUrl(a),
+      status: 'idle' as AgentStatus,
+      eventCount: 0,
+      lastEventTime: null,
+      isProcessing: false,
+      ticketId: null,
+      ticketTitle: null,
+    } satisfies AgentNodeData,
+    draggable: true,
+  }));
+
+  agentNodes.push({
+    id: 'bloodbank',
+    type: 'agent',
+    position: { x: CENTER.x - 80, y: CENTER.y - 50 },
+    data: {
+      label: 'Bloodbank',
+      emoji: '🩸',
+      role: 'Event Exchange',
+      avatarUrl: null,
+      status: 'idle' as AgentStatus,
+      eventCount: 0,
+      lastEventTime: null,
+      isProcessing: false,
+      ticketId: null,
+      ticketTitle: null,
+      isCenter: true,
+    } satisfies AgentNodeData,
+    draggable: true,
+  });
+
+  return agentNodes;
+}
+
+function buildInitialEdges(): Edge[] {
+  return AGENTS.map((a) => ({
+    id: `edge-${a.id}-bloodbank`,
+    source: a.id,
+    target: 'bloodbank',
+    animated: false,
+    style: { stroke: '#334155', strokeWidth: 1.5, transition: 'stroke 0.3s, stroke-width 0.3s' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#334155', width: 16, height: 16 },
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -134,6 +187,10 @@ export const AgentGraph: React.FC = () => {
   const { data: workstreams } = usePlaneWorkstreams();
   const [flashEdges, setFlashEdges] = useState<Record<string, { color: string; label: string }>>({});
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Controlled nodes + edges — React Flow manages drag state internally
+  const [nodes, setNodes, onNodesChange] = useNodesState(buildInitialNodes());
+  const [edges, setEdges, onEdgesChange] = useEdgesState(buildInitialEdges());
 
   const ticketMap = useMemo(() => matchTicketsToAgents(workstreams), [workstreams]);
 
@@ -162,6 +219,45 @@ export const AgentGraph: React.FC = () => {
     return stats;
   }, [events]);
 
+  // Update node DATA without resetting positions
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((node) => {
+        if (node.id === 'bloodbank') {
+          const latestTs = events[0]?.envelope?.timestamp ?? null;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              eventCount: events.length,
+              lastEventTime: latestTs ? new Date(latestTs).toLocaleTimeString() : null,
+              isProcessing: latestTs !== null && Date.now() - new Date(latestTs).getTime() < 5000,
+            },
+          };
+        }
+        const agent = AGENTS.find((a) => a.id === node.id);
+        if (!agent) return node;
+
+        const s = agentStats[agent.id] ?? { count: 0, lastTime: null, isProcessing: false };
+        const ticket = ticketMap[agent.id] ?? null;
+        const hasRecentEvent = s.lastTime !== null && Date.now() - new Date(s.lastTime).getTime() < 300_000;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            status: deriveStatus(hasRecentEvent, !!ticket),
+            eventCount: s.count,
+            lastEventTime: s.lastTime ? new Date(s.lastTime).toLocaleTimeString() : null,
+            isProcessing: s.isProcessing,
+            ticketId: ticket?.ticketId ?? null,
+            ticketTitle: ticket?.ticketTitle ?? null,
+          },
+        };
+      })
+    );
+  }, [agentStats, ticketMap, events, setNodes]);
+
   // Flash edges on new events
   useEffect(() => {
     if (events.length === 0) return;
@@ -185,91 +281,35 @@ export const AgentGraph: React.FC = () => {
     }, 3000);
   }, [events]);
 
-  // Build nodes
-  const nodes: Node[] = useMemo(() => {
-    const result: Node[] = AGENTS.map((a, i) => {
-      const s = agentStats[a.id] ?? { count: 0, lastTime: null, isProcessing: false };
-      const ticket = ticketMap[a.id] ?? null;
-      const hasRecentEvent = s.lastTime !== null && Date.now() - new Date(s.lastTime).getTime() < 300_000;
-
-      const d: AgentNodeData = {
-        label: a.name,
-        emoji: a.emoji,
-        role: a.role,
-        avatarUrl: avatarUrl(a),
-        status: deriveStatus(hasRecentEvent, !!ticket),
-        eventCount: s.count,
-        lastEventTime: s.lastTime ? new Date(s.lastTime).toLocaleTimeString() : null,
-        isProcessing: s.isProcessing,
-        ticketId: ticket?.ticketId ?? null,
-        ticketTitle: ticket?.ticketTitle ?? null,
-      };
-
-      return {
-        id: a.id,
-        type: 'agent',
-        position: agentPosition(i),
-        data: d,
-        draggable: true,
-      };
-    });
-
-    // Bloodbank hub node
-    const latestTs = events[0]?.envelope?.timestamp ?? null;
-    result.push({
-      id: 'bloodbank',
-      type: 'agent',
-      position: BLOODBANK_POS,
-      data: {
-        label: 'Bloodbank',
-        emoji: '🩸',
-        role: 'Event Exchange',
-        avatarUrl: null,
-        status: 'idle' as AgentStatus,
-        eventCount: events.length,
-        lastEventTime: latestTs ? new Date(latestTs).toLocaleTimeString() : null,
-        isProcessing: latestTs !== null && Date.now() - new Date(latestTs).getTime() < 5000,
-        ticketId: null,
-        ticketTitle: null,
-        isCenter: true,
-      } satisfies AgentNodeData,
-      draggable: true,
-    });
-
-    return result;
-  }, [agentStats, ticketMap, events]);
-
-  // Build edges
-  const edges: Edge[] = useMemo(() => {
-    return AGENTS.map((a) => {
-      const edgeId = `edge-${a.id}-bloodbank`;
-      const flash = flashEdges[edgeId];
-      const isActive = !!flash;
-
-      return {
-        id: edgeId,
-        source: a.id,
-        target: 'bloodbank',
-        animated: isActive,
-        style: {
-          stroke: isActive ? flash.color : '#334155',
-          strokeWidth: isActive ? 3 : 1.5,
-          filter: isActive ? `drop-shadow(0 0 6px ${flash.color})` : undefined,
-          transition: 'stroke 0.3s, stroke-width 0.3s',
-        },
-        label: isActive ? flash.label : undefined,
-        labelStyle: { fill: isActive ? flash.color : '#64748b', fontSize: 11, fontWeight: 600 },
-        labelBgStyle: { fill: '#0f172a', fillOpacity: 0.85 },
-        labelBgPadding: [6, 3] as [number, number],
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: isActive ? flash.color : '#334155',
-          width: 16,
-          height: 16,
-        },
-      };
-    });
-  }, [flashEdges]);
+  // Update edge styles on flash
+  useEffect(() => {
+    setEdges((prev) =>
+      prev.map((edge) => {
+        const flash = flashEdges[edge.id];
+        const isActive = !!flash;
+        return {
+          ...edge,
+          animated: isActive,
+          style: {
+            stroke: isActive ? flash.color : '#334155',
+            strokeWidth: isActive ? 3 : 1.5,
+            filter: isActive ? `drop-shadow(0 0 6px ${flash.color})` : undefined,
+            transition: 'stroke 0.3s, stroke-width 0.3s',
+          },
+          label: isActive ? flash.label : undefined,
+          labelStyle: { fill: isActive ? flash.color : '#64748b', fontSize: 11, fontWeight: 600 },
+          labelBgStyle: { fill: '#0f172a', fillOpacity: 0.85 },
+          labelBgPadding: [6, 3] as [number, number],
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isActive ? flash.color : '#334155',
+            width: 16,
+            height: 16,
+          },
+        };
+      })
+    );
+  }, [flashEdges, setEdges]);
 
   return (
     <div className="flex h-full flex-col bg-slate-950">
@@ -281,8 +321,11 @@ export const AgentGraph: React.FC = () => {
             {connected ? 'Connected to Bloodbank' : 'Disconnected — reconnecting…'}
           </span>
         </div>
-        <button type="button" onClick={clearEvents}
-          className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+        <button
+          type="button"
+          onClick={clearEvents}
+          className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+        >
           Clear log
         </button>
       </div>
@@ -293,15 +336,17 @@ export const AgentGraph: React.FC = () => {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
-            defaultViewport={{ x: 20, y: 0, zoom: 0.85 }}
-            fitView={false}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
             proOptions={{ hideAttribution: true }}
             minZoom={0.3}
             maxZoom={2}
             nodesDraggable
             nodesConnectable={false}
-            elementsSelectable={false}
+            elementsSelectable
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
           </ReactFlow>
@@ -343,11 +388,18 @@ const EventLog: React.FC<{ events: BloodbankEvent[] }> = ({ events }) => {
           (payload['task_id'] as string) ??
           '';
         return (
-          <div key={ev.envelope?.event_id ?? `evt-${i}`}
-            className="border-b border-slate-800/50 py-1.5 leading-tight">
+          <div
+            key={ev.envelope?.event_id ?? `evt-${i}`}
+            className="border-b border-slate-800/50 py-1.5 leading-tight"
+          >
             <span className="text-slate-600">[{ts}]</span>{' '}
             <span style={{ color }}>{ev.routing_key}</span>
-            {detail && <> <span className="text-slate-500">— {detail}</span></>}
+            {detail && (
+              <>
+                {' '}
+                <span className="text-slate-500">— {detail}</span>
+              </>
+            )}
           </div>
         );
       })}
