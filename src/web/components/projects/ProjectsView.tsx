@@ -1,57 +1,60 @@
-import React, { useMemo, useState } from 'react';
-import { usePlaneWorkstreams, type Workstream } from '../../hooks/usePlaneWorkstreams';
+import React, { useMemo, useState } from "react";
+import {
+  usePlaneWorkstreams,
+  type Workstream,
+} from "../../hooks/usePlaneWorkstreams";
 
 // ---------------------------------------------------------------------------
 // Quadrant definitions
 // ---------------------------------------------------------------------------
-type QuadrantId = 'monetization' | 'internal' | 'digipop' | 'jacksnaps';
+type QuadrantId = "lasertoast" | "internal" | "digipop" | "jacksnaps";
 
 type Quadrant = {
   id: QuadrantId;
   label: string;
   subtitle: string;
-  position: 'top-right' | 'bottom-left' | 'top-left' | 'bottom-right';
-  color: string;        // border/accent
-  bgColor: string;      // background tint
+  position: "top-right" | "bottom-left" | "top-left" | "bottom-right";
+  color: string; // border/accent
+  bgColor: string; // background tint
   textColor: string;
 };
 
 const QUADRANTS: Quadrant[] = [
   {
-    id: 'monetization',
-    label: 'Monetization',
-    subtitle: '33GOD-powered products',
-    position: 'top-right',
-    color: '#22c55e',
-    bgColor: 'bg-emerald-950/30',
-    textColor: 'text-emerald-400',
+    id: "lasertoast",
+    label: "lasertoast",
+    subtitle: "33GOD-powered products",
+    position: "top-right",
+    color: "#22c55e",
+    bgColor: "bg-emerald-950/30",
+    textColor: "text-emerald-400",
   },
   {
-    id: 'internal',
-    label: '33GOD Internal',
-    subtitle: 'Infrastructure & platform',
-    position: 'bottom-left',
-    color: '#3b82f6',
-    bgColor: 'bg-blue-950/30',
-    textColor: 'text-blue-400',
+    id: "internal",
+    label: "33GOD Internal",
+    subtitle: "Infrastructure & platform",
+    position: "bottom-left",
+    color: "#3b82f6",
+    bgColor: "bg-blue-950/30",
+    textColor: "text-blue-400",
   },
   {
-    id: 'digipop',
-    label: 'DigiPop Studios',
-    subtitle: 'Vectors, fonts, coloring books',
-    position: 'top-left',
-    color: '#f59e0b',
-    bgColor: 'bg-amber-950/30',
-    textColor: 'text-amber-400',
+    id: "digipop",
+    label: "DigiPop Studios",
+    subtitle: "Vectors, fonts, coloring books",
+    position: "top-left",
+    color: "#f59e0b",
+    bgColor: "bg-amber-950/30",
+    textColor: "text-amber-400",
   },
   {
-    id: 'jacksnaps',
-    label: 'Jacksnaps',
-    subtitle: 'T-shirts, stickers, merch',
-    position: 'bottom-right',
-    color: '#ef4444',
-    bgColor: 'bg-rose-950/30',
-    textColor: 'text-rose-400',
+    id: "jacksnaps",
+    label: "Jacksnaps",
+    subtitle: "T-shirts, stickers, merch",
+    position: "bottom-right",
+    color: "#ef4444",
+    bgColor: "bg-rose-950/30",
+    textColor: "text-rose-400",
   },
 ];
 
@@ -65,40 +68,126 @@ type Project = {
   color: string;
   issueCount: number;
   activeCount: number;
-  source: 'plane' | 'static';
+  source: "plane" | "static";
   planeProjectId?: string;
 };
 
 // ---------------------------------------------------------------------------
 // Map Plane project IDs → quadrants
 // ---------------------------------------------------------------------------
-const PLANE_PROJECT_MAP: Record<string, { quadrant: QuadrantId; color: string }> = {
-  'cbfbb641-33e2-43c6-a7d1-ce63136ab689': { quadrant: 'internal', color: '#8b5cf6' },   // perth (main board)
-  '10d06f8d-c110-4ce5-beaa-0914534b090a': { quadrant: 'internal', color: '#ef4444' },   // bloodbank
-  'c5d51c41-eaf0-44ae-93ab-0a74712c3b86': { quadrant: 'internal', color: '#06b6d4' },   // holocene
-  '495de1b1-a4a2-4456-a185-351885858b1e': { quadrant: 'internal', color: '#f97316' },   // imi
+const PLANE_PROJECT_MAP: Record<
+  string,
+  { quadrant: QuadrantId; color: string }
+> = {
+  "cbfbb641-33e2-43c6-a7d1-ce63136ab689": {
+    quadrant: "internal",
+    color: "#8b5cf6",
+  }, // perth (main board)
+  "10d06f8d-c110-4ce5-beaa-0914534b090a": {
+    quadrant: "internal",
+    color: "#ef4444",
+  }, // bloodbank
+  "c5d51c41-eaf0-44ae-93ab-0a74712c3b86": {
+    quadrant: "internal",
+    color: "#06b6d4",
+  }, // holocene
+  "495de1b1-a4a2-4456-a185-351885858b1e": {
+    quadrant: "internal",
+    color: "#f97316",
+  }, // imi
 };
 
 // Project display names (better than raw Plane names)
 const PLANE_PROJECT_NAMES: Record<string, string> = {
-  'cbfbb641-33e2-43c6-a7d1-ce63136ab689': 'Perth Board',
-  '10d06f8d-c110-4ce5-beaa-0914534b090a': 'Bloodbank',
-  'c5d51c41-eaf0-44ae-93ab-0a74712c3b86': 'Holocene',
-  '495de1b1-a4a2-4456-a185-351885858b1e': 'iMi',
+  "cbfbb641-33e2-43c6-a7d1-ce63136ab689": "Perth Board",
+  "10d06f8d-c110-4ce5-beaa-0914534b090a": "Bloodbank",
+  "c5d51c41-eaf0-44ae-93ab-0a74712c3b86": "Holocene",
+  "495de1b1-a4a2-4456-a185-351885858b1e": "iMi",
 };
 
 // Static projects not yet in Plane
 const STATIC_PROJECTS: Project[] = [
-  { id: 'holyfields',    name: 'Holyfields',       quadrant: 'internal',      color: '#a855f7', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'candystore',    name: 'Candystore',       quadrant: 'internal',      color: '#ec4899', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'theboard',      name: 'TheBoard',         quadrant: 'internal',      color: '#14b8a6', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'intelliforia',  name: 'Intelliforia',     quadrant: 'monetization',  color: '#22c55e', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'dp-vectors',    name: 'Vector Packs',     quadrant: 'digipop',       color: '#f59e0b', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'dp-fonts',      name: 'Fonts',            quadrant: 'digipop',       color: '#fbbf24', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'dp-coloring',   name: 'Coloring Books',   quadrant: 'digipop',       color: '#d97706', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'dp-invites',    name: 'Invitations',      quadrant: 'digipop',       color: '#f97316', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'js-tees',       name: 'T-Shirts',         quadrant: 'jacksnaps',     color: '#ef4444', issueCount: 0, activeCount: 0, source: 'static' },
-  { id: 'js-stickers',   name: 'Bumper Stickers',  quadrant: 'jacksnaps',     color: '#f87171', issueCount: 0, activeCount: 0, source: 'static' },
+  {
+    id: "holyfields",
+    name: "Holyfields",
+    quadrant: "internal",
+    color: "#a855f7",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "candystore",
+    name: "Candystore",
+    quadrant: "internal",
+    color: "#ec4899",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "theboard",
+    name: "TheBoard",
+    quadrant: "internal",
+    color: "#14b8a6",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "dp-vectors",
+    name: "Vector Packs",
+    quadrant: "digipop",
+    color: "#f59e0b",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "dp-fonts",
+    name: "Fonts",
+    quadrant: "digipop",
+    color: "#fbbf24",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "dp-coloring",
+    name: "Coloring Books",
+    quadrant: "digipop",
+    color: "#d97706",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "dp-invites",
+    name: "Invitations",
+    quadrant: "digipop",
+    color: "#f97316",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "js-tees",
+    name: "T-Shirts",
+    quadrant: "jacksnaps",
+    color: "#ef4444",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
+  {
+    id: "js-stickers",
+    name: "Bumper Stickers",
+    quadrant: "jacksnaps",
+    color: "#f87171",
+    issueCount: 0,
+    activeCount: 0,
+    source: "static",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -109,14 +198,14 @@ function deriveProjects(workstreams: Workstream[] | undefined): Project[] {
 
   if (workstreams) {
     for (const ws of workstreams) {
-      const projectId = ws.planeLinks[0]?.project ?? '';
+      const projectId = ws.planeLinks[0]?.project ?? "";
       const mapping = PLANE_PROJECT_MAP[projectId];
       if (!mapping) continue;
 
       const existing = planeProjects.get(projectId);
       if (existing) {
         existing.issueCount++;
-        if (ws.status === 'active') existing.activeCount++;
+        if (ws.status === "active") existing.activeCount++;
       } else {
         planeProjects.set(projectId, {
           id: projectId,
@@ -124,8 +213,8 @@ function deriveProjects(workstreams: Workstream[] | undefined): Project[] {
           quadrant: mapping.quadrant,
           color: mapping.color,
           issueCount: 1,
-          activeCount: ws.status === 'active' ? 1 : 0,
-          source: 'plane',
+          activeCount: ws.status === "active" ? 1 : 0,
+          source: "plane",
           planeProjectId: projectId,
         });
       }
@@ -156,7 +245,8 @@ const ProjectCircle: React.FC<{
         height: size,
         borderColor: project.color,
         backgroundColor: `${project.color}15`,
-        boxShadow: project.activeCount > 0 ? `0 0 20px ${project.color}30` : undefined,
+        boxShadow:
+          project.activeCount > 0 ? `0 0 20px ${project.color}30` : undefined,
       }}
       title={`${project.name} — ${project.issueCount} tickets, ${project.activeCount} active`}
     >
@@ -164,7 +254,7 @@ const ProjectCircle: React.FC<{
       {project.activeCount > 0 && (
         <span
           className="absolute inset-0 animate-ping rounded-full opacity-20"
-          style={{ borderColor: project.color, border: '2px solid' }}
+          style={{ borderColor: project.color, border: "2px solid" }}
         />
       )}
 
@@ -197,10 +287,14 @@ const QuadrantPane: React.FC<{
   onProjectClick: (p: Project) => void;
 }> = ({ quadrant, projects, onProjectClick }) => {
   return (
-    <div className={`flex flex-col rounded-2xl border border-slate-800/60 p-4 ${quadrant.bgColor}`}>
+    <div
+      className={`flex flex-col rounded-2xl border border-slate-800/60 p-4 ${quadrant.bgColor}`}
+    >
       {/* Quadrant header */}
       <div className="mb-4">
-        <h3 className={`text-sm font-bold ${quadrant.textColor}`}>{quadrant.label}</h3>
+        <h3 className={`text-sm font-bold ${quadrant.textColor}`}>
+          {quadrant.label}
+        </h3>
         <p className="text-[10px] text-slate-500">{quadrant.subtitle}</p>
       </div>
 
@@ -229,7 +323,7 @@ export const ProjectsView: React.FC = () => {
 
   const projectsByQuadrant = useMemo(() => {
     const map: Record<QuadrantId, Project[]> = {
-      monetization: [],
+      lasertoast: [],
       internal: [],
       digipop: [],
       jacksnaps: [],
@@ -250,10 +344,10 @@ export const ProjectsView: React.FC = () => {
   );
 
   // Quadrant ordering: top-left, top-right, bottom-left, bottom-right
-  const topLeft = QUADRANTS.find((q) => q.position === 'top-left')!;
-  const topRight = QUADRANTS.find((q) => q.position === 'top-right')!;
-  const bottomLeft = QUADRANTS.find((q) => q.position === 'bottom-left')!;
-  const bottomRight = QUADRANTS.find((q) => q.position === 'bottom-right')!;
+  const topLeft = QUADRANTS.find((q) => q.position === "top-left")!;
+  const topRight = QUADRANTS.find((q) => q.position === "top-right")!;
+  const bottomLeft = QUADRANTS.find((q) => q.position === "bottom-left")!;
+  const bottomRight = QUADRANTS.find((q) => q.position === "bottom-right")!;
 
   return (
     <div className="flex h-full flex-col bg-slate-950 text-slate-100">
@@ -262,9 +356,9 @@ export const ProjectsView: React.FC = () => {
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400">
             {isLoading
-              ? 'Loading projects…'
+              ? "Loading projects…"
               : error
-                ? 'Failed to load Plane data'
+                ? "Failed to load Plane data"
                 : `${projects.length} projects · ${totalIssues} tickets · ${totalActive} active`}
           </span>
         </div>
@@ -272,10 +366,26 @@ export const ProjectsView: React.FC = () => {
 
       {/* Quadrant grid — 2×2 */}
       <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-2 p-3 overflow-hidden">
-        <QuadrantPane quadrant={topLeft} projects={projectsByQuadrant[topLeft.id]} onProjectClick={setSelected} />
-        <QuadrantPane quadrant={topRight} projects={projectsByQuadrant[topRight.id]} onProjectClick={setSelected} />
-        <QuadrantPane quadrant={bottomLeft} projects={projectsByQuadrant[bottomLeft.id]} onProjectClick={setSelected} />
-        <QuadrantPane quadrant={bottomRight} projects={projectsByQuadrant[bottomRight.id]} onProjectClick={setSelected} />
+        <QuadrantPane
+          quadrant={topLeft}
+          projects={projectsByQuadrant[topLeft.id]}
+          onProjectClick={setSelected}
+        />
+        <QuadrantPane
+          quadrant={topRight}
+          projects={projectsByQuadrant[topRight.id]}
+          onProjectClick={setSelected}
+        />
+        <QuadrantPane
+          quadrant={bottomLeft}
+          projects={projectsByQuadrant[bottomLeft.id]}
+          onProjectClick={setSelected}
+        />
+        <QuadrantPane
+          quadrant={bottomRight}
+          projects={projectsByQuadrant[bottomRight.id]}
+          onProjectClick={setSelected}
+        />
       </div>
 
       {/* Detail drawer */}
@@ -294,14 +404,20 @@ export const ProjectsView: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div
                   className="h-10 w-10 rounded-full border-2 flex items-center justify-center"
-                  style={{ borderColor: selected.color, backgroundColor: `${selected.color}20` }}
+                  style={{
+                    borderColor: selected.color,
+                    backgroundColor: `${selected.color}20`,
+                  }}
                 >
-                  <span className="text-lg" style={{ color: selected.color }}>●</span>
+                  <span className="text-lg" style={{ color: selected.color }}>
+                    ●
+                  </span>
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-100">{selected.name}</h3>
                   <p className="text-xs text-slate-500">
-                    {QUADRANTS.find((q) => q.id === selected.quadrant)?.label} · {selected.source === 'plane' ? 'Plane' : 'Static'}
+                    {QUADRANTS.find((q) => q.id === selected.quadrant)?.label} ·{" "}
+                    {selected.source === "plane" ? "Plane" : "Static"}
                   </p>
                 </div>
               </div>
@@ -316,12 +432,23 @@ export const ProjectsView: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Total Tickets</p>
-                <p className="mt-1 text-xl font-bold text-slate-100">{selected.issueCount}</p>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                  Total Tickets
+                </p>
+                <p className="mt-1 text-xl font-bold text-slate-100">
+                  {selected.issueCount}
+                </p>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Active</p>
-                <p className="mt-1 text-xl font-bold" style={{ color: selected.color }}>{selected.activeCount}</p>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                  Active
+                </p>
+                <p
+                  className="mt-1 text-xl font-bold"
+                  style={{ color: selected.color }}
+                >
+                  {selected.activeCount}
+                </p>
               </div>
             </div>
 
