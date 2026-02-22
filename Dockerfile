@@ -18,6 +18,14 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Vite inlines VITE_* env vars at build time
+ARG VITE_BLOODBANK_API_URL=/api/bloodbank
+ARG VITE_BLOODBANK_WS_URL=/ws
+ARG VITE_BLOODBANK_WS_FALLBACK_URL=/ws
+ENV VITE_BLOODBANK_API_URL=$VITE_BLOODBANK_API_URL
+ENV VITE_BLOODBANK_WS_URL=$VITE_BLOODBANK_WS_URL
+ENV VITE_BLOODBANK_WS_FALLBACK_URL=$VITE_BLOODBANK_WS_FALLBACK_URL
+
 # Build the application
 RUN pnpm run build
 
