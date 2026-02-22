@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -7,8 +7,6 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
-  type OnNodesChange,
-  type OnEdgesChange,
   MarkerType,
   BackgroundVariant,
 } from '@xyflow/react';
@@ -16,10 +14,11 @@ import '@xyflow/react/dist/style.css';
 
 import AgentNode, { type AgentNodeData, type AgentStatus } from './AgentNode';
 import { useBloodbankStream, type BloodbankEvent } from '../../hooks/useBloodbankStream';
-import { usePlaneWorkstreams, type Workstream } from '../../hooks/usePlaneWorkstreams';
+import { useAgentTickets, type AgentTicket } from '../../hooks/useAgentTickets';
+import { useMismatchTelemetry } from '../../hooks/useMismatchTelemetry';
 
 // ---------------------------------------------------------------------------
-// Agent roster — full 11-agent 33GOD roster
+// Agent roster
 // ---------------------------------------------------------------------------
 type AgentMeta = {
   id: string;
@@ -50,21 +49,21 @@ function avatarUrl(agent: AgentMeta): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Radial layout — agents in a ring around center Bloodbank hub
+// Radial layout
 // ---------------------------------------------------------------------------
 const CENTER = { x: 500, y: 400 };
 const RADIUS = 320;
 
 function radialPosition(index: number, total: number): { x: number; y: number } {
-  const angle = (2 * Math.PI * index) / total - Math.PI / 2; // start at top
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2;
   return {
-    x: CENTER.x + RADIUS * Math.cos(angle) - 80, // offset for node width
-    y: CENTER.y + RADIUS * Math.sin(angle) - 50, // offset for node height
+    x: CENTER.x + RADIUS * Math.cos(angle) - 80,
+    y: CENTER.y + RADIUS * Math.sin(angle) - 50,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Colour mapping for event types
+// Edge colors + helpers
 // ---------------------------------------------------------------------------
 function edgeColor(routingKey: string): string {
   if (routingKey.includes('message')) return '#3b82f6';
@@ -73,6 +72,7 @@ function edgeColor(routingKey: string): string {
   if (routingKey.includes('heartbeat')) return '#22c55e80';
   if (routingKey.includes('error')) return '#ef4444';
   if (routingKey.includes('asset')) return '#06b6d4';
+  if (routingKey.includes('mismatch')) return '#f59e0b';
   return '#64748b';
 }
 
@@ -87,43 +87,30 @@ function agentFromKey(routingKey: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Ticket matching — map Plane workstreams to agents
+// Status derivation — THE RULE: no "working" without a started Plane ticket
 // ---------------------------------------------------------------------------
-type TicketMatch = { ticketId: string; ticketTitle: string };
+const RECENT_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-function matchTicketsToAgents(
-  workstreams: Workstream[] | undefined,
-): Record<string, TicketMatch> {
-  const map: Record<string, TicketMatch> = {};
-  if (!workstreams) return map;
+function deriveStatus(
+  hasRecentEvent: boolean,
+  ticket: AgentTicket | undefined,
+): AgentStatus {
+  const hasStartedTicket = !!ticket; // useAgentTickets only returns started tickets
 
-  for (const ws of workstreams) {
-    if (ws.status !== 'active') continue;
-    for (const owner of ws.activeOwners) {
-      const norm = owner.toLowerCase().replace(/[^a-z0-9]/g, '');
-      for (const agent of AGENTS) {
-        const agentNorm = agent.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (norm === agentNorm || norm.includes(agentNorm) || agentNorm.includes(norm)) {
-          const seqId = ws.planeLinks?.[0]?.issueIds?.[0] ?? `#${ws.sequenceId}`;
-          map[agent.id] = { ticketId: seqId, ticketTitle: ws.title };
-        }
-      }
-    }
-  }
-  return map;
-}
-
-function deriveStatus(hasRecentEvent: boolean, hasActiveTicket: boolean): AgentStatus {
-  if (hasActiveTicket) return 'working';
-  if (hasRecentEvent) return 'idle';
+  if (hasStartedTicket && hasRecentEvent) return 'working';
+  if (hasStartedTicket && !hasRecentEvent) return 'idle'; // ticket but quiet
+  if (!hasStartedTicket && hasRecentEvent) return 'rogue'; // active with no ticket!
   return 'idle';
 }
 
+// ---------------------------------------------------------------------------
+// Node types
+// ---------------------------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: NodeTypes = { agent: AgentNode as any };
 
 // ---------------------------------------------------------------------------
-// Build initial nodes + edges (only once)
+// Initial state builders
 // ---------------------------------------------------------------------------
 function buildInitialNodes(): Node[] {
   const agentNodes: Node[] = AGENTS.map((a, i) => ({
@@ -141,6 +128,7 @@ function buildInitialNodes(): Node[] {
       isProcessing: false,
       ticketId: null,
       ticketTitle: null,
+      ticketUrl: null,
     } satisfies AgentNodeData,
     draggable: true,
   }));
@@ -160,6 +148,7 @@ function buildInitialNodes(): Node[] {
       isProcessing: false,
       ticketId: null,
       ticketTitle: null,
+      ticketUrl: null,
       isCenter: true,
     } satisfies AgentNodeData,
     draggable: true,
@@ -184,17 +173,14 @@ function buildInitialEdges(): Edge[] {
 // ---------------------------------------------------------------------------
 export const AgentGraph: React.FC = () => {
   const { events, connected, clearEvents } = useBloodbankStream();
-  const { data: workstreams } = usePlaneWorkstreams();
+  const { data: agentTickets } = useAgentTickets();
   const [flashEdges, setFlashEdges] = useState<Record<string, { color: string; label: string }>>({});
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Controlled nodes + edges — React Flow manages drag state internally
   const [nodes, setNodes, onNodesChange] = useNodesState(buildInitialNodes());
   const [edges, setEdges, onEdgesChange] = useEdgesState(buildInitialEdges());
 
-  const ticketMap = useMemo(() => matchTicketsToAgents(workstreams), [workstreams]);
-
-  // Per-agent stats from events
+  // Per-agent event stats
   const agentStats = useMemo(() => {
     const stats: Record<string, { count: number; lastTime: string | null; isProcessing: boolean }> = {};
     for (const a of AGENTS) {
@@ -219,7 +205,30 @@ export const AgentGraph: React.FC = () => {
     return stats;
   }, [events]);
 
-  // Update node DATA without resetting positions
+  // Detect mismatches — agents with recent events but no started ticket
+  const mismatches = useMemo(() => {
+    const list: Array<{ agentId: string; agentName: string; lastEventTime: string; eventCount: number }> = [];
+    for (const a of AGENTS) {
+      const s = agentStats[a.id];
+      if (!s?.lastTime) continue;
+      const hasRecentEvent = Date.now() - new Date(s.lastTime).getTime() < RECENT_THRESHOLD_MS;
+      const hasTicket = !!agentTickets?.[a.id];
+      if (hasRecentEvent && !hasTicket) {
+        list.push({
+          agentId: a.id,
+          agentName: a.name,
+          lastEventTime: s.lastTime,
+          eventCount: s.count,
+        });
+      }
+    }
+    return list;
+  }, [agentStats, agentTickets]);
+
+  // Emit mismatch telemetry (debounced, best-effort)
+  useMismatchTelemetry(mismatches);
+
+  // Update node DATA without resetting dragged positions
   useEffect(() => {
     setNodes((prev) =>
       prev.map((node) => {
@@ -235,28 +244,30 @@ export const AgentGraph: React.FC = () => {
             },
           };
         }
+
         const agent = AGENTS.find((a) => a.id === node.id);
         if (!agent) return node;
 
         const s = agentStats[agent.id] ?? { count: 0, lastTime: null, isProcessing: false };
-        const ticket = ticketMap[agent.id] ?? null;
-        const hasRecentEvent = s.lastTime !== null && Date.now() - new Date(s.lastTime).getTime() < 300_000;
+        const ticket = agentTickets?.[agent.id];
+        const hasRecentEvent = s.lastTime !== null && Date.now() - new Date(s.lastTime).getTime() < RECENT_THRESHOLD_MS;
 
         return {
           ...node,
           data: {
             ...node.data,
-            status: deriveStatus(hasRecentEvent, !!ticket),
+            status: deriveStatus(hasRecentEvent, ticket),
             eventCount: s.count,
             lastEventTime: s.lastTime ? new Date(s.lastTime).toLocaleTimeString() : null,
             isProcessing: s.isProcessing,
             ticketId: ticket?.ticketId ?? null,
             ticketTitle: ticket?.ticketTitle ?? null,
+            ticketUrl: ticket?.ticketUrl ?? null,
           },
         };
       })
     );
-  }, [agentStats, ticketMap, events, setNodes]);
+  }, [agentStats, agentTickets, events, setNodes]);
 
   // Flash edges on new events
   useEffect(() => {
@@ -311,15 +322,27 @@ export const AgentGraph: React.FC = () => {
     );
   }, [flashEdges, setEdges]);
 
+  const mismatchCount = mismatches.length;
+
   return (
     <div className="flex h-full flex-col bg-slate-950">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${connected ? 'animate-pulse bg-emerald-400' : 'bg-red-500'}`} />
           <span className="text-xs text-slate-400">
             {connected ? 'Connected to Bloodbank' : 'Disconnected — reconnecting…'}
           </span>
+          {agentTickets && (
+            <span className="text-xs text-slate-600">
+              · {Object.keys(agentTickets).length} agents with tickets
+            </span>
+          )}
+          {mismatchCount > 0 && (
+            <span className="rounded bg-amber-900/60 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+              ⚠ {mismatchCount} rogue agent{mismatchCount !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -365,7 +388,7 @@ export const AgentGraph: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Event log sub-component
+// Event log
 // ---------------------------------------------------------------------------
 const EventLog: React.FC<{ events: BloodbankEvent[] }> = ({ events }) => {
   const logRef = useRef<HTMLDivElement>(null);

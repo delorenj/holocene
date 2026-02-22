@@ -1,7 +1,7 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
 
-export type AgentStatus = 'working' | 'idle' | 'blocked' | 'offline';
+export type AgentStatus = 'working' | 'idle' | 'blocked' | 'offline' | 'rogue';
 
 export type AgentNodeData = {
   label: string;
@@ -14,6 +14,7 @@ export type AgentNodeData = {
   isProcessing: boolean;
   ticketId: string | null;
   ticketTitle: string | null;
+  ticketUrl: string | null;
   isCenter?: boolean;
   [key: string]: unknown;
 };
@@ -23,6 +24,7 @@ const statusColor: Record<AgentStatus, string> = {
   idle: 'bg-slate-500',
   blocked: 'bg-rose-500',
   offline: 'bg-slate-700',
+  rogue: 'bg-amber-500',
 };
 
 const statusRing: Record<AgentStatus, string> = {
@@ -30,6 +32,15 @@ const statusRing: Record<AgentStatus, string> = {
   idle: '',
   blocked: 'ring-2 ring-rose-400/40 ring-offset-1 ring-offset-slate-950',
   offline: 'opacity-60',
+  rogue: 'ring-2 ring-amber-400/60 ring-offset-1 ring-offset-slate-950',
+};
+
+const statusLabel: Record<AgentStatus, string> = {
+  working: 'working',
+  idle: 'idle',
+  blocked: 'blocked',
+  offline: 'offline',
+  rogue: '⚠ no ticket',
 };
 
 type Props = { data: AgentNodeData };
@@ -93,7 +104,9 @@ const AgentNode: React.FC<Props> = ({ data: d }) => {
       {!isCenter && (
         <div className="mt-2 flex items-center gap-2">
           <span className={`inline-block h-2 w-2 rounded-full ${d.isProcessing ? 'animate-pulse ' : ''}${statusColor[d.status]}`} />
-          <span className="text-[10px] font-medium text-slate-400">{d.status}</span>
+          <span className={`text-[10px] font-medium ${d.status === 'rogue' ? 'text-amber-400' : 'text-slate-400'}`}>
+            {statusLabel[d.status]}
+          </span>
           <span className="text-[10px] text-slate-600">
             {d.eventCount} evt{d.eventCount !== 1 ? 's' : ''}
           </span>
@@ -102,8 +115,22 @@ const AgentNode: React.FC<Props> = ({ data: d }) => {
 
       {/* Ticket (if working) */}
       {d.ticketId && (
-        <div className="mt-1 max-w-[160px] truncate text-[10px] text-emerald-400" title={d.ticketTitle ?? ''}>
+        <a
+          href={d.ticketUrl ?? '#'}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1 max-w-[160px] truncate text-[10px] text-emerald-400 hover:text-emerald-300 hover:underline"
+          title={d.ticketTitle ?? ''}
+        >
           🎫 {d.ticketId}{d.ticketTitle ? `: ${d.ticketTitle}` : ''}
+        </a>
+      )}
+
+      {/* Rogue warning */}
+      {d.status === 'rogue' && !d.ticketId && (
+        <div className="mt-1 text-[10px] text-amber-400 font-medium">
+          ⚠ Active with no ticket
         </div>
       )}
 
