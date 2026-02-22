@@ -27,36 +27,69 @@ The name "Holocene" evokes the current geological epoch of human civilization, s
 
 ## Architecture Position
 
-```mermaid
-graph TB
-    subgraph "33GOD Pipeline"
-        AO[Agent Orchestration<br/>Flume/Yi/AgentForge]
-        WM[Workspace Management<br/>iMi/Jelmore]
-        MC[Meeting & Collaboration<br/>TheBoard]
-        BB[Bloodbank<br/>Event Bus]
+Holocene is the **visibility layer** of the 33GOD event-driven architecture, displaying events from both historical (Candystore API) and real-time (WebSocket relay) sources:
 
-        HC[Holocene<br/>Mission Control]
-
-        PG[(PostgreSQL)]
-        RD[(Redis)]
-    end
-
-    AO -->|agent events| BB
-    WM -->|worktree events| BB
-    MC -->|meeting events| BB
-
-    BB -->|streams events| HC
-    HC -->|persists snapshots| PG
-    HC -->|caches state| RD
-
-    HC -->|displays| UI[Dashboard Views]
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      HOLOCENE ARCHITECTURE                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   DATA SOURCES                                                               │
+│   ┌─────────────────────────┐    ┌─────────────────────────────────────┐    │
+│   │   CANDYSTORE (History)  │    │   BLOODBANK WS RELAY (Real-time)    │    │
+│   │   PostgreSQL            │    │   ws://localhost:8683               │    │
+│   │                         │    │                                     │    │
+│   │   GET /events           │    │   WebSocket connection              │    │
+│   │   • session_id filter   │    │   • routing_key: # (all events)     │    │
+│   │   • event_type filter   │    │   • type: "event" wrapper           │    │
+│   │   • time range          │    │   • auto-reconnect                  │    │
+│   │   • pagination          │    │                                     │    │
+│   └──────────┬──────────────┘    └──────────────┬──────────────────────┘    │
+│              │                                  │                            │
+│              └──────────────────┬───────────────┘                            │
+│                                 ▼                                            │
+│                         HOLOCENE FRONTEND                                    │
+│              ┌─────────────────────────────────────┐                        │
+│              │   useBloodbankStream Hook           │                        │
+│              │   • Merges API + WS data            │                        │
+│              │   • Deduplicates by event_id        │                        │
+│              │   • Filters by type === "event"     │                        │
+│              └─────────────────────────────────────┘                        │
+│                                 │                                            │
+│              ┌──────────────────┼──────────────────┐                        │
+│              ▼                  ▼                  ▼                        │
+│        EventsPanel       AgentGraph         ProjectTimeline                 │
+│        (Event List)      (Constellation)    (Session View)                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**The Event Flow to Holocene:**
+1. **All events** flow through Bloodbank (RabbitMQ)
+2. **Candystore** persists ALL events via wildcard binding (`#`)
+3. **Holocene queries** Candystore API for historical events on load
+4. **WS Relay** broadcasts live events to Holocene via WebSocket
+5. **Frontend merges** both streams into a unified view
 
 **Role in Pipeline**: Provides human-facing observation and control interface for the entire agent ecosystem, aggregating events from all domains into actionable dashboards and maintaining the authoritative registry of agent definitions.
 
 ---
 
 ## Event Contracts
+
+### Data Sources
+
+Holocene displays events from **two sources**:
+
+1. **Candystore API** (`http://localhost:8683/events`)
+   - Historical events (PostgreSQL)
+   - Query by session, type, source, time range
+   - Pagination support
+
+2. **Bloodbank WebSocket Relay** (`ws://localhost:8683`)
+   - Real-time events
+   - Broadcast to all connected clients
+   - Must include `type: "event"` wrapper
 
 ### Bloodbank Events Emitted
 
@@ -67,42 +100,92 @@ graph TB
 | `holocene.view.saved` | `holocene.view.saved` | `ViewSavedPayload` | User saves a mission layout |
 | `holocene.brief.generated` | `holocene.brief.generated` | `BriefGeneratedPayload` | AM/PM brief auto-generated or manually requested |
 
-**Payload Schemas** (defined in `holyfields/schemas/holocene/`):
+### Bloodbank Events Consumed
 
+Holocene consumes events via **two mechanisms**:
+
+#### 1. REST API (Candystore)
+
+**Query Pattern:**
+```bash
+# Get historical events for a session
+curl "http://localhost:8683/events?session_id=abc-123&limit=100"
+
+# Get events by type
+curl "http://localhost:8683/events?event_type=agent.task.completed"
+
+# Get events in time range
+curl "http://localhost:8683/events?start_time=2026-02-22T00:00:00Z&end_time=2026-02-22T23:59:59Z"
+```
+
+**Response:**
 ```json
-// AgentRegisteredPayload
 {
-  "agent_id": "string",
-  "agent_name": "string",
-  "agent_type": "letta|agno|claude|custom",
-  "capabilities": ["string"],
-  "salary_level": "junior|mid|senior|principal|fellow",
-  "registered_by": "string",
-  "timestamp": "datetime"
-}
-
-// AgentStatusPayload
-{
-  "agent_id": "string",
-  "previous_status": "string",
-  "new_status": "string",
-  "active_task_id": "string|null",
-  "timestamp": "datetime"
+  "events": [
+    {
+      "id": "uuid",
+      "event_type": "agent.task.completed",
+      "source": "agent.cack",
+      "routing_key": "agent.cack.task.completed",
+      "timestamp": "2026-02-22T18:30:00Z",
+      "stored_at": "2026-02-22T18:30:00.050Z",
+      "payload": { ... },
+      "session_id": "session-123",
+      "correlation_id": "corr-456",
+      "storage_latency_ms": 5.2
+    }
+  ],
+  "total": 142,
+  "limit": 100,
+  "offset": 0,
+  "has_more": true
 }
 ```
 
-### Bloodbank Events Consumed
+#### 2. WebSocket (Real-Time)
 
-| Event Name | Routing Key | Handler | Purpose |
-|------------|-------------|---------|---------|
-| `agent.*.*` | `agent.#` | `handleAgentEvent()` | Track all agent lifecycle events |
-| `flume.task.*` | `flume.task.#` | `handleTaskEvent()` | Update task progress displays |
-| `yi.agent.*` | `yi.agent.#` | `handleYiEvent()` | Track Yi adapter events |
-| `imi.worktree.*` | `imi.worktree.#` | `handleWorktreeEvent()` | Display worktree activity |
-| `jelmore.session.*` | `jelmore.session.#` | `handleSessionEvent()` | Update session timeline |
-| `theboard.meeting.*` | `theboard.meeting.#` | `handleMeetingEvent()` | Show meeting status |
+**Connection:**
+```javascript
+const ws = new WebSocket('ws://localhost:8683');
 
-**Note**: Holocene consumes events from all domains for visualization purposes but does not modify external state.
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  // Filter for actual events (not welcome messages)
+  if (data.type === 'event') {
+    const { routing_key, envelope } = data;
+    // Update UI with new event
+  }
+};
+```
+
+**Message Format:**
+```json
+{
+  "type": "event",
+  "routing_key": "agent.cack.task.completed",
+  "envelope": {
+    "event_id": "uuid",
+    "event_type": "agent.cack.task.completed",
+    "timestamp": "2026-02-22T18:30:00Z",
+    "source": { "host": "...", "app": "...", "type": "agent" },
+    "payload": { ... }
+  }
+}
+```
+
+### Event Consumption Table
+
+| Event Name | Routing Key | Data Source | Purpose |
+|------------|-------------|-------------|---------|
+| `agent.*.*` | `agent.#` | WS + API | Track all agent lifecycle events |
+| `flume.task.*` | `flume.task.#` | WS + API | Update task progress displays |
+| `yi.agent.*` | `yi.agent.#` | WS + API | Track Yi adapter events |
+| `worktree.*` | `worktree.#` | WS + API | Display worktree activity |
+| `system.heartbeat.tick` | `system.heartbeat.tick` | WS | Pulse indicator |
+| `candystore.event.persisted` | `candystore.event.persisted` | WS | Storage confirmation |
+
+**Note**: Holocene consumes events for visualization purposes but does not modify external state.
 
 ---
 
