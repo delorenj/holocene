@@ -14,6 +14,7 @@ import '@xyflow/react/dist/style.css';
 
 import AgentNode, { type AgentNodeData, type AgentStatus } from './AgentNode';
 import { useBloodbankStream, type BloodbankEvent } from '../../hooks/useBloodbankStream';
+import { useEventHistory } from '../../hooks/useEventHistory';
 import { useAgentTickets, type AgentTicket } from '../../hooks/useAgentTickets';
 import { useMismatchTelemetry } from '../../hooks/useMismatchTelemetry';
 
@@ -172,8 +173,28 @@ function buildInitialEdges(): Edge[] {
 // Component
 // ---------------------------------------------------------------------------
 export const AgentGraph: React.FC = () => {
-  const { events, connected, clearEvents } = useBloodbankStream();
+  const { events: liveEvents, connected, clearEvents } = useBloodbankStream();
+  const { events: historicalEvents } = useEventHistory({ limit: 100 });
   const { data: agentTickets } = useAgentTickets();
+
+  // Merge live + historical, deduplicate by event_id
+  const events = useMemo(() => {
+    const seen = new Set<string>();
+    const all: BloodbankEvent[] = [];
+    for (const ev of liveEvents) {
+      const id = ev.envelope?.event_id;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      all.push(ev);
+    }
+    for (const ev of historicalEvents) {
+      const id = ev.envelope?.event_id;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      all.push(ev);
+    }
+    return all;
+  }, [liveEvents, historicalEvents]);
   const [flashEdges, setFlashEdges] = useState<Record<string, { color: string; label: string }>>({});
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
