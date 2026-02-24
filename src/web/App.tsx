@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { AgentGraph } from './components/agent-graph';
 import { EventsPanel } from './components/events';
 import { ProjectsView } from './components/projects';
+import { CommandDashboard } from './components/command-dashboard';
 
-type TabId = 'projects' | 'agent-graph' | 'events';
+type TabId = 'projects' | 'agent-graph' | 'events' | 'commands';
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'projects',    label: 'Projects',    icon: '🎯' },
   { id: 'agent-graph', label: 'Agents',      icon: '🔮' },
   { id: 'events',      label: 'Events',      icon: '⚡' },
+  { id: 'commands',    label: 'Commands',     icon: '🦎' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,7 @@ export const App: React.FC = () => {
       {activeTab === 'projects' && <ProjectsView />}
       {activeTab === 'agent-graph' && <AgentGraph />}
       {activeTab === 'events' && <EventsPanel />}
+      {activeTab === 'commands' && <CommandDashboard />}
     </DarkShell>
   );
 };
