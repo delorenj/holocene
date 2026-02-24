@@ -27,7 +27,9 @@ function toBloodbankEvent(row: Record<string, unknown>): BloodbankEvent {
     routing_key: eventType,
     envelope: {
       event_id:
-        typeof row.event_id === 'string' ? row.event_id : crypto.randomUUID(),
+        typeof row.event_id === 'string'
+          ? row.event_id
+          : (globalThis.crypto?.randomUUID?.() ?? `hist-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`),
       event_type: eventType,
       timestamp:
         typeof row.timestamp === 'string'
@@ -70,7 +72,8 @@ export function useEventHistory(opts: EventHistoryOptions = {}) {
         throw new Error(`Event history fetch failed: ${res.status}`);
       }
 
-      const rows: Record<string, unknown>[] = await res.json();
+      const json = await res.json();
+      const rows: Record<string, unknown>[] = Array.isArray(json) ? json : [];
       setEvents(rows.map(toBloodbankEvent));
     } catch (err) {
       // Network errors (Candystore down) → empty list, no crash
@@ -84,6 +87,13 @@ export function useEventHistory(opts: EventHistoryOptions = {}) {
 
   useEffect(() => {
     fetchEvents();
+
+    // Keep retrying history fetch so transient 502/503 doesn't leave UI empty forever.
+    const timer = setInterval(() => {
+      fetchEvents();
+    }, 10000);
+
+    return () => clearInterval(timer);
   }, [fetchEvents]);
 
   return { events, loading, error, refetch: fetchEvents };
