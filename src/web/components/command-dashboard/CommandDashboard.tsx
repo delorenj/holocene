@@ -172,10 +172,15 @@ const EmptyState: React.FC = () => (
     <div className="mt-6 rounded-lg border border-dashed border-slate-700 p-4 text-left text-xs">
       <p className="text-slate-400">Expected routing key patterns:</p>
       <pre className="mt-1 text-slate-500">
-{`command.lenoon.run_drift_check       → envelope
-command.lenoon.run_drift_check.ack   → acknowledged
-command.lenoon.run_drift_check.result → completed
-command.lenoon.run_drift_check.error → failed`}
+{`command.lenoon.run_drift_check         → envelope
+command.lenoon.run_drift_check.ack     → acknowledged
+command.lenoon.run_drift_check.result  → completed
+command.lenoon.run_drift_check.error   → failed
+
+command.cack.run_git_maintenance       → envelope
+command.cack.run_git_maintenance.ack   → acknowledged
+command.cack.run_git_maintenance.result → completed
+command.cack.run_git_maintenance.error  → failed`}
       </pre>
     </div>
   </div>
