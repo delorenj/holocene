@@ -109,6 +109,11 @@ export function useCommandStream() {
 
   // Process a single BloodbankEvent into the command map
   const processEvent = useCallback((ev: BloodbankEvent): boolean => {
+    // GOD-14 Phase A: Log agent events for visibility
+    if (ev.type === 'event' && ev.routing_key?.startsWith('agent.')) {
+        console.log('[GOD-14] Agent Event:', ev.routing_key, ev.envelope?.event_id);
+    }
+
     if (ev.type !== 'event' || !ev.routing_key || !ev.envelope) return false;
 
     const parsed = parseRoutingKey(ev.routing_key);
