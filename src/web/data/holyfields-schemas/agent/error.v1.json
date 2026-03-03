@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/error.v1.json",
+  "title": "Agent Error Event",
+  "description": "Error occurred in agent processing",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.error",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent that encountered the error"
+        },
+        "error_type": {
+          "type": "string",
+          "description": "Category of error (e.g., 'rate_limit', 'timeout', 'internal')"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Human-readable error message"
+        },
+        "context": {
+          "type": ["string", "null"],
+          "description": "What was happening when the error occurred"
+        }
+      },
+      "required": ["agent_name", "error_type", "error_message"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

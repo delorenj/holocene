@@ -3,14 +3,16 @@ import { AgentGraph } from './components/agent-graph';
 import { EventsPanel } from './components/events';
 import { ProjectsView } from './components/projects';
 import { CommandDashboard } from './components/command-dashboard';
+import { BloodbankTestBoard } from './components/test-board';
 
-type TabId = 'projects' | 'agent-graph' | 'events' | 'commands';
+type TabId = 'projects' | 'agent-graph' | 'events' | 'commands' | 'test-board';
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'projects',    label: 'Projects',    icon: '🎯' },
-  { id: 'agent-graph', label: 'Agents',      icon: '🔮' },
-  { id: 'events',      label: 'Events',      icon: '⚡' },
+  { id: 'projects',    label: 'Projects',     icon: '🎯' },
+  { id: 'agent-graph', label: 'Agents',       icon: '🔮' },
+  { id: 'events',      label: 'Events',       icon: '⚡' },
   { id: 'commands',    label: 'Commands',     icon: '🦎' },
+  { id: 'test-board',  label: 'Test Board',   icon: '🧪' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -57,6 +59,7 @@ export const App: React.FC = () => {
       {activeTab === 'agent-graph' && <AgentGraph />}
       {activeTab === 'events' && <EventsPanel />}
       {activeTab === 'commands' && <CommandDashboard />}
+      {activeTab === 'test-board' && <BloodbankTestBoard />}
     </DarkShell>
   );
 };

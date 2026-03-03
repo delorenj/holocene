@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/session/thread/start.v1.json",
+  "title": "Session Thread Start Event",
+  "description": "Claude Code session started",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "session.thread.start",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_directory": {
+          "type": "string"
+        },
+        "git_branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_remote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "user_prompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "started_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "working_directory",
+        "model"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

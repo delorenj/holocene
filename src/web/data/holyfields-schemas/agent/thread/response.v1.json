@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/thread/response.v1.json",
+  "title": "Agent Thread Response Event",
+  "description": "Agent responded to prompt",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.thread.response",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "prompt_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Deprecated - use correlation_ids"
+        },
+        "response": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens_used": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "response"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

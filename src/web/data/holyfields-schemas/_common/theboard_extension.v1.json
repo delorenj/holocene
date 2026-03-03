@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/_common/theboard_extension.v1.json",
+  "title": "TheBoard Event Extension",
+  "description": "Extension schema for TheBoard events. Adds meeting_id field for meeting correlation. Use with allOf to extend base_event.",
+  "type": "object",
+  "properties": {
+    "meeting_id": {
+      "$ref": "types.v1.json#/$defs/uuid",
+      "description": "UUID of the meeting this event relates to. Used for event correlation and tracing within TheBoard domain."
+    }
+  },
+  "required": ["meeting_id"]
+}

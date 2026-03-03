@@ -5,6 +5,9 @@
   "description": "Mission control dashboard for the 33GOD Agentic Development Pipeline",
   "type": "module",
   "scripts": {
+    "schemas:sync": "node scripts/sync-holyfields-schemas.mjs",
+    "predev": "npm run schemas:sync",
+    "prebuild": "npm run schemas:sync",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

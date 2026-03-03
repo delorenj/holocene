@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/tool.invoked.v1.json",
+  "title": "Agent Tool Invoked Event",
+  "description": "Agent invoked a tool (exec, web_search, read, etc.)",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.tool.invoked",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent invoking the tool"
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the tool (e.g., 'exec', 'web_search', 'read')"
+        },
+        "tool_params_preview": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "First 200 characters of tool parameters"
+        },
+        "session_key": {
+          "$ref": "../_common/types.v1.json#/$defs/session_key",
+          "description": "Session identifier"
+        }
+      },
+      "required": ["agent_name", "tool_name", "tool_params_preview", "session_key"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

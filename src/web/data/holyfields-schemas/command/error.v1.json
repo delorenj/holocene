@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/command/error.v1.json",
+  "title": "Command Error",
+  "description": "Emitted when a command fails. Contains machine-readable classification and retry guidance.",
+  "type": "object",
+  "allOf": [{ "$ref": "../_common/base_event.v1.json" }],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "command.error",
+      "description": "Base event_type. Actual routing: command.{agent}.{action}.error"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "command_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "ID of the command that failed."
+        },
+        "target_agent": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent that attempted the command."
+        },
+        "action": {
+          "type": "string",
+          "description": "The command action that failed."
+        },
+        "error_code": {
+          "type": "string",
+          "enum": ["timeout", "rejected", "invalid_state", "execution_failed", "not_implemented", "ttl_expired", "rate_limited"],
+          "description": "Machine-readable error classification."
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Human-readable error description."
+        },
+        "retryable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the command can be retried."
+        },
+        "retry_after_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "Suggested retry delay in ms. Only meaningful when retryable=true."
+        },
+        "fsm_version": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "default": null,
+          "description": "FSM version after error transition. Null if error before FSM engagement (e.g., TTL expiry)."
+        }
+      },
+      "required": ["command_id", "target_agent", "action", "error_code", "error_message"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.33god.com/asset/created.v1.json",
+  "title": "asset.created.v1",
+  "description": "Event emitted when a new asset_registry row is inserted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "asset_id",
+    "agent_name",
+    "asset_type",
+    "storage_uri",
+    "storage_provider",
+    "content_hash",
+    "correlation_id",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agent_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "invite",
+        "font",
+        "coloring_page",
+        "mockup",
+        "listing_copy"
+      ]
+    },
+    "storage_uri": {
+      "type": "string",
+      "pattern": "^(file|gs|https|s3|volume)://"
+    },
+    "storage_provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "sha256 hash"
+    },
+    "prompt_text": {
+      "type": ["string", "null"]
+    },
+    "model_provider": {
+      "type": ["string", "null"]
+    },
+    "model_name": {
+      "type": ["string", "null"]
+    },
+    "model_params_json": {
+      "type": "object"
+    },
+    "source_event_id": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "lineage_parent_asset_id": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "revised", "deleted"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deleted_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

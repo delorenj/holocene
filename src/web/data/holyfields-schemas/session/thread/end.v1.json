@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/session/thread/end.v1.json",
+  "title": "Session Thread End Event",
+  "description": "Claude Code session ended",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "session.thread.end",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_reason": {
+          "type": "string"
+        },
+        "duration_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_turns": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tools_used": {
+          "type": "integer"
+        },
+        "files_modified": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "git_commits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "final_status": {
+          "type": "string"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "end_reason",
+        "final_status"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/command/result.v1.json",
+  "title": "Command Result",
+  "description": "Emitted when an agent completes command execution. Contains outcome classification and optional result data.",
+  "type": "object",
+  "allOf": [{ "$ref": "../_common/base_event.v1.json" }],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "command.result",
+      "description": "Base event_type. Actual routing: command.{agent}.{action}.result"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "command_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "ID of the command that produced this result."
+        },
+        "target_agent": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent that executed the command."
+        },
+        "action": {
+          "type": "string",
+          "description": "The command action that was executed."
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["success", "partial", "skipped"],
+          "description": "'success': completed fully. 'partial': completed with caveats. 'skipped': idempotency dedup, no work done."
+        },
+        "duration_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "Execution time from ack to result in milliseconds."
+        },
+        "result_payload": {
+          "type": ["object", "null"],
+          "default": null,
+          "description": "Action-specific result data. Null for skipped outcomes."
+        },
+        "fsm_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "FSM version after transitioning back to idle."
+        }
+      },
+      "required": ["command_id", "target_agent", "action", "outcome", "fsm_version"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

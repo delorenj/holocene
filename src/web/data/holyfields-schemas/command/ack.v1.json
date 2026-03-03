@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/command/ack.v1.json",
+  "title": "Command Acknowledgement",
+  "description": "Emitted immediately when an agent accepts a command for processing. Indicates the command passed all guards (TTL, idempotency, FSM state).",
+  "type": "object",
+  "allOf": [{ "$ref": "../_common/base_event.v1.json" }],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "command.ack",
+      "description": "Base event_type. Actual routing: command.{agent}.{action}.ack"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "command_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "ID of the command being acknowledged."
+        },
+        "target_agent": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent that accepted the command."
+        },
+        "action": {
+          "type": "string",
+          "description": "The command action being acknowledged."
+        },
+        "estimated_duration_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "Optional estimate of execution time in milliseconds."
+        },
+        "fsm_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "FSM version after the acknowledging transition."
+        }
+      },
+      "required": ["command_id", "target_agent", "action", "fsm_version"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

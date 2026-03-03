@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/feedback/requested.v1.json",
+  "title": "Agent Feedback Requested Event",
+  "description": "Request feedback from a specific agent",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.feedback.requested",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "AgentForge registry ID"
+        },
+        "message": {
+          "type": "string",
+          "description": "Message to send to the agent"
+        },
+        "letta_agent_id": {
+          "type": ["string", "null"],
+          "description": "Optional Letta agent ID override"
+        },
+        "context": {
+          "type": "object",
+          "description": "Optional context for the agent"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for this feedback request"
+        }
+      },
+      "required": ["agent_id", "message"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

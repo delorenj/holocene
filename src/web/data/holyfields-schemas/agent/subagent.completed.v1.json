@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/subagent.completed.v1.json",
+  "title": "Agent Subagent Completed Event",
+  "description": "Sub-agent finished its work",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.subagent.completed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the parent agent"
+        },
+        "child_label": {
+          "type": "string",
+          "description": "Sub-agent label"
+        },
+        "child_session_key": {
+          "$ref": "../_common/types.v1.json#/$defs/session_key",
+          "description": "Session key of the sub-agent"
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether the sub-agent completed successfully"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time the sub-agent ran in milliseconds"
+        },
+        "result_preview": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "First 200 characters of the result"
+        }
+      },
+      "required": ["agent_name", "child_label", "child_session_key", "success"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/session/thread/agent/action.v1.json",
+  "title": "Session Agent Tool Action Event",
+  "description": "Claude Code tool was invoked",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "session.thread.agent.action",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the tool invoked"
+        },
+        "tool_input": {
+          "type": "object",
+          "description": "Tool input parameters"
+        },
+        "working_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files_in_context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "turn_number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "conversation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_metadata": {
+          "type": "object",
+          "description": "Tool invocation metadata"
+        },
+        "git_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "session_id",
+        "tool_metadata"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

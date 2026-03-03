@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/theboard/meeting.completed.v1.json",
+  "title": "Meeting Completed Event",
+  "description": "Emitted when meeting completes successfully. Payload contains final meeting state, metrics, and extracted insights.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "theboard.meeting.completed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "total_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of discussion rounds completed"
+        },
+        "total_comments": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total comments extracted across all rounds"
+        },
+        "total_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Total cost in USD for all LLM calls"
+        },
+        "convergence_detected": {
+          "type": "boolean",
+          "description": "Whether convergence was detected before max_rounds"
+        },
+        "stopping_reason": {
+          "type": "string",
+          "enum": [
+            "convergence",
+            "max_rounds",
+            "manual"
+          ],
+          "description": "Reason the meeting stopped"
+        },
+        "top_comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/top_comment"
+          },
+          "maxItems": 5,
+          "description": "Top 5 comments ranked by novelty score"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "total_rounds",
+        "total_comments",
+        "total_cost",
+        "convergence_detected",
+        "stopping_reason",
+        "top_comments"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ],
+  "$defs": {
+    "top_comment": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "description": "Comment text"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "technical_decision",
+            "risk",
+            "implementation_detail",
+            "observation",
+            "question",
+            "other"
+          ],
+          "description": "Comment category"
+        },
+        "novelty_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Novelty score (0.0 = repetitive, 1.0 = novel)"
+        },
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent who authored the comment"
+        },
+        "round_num": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Round number when comment was made"
+        }
+      },
+      "required": [
+        "text",
+        "category",
+        "novelty_score",
+        "agent_name",
+        "round_num"
+      ]
+    }
+  }
+}

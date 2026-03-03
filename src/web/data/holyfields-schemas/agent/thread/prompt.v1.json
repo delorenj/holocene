@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/thread/prompt.v1.json",
+  "title": "Agent Thread Prompt Event",
+  "description": "A prompt is sent to an agent thread",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.thread.prompt",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "provider",
+        "prompt"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

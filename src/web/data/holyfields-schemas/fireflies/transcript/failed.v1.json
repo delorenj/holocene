@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/fireflies/transcript/failed.v1.json",
+  "title": "Fireflies Transcript Failed Event",
+  "description": "Transcription or processing failed",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "fireflies.transcript.failed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "failed_stage": {
+          "type": "string",
+          "enum": ["upload", "transcription", "processing"],
+          "description": "Stage that failed"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Error message"
+        },
+        "error_code": {
+          "type": ["string", "null"],
+          "description": "Error code"
+        },
+        "transcript_id": {
+          "type": ["string", "null"],
+          "description": "Transcript ID if available"
+        },
+        "media_file": {
+          "type": ["string", "null"],
+          "description": "Original file path"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Retry attempts"
+        },
+        "is_retryable": {
+          "type": "boolean",
+          "description": "Whether error is retryable"
+        }
+      },
+      "required": ["failed_stage", "error_message"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

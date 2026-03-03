@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/message.received.v1.json",
+  "title": "Agent Message Received Event",
+  "description": "Inbound message received by an agent",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.message.received",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent that received the message"
+        },
+        "channel": {
+          "$ref": "../_common/types.v1.json#/$defs/channel_type",
+          "description": "Channel the message came from"
+        },
+        "sender": {
+          "type": "string",
+          "description": "User name or ID who sent the message"
+        },
+        "message_preview": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "First 200 characters of the message"
+        },
+        "message_length": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total length of the message in characters"
+        },
+        "session_key": {
+          "$ref": "../_common/types.v1.json#/$defs/session_key",
+          "description": "Session identifier (e.g., 'agent:main:main')"
+        }
+      },
+      "required": ["agent_name", "channel", "sender", "message_preview", "message_length", "session_key"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

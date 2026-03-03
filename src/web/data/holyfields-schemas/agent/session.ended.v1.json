@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/session.ended.v1.json",
+  "title": "Agent Session Ended Event",
+  "description": "Agent session closed",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.session.ended",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent"
+        },
+        "session_key": {
+          "$ref": "../_common/types.v1.json#/$defs/session_key",
+          "description": "Session identifier"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["timeout", "completion", "error", "manual"],
+          "description": "Reason the session ended"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total session duration in milliseconds"
+        },
+        "total_messages": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total messages exchanged in this session"
+        }
+      },
+      "required": ["agent_name", "session_key"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

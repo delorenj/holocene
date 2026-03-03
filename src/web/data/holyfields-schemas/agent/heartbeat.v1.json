@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/heartbeat.v1.json",
+  "title": "Agent Heartbeat Event",
+  "description": "Periodic agent health signal",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.heartbeat",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "busy", "error", "degraded"],
+          "description": "Current agent status"
+        },
+        "active_sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of active sessions"
+        },
+        "uptime_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Agent uptime in milliseconds"
+        }
+      },
+      "required": ["agent_name", "status"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

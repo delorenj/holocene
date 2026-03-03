@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/fireflies/transcript/ready.v1.json",
+  "title": "Fireflies Transcript Ready Event",
+  "description": "Fireflies completed transcription",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "fireflies.transcript.ready",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "transcript_id": {
+          "type": "string",
+          "description": "Fireflies meeting/transcript ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Meeting title"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Meeting date/time"
+        },
+        "duration_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Duration in minutes"
+        },
+        "transcript_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to transcript"
+        },
+        "audio_url": {
+          "type": ["string", "null"],
+          "format": "uri",
+          "description": "URL to audio if available"
+        },
+        "video_url": {
+          "type": ["string", "null"],
+          "format": "uri",
+          "description": "URL to video if available"
+        },
+        "sentences": {
+          "type": "array",
+          "description": "Transcript sentences"
+        },
+        "summary": {
+          "type": ["string", "null"],
+          "description": "Meeting summary if generated"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "email": { "type": ["string", "null"], "format": "email" }
+            },
+            "required": ["name"]
+          }
+        }
+      },
+      "required": ["transcript_id", "title", "date", "duration_minutes", "transcript_url", "sentences"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/theboard/meeting.started.v1.json",
+  "title": "Meeting Started Event",
+  "description": "Emitted when a meeting transitions to RUNNING status. Payload contains selected agents and execution configuration.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "theboard.meeting.started",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "selected_agents": {
+          "type": "array",
+          "items": {
+            "$ref": "../_common/types.v1.json#/$defs/agent_name"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Names of AI agents selected for this meeting"
+        },
+        "agent_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of agents participating"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "selected_agents",
+        "agent_count"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

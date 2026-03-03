@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/github/pr.created.v1.json",
+  "title": "GitHub PR Created Event",
+  "description": "GitHub pull request was created",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "github.pr.created",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "cache_key": {
+          "type": "string",
+          "description": "Key to retrieve PR data from cache (e.g., 'owner/repo/123')"
+        },
+        "cache_type": {
+          "type": "string",
+          "enum": ["redis", "memory", "file"],
+          "description": "Type of cache storage"
+        },
+        "repo_owner": {
+          "type": "string",
+          "description": "Repository owner"
+        },
+        "repo_name": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "pr_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pull request number"
+        }
+      },
+      "required": ["cache_key", "repo_owner", "repo_name", "pr_number"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

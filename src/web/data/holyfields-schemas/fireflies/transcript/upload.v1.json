@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/fireflies/transcript/upload.v1.json",
+  "title": "Fireflies Transcript Upload Event",
+  "description": "Request to upload media to Fireflies for transcription",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "fireflies.transcript.upload",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "media_file": {
+          "type": "string",
+          "description": "Path or URL to media file"
+        },
+        "media_duration_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Duration of media in seconds"
+        },
+        "media_type": {
+          "type": "string",
+          "description": "MIME type (e.g., 'audio/mpeg', 'video/mp4')"
+        },
+        "title": {
+          "type": ["string", "null"],
+          "description": "Meeting title"
+        },
+        "user_id": {
+          "type": ["string", "null"],
+          "description": "User requesting transcription"
+        }
+      },
+      "required": ["media_file", "media_duration_seconds", "media_type"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

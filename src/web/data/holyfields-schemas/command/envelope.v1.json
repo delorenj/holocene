@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/command/envelope.v1.json",
+  "title": "Command Envelope",
+  "description": "Wire-level envelope for commands sent to agents via Bloodbank. Commands are imperative ('do X'), unlike events which are declarative ('X happened').",
+  "type": "object",
+  "allOf": [{ "$ref": "../_common/base_event.v1.json" }],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "command.envelope",
+      "description": "Base event_type for command envelope. Actual routing uses command.{agent}.{action}."
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "command_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique ID for this command instance. Used for idempotency, ack/result correlation."
+        },
+        "target_agent": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent that should execute this command."
+        },
+        "issued_by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the command issuer (agent name, 'system', or human name)."
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Command action identifier (e.g., 'run_drift_check', 'assign_ticket')."
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "default": "normal",
+          "description": "Execution priority. 'critical' bypasses queue ordering."
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000,
+          "description": "Time-to-live in ms. Command rejected if not acked within TTL. 0 = no expiry."
+        },
+        "idempotency_key": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Optional dedup key. Duplicates within 300s window get outcome='skipped'."
+        },
+        "command_payload": {
+          "type": "object",
+          "description": "Action-specific data. Schema varies by action."
+        }
+      },
+      "required": ["command_id", "target_agent", "issued_by", "action", "command_payload"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

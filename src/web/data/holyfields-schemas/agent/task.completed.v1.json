@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/task.completed.v1.json",
+  "title": "Agent Task Completed Event",
+  "description": "Agent finished an assigned task",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.task.completed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent that completed the task"
+        },
+        "task_type": {
+          "type": "string",
+          "enum": ["ticket", "message", "cron", "adhoc"],
+          "description": "Type of task"
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether the task completed successfully"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time to complete the task in milliseconds"
+        }
+      },
+      "required": ["agent_name", "task_type", "success"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

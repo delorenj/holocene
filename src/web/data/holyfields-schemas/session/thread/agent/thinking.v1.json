@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/session/thread/agent/thinking.v1.json",
+  "title": "Session Agent Thinking Event",
+  "description": "Claude Code thinking/reasoning event",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../../_common/base_event.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "session.thread.agent.thinking",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking_text": {
+          "type": "string"
+        },
+        "thinking_duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turn_number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "triggered_by_tool": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "thinking_text"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

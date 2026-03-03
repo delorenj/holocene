@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/llm/prompt.v1.json",
+  "title": "LLM Prompt Event (DEPRECATED)",
+  "description": "[DEPRECATED] Use agent.thread.prompt instead. LLM interaction started.",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "llm.prompt",
+      "description": "Event type discriminator - DEPRECATED"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "LLM provider"
+        },
+        "model": {
+          "type": ["string", "null"],
+          "description": "Model name"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Prompt text"
+        },
+        "project": {
+          "type": ["string", "null"],
+          "description": "Git project name"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags"
+        },
+        "_deprecated": {
+          "type": "string",
+          "const": "Use agent.thread.prompt instead",
+          "description": "Deprecation notice"
+        }
+      },
+      "required": ["provider", "prompt"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

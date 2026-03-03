@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/state.changed.v1.json",
+  "title": "Agent State Changed Event",
+  "description": "Emitted when an agent changes its internal state or thinking process",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.state.changed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "ID of the agent whose state changed"
+        },
+        "state": {
+          "type": "string",
+          "enum": ["idle", "thinking", "working", "error", "paused"],
+          "description": "Current state"
+        },
+        "thought_process": {
+          "type": ["string", "null"],
+          "description": "Internal monologue or reasoning (optional)"
+        }
+      },
+      "required": ["agent_id", "state"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

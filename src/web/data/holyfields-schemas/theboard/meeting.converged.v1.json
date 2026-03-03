@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/theboard/meeting.converged.v1.json",
+  "title": "Meeting Converged Event",
+  "description": "Emitted when meeting reaches convergence. Payload contains convergence metrics and stopping criteria.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "theboard.meeting.converged",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "round_num": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Round number when convergence detected"
+        },
+        "avg_novelty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Average novelty score that triggered convergence"
+        },
+        "novelty_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Novelty threshold for convergence detection"
+        },
+        "total_comments": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total comments extracted across all rounds"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "round_num",
+        "avg_novelty",
+        "novelty_threshold",
+        "total_comments"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

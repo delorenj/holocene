@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/fireflies/transcript/processed.v1.json",
+  "title": "Fireflies Transcript Processed Event",
+  "description": "Transcript was ingested into RAG system",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "fireflies.transcript.processed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "transcript_id": {
+          "type": "string",
+          "description": "Fireflies transcript ID"
+        },
+        "rag_document_id": {
+          "type": "string",
+          "description": "Internal RAG document ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Meeting title"
+        },
+        "sentence_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of sentences ingested"
+        },
+        "speaker_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of unique speakers"
+        },
+        "duration_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Duration in minutes"
+        },
+        "vector_store": {
+          "type": "string",
+          "description": "Vector store used (e.g., 'chroma', 'pinecone')"
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of chunks created"
+        },
+        "embedding_model": {
+          "type": ["string", "null"],
+          "description": "Model used for embeddings"
+        }
+      },
+      "required": ["transcript_id", "rag_document_id", "title", "vector_store"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

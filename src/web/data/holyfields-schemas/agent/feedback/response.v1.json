@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/feedback/response.v1.json",
+  "title": "Agent Feedback Response Event",
+  "description": "Agent feedback response",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.feedback.response",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "AgentForge registry ID"
+        },
+        "letta_agent_id": {
+          "type": ["string", "null"],
+          "description": "Letta agent ID if different"
+        },
+        "response": {
+          "type": "string",
+          "description": "Agent's response text"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "error"],
+          "description": "Response status"
+        },
+        "error_message": {
+          "type": ["string", "null"],
+          "description": "Error message if status is error"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata"
+        }
+      },
+      "required": ["agent_id", "response", "status"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

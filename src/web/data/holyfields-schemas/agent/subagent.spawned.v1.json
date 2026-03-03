@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/subagent.spawned.v1.json",
+  "title": "Agent Subagent Spawned Event",
+  "description": "Agent delegated work to a sub-agent",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.subagent.spawned",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the parent agent"
+        },
+        "child_label": {
+          "type": "string",
+          "description": "Sub-agent label (e.g., 'worker-1')"
+        },
+        "child_session_key": {
+          "$ref": "../_common/types.v1.json#/$defs/session_key",
+          "description": "Session key of the spawned sub-agent"
+        },
+        "task_preview": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "First 200 characters of the delegated task"
+        },
+        "model": {
+          "$ref": "../_common/types.v1.json#/$defs/model_name",
+          "description": "AI model assigned to the sub-agent"
+        }
+      },
+      "required": ["agent_name", "child_label", "child_session_key", "task_preview"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

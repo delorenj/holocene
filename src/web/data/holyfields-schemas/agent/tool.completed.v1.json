@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/agent/tool.completed.v1.json",
+  "title": "Agent Tool Completed Event",
+  "description": "Agent tool call finished",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "agent.tool.completed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Name of the agent that invoked the tool"
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the tool"
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether the tool completed successfully"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tool execution time in milliseconds"
+        },
+        "output_preview": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "First 200 characters of tool output"
+        }
+      },
+      "required": ["agent_name", "tool_name", "success"]
+    }
+  },
+  "required": ["event_type", "payload"]
+}

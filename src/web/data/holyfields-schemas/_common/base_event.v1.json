@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/_common/base_event.v1.json",
+  "title": "Base Event",
+  "description": "Base schema for all 33GOD events. Provides common fields for event routing, tracing, and correlation. All domain events extend this base. Domain-specific fields (e.g., meeting_id for TheBoard) are added via domain extensions.",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "$ref": "types.v1.json#/$defs/uuid",
+      "description": "Unique identifier for this event instance"
+    },
+    "event_type": {
+      "type": "string",
+      "description": "Event discriminator for routing (e.g., 'agent.message.received'). Used by Bloodbank for topic-based routing.",
+      "pattern": "^[a-z0-9]+\\.[a-z0-9._]+$",
+      "examples": [
+        "agent.message.received",
+        "agent.tool.invoked",
+        "theboard.meeting.created"
+      ]
+    },
+    "timestamp": {
+      "$ref": "types.v1.json#/$defs/timestamp",
+      "description": "ISO 8601 UTC timestamp when event was emitted"
+    },
+    "version": {
+      "$ref": "types.v1.json#/$defs/semantic_version",
+      "description": "Schema version for this event type",
+      "default": "1.0.0"
+    },
+    "correlation_id": {
+      "$ref": "types.v1.json#/$defs/uuid",
+      "description": "UUID for tracing related events through the system. All events in a causal chain share the same correlation_id."
+    },
+    "causation_id": {
+      "$ref": "types.v1.json#/$defs/uuid",
+      "description": "ID of the event or command that directly caused this event. Together with correlation_id, forms a directed acyclic graph of causation. Optional for root events."
+    },
+    "source": {
+      "type": "object",
+      "description": "Metadata about the source that emitted this event",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Hostname of the emitting machine"
+        },
+        "app": {
+          "type": "string",
+          "description": "Application or service name (e.g., 'bloodbank', 'holocene', 'cack')"
+        },
+        "trigger_type": {
+          "type": "string",
+          "enum": ["cli", "api", "scheduled", "event", "webhook"],
+          "description": "What triggered this event"
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User or agent ID if applicable"
+        }
+      },
+      "required": ["host", "app", "trigger_type"]
+    }
+  },
+  "required": ["event_id", "event_type", "timestamp", "version", "correlation_id", "source"]
+}

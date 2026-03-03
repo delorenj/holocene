@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/artifact/audio/detected.v1.json",
+  "title": "Artifact Audio Detected Event",
+  "description": "Audio file detected in the audio inbox and ready for downstream workflow processing",
+  "type": "object",
+  "allOf": [
+    { "$ref": "../../_common/base_event.v1.json" }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "artifact.audio.detected",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "inbox_source": {
+          "type": "string",
+          "const": "audio inbox",
+          "description": "Human-readable logical source where file was detected"
+        },
+        "file_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Detected file name"
+        },
+        "file_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute or relative file path as seen by the detector"
+        },
+        "file_extension": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+$",
+          "description": "Lowercase extension without dot (e.g. 'mp3', 'wav', 'm4a', 'ogg')"
+        },
+        "mime_type": {
+          "type": ["string", "null"],
+          "description": "Detected MIME type if known"
+        },
+        "file_size_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "File size in bytes if known"
+        },
+        "detected_at": {
+          "$ref": "../../_common/types.v1.json#/$defs/timestamp",
+          "description": "Timestamp when detector noticed the file"
+        },
+        "detector": {
+          "type": ["string", "null"],
+          "description": "Detector identity (e.g. 'node-red-flow-orchestrator')"
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Optional content hash for dedupe/correlation"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional source-specific metadata"
+        }
+      },
+      "required": [
+        "inbox_source",
+        "file_name",
+        "file_path",
+        "file_extension",
+        "detected_at"
+      ]
+    }
+  },
+  "required": ["event_type", "payload"]
+}
