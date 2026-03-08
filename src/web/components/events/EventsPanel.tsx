@@ -85,6 +85,29 @@ function getBadgeColor(routingKey: string): string {
   return 'bg-slate-700/30 text-slate-300 border-slate-600';
 }
 
+const HEARTBEAT_SYSTEM_FILTER = '__heartbeat_system';
+const HEARTBEAT_AGENT_FILTER = '__heartbeat_agent';
+
+function isSystemHeartbeat(routingKey: string): boolean {
+  return routingKey.startsWith('system.heartbeat.');
+}
+
+function isAgentHeartbeat(routingKey: string): boolean {
+  return /^agent\.[^.]+\.heartbeat(\.|$)/.test(routingKey);
+}
+
+function normalizeEventTypeForFilter(routingKey: string): string {
+  if (isSystemHeartbeat(routingKey)) return HEARTBEAT_SYSTEM_FILTER;
+  if (isAgentHeartbeat(routingKey)) return HEARTBEAT_AGENT_FILTER;
+  return routingKey;
+}
+
+function eventTypeFilterLabel(value: string): string {
+  if (value === HEARTBEAT_SYSTEM_FILTER) return 'system heartbeat';
+  if (value === HEARTBEAT_AGENT_FILTER) return 'agent heartbeat';
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // Event Row
 // ---------------------------------------------------------------------------
@@ -256,7 +279,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <option value="">All event types</option>
           {availableEventTypes.map((type) => (
             <option key={type} value={type}>
-              {type}
+              {eventTypeFilterLabel(type)}
             </option>
           ))}
         </select>
@@ -313,7 +336,7 @@ const EmptyState: React.FC<{ panelVisible: boolean; loading?: boolean }> = ({
 
 export const EventsPanel: React.FC = () => {
   const { events: liveEvents, connected, clearEvents } = useBloodbankStream();
-  const { events: historicalEvents, loading: historyLoading } = useEventHistory({ limit: 100 });
+  const { events: historicalEvents, loading: historyLoading } = useEventHistory({ limit: 1000 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [panelVisible, setPanelVisible] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -359,12 +382,12 @@ export const EventsPanel: React.FC = () => {
       if (event.agentName !== '—') {
         agents.add(event.agentName);
       }
-      types.add(event.routingKey);
+      types.add(normalizeEventTypeForFilter(event.routingKey));
     });
 
     return {
       availableAgents: Array.from(agents).sort(),
-      availableEventTypes: Array.from(types).sort(),
+      availableEventTypes: Array.from(types).sort((a, b) => eventTypeFilterLabel(a).localeCompare(eventTypeFilterLabel(b))),
     };
   }, [summarized]);
 
@@ -393,7 +416,7 @@ export const EventsPanel: React.FC = () => {
 
     // Event type filter
     if (eventTypeFilter) {
-      result = result.filter((event) => event.routingKey === eventTypeFilter);
+      result = result.filter((event) => normalizeEventTypeForFilter(event.routingKey) === eventTypeFilter);
     }
 
     // Time range filter
@@ -512,7 +535,7 @@ export const EventsPanel: React.FC = () => {
           )}
           {searchQuery && <span className="ml-2">• Search: &ldquo;{searchQuery}&rdquo;</span>}
           {agentFilter && <span className="ml-2">• Agent: {agentFilter}</span>}
-          {eventTypeFilter && <span className="ml-2">• Type: {eventTypeFilter}</span>}
+          {eventTypeFilter && <span className="ml-2">• Type: {eventTypeFilterLabel(eventTypeFilter)}</span>}
           {timeRangeFilter && <span className="ml-2">• Time: {timeRangeFilter}</span>}
         </div>
       )}
