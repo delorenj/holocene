@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/meeting/failed.v1.json",
+  "title": "Meeting Failed Event",
+  "description": "[CANONICAL] Emitted when meeting execution fails. Payload contains error context for debugging. Legacy alias: theboard.meeting.failed.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "meeting.failed",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "error_type": {
+          "type": "string",
+          "enum": [
+            "agent_error",
+            "timeout",
+            "network_error",
+            "validation_error",
+            "internal_error"
+          ],
+          "description": "Category of error that caused failure"
+        },
+        "error_message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Human-readable error message for debugging"
+        },
+        "round_num": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Round number when failure occurred (null if before meeting started)"
+        },
+        "agent_name": {
+          "anyOf": [
+            {
+              "$ref": "../_common/types.v1.json#/$defs/agent_name"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Agent that caused the error (null if not agent-specific)"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "error_type",
+        "error_message"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}
