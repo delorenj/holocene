@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/meeting/comment.extracted.v1.json",
+  "title": "Comment Extracted Event",
+  "description": "[CANONICAL] Emitted when comments are extracted from agent response. Payload contains comment metadata for analytics. Legacy alias: theboard.meeting.comment_extracted.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "meeting.comment_extracted",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "round_num": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Round number when comment was extracted"
+        },
+        "agent_name": {
+          "$ref": "../_common/types.v1.json#/$defs/agent_name",
+          "description": "Agent who authored the comment"
+        },
+        "comment_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "description": "Extracted comment text"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "technical_decision",
+            "risk",
+            "implementation_detail",
+            "observation",
+            "question",
+            "other"
+          ],
+          "description": "Comment category classified by notetaker agent"
+        },
+        "novelty_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Novelty score (0.0 = repetitive, 1.0 = novel)"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "round_num",
+        "agent_name",
+        "comment_text",
+        "category",
+        "novelty_score"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}

@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://schemas.33god.com/asset/created.v1.json",
-  "title": "asset.created.v1",
-  "description": "Event emitted when a new asset_registry row is inserted.",
+  "title": "asset.created.v1 (DEPRECATED)",
+  "description": "[DEPRECATED] Legacy asset registry event. Prefer artifact.* canonical events.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -49,19 +49,31 @@
       "description": "sha256 hash"
     },
     "prompt_text": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "model_provider": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "model_name": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "model_params_json": {
       "type": "object"
     },
     "source_event_id": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "uuid"
     },
     "correlation_id": {
@@ -69,12 +81,19 @@
       "format": "uuid"
     },
     "lineage_parent_asset_id": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "uuid"
     },
     "status": {
       "type": "string",
-      "enum": ["active", "revised", "deleted"]
+      "enum": [
+        "active",
+        "revised",
+        "deleted"
+      ]
     },
     "created_at": {
       "type": "string",
@@ -85,7 +104,10 @@
       "format": "date-time"
     },
     "deleted_at": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time"
     }
   }

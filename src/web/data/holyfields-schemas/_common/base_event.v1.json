@@ -15,8 +15,9 @@
       "pattern": "^[a-z0-9]+\\.[a-z0-9._]+$",
       "examples": [
         "agent.message.received",
-        "agent.tool.invoked",
-        "theboard.meeting.created"
+        "agent.memory.retained",
+        "meeting.created",
+        "transcript.processed"
       ]
     },
     "timestamp": {
