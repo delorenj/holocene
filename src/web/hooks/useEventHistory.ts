@@ -12,6 +12,10 @@ export type EventHistoryOptions = {
   limit?: number;
   /** Event type filter (e.g. "agent.grolf.status"). */
   eventType?: string;
+  /** Offset for pagination. Default 0. */
+  offset?: number;
+  /** Enable auto-polling. Default false (disabled for performance). */
+  enablePolling?: boolean;
 };
 
 /**
@@ -47,10 +51,11 @@ function toBloodbankEvent(row: Record<string, unknown>): BloodbankEvent {
 }
 
 export function useEventHistory(opts: EventHistoryOptions = {}) {
-  const { limit = 50, eventType } = opts;
+  const { limit = 50, eventType, offset = 0, enablePolling = false } = opts;
   const [events, setEvents] = useState<BloodbankEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -59,6 +64,7 @@ export function useEventHistory(opts: EventHistoryOptions = {}) {
     try {
       const params = new URLSearchParams();
       params.set('limit', String(limit));
+      params.set('offset', String(offset));
       if (eventType) params.set('event_type', eventType);
 
       const res = await fetch(`/api/events?${params.toString()}`);
@@ -74,27 +80,33 @@ export function useEventHistory(opts: EventHistoryOptions = {}) {
 
       const json = await res.json();
       const rows: Record<string, unknown>[] = Array.isArray(json) ? json : [];
-      setEvents(rows.map(toBloodbankEvent));
+      const fetchedEvents = rows.map(toBloodbankEvent);
+      
+      setEvents(fetchedEvents);
+      setHasMore(fetchedEvents.length === limit);
     } catch (err) {
       // Network errors (Candystore down) → empty list, no crash
       console.warn('[useEventHistory] fetch failed, degrading:', err);
       setError(err instanceof Error ? err.message : String(err));
       setEvents([]);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
-  }, [limit, eventType]);
+  }, [limit, eventType, offset]);
 
   useEffect(() => {
     fetchEvents();
 
-    // Keep retrying history fetch so transient 502/503 doesn't leave UI empty forever.
+    // Polling disabled by default for performance (live WS handles real-time)
+    if (!enablePolling) return;
+
     const timer = setInterval(() => {
       fetchEvents();
     }, 10000);
 
     return () => clearInterval(timer);
-  }, [fetchEvents]);
+  }, [fetchEvents, enablePolling]);
 
-  return { events, loading, error, refetch: fetchEvents };
+  return { events, loading, error, hasMore, refetch: fetchEvents };
 }

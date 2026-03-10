@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useBloodbankStream, type BloodbankEvent } from '../../hooks/useBloodbankStream';
 import { useEventHistory } from '../../hooks/useEventHistory';
 
@@ -315,9 +316,20 @@ const EmptyState: React.FC<{ panelVisible: boolean; loading?: boolean }> = ({
 
   if (loading) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-slate-500">
-        <span className="animate-pulse text-2xl">📡</span>
-        <p>Loading event history…</p>
+      <div className="flex h-full flex-col gap-0">
+        {/* Skeleton loading rows */}
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[90px_1fr_140px_160px_24px] items-center gap-3 border-b border-slate-800 px-4 py-2 animate-pulse"
+          >
+            <div className="h-4 bg-slate-800 rounded w-16" />
+            <div className="h-4 bg-slate-800 rounded w-3/4" />
+            <div className="h-4 bg-slate-800 rounded w-20" />
+            <div className="h-4 bg-slate-800 rounded w-24" />
+            <div className="h-4 bg-slate-800 rounded w-4" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -336,7 +348,13 @@ const EmptyState: React.FC<{ panelVisible: boolean; loading?: boolean }> = ({
 
 export const EventsPanel: React.FC = () => {
   const { events: liveEvents, connected, clearEvents } = useBloodbankStream();
-  const { events: historicalEvents, loading: historyLoading } = useEventHistory({ limit: 1000 });
+  const [historicalOffset, setHistoricalOffset] = useState(0);
+  const { events: historicalEvents, loading: historyLoading, hasMore } = useEventHistory({ 
+    limit: 50,
+    offset: historicalOffset,
+    enablePolling: false, // Disabled — WS handles live events
+  });
+  const [allHistoricalEvents, setAllHistoricalEvents] = useState<BloodbankEvent[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [panelVisible, setPanelVisible] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -346,6 +364,21 @@ export const EventsPanel: React.FC = () => {
   const [autoScroll, setAutoScroll] = useState(true);
   const [isHovering, setIsHovering] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Accumulate historical events as pagination loads more
+  useEffect(() => {
+    if (historicalEvents.length > 0) {
+      setAllHistoricalEvents(prev => {
+        // Deduplicate by event_id
+        const seen = new Set(prev.map(e => e.envelope?.event_id).filter(Boolean));
+        const newEvents = historicalEvents.filter(e => {
+          const id = e.envelope?.event_id;
+          return id && !seen.has(id);
+        });
+        return [...prev, ...newEvents];
+      });
+    }
+  }, [historicalEvents]);
 
   // Merge live + historical events, deduplicate by event_id, sort newest first
   const mergedEvents = useMemo(() => {
@@ -360,8 +393,8 @@ export const EventsPanel: React.FC = () => {
       all.push(ev);
     }
 
-    // Then backfill with historical
-    for (const ev of historicalEvents) {
+    // Then backfill with accumulated historical
+    for (const ev of allHistoricalEvents) {
       const id = ev.envelope?.event_id;
       if (id && seen.has(id)) continue;
       if (id) seen.add(id);
@@ -369,9 +402,24 @@ export const EventsPanel: React.FC = () => {
     }
 
     return all;
-  }, [liveEvents, historicalEvents]);
+  }, [liveEvents, allHistoricalEvents]);
 
   const summarized = useMemo(() => mergedEvents.map((event, idx) => deriveSummary(event, idx)), [mergedEvents]);
+
+  // Memoized search index — compute searchable text once per event
+  const searchIndex = useMemo(() => {
+    const index = new Map<string, string>();
+    summarized.forEach(event => {
+      const searchText = [
+        event.routingKey,
+        event.agentName,
+        event.action,
+        JSON.stringify(event.payload),
+      ].join(' ').toLowerCase();
+      index.set(event.id, searchText);
+    });
+    return index;
+  }, [summarized]);
 
   // Extract unique agents and event types for filter dropdowns
   const { availableAgents, availableEventTypes } = useMemo(() => {
@@ -395,17 +443,12 @@ export const EventsPanel: React.FC = () => {
   const filteredEvents = useMemo(() => {
     let result = summarized;
 
-    // Search query (searches in routing key, agent name, action, and payload)
+    // Search query — use pre-computed search index
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter((event) => {
-        const payloadStr = JSON.stringify(event.payload).toLowerCase();
-        return (
-          event.routingKey.toLowerCase().includes(query) ||
-          event.agentName.toLowerCase().includes(query) ||
-          event.action.toLowerCase().includes(query) ||
-          payloadStr.includes(query)
-        );
+        const searchText = searchIndex.get(event.id);
+        return searchText ? searchText.includes(query) : false;
       });
     }
 
@@ -436,7 +479,29 @@ export const EventsPanel: React.FC = () => {
     }
 
     return result;
-  }, [summarized, searchQuery, agentFilter, eventTypeFilter, timeRangeFilter]);
+  }, [summarized, searchQuery, agentFilter, eventTypeFilter, timeRangeFilter, searchIndex]);
+
+  // Virtual scrolling setup
+  const virtualizer = useVirtualizer({
+    count: filteredEvents.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 48, // Estimated row height
+    overscan: 10, // Render 10 extra rows above/below viewport
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // Load more when scrolling near bottom
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || !hasMore || historyLoading) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const scrolledToBottom = scrollHeight - scrollTop - clientHeight < 200;
+    
+    if (scrolledToBottom) {
+      setHistoricalOffset(prev => prev + 50);
+    }
+  }, [hasMore, historyLoading]);
 
   // Auto-scroll to top when new events arrive (unless hovering)
   useEffect(() => {
@@ -505,19 +570,47 @@ export const EventsPanel: React.FC = () => {
         ref={scrollContainerRef}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
       >
         {!panelVisible || filteredEvents.length === 0 ? (
           <EmptyState panelVisible={panelVisible} loading={historyLoading} />
         ) : (
-          filteredEvents.map((event) => (
-            <EventRow
-              key={event.id}
-              event={event}
-              expanded={expanded.has(event.id)}
-              onToggle={() => toggleExpanded(event.id)}
-            />
-          ))
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualItems.map((virtualItem) => {
+              const event = filteredEvents[virtualItem.index];
+              if (!event) return null;
+              return (
+                <div
+                  key={event.id}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <EventRow
+                    event={event}
+                    expanded={expanded.has(event.id)}
+                    onToggle={() => toggleExpanded(event.id)}
+                  />
+                </div>
+              );
+            })}
+            {historyLoading && hasMore && (
+              <div className="flex items-center justify-center gap-2 py-4 text-xs text-slate-400">
+                <span className="animate-pulse">Loading more events...</span>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -530,8 +623,11 @@ export const EventsPanel: React.FC = () => {
           {liveEvents.length > 0 && (
             <span className="ml-2 text-emerald-400">• {liveEvents.length} live</span>
           )}
-          {historicalEvents.length > 0 && (
-            <span className="ml-2 text-blue-400">• {historicalEvents.length} from history</span>
+          {allHistoricalEvents.length > 0 && (
+            <span className="ml-2 text-blue-400">• {allHistoricalEvents.length} from history</span>
+          )}
+          {hasMore && !historyLoading && (
+            <span className="ml-2 text-slate-500">• Scroll for more</span>
           )}
           {searchQuery && <span className="ml-2">• Search: &ldquo;{searchQuery}&rdquo;</span>}
           {agentFilter && <span className="ml-2">• Agent: {agentFilter}</span>}
