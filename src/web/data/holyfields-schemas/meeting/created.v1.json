@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://33god.dev/schemas/meeting/created.v1.json",
+  "title": "Meeting Created Event",
+  "description": "[CANONICAL] Emitted when a new meeting is created. Payload contains initial meeting configuration. Legacy alias: theboard.meeting.created.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "../_common/base_event.v1.json"
+    },
+    {
+      "$ref": "../_common/theboard_extension.v1.json"
+    }
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "const": "meeting.created",
+      "description": "Event type discriminator"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Meeting topic or question to discuss"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "sequential",
+            "greedy"
+          ],
+          "description": "Meeting execution strategy"
+        },
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of discussion rounds before stopping"
+        },
+        "agent_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Number of agents participating (null if not yet selected)"
+        },
+        "meeting_id": {
+          "$ref": "../_common/types.v1.json#/$defs/uuid",
+          "description": "Unique meeting identifier"
+        }
+      },
+      "required": [
+        "meeting_id",
+        "topic",
+        "strategy",
+        "max_rounds"
+      ]
+    }
+  },
+  "required": [
+    "event_type",
+    "payload"
+  ]
+}
