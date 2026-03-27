@@ -36,6 +36,10 @@
         "user_id": {
           "type": ["string", "null"],
           "description": "User requesting transcription"
+        },
+        "content_hash": {
+          "type": ["string", "null"],
+          "description": "SHA256 hash of source audio file for deduplication"
         }
       },
       "required": ["media_file", "media_duration_seconds", "media_type"]

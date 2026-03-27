@@ -39,6 +39,11 @@ export default defineConfig({
         target: 'http://localhost:8683',
         ws: true,
       },
+      '/api/echobox': {
+        target: 'http://localhost:18697',
+        rewrite: (path: string) => path.replace(/^\/api\/echobox/, ''),
+        changeOrigin: true,
+      },
     },
   },
   preview: {
