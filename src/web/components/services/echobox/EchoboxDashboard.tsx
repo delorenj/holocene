@@ -7,6 +7,7 @@ import { EchoboxStatusPipeline } from './EchoboxStatusPipeline';
 import { EchoboxJobsTable } from './EchoboxJobsTable';
 
 const IN_PROGRESS_STATUSES: JobStatus[] = [
+  'detected',
   'hashing',
   'uploading',
   'uploaded',

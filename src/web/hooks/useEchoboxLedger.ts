@@ -21,7 +21,7 @@ export function useEchoboxJobs() {
   return useQuery<EchoboxJob[]>({
     queryKey: ['echobox', 'jobs'],
     queryFn: async () => {
-      const res = await fetch(`${ECHOBOX_API}/jobs/pending`);
+      const res = await fetch(`${ECHOBOX_API}/jobs`);
       if (!res.ok) throw new Error('Failed to fetch jobs');
       return res.json();
     },
