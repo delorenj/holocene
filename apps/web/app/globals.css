@@ -712,3 +712,38 @@ td small {
     flex-direction: column;
   }
 }
+
+/* Per-service control buttons in the fleet table */
+.svc-cell {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.svc-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.svc-btn {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.svc-btn-start:hover:not(:disabled) {
+  border-color: #3ddc84;
+  color: #3ddc84;
+}
+
+.svc-btn-restart:hover:not(:disabled) {
+  border-color: var(--blue);
+}
+
+.svc-btn-stop:hover:not(:disabled) {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}

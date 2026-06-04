@@ -1,5 +1,11 @@
 import Fastify from "fastify";
-import { getAgentLogTail, getFleetSnapshot, restartGateways, syncTemplateDefaults } from "./fleet.js";
+import {
+  controlAgentUnit,
+  getAgentLogTail,
+  getFleetSnapshot,
+  restartGateways,
+  syncTemplateDefaults
+} from "./fleet.js";
 
 const app = Fastify({ logger: true });
 
@@ -95,6 +101,18 @@ app.post<{ Body: ActionRequestBody }>(
     const target = parseActionTarget(req.body);
     if ("error" in target) return reply.status(400).send({ error: target.error });
     return syncTemplateDefaults(target.agentIds);
+  }
+);
+
+// Per-service manual control: start | stop | restart one of an agent's units
+// (gateway | consumer | sentinel | checkpoint).
+app.post<{ Params: { agentId: string; service: string; action: string } }>(
+  "/api/modules/hermes-fleet/agents/:agentId/services/:service/:action",
+  async (req, reply) => {
+    const { agentId, service, action } = req.params;
+    const result = await controlAgentUnit(agentId, service, action);
+    if (!result.ok) return reply.status(400).send(result);
+    return result;
   }
 );
 

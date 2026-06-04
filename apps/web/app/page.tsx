@@ -387,6 +387,48 @@ function velocityTickLabels() {
   });
 }
 
+type ServiceKind = "gateway" | "consumer" | "sentinel" | "checkpoint";
+type UnitAction = "start" | "stop" | "restart";
+
+function ServiceControls({
+  agentId,
+  service,
+  status,
+  disabled,
+  onAction
+}: {
+  agentId: string;
+  service: ServiceKind;
+  status: string;
+  disabled: boolean;
+  onAction: (agentId: string, service: ServiceKind, action: UnitAction) => void;
+}) {
+  const buttons: { action: UnitAction; glyph: string; title: string }[] = [
+    { action: "start", glyph: "▶", title: `Start ${service}` },
+    { action: "restart", glyph: "⟳", title: `Restart ${service}` },
+    { action: "stop", glyph: "■", title: `Stop ${service}` }
+  ];
+  return (
+    <div className="svc-cell">
+      <span className={serviceClass(status)}>{status}</span>
+      <span className="svc-buttons">
+        {buttons.map((b) => (
+          <button
+            className={`svc-btn svc-btn-${b.action}`}
+            disabled={disabled}
+            key={b.action}
+            onClick={() => onAction(agentId, service, b.action)}
+            title={`${b.title} (${agentId})`}
+            type="button"
+          >
+            {b.glyph}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -509,6 +551,22 @@ export default function HomePage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ all: true })
       });
+      const next = (await fetch(`${API}/api/modules/hermes-fleet/snapshot`).then((r) =>
+        r.json()
+      )) as Snapshot;
+      setSnapshot(next);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const controlService = async (agentId: string, service: ServiceKind, act: UnitAction) => {
+    setWorking(true);
+    try {
+      await fetch(
+        `${API}/api/modules/hermes-fleet/agents/${encodeURIComponent(agentId)}/services/${service}/${act}`,
+        { method: "POST", headers: { "content-type": "application/json" } }
+      );
       const next = (await fetch(`${API}/api/modules/hermes-fleet/snapshot`).then((r) =>
         r.json()
       )) as Snapshot;
@@ -764,19 +822,31 @@ export default function HomePage() {
                   </td>
                   <td>{agent.repo}</td>
                   <td>
-                    <span className={serviceClass(agent.gateway_status)}>
-                      {agent.gateway_status}
-                    </span>
+                    <ServiceControls
+                      agentId={agent.agent_id}
+                      disabled={working}
+                      onAction={controlService}
+                      service="gateway"
+                      status={agent.gateway_status}
+                    />
                   </td>
                   <td>
-                    <span className={serviceClass(agent.consumer_status)}>
-                      {agent.consumer_status}
-                    </span>
+                    <ServiceControls
+                      agentId={agent.agent_id}
+                      disabled={working}
+                      onAction={controlService}
+                      service="consumer"
+                      status={agent.consumer_status}
+                    />
                   </td>
                   <td>
-                    <span className={serviceClass(agent.sentinel_timer_status)}>
-                      {agent.sentinel_timer_status}
-                    </span>
+                    <ServiceControls
+                      agentId={agent.agent_id}
+                      disabled={working}
+                      onAction={controlService}
+                      service="sentinel"
+                      status={agent.sentinel_timer_status}
+                    />
                   </td>
                   <td>
                     <span className={statusClass(agent.busy_state)}>{agent.busy_state}</span>

@@ -1,1 +1,0 @@
-export { BloodbankTestBoard } from './BloodbankTestBoard';

@@ -546,6 +546,63 @@ export async function restartGateways(agentIds?: string[]) {
   return { restarted };
 }
 
+const UNIT_ACTIONS = ["start", "stop", "restart"] as const;
+const SERVICE_KINDS = ["gateway", "consumer", "sentinel", "checkpoint"] as const;
+type UnitAction = (typeof UNIT_ACTIONS)[number];
+type ServiceKind = (typeof SERVICE_KINDS)[number];
+
+function resolveServiceUnit(agentId: string, cfg: AgentCfg, service: ServiceKind): string {
+  switch (service) {
+    case "gateway":
+      return cfg.systemd?.gateway_unit ?? `hermes-${agentId}-gateway.service`;
+    case "consumer":
+      return cfg.systemd?.consumer_unit ?? `hermes-${agentId}-consumer.service`;
+    case "sentinel":
+      return sentinelTimerUnit(agentId, cfg);
+    case "checkpoint":
+      return cfg.systemd?.checkpoint_timer ?? `hermes-${agentId}-checkpoint.timer`;
+  }
+}
+
+// Manually start/stop/restart one systemd --user unit for one agent. Powers the
+// per-service control buttons in the Holocene fleet table.
+export async function controlAgentUnit(agentId: string, service: string, action: string) {
+  if (!UNIT_ACTIONS.includes(action as UnitAction)) {
+    return { ok: false as const, error: `Invalid action '${action}'. Use start, stop, or restart.` };
+  }
+  if (!SERVICE_KINDS.includes(service as ServiceKind)) {
+    return { ok: false as const, error: `Invalid service '${service}'. Use gateway, consumer, sentinel, or checkpoint.` };
+  }
+  const cfg = readRegistry()[agentId];
+  if (!cfg) return { ok: false as const, error: `Unknown agent '${agentId}'.` };
+
+  const unit = resolveServiceUnit(agentId, cfg, service as ServiceKind);
+  try {
+    await execFileAsync("systemctl", ["--user", action, unit], { env: systemdEnv });
+  } catch (err) {
+    return {
+      ok: false as const,
+      agent_id: agentId,
+      service,
+      action,
+      unit,
+      error: err instanceof Error ? err.message : String(err)
+    };
+  }
+
+  // Read back is-active (exits non-zero when not active — capture its stdout anyway).
+  let status = "unknown";
+  try {
+    const { stdout } = await execFileAsync("systemctl", ["--user", "is-active", unit], { env: systemdEnv });
+    status = stdout.trim();
+  } catch (err) {
+    const stdout = (err as { stdout?: string | Buffer })?.stdout;
+    status = stdout ? stdout.toString().trim() : "inactive";
+  }
+
+  return { ok: true as const, agent_id: agentId, service, action, unit, status };
+}
+
 export async function syncTemplateDefaults(agentIds?: string[]) {
   const agents = readRegistry();
   const target = Object.entries(agents).filter(([id]) => !agentIds || agentIds.includes(id));
