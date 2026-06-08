@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ToolingTab } from "./tooling";
 
 type ActiveWork = {
   status: "idle" | "checking" | "active" | "blocked" | "stalled" | "error" | "unknown";
@@ -430,6 +431,7 @@ function ServiceControls({
 }
 
 export default function HomePage() {
+  const [activeTab, setActiveTab] = useState<"fleet" | "tooling">("fleet");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -580,43 +582,68 @@ export default function HomePage() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Hermes Fleet Control</p>
+          <p className="eyebrow">33GOD Control Plane</p>
           <h1>Holocene</h1>
         </div>
-        <div className="actions">
-          <button
-            disabled={working}
-            onClick={() => action("/api/modules/hermes-fleet/actions/restart-gateways")}
-          >
-            Restart gateways
-          </button>
-          <button
-            disabled={working}
-            onClick={() => action("/api/modules/hermes-fleet/actions/sync-template-defaults")}
-          >
-            Sync defaults
-          </button>
-        </div>
+        {activeTab === "fleet" ? (
+          <div className="actions">
+            <button
+              disabled={working}
+              onClick={() => action("/api/modules/hermes-fleet/actions/restart-gateways")}
+            >
+              Restart gateways
+            </button>
+            <button
+              disabled={working}
+              onClick={() => action("/api/modules/hermes-fleet/actions/sync-template-defaults")}
+            >
+              Sync defaults
+            </button>
+          </div>
+        ) : null}
       </header>
 
-      <section className="summary-grid" aria-label="Fleet summary">
-        <div className="metric">
-          <span className="metric-label">Agents</span>
-          <strong>{agents.length}</strong>
-        </div>
-        <div className="metric">
-          <span className="metric-label">Working</span>
-          <strong>{workingAgents.length}</strong>
-        </div>
-        <div className="metric">
-          <span className="metric-label">Needs attention</span>
-          <strong>{attentionAgents.length}</strong>
-        </div>
-        <div className="metric">
-          <span className="metric-label">Snapshot</span>
-          <strong>{snapshot ? new Date(snapshot.generatedAt).toLocaleTimeString() : "loading"}</strong>
-        </div>
-      </section>
+      <nav className="tabs" aria-label="Holocene sections" role="tablist">
+        <button
+          aria-selected={activeTab === "fleet"}
+          className={activeTab === "fleet" ? "tab tab-active" : "tab"}
+          onClick={() => setActiveTab("fleet")}
+          role="tab"
+          type="button"
+        >
+          Fleet
+        </button>
+        <button
+          aria-selected={activeTab === "tooling"}
+          className={activeTab === "tooling" ? "tab tab-active" : "tab"}
+          onClick={() => setActiveTab("tooling")}
+          role="tab"
+          type="button"
+        >
+          Tooling
+        </button>
+      </nav>
+
+      {activeTab === "fleet" ? (
+        <>
+          <section className="summary-grid" aria-label="Fleet summary">
+            <div className="metric">
+              <span className="metric-label">Agents</span>
+              <strong>{agents.length}</strong>
+            </div>
+            <div className="metric">
+              <span className="metric-label">Working</span>
+              <strong>{workingAgents.length}</strong>
+            </div>
+            <div className="metric">
+              <span className="metric-label">Needs attention</span>
+              <strong>{attentionAgents.length}</strong>
+            </div>
+            <div className="metric">
+              <span className="metric-label">Snapshot</span>
+              <strong>{snapshot ? new Date(snapshot.generatedAt).toLocaleTimeString() : "loading"}</strong>
+            </div>
+          </section>
 
       <section className="velocity-section" aria-label="Ticket velocity">
         <div className="section-heading">
@@ -859,6 +886,10 @@ export default function HomePage() {
           </table>
         </div>
       </section>
+        </>
+      ) : (
+        <ToolingTab apiBase={API} />
+      )}
     </main>
   );
 }

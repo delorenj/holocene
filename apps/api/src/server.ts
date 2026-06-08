@@ -6,6 +6,13 @@ import {
   restartGateways,
   syncTemplateDefaults
 } from "./fleet.js";
+import {
+  getToolingStat,
+  getToolingStatDefinitions,
+  getToolingStats,
+  refreshToolingStat,
+  startToolingCollectors
+} from "./tooling.js";
 
 const app = Fastify({ logger: true });
 
@@ -21,6 +28,15 @@ type AgentLogParams = {
 
 type AgentLogQuery = {
   lines?: string;
+};
+
+type ToolingStatParams = {
+  statId: string;
+};
+
+type ToolingStreamQuery = {
+  stat_id?: string;
+  statId?: string;
 };
 
 function parseActionTarget(body?: ActionRequestBody): { agentIds?: string[] } | { error: string } {
@@ -56,6 +72,55 @@ app.get("/health", async () => ({ ok: true, service: "holocene-api" }));
 
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
 
+app.get("/api/modules/tooling/definitions", async () => ({
+  generatedAt: new Date().toISOString(),
+  definitions: getToolingStatDefinitions()
+}));
+
+app.get("/api/modules/tooling/stats", async () => getToolingStats());
+
+app.get<{ Params: ToolingStatParams }>("/api/modules/tooling/stats/:statId", async (req) =>
+  getToolingStat(req.params.statId)
+);
+
+app.post<{ Params: ToolingStatParams }>("/api/modules/tooling/stats/:statId/refresh", async (req, reply) => {
+  try {
+    return await refreshToolingStat(req.params.statId);
+  } catch (err) {
+    return reply.status(404).send({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.get<{ Querystring: ToolingStreamQuery }>("/api/modules/tooling/stream", async (req, reply) => {
+  reply.raw.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Access-Control-Allow-Origin": "*",
+    Connection: "keep-alive"
+  });
+
+  const statId = req.query.stat_id ?? req.query.statId;
+  const push = async () => {
+    if (statId) {
+      const stat = await getToolingStat(statId);
+      reply.raw.write(`event: tooling-stat\n`);
+      reply.raw.write(`data: ${JSON.stringify(stat)}\n\n`);
+      return;
+    }
+
+    const stats = await getToolingStats();
+    reply.raw.write(`event: tooling-stats\n`);
+    reply.raw.write(`data: ${JSON.stringify(stats)}\n\n`);
+  };
+
+  await push();
+  const interval = setInterval(() => {
+    push().catch(() => undefined);
+  }, 5000);
+
+  reply.raw.on("close", () => clearInterval(interval));
+});
+
 app.get<{ Params: AgentLogParams; Querystring: AgentLogQuery }>(
   "/api/modules/hermes-fleet/agents/:agentId/log",
   async (req, reply) => {
@@ -69,6 +134,7 @@ app.get("/api/modules/hermes-fleet/stream", async (_req, reply) => {
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
+    "Access-Control-Allow-Origin": "*",
     Connection: "keep-alive"
   });
 
@@ -118,6 +184,8 @@ app.post<{ Params: { agentId: string; service: string; action: string } }>(
 
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? "0.0.0.0";
+
+startToolingCollectors(app.log);
 
 app.listen({ port, host }).catch((err) => {
   app.log.error(err);
