@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ToolingTab } from "./tooling";
+import { SystemsTab } from "./systems";
 
 type ActiveWork = {
   status: "idle" | "checking" | "active" | "blocked" | "stalled" | "error" | "unknown";
@@ -431,7 +432,7 @@ function ServiceControls({
 }
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"fleet" | "tooling">("fleet");
+  const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems">("fleet");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -621,6 +622,15 @@ export default function HomePage() {
           type="button"
         >
           Tooling
+        </button>
+        <button
+          aria-selected={activeTab === "systems"}
+          className={activeTab === "systems" ? "tab tab-active" : "tab"}
+          onClick={() => setActiveTab("systems")}
+          role="tab"
+          type="button"
+        >
+          Systems
         </button>
       </nav>
 
@@ -887,8 +897,10 @@ export default function HomePage() {
         </div>
       </section>
         </>
-      ) : (
+      ) : activeTab === "tooling" ? (
         <ToolingTab apiBase={API} />
+      ) : (
+        <SystemsTab apiBase={API} />
       )}
     </main>
   );

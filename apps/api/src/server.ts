@@ -13,6 +13,7 @@ import {
   refreshToolingStat,
   startToolingCollectors
 } from "./tooling.js";
+import { getSystemsHistory, getSystemsInventory, systemsItemAction } from "./systems.js";
 
 const app = Fastify({ logger: true });
 
@@ -71,6 +72,26 @@ app.addHook("onRequest", async (req, reply) => {
 app.get("/health", async () => ({ ok: true, service: "holocene-api" }));
 
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
+
+app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", async (req) =>
+  getSystemsInventory(req.query.force === "1")
+);
+
+app.get<{ Querystring: { range?: string } }>("/api/modules/systems/history", async (req) => {
+  const hours = Number(req.query.range ?? 24);
+  return getSystemsHistory(Number.isFinite(hours) ? hours : 24);
+});
+
+app.post<{ Params: { type: string; name: string; action: string } }>(
+  "/api/modules/systems/items/:type/:name/:action",
+  async (req, reply) => {
+    try {
+      return await systemsItemAction(req.params.type, req.params.name, req.params.action);
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+);
 
 app.get("/api/modules/tooling/definitions", async () => ({
   generatedAt: new Date().toISOString(),
