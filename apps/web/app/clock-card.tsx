@@ -49,9 +49,25 @@ export function ClockCard({ apiBase }: { apiBase: string }) {
   const [message, setMessage] = useState<string>("");
   const [cachedState, setCachedState] = useState<ClockState | null>(loadCachedState);
 
+  const fetchState = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/clock/state`, {
+        cache: "no-store"
+      });
+      const body = (await res.json().catch(() => ({}))) as ClockResponse;
+      if (res.ok && body.success && body.state) {
+        saveCachedState(body.state);
+        setCachedState({ state: body.state, updatedAt: new Date().toISOString() });
+      }
+    } catch (err) {
+      // ignore mount load errors, fallback to cache
+    }
+  }, [apiBase]);
+
   useEffect(() => {
     setCachedState(loadCachedState);
-  }, []);
+    void fetchState();
+  }, [fetchState]);
 
   const invoke = useCallback(
     async (action: "in" | "out") => {

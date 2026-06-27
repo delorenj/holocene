@@ -154,6 +154,36 @@ app.post("/api/clock/out", async (_req, reply) => {
   return reply.send(result.body);
 });
 
+app.get("/api/clock/state", async (_req, reply) => {
+  const url = `${N8N_WEBHOOK_BASE_URL}/webhook/clockstate`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authentication: N8N_WEBHOOK_AUTH_HEADER,
+      Accept: "application/json"
+    }
+  });
+
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { raw: text };
+  }
+
+  if (!res.ok) {
+    return reply.status(res.status || 502).send({
+      success: false,
+      error: "Upstream n8n call failed",
+      upstream: body
+    });
+  }
+
+  return reply.send(body);
+});
+
+
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
 
 app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", async (req) =>
