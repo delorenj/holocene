@@ -1,3 +1,6 @@
+import { config } from "dotenv";
+config({ path: new URL("../../../.env", import.meta.url) });
+
 import Fastify from "fastify";
 import {
   controlAgentUnit,
@@ -13,9 +16,22 @@ import {
   refreshToolingStat,
   startToolingCollectors
 } from "./tooling.js";
-import { getSystemsHistory, getSystemsInventory, systemsItemAction } from "./systems.js";
+import {
+  getSystemsHistory,
+  getSystemsInventory,
+  getSystemsPreview,
+  openSystemsPreviewTerminal,
+  systemsItemAction
+} from "./systems.js";
+
+const N8N_WEBHOOK_BASE_URL = (process.env.N8N_WEBHOOK_BASE_URL ?? "https://n8n.delo.sh").replace(/\/$/, "");
+const N8N_WEBHOOK_AUTH_HEADER = process.env.N8N_WEBHOOK_AUTH_HEADER ?? "";
 
 const app = Fastify({ logger: true });
+
+if (!N8N_WEBHOOK_AUTH_HEADER) {
+  app.log.warn("N8N_WEBHOOK_AUTH_HEADER is not set; /api/clock routes will fail.");
+}
 
 type ActionRequestBody = {
   agent_ids?: unknown;
@@ -38,6 +54,16 @@ type ToolingStatParams = {
 type ToolingStreamQuery = {
   stat_id?: string;
   statId?: string;
+};
+
+type SystemsPreviewQuery = {
+  kind?: string;
+  target?: string;
+};
+
+type SystemsPreviewTerminalBody = {
+  kind?: unknown;
+  target?: unknown;
 };
 
 function parseActionTarget(body?: ActionRequestBody): { agentIds?: string[] } | { error: string } {
@@ -71,6 +97,63 @@ app.addHook("onRequest", async (req, reply) => {
 
 app.get("/health", async () => ({ ok: true, service: "holocene-api" }));
 
+async function forwardClockAction(action: "in" | "out") {
+  const url = `${N8N_WEBHOOK_BASE_URL}/webhook/clock${action}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authentication: N8N_WEBHOOK_AUTH_HEADER,
+      Accept: "application/json"
+    }
+  });
+
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { raw: text };
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      body
+    };
+  }
+
+  return {
+    ok: true,
+    status: res.status,
+    body
+  };
+}
+
+app.post("/api/clock/in", async (_req, reply) => {
+  const result = await forwardClockAction("in");
+  if (!result.ok) {
+    return reply.status(result.status || 502).send({
+      success: false,
+      error: "Upstream n8n call failed",
+      upstream: result.body
+    });
+  }
+  return reply.send(result.body);
+});
+
+app.post("/api/clock/out", async (_req, reply) => {
+  const result = await forwardClockAction("out");
+  if (!result.ok) {
+    return reply.status(result.status || 502).send({
+      success: false,
+      error: "Upstream n8n call failed",
+      upstream: result.body
+    });
+  }
+  return reply.send(result.body);
+});
+
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
 
 app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", async (req) =>
@@ -80,6 +163,24 @@ app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", a
 app.get<{ Querystring: { range?: string } }>("/api/modules/systems/history", async (req) => {
   const hours = Number(req.query.range ?? 24);
   return getSystemsHistory(Number.isFinite(hours) ? hours : 24);
+});
+
+app.get<{ Querystring: SystemsPreviewQuery }>("/api/modules/systems/preview", async (req, reply) => {
+  try {
+    return await getSystemsPreview(req.query.kind ?? "", req.query.target ?? "");
+  } catch (err) {
+    return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post<{ Body: SystemsPreviewTerminalBody }>("/api/modules/systems/preview/open-terminal", async (req, reply) => {
+  try {
+    const kind = typeof req.body?.kind === "string" ? req.body.kind : "";
+    const target = typeof req.body?.target === "string" ? req.body.target : "";
+    return await openSystemsPreviewTerminal(kind, target);
+  } catch (err) {
+    return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.post<{ Params: { type: string; name: string; action: string } }>(

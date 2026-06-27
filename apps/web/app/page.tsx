@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ClockCard } from "./clock-card";
 import { ToolingTab } from "./tooling";
 import { SystemsTab } from "./systems";
 
@@ -636,6 +637,8 @@ export default function HomePage() {
 
       {activeTab === "fleet" ? (
         <>
+          <ClockCard apiBase={API} />
+
           <section className="summary-grid" aria-label="Fleet summary">
             <div className="metric">
               <span className="metric-label">Agents</span>
