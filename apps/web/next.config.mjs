@@ -13,6 +13,10 @@ const nextConfig = {
       {
         source: "/api/modules/:path*",
         destination: `${apiInternalUrl}/api/modules/:path*`
+      },
+      {
+        source: "/api/clock/:path*",
+        destination: `${apiInternalUrl}/api/clock/:path*`
       }
     ];
   }
