@@ -1,0 +1,19 @@
+{
+  "project_name": "Holocene",
+  "project_description": "",
+  "project_slug": "holocene",
+  "repo_path": "/home/delorenj/code/33GOD/holocene",
+  "ticket_provider": {
+    "type": "plane",
+    "workspace": "33god",
+    "identifier": "HOLOC",
+    "board_id": "727a2b17-a1dd-46f6-b583-afa5a2d2cdae",
+    "board_url": "https://plane.delo.sh/33god/projects/727a2b17-a1dd-46f6-b583-afa5a2d2cdae/issues/"
+  },
+  "agents": {
+    "holocene-pm": {
+      "role": "pm",
+      "role_dir": "agents/hermes/pm"
+    }
+  }
+}

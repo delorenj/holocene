@@ -1658,3 +1658,134 @@ td small {
 .clock-status-error {
   color: var(--red);
 }
+
+.clock-state-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.clock-state-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.clock-state-refresh {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+}
+
+.clock-state-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.clock-spinner-inline {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-width: 2px;
+}
+
+.polr-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.polr-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  position: relative;
+}
+
+.polr-card-healthy {
+  border-left: 3px solid var(--green);
+}
+
+.polr-card-unhealthy {
+  border-left: 3px solid var(--red);
+}
+
+.polr-card-unknown {
+  border-left: 3px solid var(--muted);
+}
+
+.polr-card-cooldown {
+  opacity: 0.55;
+}
+
+.polr-status-dot {
+  border-radius: 999px;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 8px;
+  width: 8px;
+}
+
+.polr-card-healthy .polr-status-dot {
+  background: var(--green);
+}
+
+.polr-card-unhealthy .polr-status-dot {
+  background: var(--red);
+}
+
+.polr-card-unknown .polr-status-dot {
+  background: var(--muted);
+}
+
+.polr-name {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.polr-code {
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.polr-card-healthy .polr-code {
+  color: var(--green);
+}
+
+.polr-card-unhealthy .polr-code {
+  color: var(--red);
+}
+
+.polr-card-unknown .polr-code {
+  color: var(--muted);
+}
+
+.polr-url {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.polr-cooldown {
+  color: var(--yellow);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}

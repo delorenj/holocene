@@ -24,10 +24,10 @@ telegram:
 # swapping providers is a one-line change here. Filled in by 42-ticket-provider.sh.
 ticket_provider:
   name: plane
-  board_id: "f7b06566-c04d-4530-a569-f7256081827f"
-  board_url: "https://plane.delo.sh/automaticai/projects/f7b06566-c04d-4530-a569-f7256081827f/issues/"
-  workspace: "automaticai"
-  project: "f7b06566-c04d-4530-a569-f7256081827f"
+  board_id: "727a2b17-a1dd-46f6-b583-afa5a2d2cdae"
+  board_url: "https://plane.delo.sh/33god/projects/727a2b17-a1dd-46f6-b583-afa5a2d2cdae/issues/"
+  workspace: "33god"
+  project: "727a2b17-a1dd-46f6-b583-afa5a2d2cdae"
   # Optional normalized-state name overrides for non-standard boards.
   in_review: ""   # e.g. "In Review"
   completed: ""   # e.g. "Done"
@@ -43,7 +43,7 @@ plane:
   # Empty -> resolved from ~/.config/hermes-agent-template/config.toml [plane].workspace
   workspace: ""
   # identifier is set by .scripts/42-ticket-provider.sh after creation (plane only)
-  identifier: "HOLPM"
+  identifier: "HOLOC"
 # Bloodbank wiring (consumed + produced subjects).
 bloodbank:
   subscribe:

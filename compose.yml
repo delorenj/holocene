@@ -5,7 +5,7 @@ services:
     working_dir: /app
     command: >
       sh -c "corepack enable
-      && if [ ! -x apps/web/node_modules/.bin/next ]; then pnpm install --frozen-lockfile --prod=false; fi
+      && pnpm install --frozen-lockfile --prod=false
       && mkdir -p apps/web/.next
       && find apps/web/.next -mindepth 1 -maxdepth 1 -exec rm -rf {} +
       && NODE_ENV=production pnpm --filter @holocene/web build

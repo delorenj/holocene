@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ClockCard } from "./clock-card";
 import { ToolingTab } from "./tooling";
 import { SystemsTab } from "./systems";
+import ContainersTab from "./containers";
 
 type ActiveWork = {
   status: "idle" | "checking" | "active" | "blocked" | "stalled" | "error" | "unknown";
@@ -70,6 +71,27 @@ type LogTail = {
 
 const configuredApi = process.env.NEXT_PUBLIC_HOLOCENE_API_URL?.trim().replace(/\/$/, "");
 const API = configuredApi && configuredApi !== "/" ? configuredApi : "";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function isLoopbackHost(hostname: string) {
+  return LOOPBACK_HOSTS.has(hostname.replace(/^\[|\]$/g, ""));
+}
+
+function resolveApiBase() {
+  if (!API) return "";
+  if (typeof window === "undefined") return API;
+
+  try {
+    const apiUrl = new URL(API, window.location.href);
+    if (isLoopbackHost(apiUrl.hostname) && !isLoopbackHost(window.location.hostname)) {
+      return "";
+    }
+  } catch {
+    return API;
+  }
+
+  return API;
+}
 const TASK_TEXT_LIMIT = 190;
 const LOG_TAIL_LINES = 160;
 const LOG_REFRESH_MS = 2000;
@@ -433,7 +455,8 @@ function ServiceControls({
 }
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems">("fleet");
+  const [apiBase] = useState(resolveApiBase);
+  const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems" | "containers">("fleet");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -447,7 +470,7 @@ export default function HomePage() {
 
     const loadSnapshot = async () => {
       try {
-        const response = await fetch(`${API}/api/modules/hermes-fleet/snapshot`);
+        const response = await fetch(`${apiBase}/api/modules/hermes-fleet/snapshot`);
         if (!response.ok) throw new Error(`snapshot ${response.status}`);
         const data = (await response.json()) as Snapshot;
         if (!cancelled) {
@@ -463,7 +486,7 @@ export default function HomePage() {
 
     void loadSnapshot();
 
-    const es = new EventSource(`${API}/api/modules/hermes-fleet/stream`);
+    const es = new EventSource(`${apiBase}/api/modules/hermes-fleet/stream`);
     es.addEventListener("snapshot", (evt) => {
       const data = JSON.parse((evt as MessageEvent).data) as Snapshot;
       setSnapshot(data);
@@ -476,7 +499,7 @@ export default function HomePage() {
       cancelled = true;
       es.close();
     };
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -505,7 +528,7 @@ export default function HomePage() {
     const loadLogTail = async () => {
       try {
         const response = await fetch(
-          `${API}/api/modules/hermes-fleet/agents/${encodeURIComponent(
+          `${apiBase}/api/modules/hermes-fleet/agents/${encodeURIComponent(
             openLogAgentId
           )}/log?lines=${LOG_TAIL_LINES}`,
           { cache: "no-store" }
@@ -545,17 +568,17 @@ export default function HomePage() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [openLogAgentId]);
+  }, [apiBase, openLogAgentId]);
 
   const action = async (path: string) => {
     setWorking(true);
     try {
-      await fetch(`${API}${path}`, {
+      await fetch(`${apiBase}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ all: true })
       });
-      const next = (await fetch(`${API}/api/modules/hermes-fleet/snapshot`).then((r) =>
+      const next = (await fetch(`${apiBase}/api/modules/hermes-fleet/snapshot`).then((r) =>
         r.json()
       )) as Snapshot;
       setSnapshot(next);
@@ -568,10 +591,10 @@ export default function HomePage() {
     setWorking(true);
     try {
       await fetch(
-        `${API}/api/modules/hermes-fleet/agents/${encodeURIComponent(agentId)}/services/${service}/${act}`,
+        `${apiBase}/api/modules/hermes-fleet/agents/${encodeURIComponent(agentId)}/services/${service}/${act}`,
         { method: "POST", headers: { "content-type": "application/json" } }
       );
-      const next = (await fetch(`${API}/api/modules/hermes-fleet/snapshot`).then((r) =>
+      const next = (await fetch(`${apiBase}/api/modules/hermes-fleet/snapshot`).then((r) =>
         r.json()
       )) as Snapshot;
       setSnapshot(next);
@@ -633,11 +656,20 @@ export default function HomePage() {
         >
           Systems
         </button>
+        <button
+          aria-selected={activeTab === "containers"}
+          className={activeTab === "containers" ? "tab tab-active" : "tab"}
+          onClick={() => setActiveTab("containers")}
+          role="tab"
+          type="button"
+        >
+          Containers
+        </button>
       </nav>
 
       {activeTab === "fleet" ? (
         <>
-          <ClockCard apiBase={API} />
+          <ClockCard apiBase={apiBase} />
 
           <section className="summary-grid" aria-label="Fleet summary">
             <div className="metric">
@@ -901,9 +933,11 @@ export default function HomePage() {
       </section>
         </>
       ) : activeTab === "tooling" ? (
-        <ToolingTab apiBase={API} />
+        <ToolingTab apiBase={apiBase} />
+      ) : activeTab === "containers" ? (
+        <ContainersTab apiBase={apiBase} />
       ) : (
-        <SystemsTab apiBase={API} />
+        <SystemsTab apiBase={apiBase} />
       )}
     </main>
   );

@@ -14,6 +14,7 @@ type ClockResponse = {
   action?: string;
   state?: string;
   error?: string;
+  timestamp?: string;
 };
 
 const STORAGE_KEY = "holocene-clock-state";
@@ -32,13 +33,10 @@ function loadCachedState(): ClockState | null {
   }
 }
 
-function saveCachedState(state: string) {
+function saveCachedState(state: string, updatedAt: string = new Date().toISOString()) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ state, updatedAt: new Date().toISOString() })
-    );
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, updatedAt }));
   } catch {
     // ignore storage errors
   }
@@ -47,27 +45,35 @@ function saveCachedState(state: string) {
 export function ClockCard({ apiBase }: { apiBase: string }) {
   const [status, setStatus] = useState<ClockStatus>("idle");
   const [message, setMessage] = useState<string>("");
-  const [cachedState, setCachedState] = useState<ClockState | null>(loadCachedState);
+  const [cachedState, setCachedState] = useState<ClockState | null>(null);
+  const [stateLoading, setStateLoading] = useState(false);
+  const [stateError, setStateError] = useState<string | null>(null);
 
   const fetchState = useCallback(async () => {
+    setStateLoading(true);
     try {
       const res = await fetch(`${apiBase}/api/clock/state`, {
         cache: "no-store"
       });
       const body = (await res.json().catch(() => ({}))) as ClockResponse;
       if (res.ok && body.success && body.state) {
-        saveCachedState(body.state);
-        setCachedState({ state: body.state, updatedAt: new Date().toISOString() });
+        const observedAt = body.timestamp ?? new Date().toISOString();
+        saveCachedState(body.state, observedAt);
+        setCachedState({ state: body.state, updatedAt: observedAt });
+        setStateError(null);
+      } else {
+        setStateError(body.error ?? `State unavailable (${res.status})`);
       }
     } catch (err) {
-      // ignore mount load errors, fallback to cache
+      setStateError(err instanceof Error ? err.message : "State unavailable");
+    } finally {
+      setStateLoading(false);
     }
   }, [apiBase]);
 
   useEffect(() => {
-    setCachedState(loadCachedState);
-    void fetchState();
-  }, [fetchState]);
+    setCachedState(loadCachedState());
+  }, []);
 
   const invoke = useCallback(
     async (action: "in" | "out") => {
@@ -78,7 +84,6 @@ export function ClockCard({ apiBase }: { apiBase: string }) {
       try {
         const res = await fetch(`${apiBase}/api/clock/${action}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
           cache: "no-store"
         });
 
@@ -89,8 +94,10 @@ export function ClockCard({ apiBase }: { apiBase: string }) {
         }
 
         const newState = body.state ?? "unknown";
-        saveCachedState(newState);
-        setCachedState({ state: newState, updatedAt: new Date().toISOString() });
+        const observedAt = body.timestamp ?? new Date().toISOString();
+        saveCachedState(newState, observedAt);
+        setCachedState({ state: newState, updatedAt: observedAt });
+        setStateError(null);
         setStatus("success");
         setMessage(newState);
       } catch (err) {
@@ -134,7 +141,28 @@ export function ClockCard({ apiBase }: { apiBase: string }) {
         </button>
       </div>
       <div className="clock-card-status" aria-live="polite">
-        {status === "idle" ? <span>{stateLabel}</span> : null}
+        {status === "idle" ? (
+          <span className="clock-state-line">
+            <span>{stateLabel}</span>
+            {stateLoading ? (
+              <span className="clock-state-hint">
+                {" "}
+                <span className="clock-spinner clock-spinner-inline" aria-label="Checking" /> checking…
+              </span>
+            ) : null}
+            {!stateLoading && stateError ? (
+              <span className="clock-status clock-status-error"> · {stateError}</span>
+            ) : null}
+            <button
+              className="clock-state-refresh"
+              disabled={stateLoading}
+              onClick={() => void fetchState()}
+              type="button"
+            >
+              Refresh
+            </button>
+          </span>
+        ) : null}
         {status === "loading" ? <span className="clock-spinner" aria-label="Loading" /> : null}
         {status === "success" ? (
           <span className="clock-status clock-status-success">
