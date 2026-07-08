@@ -1,0 +1,214 @@
+/* DeloHQ Mini App — the living org chart. Reuses the Holocene palette
+   (globals.css :root vars) so it reads as one system. */
+
+.hq-shell {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.hq-top {
+  align-items: baseline;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 14px;
+}
+
+.hq-top h1 {
+  font-size: 1.5rem;
+}
+
+.hq-eyebrow {
+  color: var(--blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0 0 3px;
+  text-transform: uppercase;
+}
+
+.hq-mood {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.hq-metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hq-metric {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.hq-metric span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.hq-metric strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.hq-metric-working strong {
+  color: var(--blue);
+}
+
+.hq-metric-attention strong {
+  color: var(--red);
+}
+
+.hq-section-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hq-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+
+.hq-node {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.hq-node-busy {
+  border-left-color: var(--blue);
+}
+.hq-node-idle {
+  border-left-color: var(--green);
+}
+.hq-node-attention {
+  border-left-color: var(--red);
+}
+.hq-node-unknown {
+  border-left-color: #96a0b8;
+}
+
+.hq-node-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hq-dot {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 9px;
+  width: 9px;
+}
+.hq-dot-busy {
+  background: var(--blue);
+  animation: hq-pulse 1.6s ease-in-out infinite;
+}
+.hq-dot-idle {
+  background: var(--green);
+}
+.hq-dot-attention {
+  background: var(--red);
+  animation: hq-pulse 1.6s ease-in-out infinite;
+}
+.hq-dot-unknown {
+  background: #96a0b8;
+}
+
+.hq-node-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hq-node-state {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  margin-left: auto;
+  text-transform: uppercase;
+}
+
+.hq-node-repo {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hq-node-task {
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.hq-node-meta {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.hq-banner {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  padding: 16px 18px;
+}
+.hq-banner strong {
+  color: var(--text);
+}
+.hq-banner-attention {
+  border-color: rgba(255, 122, 144, 0.55);
+}
+
+.hq-foot {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+@keyframes hq-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 620px) {
+  .hq-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Holocene - Fleet Control Plane</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #0e1323;
+            color: #dee1f9;
+            -webkit-font-smoothing: antialiased;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .hook-health-stripe {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(112, 218, 172, 0.1),
+                rgba(112, 218, 172, 0.1) 10px,
+                rgba(112, 218, 172, 0.2) 10px,
+                rgba(112, 218, 172, 0.2) 20px
+            );
+        }
+        .hook-health-stripe-warning {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(255, 122, 144, 0.05),
+                rgba(255, 122, 144, 0.05) 10px,
+                rgba(255, 122, 144, 0.1) 10px,
+                rgba(255, 122, 144, 0.1) 20px
+            );
+        }
+        /* Hide scrollbars for a cleaner UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary-fixed-dim": "#a9c8ff",
+                      "on-primary-fixed-variant": "#00468b",
+                      "tertiary-fixed-dim": "#edc157",
+                      "on-secondary-fixed-variant": "#005138",
+                      "outline": "#8c919c",
+                      "on-error-container": "#ffdad6",
+                      "on-error": "#690005",
+                      "tertiary-container": "#d3a942",
+                      "line": "#26324d",
+                      "primary-container": "#7fb0ff",
+                      "outline-variant": "#424751",
+                      "on-background": "#dee1f9",
+                      "status-red": "#ff7a90",
+                      "secondary-fixed": "#8df7c7",
+                      "error-container": "#93000a",
+                      "surface-tint": "#a9c8ff",
+                      "error": "#ffb4ab",
+                      "surface-bright": "#34394a",
+                      "primary-fixed": "#d6e3ff",
+                      "ink": "#07111f",
+                      "tertiary": "#f1c45b",
+                      "surface-dim": "#0e1323",
+                      "on-surface-variant": "#c2c6d3",
+                      "secondary-container": "#007f5a",
+                      "background": "#0e1323",
+                      "on-tertiary": "#3f2e00",
+                      "inverse-on-surface": "#2b3041",
+                      "secondary-fixed-dim": "#70daac",
+                      "on-secondary-fixed": "#002114",
+                      "inverse-primary": "#255ea8",
+                      "on-secondary": "#003825",
+                      "on-primary-fixed": "#001b3d",
+                      "on-primary-container": "#004282",
+                      "surface-container-low": "#161b2b",
+                      "on-surface": "#dee1f9",
+                      "on-primary": "#003062",
+                      "control": "#1d2943",
+                      "on-tertiary-fixed-variant": "#5b4300",
+                      "inverse-surface": "#dee1f9",
+                      "surface-container": "#1a1f30",
+                      "surface-container-high": "#25293a",
+                      "on-secondary-container": "#d0ffe5",
+                      "surface-container-lowest": "#080d1d",
+                      "inset": "#0f1729",
+                      "on-tertiary-fixed": "#251a00",
+                      "on-tertiary-container": "#553f00",
+                      "text-bright": "#e8f5ff",
+                      "code-line": "#30405f",
+                      "panel-raised": "#172036",
+                      "status-neutral": "#96a0b8",
+                      "secondary": "#70daac",
+                      "primary": "#afcbff",
+                      "text-muted": "#9aa8c7",
+                      "surface-container-highest": "#2f3446",
+                      "panel": "#121a2d",
+                      "text-primary": "#eef3ff",
+                      "surface": "#0e1323",
+                      "surface-variant": "#2f3446",
+                      "tertiary-fixed": "#ffdf9b"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xl": "22px",
+                      "page-mobile": "18px",
+                      "xs": "6px",
+                      "sm": "8px",
+                      "page": "28px",
+                      "md": "12px",
+                      "lg": "16px"
+              },
+              "fontFamily": {
+                      "metric-value": ["Inter"],
+                      "eyebrow": ["Inter"],
+                      "display": ["Inter"],
+                      "status": ["Inter"],
+                      "label": ["Inter"],
+                      "title": ["Inter"],
+                      "body-md": ["Inter"],
+                      "mono": ["JetBrains Mono"],
+                      "headline": ["Inter"]
+              },
+              "fontSize": {
+                      "metric-value": ["25px", {"lineHeight": "25px", "fontWeight": "700"}],
+                      "eyebrow": ["12.5px", {"lineHeight": "16px", "letterSpacing": "0.05rem", "fontWeight": "700"}],
+                      "display": ["51px", {"lineHeight": "51px", "fontWeight": "800"}],
+                      "status": ["12.5px", {"lineHeight": "12.5px", "fontWeight": "800"}],
+                      "label": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                      "title": ["17px", {"lineHeight": "24px", "fontWeight": "700"}],
+                      "body-md": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                      "mono": ["11.5px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "headline": ["32px", {"lineHeight": "35px", "fontWeight": "700"}]
+              }
+            },
+          },
+        }
+    </script>
+</head>
+<body class="bg-background min-h-screen">
+<div class="max-w-[1280px] mx-auto px-page-mobile md:px-page flex flex-col pt-md">
+<!-- Header Section -->
+<header class="flex flex-col mb-lg">
+<span class="font-eyebrow text-eyebrow text-primary uppercase tracking-widest">33GOD CONTROL PLANE</span>
+<h1 class="font-headline text-headline text-text-primary">Holocene</h1>
+</header>
+<!-- Tab Navigation -->
+<nav class="flex items-end border-b border-line mb-xl">
+<!-- Active Tab: Fleet -->
+<button class="bg-control border-b-2 border-primary text-primary font-bold px-4 py-2 transition-all">Fleet</button>
+<button class="text-text-muted hover:text-text-primary px-4 py-2 transition-colors">Tooling</button>
+<button class="text-text-muted hover:text-text-primary px-4 py-2 transition-colors">Systems</button>
+<button class="text-text-muted hover:text-text-primary px-4 py-2 transition-colors">Containers</button>
+</nav>
+<!-- Hero Health Summary Band -->
+<section class="mb-xl rounded-[32px] border-2 border-white/20 bg-panel-raised p-page flex flex-wrap md:flex-nowrap justify-between items-center gap-page">
+<div class="flex flex-col">
+<span class="font-label text-label text-text-muted mb-xs uppercase tracking-tighter">AGENTS</span>
+<span class="font-metric-value text-metric-value text-text-primary">12</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label text-label text-text-muted mb-xs uppercase tracking-tighter">WORKING</span>
+<span class="font-metric-value text-metric-value text-secondary">7</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label text-label text-text-muted mb-xs uppercase tracking-tighter">NEEDS ATTENTION</span>
+<span class="font-metric-value text-metric-value text-status-red">2</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-label text-label text-text-muted mb-xs uppercase tracking-tighter">SNAPSHOT</span>
+<span class="font-mono text-mono text-primary-fixed-dim bg-inset px-sm py-xs rounded">16:08:07Z</span>
+</div>
+</section>
+<!-- Main Content Layout -->
+<main class="grid grid-cols-1 lg:grid-cols-3 gap-xl">
+<!-- Left Column: Right Now -->
+<div class="lg:col-span-2 space-y-md">
+<div class="flex justify-between items-baseline border-b border-line pb-xs mb-md">
+<h2 class="font-title text-title text-text-primary">Right Now</h2>
+<span class="font-label text-label text-text-muted">Live PM work-state feed</span>
+</div>
+<!-- Feed Rows -->
+<div class="space-y-sm">
+<!-- Row 1: Active -->
+<div class="bg-panel border border-line p-lg flex items-center justify-between hover:bg-surface-container transition-colors group">
+<div class="flex flex-col">
+<span class="font-title text-title text-text-bright">Prime_X1</span>
+<span class="font-body-md text-body-md text-text-muted">Working on edge-latency-optimization.sh</span>
+</div>
+<div class="flex items-center gap-lg">
+<span class="font-mono text-mono text-text-muted bg-inset px-xs rounded">04:12:12</span>
+<span class="px-3 py-1 bg-secondary text-ink font-status text-status rounded-full">ACTIVE</span>
+</div>
+</div>
+<!-- Row 2: Warning -->
+<div class="bg-panel border border-line p-lg flex items-center justify-between hover:bg-surface-container transition-colors group">
+<div class="flex flex-col">
+<span class="font-title text-title text-text-bright">Vector_Zero</span>
+<span class="font-body-md text-body-md text-text-muted">Working on container-repatriation-flow</span>
+</div>
+<div class="flex items-center gap-lg">
+<span class="font-mono text-mono text-text-muted bg-inset px-xs rounded">01:45:00</span>
+<span class="px-3 py-1 bg-status-red text-ink font-status text-status rounded-full">THROTTLED</span>
+</div>
+</div>
+<!-- Row 3: Active -->
+<div class="bg-panel border border-line p-lg flex items-center justify-between hover:bg-surface-container transition-colors group">
+<div class="flex flex-col">
+<span class="font-title text-title text-text-bright">Aether_Node</span>
+<span class="font-body-md text-body-md text-text-muted">Working on sync-protocol-v2.patch</span>
+</div>
+<div class="flex items-center gap-lg">
+<span class="font-mono text-mono text-text-muted bg-inset px-xs rounded">00:32:04</span>
+<span class="px-3 py-1 bg-secondary text-ink font-status text-status rounded-full">ACTIVE</span>
+</div>
+</div>
+<!-- Row 4: Idle -->
+<div class="bg-panel border border-line p-lg flex items-center justify-between hover:bg-surface-container transition-colors group opacity-80">
+<div class="flex flex-col">
+<span class="font-title text-title text-text-bright">Ghost_Protocol</span>
+<span class="font-body-md text-body-md text-text-muted">Awaiting next task sequence...</span>
+</div>
+<div class="flex items-center gap-lg">
+<span class="font-mono text-mono text-text-muted bg-inset px-xs rounded">--:--:--</span>
+<span class="px-3 py-1 bg-status-neutral text-ink font-status text-status rounded-full">IDLE</span>
+</div>
+</div>
+<!-- Row 5: Active -->
+<div class="bg-panel border border-line p-lg flex items-center justify-between hover:bg-surface-container transition-colors group">
+<div class="flex flex-col">
+<span class="font-title text-title text-text-bright">Zenith_9</span>
+<span class="font-body-md text-body-md text-text-muted">Working on garbage-collection-sweep-22</span>
+</div>
+<div class="flex items-center gap-lg">
+<span class="font-mono text-mono text-text-muted bg-inset px-xs rounded">00:15:10</span>
+<span class="px-3 py-1 bg-secondary text-ink font-status text-status rounded-full">ACTIVE</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Rail -->
+<aside class="space-y-xl">
+<!-- Orwell Card -->
+<section class="bg-panel-raised border border-line rounded-xl p-lg flex flex-col gap-md">
+<div class="flex flex-col">
+<h2 class="font-title text-title text-text-primary">Orwell</h2>
+<p class="font-label text-label text-text-muted">Manual clock-in / clock-out control.</p>
+</div>
+<div class="grid grid-cols-2 gap-md">
+<button class="h-[40px] bg-[#007f5a] text-ink font-status text-status rounded hover:opacity-90 active:scale-[0.98] transition-all">Clock In</button>
+<button class="h-[40px] bg-[#93000a] text-on-error-container font-status text-status rounded hover:opacity-90 active:scale-[0.98] transition-all">Clock Out</button>
+</div>
+<div class="pt-sm border-t border-line">
+<p class="font-mono text-mono text-text-muted text-[10px]">Last state: <span class="text-secondary">clocked in</span> · 09:14</p>
+</div>
+</section>
+<!-- Compact Fleet List -->
+<section class="space-y-md">
+<div class="flex flex-col border-b border-line pb-xs">
+<h2 class="font-title text-title text-text-primary">Fleet</h2>
+<span class="font-label text-label text-text-muted">Live services &amp; PM work-state</span>
+</div>
+<div class="space-y-xs">
+<!-- Fleet Row 1 -->
+<div class="flex items-center justify-between py-xs border-b border-line hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label text-label text-text-bright">Atlas</span>
+<span class="font-mono text-mono text-text-muted scale-90">#ATLS-01</span>
+</div>
+<span class="px-2 py-[2px] bg-secondary/20 text-secondary border border-secondary/30 font-status text-[10px] rounded-full">OK</span>
+</div>
+<!-- Fleet Row 2 -->
+<div class="flex items-center justify-between py-xs border-b border-line">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label text-label text-text-bright">Boreas</span>
+<span class="font-mono text-mono text-text-muted scale-90">#BORS-04</span>
+</div>
+<span class="px-2 py-[2px] bg-secondary/20 text-secondary border border-secondary/30 font-status text-[10px] rounded-full">OK</span>
+</div>
+<!-- Fleet Row 3 -->
+<div class="flex items-center justify-between py-xs border-b border-line">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-status-red"></div>
+<span class="font-label text-label text-text-bright">Cronus</span>
+<span class="font-mono text-mono text-text-muted scale-90">#CRNS-09</span>
+</div>
+<span class="px-2 py-[2px] bg-status-red/20 text-status-red border border-status-red/30 font-status text-[10px] rounded-full">ERR</span>
+</div>
+<!-- Fleet Row 4 -->
+<div class="flex items-center justify-between py-xs border-b border-line">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label text-label text-text-bright">Dione</span>
+<span class="font-mono text-mono text-text-muted scale-90">#DION-12</span>
+</div>
+<span class="px-2 py-[2px] bg-secondary/20 text-secondary border border-secondary/30 font-status text-[10px] rounded-full">OK</span>
+</div>
+<!-- Fleet Row 5 -->
+<div class="flex items-center justify-between py-xs border-b border-line">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-tertiary"></div>
+<span class="font-label text-label text-text-bright">Eos_M</span>
+<span class="font-mono text-mono text-text-muted scale-90">#EOSM-02</span>
+</div>
+<span class="px-2 py-[2px] bg-tertiary/20 text-tertiary border border-tertiary/30 font-status text-[10px] rounded-full">WARN</span>
+</div>
+<!-- Fleet Row 6 -->
+<div class="flex items-center justify-between py-xs border-b border-line">
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label text-label text-text-bright">Fates</span>
+<span class="font-mono text-mono text-text-muted scale-90">#FATS-07</span>
+</div>
+<span class="px-2 py-[2px] bg-secondary/20 text-secondary border border-secondary/30 font-status text-[10px] rounded-full">OK</span>
+</div>
+</div>
+</section>
+</aside>
+</main>
+<!-- Ticket Velocity Section -->
+<footer class="mt-xl pb-page">
+<div class="flex justify-between items-end mb-md">
+<div class="flex flex-col">
+<h2 class="font-title text-title text-text-primary">Ticket Velocity</h2>
+<div class="flex items-center gap-lg mt-xs">
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 bg-secondary"></div>
+<span class="font-label text-label text-text-muted text-[11px] uppercase">Resolved</span>
+</div>
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 bg-status-red"></div>
+<span class="font-label text-label text-text-muted text-[11px] uppercase">Incident</span>
+</div>
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 bg-inset"></div>
+<span class="font-label text-label text-text-muted text-[11px] uppercase">No Data</span>
+</div>
+</div>
+</div>
+<span class="font-mono text-mono text-text-muted">Last 240 ticks</span>
+</div>
+<!-- Sparkline strip -->
+<div class="w-full h-8 flex gap-[1px] bg-line overflow-hidden rounded-sm border border-line group relative">
+<!-- Generating 60 simulated cells for the velocity strip -->
+<!-- First batch: Stable green -->
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<!-- Second batch: Some issues -->
+<div class="flex-1 bg-status-red/90"></div><div class="flex-1 bg-status-red/90"></div><div class="flex-1 bg-secondary/60"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<div class="flex-1 bg-inset"></div><div class="flex-1 bg-inset"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<!-- Third batch: Stable green -->
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<!-- Fourth batch: Mixed -->
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-status-red/90"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-inset"></div>
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<!-- Fifth batch: Stable green -->
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div><div class="flex-1 bg-secondary/80"></div>
+<!-- Sixth batch: Ending strong -->
+<div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div>
+<div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary"></div><div class="flex-1 bg-secondary animate-pulse"></div>
+</div>
+</footer>
+</div>
+<!-- Micro-interaction Script -->
+<script>
+        document.querySelectorAll('.bg-panel').forEach(card => {
+            card.addEventListener('mousedown', () => {
+                card.style.transform = 'scale(0.995)';
+            });
+            card.addEventListener('mouseup', () => {
+                card.style.transform = 'scale(1)';
+            });
+        });
+
+        // Simple Clock Simulation
+        function updateSnapshot() {
+            const now = new Date();
+            const timeStr = now.getUTCHours().toString().padStart(2, '0') + ':' +
+                          now.getUTCMinutes().toString().padStart(2, '0') + ':' +
+                          now.getUTCSeconds().toString().padStart(2, '0') + 'Z';
+            const snapshotEl = document.querySelector('.font-mono.text-primary-fixed-dim');
+            if(snapshotEl) snapshotEl.innerText = timeStr;
+        }
+        setInterval(updateSnapshot, 1000);
+        updateSnapshot();
+    </script>
+</body></html>
