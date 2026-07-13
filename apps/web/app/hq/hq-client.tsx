@@ -1,39 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-
-type BusyState = "idle" | "busy" | "blocked" | "stalled" | "error" | "unknown";
-
-type ActiveWork = {
-  status?: string;
-  issue_id?: string;
-  summary?: string;
-  reason?: string;
-  last_heartbeat_at?: string;
-  age_seconds?: number;
-};
-
-type FleetAgent = {
-  agent_id: string;
-  display_name: string;
-  repo: string;
-  role: string;
-  project_path: string;
-  busy_state: BusyState;
-  active_work: ActiveWork;
-};
-
-type Snapshot = {
-  generatedAt: string;
-  source: string;
-  agents: FleetAgent[];
-};
+import type { EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
 
 type Tone = "busy" | "idle" | "attention" | "unknown";
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ok"; snapshot: Snapshot; at: number }
+  | { kind: "ok"; tree: OrgTree; at: number }
   | { kind: "not-configured" }
   | { kind: "no-telegram" }
   | { kind: "unauthorized" }
@@ -56,14 +30,21 @@ type TelegramWebApp = {
 const POLL_MS = 5000;
 const SDK_SRC = "https://telegram.org/js/telegram-web-app.js";
 
-function toneOf(state: BusyState): Tone {
-  if (state === "busy") return "busy";
-  if (state === "idle") return "idle";
-  if (state === "blocked" || state === "stalled" || state === "error") return "attention";
-  return "unknown";
+function toneOf(status: EmployeeStatus): Tone {
+  switch (status) {
+    case "working":
+    case "initializing":
+    case "onboarding":
+      return "busy";
+    case "idle":
+      return "idle";
+    case "blocked":
+    case "failed":
+      return "attention";
+    default:
+      return "unknown";
+  }
 }
-
-const TONE_RANK: Record<Tone, number> = { attention: 0, busy: 1, idle: 2, unknown: 3 };
 
 function loadTelegramSdk(): Promise<TelegramWebApp | null> {
   if (typeof window === "undefined") return Promise.resolve(null);
@@ -86,8 +67,8 @@ function loadTelegramSdk(): Promise<TelegramWebApp | null> {
   });
 }
 
-function ageLabel(agent: FleetAgent): string {
-  const secs = agent.active_work?.age_seconds;
+function ageLabel(node: OrgNode): string {
+  const secs = node.live?.activeWork?.ageSeconds;
   if (typeof secs !== "number" || !Number.isFinite(secs)) return "";
   if (secs < 60) return `${Math.round(secs)}s ago`;
   if (secs < 3600) return `${Math.round(secs / 60)}m ago`;
@@ -111,7 +92,7 @@ export default function HqClient() {
 
     const poll = async () => {
       try {
-        const res = await fetch("/hq/api/snapshot", {
+        const res = await fetch("/hq/api/org-tree", {
           headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
           cache: "no-store"
         });
@@ -123,8 +104,8 @@ export default function HqClient() {
         } else if (!res.ok) {
           setState({ kind: "error", message: `Fleet API returned ${res.status}` });
         } else {
-          const snapshot = (await res.json()) as Snapshot;
-          if (!cancelled) setState({ kind: "ok", snapshot, at: Date.now() });
+          const tree = (await res.json()) as OrgTree;
+          if (!cancelled) setState({ kind: "ok", tree, at: Date.now() });
         }
       } catch (err) {
         if (!cancelled) setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
@@ -215,94 +196,112 @@ export default function HqClient() {
     );
   }
 
-  return <Floor snapshot={state.snapshot} at={state.at} />;
+  return <Floor tree={state.tree} at={state.at} />;
 }
 
-function Floor({ snapshot, at }: { snapshot: Snapshot; at: number }) {
-  const agents = snapshot.agents ?? [];
+function AgentCard({ node }: { node: OrgNode }) {
+  const tone = toneOf(node.status);
+  const summary = node.live?.activeWork?.summary || node.live?.activeWork?.reason || "";
+  const issueId = node.live?.activeWork?.issueId;
+  const age = ageLabel(node);
+  const isManager = node.employeeRole === "manager";
+  return (
+    <article className={`hq-node hq-node-${tone}${isManager ? " hq-node-manager" : ""}`}>
+      <div className="hq-node-head">
+        <span className={`hq-dot hq-dot-${tone}`} />
+        <span className="hq-node-name">{node.displayName || node.id}</span>
+        {isManager ? <span className="hq-node-badge">lead</span> : null}
+        <span className="hq-node-state">{node.status}</span>
+      </div>
+      <div className="hq-node-repo">
+        {node.agentRef?.repo || node.id}
+        {node.agentRef?.planeIdentifier ? ` · ${node.agentRef.planeIdentifier}` : ""}
+      </div>
+      {summary ? <div className="hq-node-task">{summary}</div> : null}
+      {issueId || age ? (
+        <div className="hq-node-meta">
+          {issueId ? `${issueId} · ` : ""}
+          {age || "no heartbeat yet"}
+        </div>
+      ) : null}
+    </article>
+  );
+}
 
-  const sorted = useMemo(() => {
-    return [...agents].sort((a, b) => {
-      const rank = TONE_RANK[toneOf(a.busy_state)] - TONE_RANK[toneOf(b.busy_state)];
-      if (rank !== 0) return rank;
-      return (a.display_name || a.agent_id).localeCompare(b.display_name || b.agent_id);
-    });
-  }, [agents]);
+function Floor({ tree, at }: { tree: OrgTree; at: number }) {
+  const root = tree.root;
+  const departments = useMemo(
+    () => [...(root.children ?? [])].sort((a, b) => a.order - b.order),
+    [root.children]
+  );
 
-  const counts = useMemo(() => {
-    let working = 0;
-    let attention = 0;
-    let idle = 0;
-    for (const a of agents) {
-      const tone = toneOf(a.busy_state);
-      if (tone === "busy") working += 1;
-      else if (tone === "attention") attention += 1;
-      else if (tone === "idle") idle += 1;
-    }
-    return { total: agents.length, working, attention, idle };
-  }, [agents]);
-
+  const totals = tree.totals ?? { agents: 0, working: 0, needsAttention: 0 };
+  const idle = Math.max(0, totals.agents - totals.working - totals.needsAttention);
   const updated = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <main className="hq-shell">
       <header className="hq-top">
         <div>
-          <p className="hq-eyebrow">33GOD Co.</p>
-          <h1>The Floor</h1>
+          <p className="hq-eyebrow">{tree.company?.name || "Company"}</p>
+          <h1>The Org</h1>
+          <p className="hq-ceo">
+            {root.displayName} · <span>{root.title}</span>
+          </p>
         </div>
         <span className="hq-mood" title="Company mood">
-          {moodGlyph(counts.attention, counts.total)}
+          {moodGlyph(totals.needsAttention, totals.agents)}
         </span>
       </header>
 
       <section className="hq-metrics">
         <div className="hq-metric">
           <span>Agents</span>
-          <strong>{counts.total}</strong>
+          <strong>{totals.agents}</strong>
         </div>
         <div className="hq-metric hq-metric-working">
           <span>Working</span>
-          <strong>{counts.working}</strong>
+          <strong>{totals.working}</strong>
         </div>
         <div className="hq-metric hq-metric-attention">
           <span>Needs attn</span>
-          <strong>{counts.attention}</strong>
+          <strong>{totals.needsAttention}</strong>
         </div>
         <div className="hq-metric">
           <span>Idle</span>
-          <strong>{counts.idle}</strong>
+          <strong>{idle}</strong>
         </div>
       </section>
 
-      <p className="hq-section-label">Everyone · needs-attention first</p>
-      <section className="hq-grid">
-        {sorted.map((agent) => {
-          const tone = toneOf(agent.busy_state);
-          const summary = agent.active_work?.summary || agent.active_work?.reason || "";
-          const age = ageLabel(agent);
-          return (
-            <article key={agent.agent_id} className={`hq-node hq-node-${tone}`}>
-              <div className="hq-node-head">
-                <span className={`hq-dot hq-dot-${tone}`} />
-                <span className="hq-node-name">{agent.display_name || agent.agent_id}</span>
-                <span className="hq-node-state">{agent.busy_state}</span>
-              </div>
-              <div className="hq-node-repo">{agent.repo}</div>
-              {summary ? <div className="hq-node-task">{summary}</div> : null}
-              {agent.active_work?.issue_id || age ? (
-                <div className="hq-node-meta">
-                  {agent.active_work?.issue_id ? `${agent.active_work.issue_id} · ` : ""}
-                  {age || "no heartbeat yet"}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </section>
+      {tree.unmapped?.length ? (
+        <div className="hq-banner hq-banner-attention hq-unmapped">
+          {tree.unmapped.length} unmapped agent{tree.unmapped.length === 1 ? "" : "s"} in Unassigned — add{" "}
+          {tree.unmapped.length === 1 ? "it" : "them"} to <code>~/.hermes/org.yaml</code>.
+        </div>
+      ) : null}
+
+      {departments.map((dept) => {
+        const roll = dept.rollup ?? { agents: 0, working: 0, needsAttention: 0 };
+        return (
+          <section key={dept.id} className="hq-dept">
+            <div className="hq-dept-head">
+              <span className="hq-dept-name">{dept.displayName}</span>
+              <span className="hq-dept-roll">
+                {roll.agents} · {roll.working} working
+                {roll.needsAttention ? ` · ${roll.needsAttention} needs attn` : ""}
+              </span>
+            </div>
+            <div className="hq-grid">
+              {(dept.children ?? []).map((agent) => (
+                <AgentCard key={agent.id} node={agent} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       <p className="hq-foot">
-        {counts.total} agents · updated {updated} · refreshes every 5s
+        {totals.agents} agents · {departments.length} departments · updated {updated} · refreshes every 5s
       </p>
     </main>
   );

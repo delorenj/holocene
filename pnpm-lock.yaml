@@ -17,6 +17,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@holocene/org-model':
+        specifier: workspace:*
+        version: link:../../packages/org-model
       '@holocene/system-actions':
         specifier: workspace:*
         version: link:../../packages/system-actions
@@ -54,6 +57,9 @@ importers:
       '@holocene/modules-hermes-fleet':
         specifier: workspace:*
         version: link:../../packages/modules-hermes-fleet
+      '@holocene/org-model':
+        specifier: workspace:*
+        version: link:../../packages/org-model
       '@radix-ui/react-dialog':
         specifier: ^1.1.16
         version: 1.1.16(@types/react-dom@18.3.7(@types/react@18.3.29))(@types/react@18.3.29)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -120,6 +126,12 @@ importers:
       '@types/node':
         specifier: ^22.10.1
         version: 22.19.19
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/org-model:
+    devDependencies:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

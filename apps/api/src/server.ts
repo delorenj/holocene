@@ -12,6 +12,7 @@ import {
 import {
   getContainersSnapshot
 } from "./containers.js";
+import { getOrgTree } from "./org.js";
 import {
   getToolingStat,
   getToolingStatDefinitions,
@@ -329,6 +330,10 @@ app.get("/api/clock/state", async (_req, reply) => {
 
 
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
+
+// P2 — the fleet arranged into the operator's real reporting hierarchy
+// (~/.hermes/org.yaml merged with project_path derivation + live overlay).
+app.get("/api/modules/org/tree", async () => getOrgTree());
 
 app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", async (req) =>
   getSystemsInventory(req.query.force === "1")

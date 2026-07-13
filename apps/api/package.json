@@ -12,6 +12,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@holocene/org-model": "workspace:*",
     "@holocene/system-actions": "workspace:*",
     "dotenv": "^17.4.2",
     "fastify": "^5.1.0",
