@@ -114,7 +114,7 @@ export type OrgTree = {
   company: { name: string; handle?: string };
   root: OrgNode; // CEO node; children = departments
   unmapped: string[]; // agent_ids that landed in the Unassigned bucket
-  totals: { agents: number; working: number; needsAttention: number };
+  totals: { agents: number; working: number; idle: number; needsAttention: number; unknown: number };
 };
 
 // ---- resolver --------------------------------------------------------------
@@ -221,17 +221,26 @@ export function merge(input: MergeInput): OrgTree {
   for (const a of byId.values()) {
     if (configPlaced.has(a.agentId)) continue;
 
-    // Nest under the deepest configured agent whose project_path is an ancestor.
+    // Co-locate by project_path: prefer nesting under the deepest configured
+    // ancestor directory, else share a department with a configured agent in the
+    // SAME directory (e.g. a repo's PM + scrum-master sharing one project_path).
     let best: { deptId: string; depth: number } | undefined;
+    let samePathDept: string | undefined;
     for (const [otherId, deptId] of configPlaced.entries()) {
       const other = byId.get(otherId);
-      if (!other || !isAncestorPath(other.projectPath, a.projectPath)) continue;
+      if (!other || !other.projectPath || !a.projectPath) continue;
+      if (other.projectPath === a.projectPath) {
+        samePathDept ??= deptId;
+        continue;
+      }
+      if (!isAncestorPath(other.projectPath, a.projectPath)) continue;
       const depth = other.projectPath.length;
       if (!best || depth > best.depth) best = { deptId, depth };
     }
 
-    if (best) {
-      depts.get(best.deptId)!.memberIds.push(a.agentId);
+    const targetDept = best?.deptId ?? samePathDept;
+    if (targetDept) {
+      depts.get(targetDept)!.memberIds.push(a.agentId);
       continue;
     }
 
@@ -276,7 +285,9 @@ export function merge(input: MergeInput): OrgTree {
 
   let totalAgents = 0;
   let totalWorking = 0;
+  let totalIdle = 0;
   let totalAttention = 0;
+  let totalUnknown = 0;
 
   const deptNodes: OrgNode[] = [];
   const sortedDepts = [...depts.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
@@ -295,14 +306,20 @@ export function merge(input: MergeInput): OrgTree {
     if (children.length === 0) continue;
 
     let working = 0;
+    let idle = 0;
     let attention = 0;
+    let unknown = 0;
     for (const c of children) {
       if (c.status === "working") working += 1;
+      else if (c.status === "idle") idle += 1;
+      else if (c.status === "unknown") unknown += 1;
       if (needsAttention(c.status)) attention += 1;
     }
     totalAgents += children.length;
     totalWorking += working;
+    totalIdle += idle;
     totalAttention += attention;
+    totalUnknown += unknown;
 
     deptNodes.push({
       id: `dept:${d.id}`,
@@ -334,6 +351,12 @@ export function merge(input: MergeInput): OrgTree {
     company,
     root,
     unmapped,
-    totals: { agents: totalAgents, working: totalWorking, needsAttention: totalAttention }
+    totals: {
+      agents: totalAgents,
+      working: totalWorking,
+      idle: totalIdle,
+      needsAttention: totalAttention,
+      unknown: totalUnknown
+    }
   };
 }

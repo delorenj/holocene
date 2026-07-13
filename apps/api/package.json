@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --filter @holocene/org-model build && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",

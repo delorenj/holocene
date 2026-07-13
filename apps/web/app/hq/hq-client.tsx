@@ -235,8 +235,8 @@ function Floor({ tree, at }: { tree: OrgTree; at: number }) {
     [root.children]
   );
 
-  const totals = tree.totals ?? { agents: 0, working: 0, needsAttention: 0 };
-  const idle = Math.max(0, totals.agents - totals.working - totals.needsAttention);
+  const totals = tree.totals ?? { agents: 0, working: 0, idle: 0, needsAttention: 0, unknown: 0 };
+  const idle = totals.idle;
   const updated = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (

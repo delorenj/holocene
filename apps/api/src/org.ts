@@ -1,6 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { load } from "js-yaml";
 import { merge } from "@holocene/org-model";
 import type { LiveAgentState, OrgConfig, OrgTree, RegistryAgent } from "@holocene/org-model";
@@ -9,8 +7,11 @@ import { getFleetSnapshot } from "./fleet.js";
 // The org chart is the fleet snapshot (P1 data path) arranged into the real
 // reporting hierarchy the operator declares in ~/.hermes/org.yaml. All IO lives
 // here; the pure resolver is @holocene/org-model.merge().
-const ORG_PATH = process.env.HERMES_ORG_PATH ?? join(homedir(), ".hermes", "org.yaml");
-const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? join(homedir(), ".hermes", "agents-registry.yaml");
+//
+// REGISTRY_PATH's fallback intentionally matches fleet.ts exactly so the org
+// roster and the live snapshot can never resolve to different registry files.
+const ORG_PATH = process.env.HERMES_ORG_PATH ?? "/home/delorenj/.hermes/org.yaml";
+const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
 
 function readOrgConfig(): OrgConfig | undefined {
   if (!existsSync(ORG_PATH)) return undefined;
@@ -30,8 +31,12 @@ function readRegistryAgents(): RegistryAgent[] {
     repo: typeof cfg?.repo === "string" ? cfg.repo : "",
     displayName: typeof cfg?.display_name === "string" ? cfg.display_name : agentId,
     projectPath: typeof cfg?.project_path === "string" ? cfg.project_path : "",
-    botUsername: cfg?.telegram?.bot_username || undefined,
-    planeIdentifier: cfg?.plane?.identifier || undefined
+    botUsername:
+      typeof cfg?.telegram?.bot_username === "string" && cfg.telegram.bot_username
+        ? cfg.telegram.bot_username
+        : undefined,
+    planeIdentifier:
+      typeof cfg?.plane?.identifier === "string" && cfg.plane.identifier ? cfg.plane.identifier : undefined
   }));
 }
 
