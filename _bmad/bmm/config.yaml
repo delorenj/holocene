@@ -3,7 +3,7 @@
 # Version: 6.0.0-alpha.23
 # Date: 2026-03-08T19:53:52.569Z
 
-project_name: {{PROJECT_NAME}}
+project_name: holocene
 user_skill_level: intermediate
 planning_artifacts: "{project-root}/_bmad-output/planning-artifacts"
 implementation_artifacts: "{project-root}/_bmad-output/implementation-artifacts"
