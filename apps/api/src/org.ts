@@ -40,10 +40,31 @@ function readRegistryAgents(): RegistryAgent[] {
   }));
 }
 
+const SPARKLINE_DAYS = 7;
+
+// Per-agent daily ticket-velocity counts over the last SPARKLINE_DAYS (oldest →
+// newest), derived from the fleet snapshot's velocity_history (Candystore).
+function buildSparklines(events: Array<{ agent_id?: string; timestamp?: string }>): Record<string, number[]> {
+  const dayMs = 86_400_000;
+  const now = Date.now();
+  const out: Record<string, number[]> = {};
+  for (const ev of events ?? []) {
+    if (!ev?.agent_id || !ev.timestamp) continue;
+    const t = Date.parse(ev.timestamp);
+    if (Number.isNaN(t)) continue;
+    const idx = Math.floor((now - t) / dayMs);
+    if (idx < 0 || idx >= SPARKLINE_DAYS) continue;
+    const bucket = (out[ev.agent_id] ??= new Array(SPARKLINE_DAYS).fill(0));
+    bucket[SPARKLINE_DAYS - 1 - idx] += 1;
+  }
+  return out;
+}
+
 export async function getOrgTree(): Promise<OrgTree> {
   const config = readOrgConfig();
   const agents = readRegistryAgents();
   const snapshot = await getFleetSnapshot();
+  const sparklines = buildSparklines(snapshot.velocity_history ?? []);
 
   const live: Record<string, LiveAgentState> = {};
   for (const a of snapshot.agents) {
@@ -58,6 +79,7 @@ export async function getOrgTree(): Promise<OrgTree> {
         lastHeartbeatAt: a.active_work?.last_heartbeat_at,
         ageSeconds: a.active_work?.age_seconds
       },
+      sparkline: sparklines[a.agent_id],
       updatedAt: a.active_work?.updated_at
     };
   }

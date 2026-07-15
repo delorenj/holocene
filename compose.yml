@@ -36,7 +36,11 @@ services:
       # DeloHQ Telegram Mini App: /hq must bypass google-auth (Telegram's webview
       # can't complete Google SSO). Access is gated instead by initData validation
       # in app/hq/api/*. Higher priority so it wins over the google-auth router.
-      - "traefik.http.routers.holocene-hq.rule=Host(`holocene.delo.sh`) && PathPrefix(`/hq`)"
+      # /_next/static (JS/CSS bundles) must ALSO bypass google-auth — otherwise the
+      # /hq page loads but its assets 401->307 to the SSO wall, so the Mini App
+      # never hydrates (black screen stuck on "Loading the floor…"). Static build
+      # output carries no data; all fleet data stays behind the initData gate.
+      - "traefik.http.routers.holocene-hq.rule=Host(`holocene.delo.sh`) && (PathPrefix(`/hq`) || PathPrefix(`/_next/static`))"
       - "traefik.http.routers.holocene-hq.priority=350"
       - "traefik.http.routers.holocene-hq.entrypoints=websecure"
       - "traefik.http.routers.holocene-hq.service=holocene-web"

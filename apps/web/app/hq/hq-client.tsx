@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
 
-type Tone = "busy" | "idle" | "attention" | "unknown";
+type Tone = "working" | "idle" | "attention" | "failed" | "unknown";
 
 type LoadState =
   | { kind: "loading" }
@@ -25,6 +25,8 @@ type TelegramWebApp = {
   expand?: () => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
+  openTelegramLink?: (url: string) => void;
+  HapticFeedback?: { impactOccurred?: (style: string) => void };
 };
 
 const POLL_MS = 5000;
@@ -35,12 +37,13 @@ function toneOf(status: EmployeeStatus): Tone {
     case "working":
     case "initializing":
     case "onboarding":
-      return "busy";
+      return "working";
     case "idle":
       return "idle";
     case "blocked":
-    case "failed":
       return "attention";
+    case "failed":
+      return "failed";
     default:
       return "unknown";
   }
@@ -72,7 +75,8 @@ function ageLabel(node: OrgNode): string {
   if (typeof secs !== "number" || !Number.isFinite(secs)) return "";
   if (secs < 60) return `${Math.round(secs)}s ago`;
   if (secs < 3600) return `${Math.round(secs / 60)}m ago`;
-  return `${Math.round(secs / 3600)}h ago`;
+  if (secs < 86400) return `${Math.round(secs / 3600)}h ago`;
+  return `${Math.round(secs / 86400)}d ago`;
 }
 
 function moodGlyph(attention: number, total: number): string {
@@ -80,6 +84,23 @@ function moodGlyph(attention: number, total: number): string {
   if (attention === 0) return "☀";
   if (attention / total < 0.2) return "⛅";
   return "⛈";
+}
+
+function openDm(botUsername?: string) {
+  if (!botUsername) return;
+  const url = `https://t.me/${botUsername}`;
+  const tg = typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
+  if (tg?.openTelegramLink) tg.openTelegramLink(url);
+  else if (typeof window !== "undefined") window.open(url, "_blank", "noopener");
+}
+
+// Flatten every agent node with its department for lookups / attention band.
+function collectAgents(tree: OrgTree): { node: OrgNode; deptName: string }[] {
+  const out: { node: OrgNode; deptName: string }[] = [];
+  for (const dept of tree.root.children ?? []) {
+    for (const agent of dept.children ?? []) out.push({ node: agent, deptName: dept.displayName });
+  }
+  return out;
 }
 
 export default function HqClient() {
@@ -151,8 +172,8 @@ export default function HqClient() {
         <div className="hq-banner hq-banner-attention">
           <strong>DeloHQ isn’t wired up yet.</strong>
           <br />
-          Create the <strong>@DeloHQBot</strong> in BotFather and set{" "}
-          <code>TELEGRAM_HQ_BOT_TOKEN</code> on the Holocene web service, then reopen.
+          Create the <strong>@DeloHQBot</strong> in BotFather and set <code>TELEGRAM_HQ_BOT_TOKEN</code> on the
+          Holocene web service, then reopen.
         </div>
       </main>
     );
@@ -164,9 +185,9 @@ export default function HqClient() {
         <div className="hq-banner">
           <strong>Open this from Telegram.</strong>
           <br />
-          DeloHQ is a Telegram Mini App — launch it from the <strong>@DeloHQBot</strong> menu button so it
-          can prove who you are. (The page loads fine here, but the fleet data stays locked without a valid
-          Telegram session.)
+          DeloHQ is a Telegram Mini App — launch it from the <strong>@DeloHQBot</strong> menu button so it can
+          prove who you are. (The page loads fine here, but the org data stays locked without a valid Telegram
+          session.)
         </div>
       </main>
     );
@@ -196,48 +217,65 @@ export default function HqClient() {
     );
   }
 
-  return <Floor tree={state.tree} at={state.at} />;
+  return <Constellation tree={state.tree} at={state.at} />;
 }
 
-function AgentCard({ node }: { node: OrgNode }) {
+function Sparkline({ data }: { data?: number[] }) {
+  const values = data ?? [];
+  const has = values.some((v) => v > 0);
+  if (!has) return <span className="hq-spark-empty">no ticket velocity yet</span>;
+  const max = Math.max(...values, 1);
+  const w = 96;
+  const h = 22;
+  const step = values.length > 1 ? w / (values.length - 1) : w;
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 2) - 1).toFixed(1)}`).join(" ");
+  return (
+    <svg className="hq-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden>
+      <polyline points={pts} fill="none" stroke="var(--blue)" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function StatusDot({ tone }: { tone: Tone }) {
+  return <span className={`hq-dot hq-dot-${tone}`} />;
+}
+
+function AgentNode({ node, deptName, onOpen }: { node: OrgNode; deptName: string; onOpen: (n: OrgNode, dept: string) => void }) {
   const tone = toneOf(node.status);
-  const summary = node.live?.activeWork?.summary || node.live?.activeWork?.reason || "";
-  const issueId = node.live?.activeWork?.issueId;
-  const age = ageLabel(node);
   const isManager = node.employeeRole === "manager";
   return (
-    <article className={`hq-node hq-node-${tone}${isManager ? " hq-node-manager" : ""}`}>
-      <div className="hq-node-head">
-        <span className={`hq-dot hq-dot-${tone}`} />
+    <button
+      type="button"
+      className={`hq-node hq-node-${tone}${isManager ? " hq-node-manager" : ""}${tone === "attention" ? " hq-node-ring" : ""}`}
+      onClick={() => onOpen(node, deptName)}
+    >
+      <span className="hq-node-head">
+        <StatusDot tone={tone} />
         <span className="hq-node-name">{node.displayName || node.id}</span>
         {isManager ? <span className="hq-node-badge">lead</span> : null}
+      </span>
+      <span className="hq-node-sub">
+        <span className="hq-node-repo">{node.agentRef?.repo || node.id}</span>
         <span className="hq-node-state">{node.status}</span>
-      </div>
-      <div className="hq-node-repo">
-        {node.agentRef?.repo || node.id}
-        {node.agentRef?.planeIdentifier ? ` · ${node.agentRef.planeIdentifier}` : ""}
-      </div>
-      {summary ? <div className="hq-node-task">{summary}</div> : null}
-      {issueId || age ? (
-        <div className="hq-node-meta">
-          {issueId ? `${issueId} · ` : ""}
-          {age || "no heartbeat yet"}
-        </div>
-      ) : null}
-    </article>
+      </span>
+    </button>
   );
 }
 
-function Floor({ tree, at }: { tree: OrgTree; at: number }) {
-  const root = tree.root;
-  const departments = useMemo(
-    () => [...(root.children ?? [])].sort((a, b) => a.order - b.order),
-    [root.children]
+function Constellation({ tree, at }: { tree: OrgTree; at: number }) {
+  const [selected, setSelected] = useState<{ node: OrgNode; deptName: string } | null>(null);
+
+  const departments = useMemo(() => [...(tree.root.children ?? [])].sort((a, b) => a.order - b.order), [tree.root.children]);
+  const everyone = useMemo(() => collectAgents(tree), [tree]);
+  const attention = useMemo(
+    () => everyone.filter((e) => toneOf(e.node.status) === "attention" || toneOf(e.node.status) === "failed"),
+    [everyone]
   );
+  const working = useMemo(() => everyone.filter((e) => toneOf(e.node.status) === "working"), [everyone]);
 
   const totals = tree.totals ?? { agents: 0, working: 0, idle: 0, needsAttention: 0, unknown: 0 };
-  const idle = totals.idle;
   const updated = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const open = (node: OrgNode, deptName: string) => setSelected({ node, deptName });
 
   return (
     <main className="hq-shell">
@@ -245,14 +283,21 @@ function Floor({ tree, at }: { tree: OrgTree; at: number }) {
         <div>
           <p className="hq-eyebrow">{tree.company?.name || "Company"}</p>
           <h1>The Org</h1>
-          <p className="hq-ceo">
-            {root.displayName} · <span>{root.title}</span>
-          </p>
         </div>
         <span className="hq-mood" title="Company mood">
           {moodGlyph(totals.needsAttention, totals.agents)}
         </span>
       </header>
+
+      {/* CEO node at the top of the constellation */}
+      <div className="hq-ceo-wrap">
+        <div className="hq-ceo-node">
+          <span className="hq-ceo-avatar">{(tree.root.displayName || "?").slice(0, 1).toUpperCase()}</span>
+          <span className="hq-ceo-name">{tree.root.displayName}</span>
+          <span className="hq-ceo-title">{tree.root.title}</span>
+        </div>
+        <span className="hq-trunk" aria-hidden />
+      </div>
 
       <section className="hq-metrics">
         <div className="hq-metric">
@@ -268,10 +313,30 @@ function Floor({ tree, at }: { tree: OrgTree; at: number }) {
           <strong>{totals.needsAttention}</strong>
         </div>
         <div className="hq-metric">
-          <span>Idle</span>
-          <strong>{idle}</strong>
+          <span>Offline</span>
+          <strong>{totals.unknown}</strong>
         </div>
       </section>
+
+      {attention.length ? (
+        <section className="hq-attn">
+          <p className="hq-attn-label">▲ Needs attention</p>
+          <div className="hq-attn-row">
+            {attention.map(({ node, deptName }) => (
+              <button key={node.id} type="button" className="hq-attn-chip" onClick={() => open(node, deptName)}>
+                <StatusDot tone={toneOf(node.status)} />
+                {node.displayName || node.id}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {working.length ? (
+        <p className="hq-ticker">
+          ⚡ Right now: {working.map((w) => w.node.displayName || w.node.id).join(" · ")}
+        </p>
+      ) : null}
 
       {tree.unmapped?.length ? (
         <div className="hq-banner hq-banner-attention hq-unmapped">
@@ -280,29 +345,106 @@ function Floor({ tree, at }: { tree: OrgTree; at: number }) {
         </div>
       ) : null}
 
-      {departments.map((dept) => {
-        const roll = dept.rollup ?? { agents: 0, working: 0, needsAttention: 0 };
-        return (
-          <section key={dept.id} className="hq-dept">
-            <div className="hq-dept-head">
-              <span className="hq-dept-name">{dept.displayName}</span>
-              <span className="hq-dept-roll">
-                {roll.agents} · {roll.working} working
-                {roll.needsAttention ? ` · ${roll.needsAttention} needs attn` : ""}
-              </span>
-            </div>
-            <div className="hq-grid">
-              {(dept.children ?? []).map((agent) => (
-                <AgentCard key={agent.id} node={agent} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      <section className="hq-clusters">
+        {departments.map((dept) => {
+          const roll = dept.rollup ?? { agents: 0, working: 0, needsAttention: 0 };
+          const manager = (dept.children ?? []).find((c) => c.employeeRole === "manager");
+          const contributors = (dept.children ?? []).filter((c) => c.employeeRole !== "manager");
+          return (
+            <section key={dept.id} className="hq-cluster">
+              <div className="hq-cluster-head">
+                <span className="hq-cluster-name">{dept.displayName}</span>
+                <span className="hq-cluster-roll">
+                  <span className="hq-pip">{roll.agents}</span>
+                  {roll.working ? <span className="hq-pip hq-pip-working">{roll.working} working</span> : null}
+                  {roll.needsAttention ? <span className="hq-pip hq-pip-attention">{roll.needsAttention} attn</span> : null}
+                </span>
+              </div>
+              {manager ? <AgentNode node={manager} deptName={dept.displayName} onOpen={open} /> : null}
+              {contributors.length ? (
+                <div className="hq-cluster-grid">
+                  {contributors.map((agent) => (
+                    <AgentNode key={agent.id} node={agent} deptName={dept.displayName} onOpen={open} />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </section>
 
       <p className="hq-foot">
         {totals.agents} agents · {departments.length} departments · updated {updated} · refreshes every 5s
       </p>
+
+      {selected ? <Office entry={selected} onClose={() => setSelected(null)} /> : null}
     </main>
+  );
+}
+
+function Office({ entry, onClose }: { entry: { node: OrgNode; deptName: string }; onClose: () => void }) {
+  const { node, deptName } = entry;
+  const tone = toneOf(node.status);
+  const work = node.live?.activeWork;
+  const summary = work?.summary || work?.reason || "";
+  const bot = node.agentRef?.botUsername;
+  const expertise = node.metadata?.expertise ?? [];
+
+  return (
+    <div className="hq-sheet-backdrop" onClick={onClose}>
+      <div className="hq-sheet" role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
+        <div className="hq-sheet-grip" />
+        <div className="hq-sheet-head">
+          <StatusDot tone={tone} />
+          <div className="hq-sheet-id">
+            <span className="hq-sheet-name">{node.displayName || node.id}</span>
+            <span className="hq-sheet-title">
+              {node.title}
+              {node.employeeRole === "manager" ? " · lead" : ""} · {deptName}
+            </span>
+          </div>
+          <span className={`hq-pill hq-pill-${tone}`}>{node.status}</span>
+        </div>
+
+        <div className="hq-sheet-meta">
+          <span className="hq-sheet-repo">{node.agentRef?.repo || node.id}</span>
+          {node.agentRef?.planeIdentifier ? <span className="hq-sheet-plane">{node.agentRef.planeIdentifier}</span> : null}
+        </div>
+
+        <div className="hq-sheet-block">
+          <span className="hq-sheet-k">Current task</span>
+          <span className="hq-sheet-v">
+            {summary || "—"}
+            {work?.issueId ? <span className="hq-sheet-issue"> {work.issueId}</span> : null}
+          </span>
+        </div>
+
+        <div className="hq-sheet-block">
+          <span className="hq-sheet-k">Heartbeat</span>
+          <span className="hq-sheet-v">{ageLabel(node) || "no heartbeat yet"}</span>
+        </div>
+
+        <div className="hq-sheet-block">
+          <span className="hq-sheet-k">Ticket velocity · 7d</span>
+          <span className="hq-sheet-v">
+            <Sparkline data={node.live?.sparkline} />
+          </span>
+        </div>
+
+        {expertise.length ? (
+          <div className="hq-sheet-tags">
+            {expertise.map((x) => (
+              <span key={x} className="hq-tag">
+                {x}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <button type="button" className="hq-dm" disabled={!bot} onClick={() => openDm(bot)}>
+          {bot ? "Open DM →" : "No bot linked"}
+        </button>
+      </div>
+    </div>
   );
 }

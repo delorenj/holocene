@@ -40,6 +40,7 @@ export type LiveAgentState = {
     lastHeartbeatAt?: string;
     ageSeconds?: number;
   };
+  sparkline?: number[]; // recent per-day ticket-velocity counts (oldest → newest)
   updatedAt?: string;
 };
 
