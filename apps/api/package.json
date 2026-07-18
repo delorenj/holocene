@@ -9,9 +9,12 @@
     "start": "node dist/server.js",
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@holocene/bloodbank-client": "workspace:*",
+    "@holocene/lifecycle-client": "workspace:*",
     "@holocene/org-model": "workspace:*",
     "@holocene/system-actions": "workspace:*",
     "dotenv": "^17.4.2",

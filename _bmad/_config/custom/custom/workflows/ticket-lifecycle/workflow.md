@@ -2,10 +2,12 @@
 
 ## Status
 
-This project-specific workflow is corrected but not executable. The standalone
-Lifecycle component, its canonical Bloodbank command/event contracts, and the
-Momo/Holocene clients are not implemented. The tested controller under
-Bloodbank is the extraction embryo, not a deployed authority.
+This project-specific client protocol is implemented. Lifecycle is the
+standalone authority, Bloodbank supplies the canonical contracts and transport,
+Candystore supplies the durable read projection, Momo supplies the bounded
+policy/invocation seam, and Holocene supplies the read/action surface. Root
+Compose owns deployment and bootstrap; none of these clients gains authority
+when the workflow is enabled.
 
 ## Purpose
 
@@ -31,8 +33,9 @@ Bloodbank owns transport and schemas. Candystore owns history/read models.
 PJangler owns project/bootstrap identity. Momo never calculates or writes
 lifecycle truth. Holocene never calculates it either.
 
-Provider boards and direct tp/Trello transitions are legacy current paths. They
-may be inspected as migration projections but cannot satisfy this workflow.
+Provider boards may be inspected as external observations or projections, but
+direct provider transitions cannot satisfy this workflow and are never fallback
+lifecycle truth.
 
 ## Modes
 

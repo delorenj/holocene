@@ -1,5 +1,5 @@
 {
-  "name": "@holocene/bloodbank-client",
+  "name": "@holocene/lifecycle-client",
   "version": "0.0.1",
   "type": "module",
   "main": "src/index.ts",
@@ -8,12 +8,9 @@
     "dev": "tsc -w -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint:todo'",
+    "lint": "echo 'lint:covered-by-typecheck'",
     "test": "tsx --test src/*.test.ts",
     "clean": "rm -rf dist"
-  },
-  "dependencies": {
-    "@holocene/module-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

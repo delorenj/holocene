@@ -27,6 +27,7 @@ import {
   openSystemsPreviewTerminal,
   systemsItemAction
 } from "./systems.js";
+import { registerLifecycleRoutes } from "./lifecycle.js";
 
 const N8N_WEBHOOK_BASE_URL = (process.env.N8N_WEBHOOK_BASE_URL ?? "https://n8n.delo.sh").replace(/\/$/, "");
 const N8N_WEBHOOK_AUTH_HEADER = process.env.N8N_WEBHOOK_AUTH_HEADER ?? "";
@@ -161,6 +162,8 @@ app.addHook("onRequest", async (req, reply) => {
 });
 
 app.get("/health", async () => ({ ok: true, service: "holocene-api" }));
+
+registerLifecycleRoutes(app);
 
 async function forwardClockAction(action: "in" | "out") {
   const targetState = action === "in" ? "clocked_in" : "clocked_out";

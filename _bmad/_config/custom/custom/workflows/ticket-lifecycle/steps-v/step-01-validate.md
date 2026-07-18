@@ -28,8 +28,9 @@
 
 - Source/generated custom workflow copies are byte-identical in Momo/Holocene.
 - Historical backup files are excluded from authoritative execution and scans.
-- execution_enabled remains false until the external Lifecycle gate is proven.
-- Documentation states that extraction, migration, wiring, and deployment have
-  not occurred.
+- execution_enabled is true only for this bounded client protocol; it never
+  enables local lifecycle authority.
+- Current implementation and deployment evidence is attached to the owning
+  component/root validation record.
 
 Validation passes only when all checks above pass with evidence.

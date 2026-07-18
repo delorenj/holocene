@@ -13,6 +13,5 @@ Render authoritative truth and preserve an auditable policy decision.
 4. Mark the pass complete, blocked, or waiting based on authoritative results.
 5. Name the next legal action or state that none is available.
 
-Do not describe the ticket as transitioned by Momo and do not claim the
-standalone Lifecycle vertical slice exists until implementation evidence proves
-it.
+Do not describe the ticket as transitioned by Momo. Cite the authoritative
+Lifecycle snapshot/verdict and the owning component/root validation evidence.

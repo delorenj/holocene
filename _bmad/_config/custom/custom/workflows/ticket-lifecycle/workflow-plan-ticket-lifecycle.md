@@ -1,4 +1,4 @@
-# Ticket Lifecycle Workflow Plan
+# Ticket Lifecycle Client Implementation Record
 
 ## Approved correction
 
@@ -7,15 +7,18 @@ workflow embedded a local state machine and provider writes in Momo/Holocene.
 The corrected workflow is a client protocol over one headless Lifecycle
 authority.
 
-## Current evidence
+## Implemented current slice
 
-- No standalone Lifecycle repository, service, or root Compose entry exists.
-- Bloodbank contains a tested deterministic controller embryo with leased
-  reconcile work, atomic current state/history/outbox persistence, and a sweeper.
-- Its default outbox publisher is unconfigured.
-- Its emitted blocker event lacks a registered schema, and initial status
-  payloads can violate the registered contract.
-- Momo and Holocene contain planning/workflow surfaces but no conforming client.
+- Lifecycle is the standalone state/reconcile authority and is deployed by the
+  root Compose topology from an immutable image.
+- Bloodbank contains the canonical versioned lifecycle schemas and NATS/JetStream
+  transport.
+- Candystore durably consumes lifecycle events/replies and exposes a read-only,
+  freshness-aware projection.
+- Momo filters authoritative frontier/obligations and emits canonical
+  skill-invocation and lifecycle command intent through Bloodbank.
+- Holocene renders Candystore's projection and publishes high-level canonical
+  commands without optimistic local transition state.
 
 ## Target responsibilities
 
@@ -47,17 +50,16 @@ authority.
 - Provider projections cannot override Lifecycle state.
 - An unavailable authority is a visible blocker, never an empty/healthy state.
 
-## Extraction and cutover dependency
+## Operational boundary
 
-Freeze vocabulary and versions; close Bloodbank schema/outbox gaps; extract the
-controller with git history; add missing spec/frontier/obligation/capability and
-command behavior; back up and migrate state/history/outbox with row, key,
-fingerprint, replay, and rollback checks; then cut Momo and Holocene clients over.
-Only after those gates may root Compose add one Lifecycle service.
+Clients always refetch after intent and treat queued transport acknowledgement as
+non-authoritative. Lifecycle rejection, stale data, missing grants, or transport
+outage remains visible and fail-closed. Provider state, board state, local files,
+and UI clicks never substitute for the authoritative projection.
 
 ## Success criteria
 
 The source and generated workflow copies are byte-identical. Validation proves
 one writer, deterministic replay, idempotency, version conflicts, capability
 denial, unavailable-service behavior, history continuity, and absence of direct
-Momo/Holocene provider transitions. Documentation does not claim deployment.
+Momo/Holocene provider transitions.

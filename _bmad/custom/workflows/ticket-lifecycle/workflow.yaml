@@ -1,8 +1,8 @@
 name: ticket-lifecycle
 description: "Momo client protocol for authoritative project lifecycle"
 version: "3.0.0"
-status: blocked_unimplemented_dependency
-execution_enabled: false
+status: client_protocol_implemented
+execution_enabled: true
 
 authority:
   lifecycle: "sole writer of versioned spec/state and sole calculator of reconcile, frontier, obligations, and capability validity"

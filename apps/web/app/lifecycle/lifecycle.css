@@ -1,0 +1,345 @@
+.lifecycle-shell {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1240px;
+  padding: 32px;
+}
+
+.lifecycle-hero {
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 28px;
+  justify-content: space-between;
+  padding: 18px 0 24px;
+}
+
+.lifecycle-back {
+  color: var(--muted);
+  display: inline-block;
+  font-size: 0.82rem;
+  margin-bottom: 20px;
+  text-decoration: none;
+}
+
+.lifecycle-back:hover {
+  color: var(--blue);
+}
+
+.lifecycle-hero h1 {
+  font-size: clamp(2rem, 5vw, 4.4rem);
+  letter-spacing: -0.045em;
+  max-width: 900px;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-id {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  margin-top: 12px;
+}
+
+.lifecycle-state {
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  display: grid;
+  flex: 0 0 170px;
+  gap: 4px;
+  min-height: 116px;
+  padding: 16px;
+}
+
+.lifecycle-state span,
+.lifecycle-state small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.lifecycle-state strong {
+  font-size: 1.35rem;
+}
+
+.lifecycle-state-current {
+  border-left-color: var(--green);
+}
+
+.lifecycle-state-stale,
+.lifecycle-state-missing {
+  border-left-color: var(--yellow);
+}
+
+.lifecycle-alert {
+  align-items: baseline;
+  background: #201b16;
+  border: 1px solid #5a492a;
+  color: var(--yellow);
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.lifecycle-alert span {
+  color: #ddcda6;
+}
+
+.lifecycle-metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.lifecycle-metric {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  min-height: 88px;
+  padding: 14px;
+}
+
+.lifecycle-metric-wide {
+  grid-column: span 2;
+}
+
+.lifecycle-metric span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.lifecycle-metric strong {
+  align-self: end;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lifecycle-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.lifecycle-panel-full {
+  grid-column: 1 / -1;
+}
+
+.lifecycle-panel > header {
+  align-items: baseline;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.lifecycle-panel > header span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.lifecycle-panel-body {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.lifecycle-key-value {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(38, 50, 77, 0.6);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(100px, 0.45fr) minmax(0, 1fr);
+  padding: 7px 0;
+}
+
+.lifecycle-key-value span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.lifecycle-key-value strong {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.lifecycle-note,
+.lifecycle-empty {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.lifecycle-action-context {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lifecycle-action-context label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.76rem;
+  gap: 7px;
+}
+
+.lifecycle-action-context input,
+.lifecycle-action-context select {
+  background: #0f1729;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 42px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.lifecycle-cards {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.lifecycle-card,
+.lifecycle-list-item,
+.lifecycle-verdicts article {
+  background: #0f1729;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.lifecycle-card-head,
+.lifecycle-list-item > div {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.lifecycle-card strong,
+.lifecycle-list-item strong {
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-card p,
+.lifecycle-card small,
+.lifecycle-list-item p,
+.lifecycle-list-item span,
+.lifecycle-verdicts small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.lifecycle-card button {
+  justify-self: stretch;
+  margin-top: 6px;
+}
+
+.lifecycle-allowed,
+.lifecycle-denied,
+.lifecycle-verdict {
+  border: 1px solid currentColor;
+  font-size: 0.68rem;
+  padding: 3px 6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lifecycle-allowed,
+.lifecycle-verdict-applied,
+.lifecycle-verdict-idempotent {
+  color: var(--green);
+}
+
+.lifecycle-denied,
+.lifecycle-verdict-stale,
+.lifecycle-verdict-illegal,
+.lifecycle-verdict-unauthorized,
+.lifecycle-verdict-malformed {
+  color: var(--red);
+}
+
+.lifecycle-command-ok {
+  border-left: 3px solid var(--green);
+  color: var(--green);
+  padding: 10px 12px;
+}
+
+.lifecycle-command-error {
+  border-left: 3px solid var(--red);
+  color: var(--red);
+  padding: 10px 12px;
+}
+
+.lifecycle-list-item code {
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-verdicts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.lifecycle-verdicts article {
+  align-content: start;
+}
+
+.lifecycle-verdicts .lifecycle-verdict {
+  justify-self: start;
+}
+
+@media (max-width: 820px) {
+  .lifecycle-shell {
+    padding: 18px;
+  }
+
+  .lifecycle-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .lifecycle-state {
+    flex-basis: auto;
+    min-height: 0;
+  }
+
+  .lifecycle-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lifecycle-metric-wide {
+    grid-column: 1 / -1;
+  }
+
+  .lifecycle-grid,
+  .lifecycle-action-context {
+    grid-template-columns: 1fr;
+  }
+
+  .lifecycle-panel > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lifecycle-panel > header span {
+    text-align: left;
+  }
+}

@@ -17,6 +17,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@holocene/bloodbank-client':
+        specifier: workspace:*
+        version: link:../../packages/bloodbank-client
+      '@holocene/lifecycle-client':
+        specifier: workspace:*
+        version: link:../../packages/lifecycle-client
       '@holocene/org-model':
         specifier: workspace:*
         version: link:../../packages/org-model
@@ -51,6 +57,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@holocene/lifecycle-client':
+        specifier: workspace:*
+        version: link:../../packages/lifecycle-client
       '@holocene/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
@@ -88,6 +97,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.1
         version: 18.3.7(@types/react@18.3.29)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.3
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -98,6 +110,24 @@ importers:
         specifier: workspace:*
         version: link:../module-sdk
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.1
+        version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.3
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/lifecycle-client:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.1
+        version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.3
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
