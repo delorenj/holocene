@@ -1,39 +1,39 @@
-# ticket-lifecycle workflow configuration
-# Edit these values via the edit mode (steps-e/)
+name: ticket-lifecycle
+description: "Momo client protocol for authoritative project lifecycle"
+version: "3.0.0"
+status: blocked_unimplemented_dependency
+execution_enabled: false
 
-# AC Sufficiency Rubric Criteria
-ac_rubric:
-  require_non_empty: true
-  require_testable_assertions: true
-  require_enumerated_items: true
-  require_fr_coverage: true
+authority:
+  lifecycle: "sole writer of versioned spec/state and sole calculator of reconcile, frontier, obligations, and capability validity"
+  bloodbank: "canonical schemas/contracts and NATS/Dapr transport"
+  candystore: "durable event history and rebuildable read models"
+  pjangler: "project/bootstrap identity and binding inputs"
+  momo: "business policy, legal-work selection, delegation, review, observations, evidence, and intent"
+  holocene: "renderer and high-level command client"
 
-# QA Retry Limits
-qa:
-  max_retries: 3
+required_snapshot_fields:
+  - lifecycle_id
+  - project_id
+  - spec_version
+  - state_version
+  - provenance
+  - observed_at
+  - legal_frontier
+  - obligations
+  - blockers
+  - capability_grants
 
-# Staleness Detection (durations in minutes)
-staleness:
-  triage: 10
-  refining: 30
-  in_progress: 120
-  review: 15
-  qa: 60
+required_command_fields:
+  - command_id
+  - idempotency_key
+  - lifecycle_id
+  - expected_state_version
+  - actor
+  - capability
+  - intent
 
-# Bloodbank Event Configuration
-events:
-  topic_prefix: "ticket"
-  include_project_id: true
-  include_ticket_id: true
-
-# Plane State Mapping
-states:
-  backlog: "Backlog"
-  triage: "Triage"
-  refining: "Refining"
-  ready: "Ready"
-  in_progress: "In Progress"
-  review: "Review"
-  qa: "QA"
-  done: "Done"
-  blocked: "Blocked"
+modes:
+  create: steps-c/step-01-init.md
+  edit: steps-e/step-01-assess.md
+  validate: steps-v/step-01-validate.md

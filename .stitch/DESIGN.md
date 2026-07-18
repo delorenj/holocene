@@ -151,6 +151,33 @@ page organizes around **collections of status-bearing items** — agents, ticket
 services, tooling checks, containers — each carrying a state that the operator
 scans at a glance.
 
+## Lifecycle Rendering Boundary
+
+Holocene is a dashboard/renderer and high-level command surface. It never
+calculates or writes project-lifecycle truth. The approved separate headless
+Lifecycle component owns versioned spec/state, deterministic reconciliation,
+legal frontier, obligations, blockers, and capability validation. Bloodbank
+owns canonical schemas/transport, Candystore owns durable history/read models,
+and PJangler owns project/bootstrap identity.
+
+The standalone Lifecycle service and Holocene client are not implemented. The
+current Bloodbank controller is only an extraction embryo; the live Holocene
+Bloodbank client is a stub and Candystore history is not current-state proof.
+
+When the target client exists, every lifecycle view must render:
+
+- lifecycle/project identity, spec version, and state version;
+- provenance, observed time, freshness, and explicit unavailable/stale state;
+- legal frontier, obligations, blockers, and capability context;
+- command status as pending, accepted, rejected, stale, denied, or unavailable;
+- history from Candystore distinctly from the authoritative current snapshot.
+
+Controls submit idempotent high-level intent with expected state version and
+capability context through Bloodbank. They never optimistically change a status
+pill or derive a transition from board lanes, agent health, or event history.
+Color communicates the authoritative result; it must not conceal unknown or
+stale provenance.
+
 The top-level information architecture is four tabs, defaulting to **Fleet**:
 
 - **Fleet** — the home view. A four-metric summary (`Agents`, `Working`,

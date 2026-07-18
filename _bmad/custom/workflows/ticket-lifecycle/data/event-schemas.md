@@ -1,58 +1,36 @@
-# Bloodbank Event Schemas
+# Lifecycle Contract Requirements
 
-Reference for events broadcast during ticket lifecycle execution.
-Source schemas: ~/code/33GOD/holyfields/schemas/agent/
+Bloodbank owns the canonical schema IDs and transport subjects. This workflow
+must not invent executable event names or publish an unregistered payload.
 
-## ticket.state_changed
+## Snapshot/read contract
 
-Broadcast at every state transition. Primary event for this workflow.
+Required data includes lifecycle/project identity, spec/state versions,
+provenance, observation time, legal frontier, obligations, blockers, and
+capability grants.
 
-```json
-{
-  "event_type": "ticket.state_changed",
-  "version": "v1",
-  "payload": {
-    "project_id": "{from ticket_provider.board_id in .project.json}",
-    "ticket_id": "{plane ticket ID}",
-    "previous_state": "{state before transition}",
-    "new_state": "{state after transition}",
-    "trigger_source": "ticket-lifecycle-workflow",
-    "timestamp": "{ISO 8601}"
-  }
-}
-```
+## Intent command contract
 
-## ticket.stale
+Required data includes command ID, idempotency key, lifecycle ID, expected state
+version, actor identity, capability/grant context, intent, and evidence
+references. Delivery is single-consumer.
 
-Broadcast when a ticket exceeds max duration in any state.
+## Result contract
 
-```json
-{
-  "event_type": "ticket.stale",
-  "version": "v1",
-  "payload": {
-    "project_id": "{from ticket_provider.board_id in .project.json}",
-    "ticket_id": "{plane ticket ID}",
-    "stuck_state": "{state ticket is stuck in}",
-    "duration_minutes": "{how long it has been in this state}",
-    "max_duration_minutes": "{configured max from workflow.yaml}",
-    "timestamp": "{ISO 8601}"
-  }
-}
-```
+Required data distinguishes accepted, rejected, stale, denied, duplicate, and
+unavailable outcomes and includes the authoritative resulting state version.
 
-## Existing Holyfields Schemas Used
+## Observation/evidence contract
 
-These are published via Bloodbank CLI at ~/code/33GOD/bloodbank/
+Observations never mutate state directly. They identify the lifecycle, source,
+observation/evidence kind, causation/correlation, and immutable evidence
+references so Lifecycle can reconcile deterministically.
 
-- `agent.task.assigned` - When sub-agent receives work
-- `agent.task.completed` - When sub-agent finishes work
-- `agent.message.sent` - For audit trail notifications
+## Momo decision provenance
 
-## Publishing
+The existing Bloodbank repo decision event may audit Momo's business reasoning.
+It cannot serve as an intent command, capability grant, obligation result, or
+state transition.
 
-```bash
-# Example: publish state change event
-cd ~/code/33GOD/bloodbank
-./publish.sh ticket.state_changed '{payload_json}'
-```
+Before execution is enabled, every contract above must be registered and pass
+Bloodbank schema, runtime, naming, producer, consumer, and replay validation.

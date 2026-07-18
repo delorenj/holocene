@@ -1,67 +1,49 @@
-# Continuous ticket orchestration (Scrum Master engine)
+# Continuous PM/EM Policy Orchestration
 
-Status: Scrum Master engine protocol (provider-agnostic)
+Status: corrected target protocol; blocked on Lifecycle implementation.
 
 ## Invariant
 
-If a ready ticket exists, exactly one implementation worker must be actively
-moving it, or the Scrum Master records why none can. Prefer one live thread over
-a quiet backlog. WIP limit: one active worker ticket.
+When Lifecycle exposes legal executable work, exactly one implementation worker
+is active or the PM records why no legal action was selected. WIP=1 prevents
+duplicate workers. Command idempotency, expected state versions, and capability
+validation prevent duplicate/conflicting state writes.
 
-The Scrum Master owns the watch loop. Workers (codex, opencode, copilot, …) own
-implementation. The Scrum Master does not write application code or approve
-merges. It may close a ticket only via the autonomous delegated-review protocol
-(`autonomous-delegated-review.md`).
+## Source order
 
-## Ticket access
+1. PJangler project/bootstrap identity.
+2. Authoritative Lifecycle snapshot: identity, spec/state versions, provenance,
+   freshness, frontier, obligations, blockers, and grants.
+3. Local evidence and live worker/Kanban state.
+4. Provider board and Candystore history as projections only.
 
-All board access goes through the adapter (`tp`, from
-`.scripts/lib/ticket-provider.sh`) and reasons in normalized states:
-`backlog | unstarted | started | in_review | completed`. Never call the provider
-directly — the engine is identical across Linear, Plane, and Trello.
+When sources disagree, submit the discrepancy as an observation. Lifecycle
+remains authoritative; the PM does not choose or write a winning state.
 
-## Work-state feed
+## Policy pass
 
-Every heartbeat/pass keeps `runtime/continuous-ticket-sentinel-state.json`
-current and machine-readable: `source`, `agent_id`, `repo`, `ticket_provider`,
-`status` (`idle|checking|active|blocked|stalled|error`), `active_issue`,
-`summary`, `reason`, `session`, `worktree`, `updated_at`, `last_activity_at`,
-`log_path`.
+1. Fetch the authoritative snapshot.
+2. Monitor an existing healthy worker, if any.
+3. Otherwise rank only legal frontier items by product/business policy.
+4. Submit idempotent work-start intent with expected state version.
+5. Delegate exactly one worker only after acceptance.
+6. Collect evidence and independent review; submit both as observations.
+7. Refetch and follow only the new legal frontier.
+8. Render accepted, rejected, stale, denied, duplicate, blocked, or unavailable
+   outcomes in the PM feed.
 
-## Source order (each pass)
+## Current adapter boundary
 
-1. Active milestone (`tp active_milestone`) and issues (`tp list_issues`).
-2. Local evidence under `_bmad-output/implementation-artifacts/issue-evidence/`.
-3. Live worker state: zellij sessions, worktrees, branches, recent git.
-
-When sources disagree, record a truth-check note and keep the issue open.
-
-## Ticket selection (when no worker active)
-
-1. A blocked/review ticket needing only agent-doable evidence repair.
-2. An unblocked issue in the current milestone.
-3. A small, high-priority backlog issue when the milestone has no ready ticket.
-
-Move the chosen issue to `started` (`tp transition <id> started`) and create/
-refresh its evidence file. In bridge mode, spawn work by creating or refreshing
-one linked Hermes Kanban execution card (WIP=1) rather than direct ad-hoc
-worker dispatch. Preferred command path:
-`.scripts/scrum-master/bin/kanban-bridge-enqueue.sh <ISSUE_ID> <ASSIGNEE_PROFILE>`.
+The tp adapter may read provider projections and post signed notes during
+migration. Its transition operation and the existing --close script are legacy
+direct writers and cannot satisfy the target protocol.
 
 ## Stop conditions
 
-Stop without spawning only when: the board/evidence cannot be inspected; every
-candidate is blocked by external evidence/credentials/product decisions (a
-ticket blocked **only** on human review is NOT a stop condition — route it to
-delegated review); a worker is already active and healthy; or the next action
-needs destructive git ops / production credentials / a paid action.
+Stop without dispatch when Lifecycle/grants/contracts are unavailable; no legal
+action exists; a worker is already healthy; every legal candidate needs an
+external/paid/destructive action; or business intent is genuinely undecided.
+Never invent a provider transition to escape a blocker.
 
-## Review and closure
-
-1. Run ticket verification.
-2. Run the close gate: `.scripts/scrum-master/bin/issue-close-gate.sh <ISSUE>`.
-3. Gate pass → recommend closure; human-review-only + grace elapsed → autonomous
-   delegated review (`autonomous-delegated-review.md`).
-4. Gate fail → leave open, record missing evidence.
-
-Board status is not proof. Repository evidence and the close gate are proof.
+Board status is not proof. Evidence is an input. Lifecycle deterministically
+evaluates that input and owns the resulting state.

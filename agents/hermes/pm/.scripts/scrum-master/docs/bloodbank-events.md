@@ -1,48 +1,44 @@
-# Scrum Master workflow events
+# PM Client Events and Commands
 
-Status: Scrum Master engine protocol (provider-agnostic)
+Status: corrected contract guidance; canonical Lifecycle schemas remain an
+implementation dependency.
 
-## Purpose
+## Authority
 
-Local workflow events are the machine-readable timeline of the sentinel loop.
-The board remains the human command center; issue evidence files remain the
-close gate; this JSONL spool lets Hermes, dashboards, and future agents observe
-what happened.
+Bloodbank owns canonical schema IDs, CloudEvents envelopes, NATS/Dapr subjects,
+and command delivery rules. Lifecycle owns the domain result. Candystore stores
+durable event history/read models. The PM does not turn a local event into a
+state transition.
 
-## Emitter
+## Local diagnostic spool
 
-```bash
-.scripts/scrum-master/bin/emit-event.py <event_type> --field key=value [...]
-```
+The current emit-event.py script appends repo-lane events to
+_bmad-output/implementation-artifacts/bloodbank-events.jsonl. Those entries are
+diagnostic/audit observations. They are not canonical Lifecycle commands and
+may not be used as proof of current state.
 
-Appends to `_bmad-output/implementation-artifacts/bloodbank-events.jsonl`
-(git-ignored dev spool) using the Hermes CloudEvents envelope shape. Event types
-use the project repo lane `bloodbank.v1.repo.<repo>.<entity>.<action>`, where
-`<repo>` comes from `role.yaml`.
+## Target command requirements
 
-## Event types
+Every state-changing intent must use a registered Bloodbank command contract
+with command ID, idempotency key, lifecycle ID, expected state version, actor,
+capability/grant context, intent, and evidence references. Delivery is
+single-consumer.
 
-| Event type | When | Required data |
-| --- | --- | --- |
-| `…repo.<repo>.issue.evidence.created` | Evidence file created | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.gate.passed` | Close gate passes | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.gate.failed` | Close gate fails | `issue`, `evidence_file` |
-| `…repo.<repo>.issue.autonomous_review.decided` | Independent reviewer decides a human-review-only ticket on the operator's behalf | `issue`, `decision` (`closed`/`held`), `drift`, `close_gate`, `reviewer_agent`, `evidence_file`, `report_file` |
-| `…repo.<repo>.issue.truthcheck.flagged` | Status/evidence mismatch found | `issue`, `reason` |
+The result must distinguish accepted, rejected, stale, denied, duplicate, and
+unavailable outcomes and include the authoritative resulting state version.
 
-## Rules
+## Observations and evidence
 
-- Emit events for consequential transitions; do not invent types casually.
-- Event emission never replaces the board update or issue evidence.
-- If emission fails, continue and report the trail is incomplete.
-- Autonomous closure is legitimate only when
-  `issue.autonomous_review.decided` is emitted with `decision=closed` and
-  `close_gate=pass` by `bin/issue-autonomous-review.sh`. That script will not
-  emit a `closed` decision while the close gate fails or drift is `significant`.
+Evidence-created, gate, review, truth-check, worker, and blocker reports are
+observations. Lifecycle may reconcile them; their emission alone never changes
+state. Promote a local type only after schema, naming, runtime, producer,
+consumer, replay, and compatibility validation in Bloodbank.
 
-## Canonical BloodBank
+## Decision provenance
 
-These project-local repo-lane events are BloodBank-*style*. Promote a type to a
-canonical NATS subject only after adding its JSON Schema to the BloodBank schema
-tree and passing validation. The local emitter does not require NATS so the loop
-stays reliable offline.
+A repo decision event records the PM's business choice, pillar basis, and
+reasoning. It cannot serve as a capability grant, obligation result, intent
+command, or transition.
+
+If Bloodbank or Lifecycle is unavailable, preserve the local diagnostic record,
+surface the outage, and stop the target state-changing pass.

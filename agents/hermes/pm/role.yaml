@@ -19,9 +19,10 @@ profile: holocene-pm
 # Telegram bot identity (one bot per agent — see docs/architecture.md).
 telegram:
   bot_username: "HolocenePMBot"
-# Ticket-provider binding (linear | plane | trello).
-# The Scrum Master sentinel talks ONLY to this via .scripts/lib/ticket-provider.sh;
-# swapping providers is a one-line change here. Filled in by 42-ticket-provider.sh.
+# Ticket-provider projection binding (linear | plane | trello), supplied as
+# PJangler/bootstrap identity. The current sentinel adapter can write directly,
+# but that is a legacy path. Target state changes use the versioned/idempotent
+# Lifecycle command contract; this binding never becomes lifecycle authority.
 ticket_provider:
   name: plane
   board_id: "727a2b17-a1dd-46f6-b583-afa5a2d2cdae"

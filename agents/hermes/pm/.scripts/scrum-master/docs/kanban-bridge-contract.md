@@ -1,172 +1,71 @@
-# Kanban bridge contract for Scrum Master
+# Kanban Execution Bridge Contract
 
-Status: draft implementation contract (hybrid command plane + execution plane)
+Status: corrected target contract; implementation is not complete.
 
 ## Overview
 
-This contract marries two systems without diluting either one:
+The bridge connects three distinct responsibilities:
 
-- Scrum Master sentinel stays the command plane (policy, truth, closure).
-- Hermes Kanban becomes the execution plane (worker dispatch, retries,
-  heartbeats, dependency graph).
+- Lifecycle is the state/command authority.
+- The Momo/Hermes PM is the business-policy and delegation client.
+- Hermes Kanban is the worker execution plane.
 
-Core principle: board status is not proof. Close-gate evidence remains proof.
+Neither the PM nor Kanban calculates lifecycle truth. Provider boards are
+projections behind Lifecycle's adapter boundary.
 
-## Why this architecture
+## Ownership
 
-The existing Scrum Master rules are strong at governance:
+### Lifecycle owns
 
-- Provider-agnostic ticket adapter (`tp`) over Plane/Linear/Trello.
-- WIP=1 expectation for active implementation work.
-- Evidence-first close gate (`issue-close-gate.sh`).
-- Autonomous delegated review path with drift protection.
-- Bloodbank event trail for consequential transitions.
+- versioned spec/state and deterministic reconciliation;
+- legal frontier, obligations, blockers, gates, and checkpoints;
+- capability validation, command idempotency, and provider projection writes.
 
-Hermes Kanban is strong at execution durability:
+### PM client owns
 
-- Isolated workers with role-specific skills.
-- Long-running queue semantics and retries.
-- Explicit block/unblock lifecycle.
-- Parent/child task graph for real dependencies.
-
-Combining them gives policy discipline plus resilient throughput.
-
-## In-scope
-
-This bridge defines:
-
-1. State ownership boundaries.
-2. Mapping between ticket-provider states and Kanban task states.
-3. Sentinel loop updates to create/monitor Kanban cards.
-4. Closure policy (still gate-driven).
-5. Required event emissions.
-
-## Out-of-scope
-
-- Replacing `tp` provider adapter with direct Kanban-only planning.
-- Allowing workers to close provider tickets without close gate.
-- Changing autonomous delegated-review drift rubric.
-
-## Ownership model
-
-### Scrum Master sentinel owns
-
-- Ticket selection from provider board (milestone-aware).
-- Transition intent in normalized states (`backlog|unstarted|started|in_review|completed`).
-- Evidence file freshness and close-gate invocation.
-- Decision to trigger delegated review after grace window.
-- Final ticket closure through `tp transition <id> completed`.
+- selecting among legal actions using business policy;
+- WIP=1 dispatch policy;
+- delegation, evidence collection, independent review, and intent submission;
+- decision provenance explaining why an action was selected.
 
 ### Kanban workers own
 
-- Implementation execution against a scoped task body.
-- Progress heartbeats and structured completion metadata.
-- Blocking when action requires human or external dependency.
-- Optional decomposition into child cards when instructed.
+- scoped implementation execution;
+- progress heartbeats and completion metadata;
+- dependency cards when explicitly required;
+- external/human blocker observations.
 
-## Canonical mappings
+## Data contract
 
-### Ticket provider -> Kanban
+Each active implementation maps to one primary Kanban card with project ID,
+lifecycle ID, source state version, provider issue identity, evidence path,
+implementer profile, command ID, and WIP slot. Kanban states describe worker
+execution only; they never map directly into lifecycle transitions.
 
-- `backlog` / `unstarted` (provider) -> Kanban task `todo`.
-- `started` (provider) -> Kanban task `ready` then `running` (claimed).
-- `in_review` (provider) -> Kanban task `blocked` with
-  `reason` prefixed `review-required:`.
-- `completed` (provider) -> Kanban task `done` + provider transition,
-  only after close gate passes.
+## Bridge behavior
 
-### Kanban -> ticket provider
+1. Fetch Lifecycle and choose one legal work item.
+2. Submit work-start intent.
+3. After acceptance, create/refresh one linked Kanban card and assign one worker.
+4. Submit worker progress/completion as observations.
+5. Submit close-gate and independent-review evidence.
+6. Refetch and render Lifecycle's result.
 
-- Kanban `done` does not auto-close provider ticket.
-- Sentinel re-validates evidence and gate, then transitions provider issue.
-- Kanban `blocked` with external blockers leaves provider issue in
-  `started` or `in_review` per current review posture.
+No Kanban done state, provider lane, close-gate pass, or review verdict
+automatically closes lifecycle work.
 
-## Data contract between systems
+## Bloodbank contract
 
-Each active provider issue maps to exactly one primary execution card in Kanban.
+Use only registered canonical command/event/reply schemas. Local repo-lane
+events may retain diagnostic provenance but are not executable transition
+contracts. A decision event audits PM reasoning only.
 
-Required metadata on the Kanban card:
+## Acceptance
 
-- `provider`: `plane|linear|trello`
-- `provider_issue_id`: canonical provider issue id
-- `provider_issue_key`: human key/sequence
-- `milestone_id`: active milestone/cycle at enqueue time
-- `evidence_file`: path to issue evidence markdown
-- `implementer_profile`: assigned worker profile
-- `wip_slot`: static value `implementation-1`
-
-Optional metadata:
-
-- `review_required`: boolean
-- `close_gate_status`: `unknown|pass|fail`
-- `delegated_review_eligible_at`: ISO-8601 timestamp
-
-## Sentinel pass behavior (bridge mode)
-
-1. Reconcile provider board + evidence + live worker activity.
-2. If active healthy worker exists, monitor only.
-3. If no active worker and ready issue exists:
-   - ensure provider issue is `started`.
-   - create or refresh a Kanban card tied to the issue id.
-   - assign exactly one implementation profile.
-4. On worker completion:
-   - merge structured metadata into evidence draft.
-   - run close gate.
-   - if pass: transition provider issue to `in_review` or `completed`
-     depending on review policy.
-   - if fail: keep open and comment required evidence deltas.
-5. On human-review-only blocker beyond grace window:
-   - trigger independent reviewer task.
-   - run `issue-autonomous-review.sh ... --close`.
-
-## WIP and dependency rules
-
-- Global implementation WIP remains 1 primary issue at a time.
-- Within that issue, worker may create child cards only when they are true
-  dependencies (no speculative fan-out).
-- A child card must include parent linkage and inherited provider metadata.
-
-## Event contract
-
-Emit Bloodbank events for each consequential action, reusing existing types:
-
-- `bloodbank.v1.repo.holocene.intake.triaged`
-- `bloodbank.v1.repo.holocene.task.created`
-- `bloodbank.v1.repo.holocene.decision.recorded`
-
-Also preserve existing issue-level events from the scrum-master protocol:
-
-- `bloodbank.v1.repo.holocene.issue.evidence.created`
-- `bloodbank.v1.repo.holocene.issue.gate.passed|failed`
-- `bloodbank.v1.repo.holocene.issue.autonomous_review.decided`
-- `bloodbank.v1.repo.holocene.issue.truthcheck.flagged`
-
-## Rollout plan
-
-Phase 1: contract + tasking
-- land this doc
-- create implementation tasks
-
-Phase 2: sentinel bridge
-- add bridge mode in sentinel prompt/runner
-- add provider<->kanban metadata mapping
-
-Phase 3: close-gate integration
-- ensure worker completion feeds evidence updates
-- ensure sentinel remains sole closer via gate
-
-Phase 4: autonomous review bridge
-- map review-required blocks to delegated-review trigger
-- verify independent reviewer constraints
-
-Phase 5: hardening
-- telemetry, failure drills, replay tests, rollback switches
-
-## Acceptance checklist
-
-- one active implementation issue max (WIP=1)
-- every active provider issue has a linked Kanban primary card
-- no provider ticket closes unless close gate passes
-- autonomous close only via delegated-review protocol
-- Bloodbank event trail present for all consequential transitions
+- one Lifecycle writer;
+- one primary implementation card per active work item;
+- no direct provider transition from PM/Kanban;
+- idempotent/versioned/capability-checked commands;
+- immutable evidence references and independent review;
+- visible stale, denied, rejected, duplicate, and unavailable outcomes;
+- provider/Candystore projections never substituted for authoritative state.
