@@ -13,13 +13,18 @@ Holocene renders Lifecycle truth from Candystore's read-only projection through
 `unknown`/`degraded`; stale observations retain the last authoritative values
 while visibly degrading freshness. The UI displays identity, spec/state
 versions, source and provenance, authority status/health/phase/fingerprint,
-legal frontier, obligations, blockers/gates, and stable command verdicts.
+legal frontier, obligation occurrence/activation identity, blockers/gates, and
+stable command verdicts. A projection with missing or non-Lifecycle provenance,
+schema identity, source actor, or causal metadata fails closed as
+`unknown`/`degraded` and cannot authorize a command.
 
 High-level actions are accepted by
 `POST /api/modules/lifecycle/:lifecycleId/actions`. The API refetches the
 projection, requires a legal frontier item and matching capability grant, then
 derives the grant's canonical `capability_version` and the complete semantic
 command identity, then publishes the version-checked command through Bloodbank.
+The command inherits the authoritative snapshot's correlation lineage and names
+that exact snapshot event as its cause; Holocene never fabricates causal IDs.
 The current publisher uses core NATS. Its PING/PONG result proves server protocol
 processing only; it is explicitly not a durable JetStream publish acknowledgment
 or Lifecycle acceptance. Holocene never advances local state optimistically and

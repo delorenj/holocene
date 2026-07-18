@@ -48,6 +48,7 @@ export type LifecycleIntentInput = {
   selectedFrontierId: string;
   authoritySnapshotEventId: string;
   authoritySnapshotEventTime: string;
+  authoritySnapshotCorrelationId: string;
   expectedStateVersion: number;
   intent: {
     name: string;
@@ -83,6 +84,7 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   requireText(input.repo, "repo");
   requireText(input.selectedFrontierId, "selectedFrontierId");
   requireUuid(input.authoritySnapshotEventId, "authoritySnapshotEventId");
+  requireUuid(input.authoritySnapshotCorrelationId, "authoritySnapshotCorrelationId");
   requireVersion(input.expectedStateVersion, "expectedStateVersion");
   requireText(input.intent.name, "intent.name");
   requireText(input.intent.target, "intent.target");
@@ -124,6 +126,7 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
         repo: input.repo,
         selected_frontier_id: input.selectedFrontierId,
         authority_snapshot_event_id: input.authoritySnapshotEventId,
+        authority_snapshot_correlation_id: input.authoritySnapshotCorrelationId,
         expected_state_version: input.expectedStateVersion,
         actor: input.actor,
         capability: input.capability,
@@ -133,8 +136,6 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
     .digest("hex");
   const eventId = uuidV5(`event:${semanticDigest}`, COMMAND_NAMESPACE);
   const commandId = uuidV5(`command:${semanticDigest}`, COMMAND_NAMESPACE);
-  const correlationId = uuidV5(`correlation:${semanticDigest}`, COMMAND_NAMESPACE);
-  const causationId = uuidV5(`causation:${semanticDigest}`, COMMAND_NAMESPACE);
   const idempotencyKey = `holocene:lifecycle.intent.submit:semantic:${semanticDigest}`;
   const timestamp = requestedAt.toISOString();
   return {
@@ -147,8 +148,8 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
     datacontenttype: "application/json" as const,
     dataschema:
       "apicurio://holyfields/bloodbank.v1.lifecycle.intent.submit.command/versions/1" as const,
-    correlationid: correlationId,
-    causationid: causationId,
+    correlationid: input.authoritySnapshotCorrelationId,
+    causationid: input.authoritySnapshotEventId,
     producer: "holocene",
     service: "holocene",
     domain: "lifecycle" as const,

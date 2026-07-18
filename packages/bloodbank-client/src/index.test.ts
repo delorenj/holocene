@@ -18,6 +18,7 @@ const input = {
   selectedFrontierId: "transition:planned:active",
   authoritySnapshotEventId: "33333333-3333-4333-8333-333333333333",
   authoritySnapshotEventTime: "2026-07-18T12:00:00Z",
+  authoritySnapshotCorrelationId: "22222222-2222-4222-8222-222222222222",
   expectedStateVersion: 7,
   intent: {
     name: "transition",
@@ -59,8 +60,10 @@ test("Lifecycle command derives complete immutable identity and retries exactly"
     first.data.intent.parameters.authority_snapshot_event_id,
     input.authoritySnapshotEventId
   );
+  assert.equal(first.correlationid, input.authoritySnapshotCorrelationId);
+  assert.equal(first.causationid, input.authoritySnapshotEventId);
   assert.match(first.idempotency_key, /^holocene:lifecycle\.intent\.submit:semantic:[0-9a-f]{64}$/);
-  for (const value of [first.id, first.command_id, first.correlationid, first.causationid]) {
+  for (const value of [first.id, first.command_id]) {
     assert.match(value, /^[0-9a-f-]{36}$/);
   }
   validateWithBloodbank(first);
@@ -79,13 +82,31 @@ test("every material request change yields a new complete semantic identity", ()
     { ...input, intent: { ...input.intent, target: "waiting" } },
     { ...input, intent: { ...input.intent, parameters: { confirmed: false } } }
   ];
-  const identityFields = ["id", "command_id", "correlationid", "causationid", "idempotency_key"] as const;
+  const identityFields = ["id", "command_id", "idempotency_key"] as const;
 
   for (const variant of variants) {
     const envelope = buildLifecycleIntentEnvelope(variant);
     assert.ok(identityFields.every((field) => envelope[field] !== first[field]));
+    assert.equal(envelope.correlationid, input.authoritySnapshotCorrelationId);
+    assert.equal(envelope.causationid, input.authoritySnapshotEventId);
     validateWithBloodbank(envelope);
   }
+
+  const nextSnapshot = buildLifecycleIntentEnvelope({
+    ...input,
+    authoritySnapshotEventId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  });
+  assert.ok(identityFields.every((field) => nextSnapshot[field] !== first[field]));
+  assert.equal(nextSnapshot.correlationid, input.authoritySnapshotCorrelationId);
+  assert.equal(nextSnapshot.causationid, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+  const nextCorrelation = buildLifecycleIntentEnvelope({
+    ...input,
+    authoritySnapshotCorrelationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+  });
+  assert.ok(identityFields.every((field) => nextCorrelation[field] !== first[field]));
+  assert.equal(nextCorrelation.correlationid, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+  assert.equal(nextCorrelation.causationid, input.authoritySnapshotEventId);
 });
 
 test("command builder rejects mismatched capability scope and actor", () => {

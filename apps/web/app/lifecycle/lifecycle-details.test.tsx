@@ -25,6 +25,8 @@ test("Lifecycle UI renders identity, versions, provenance, work, blockers and ve
     "Observed through",
     "transition:planned:active",
     "bmad-code-review@6.10.2",
+    "55555555-5555-4555-8555-555555555555",
+    "2026-07-18T11:55:00Z",
     "Credential unavailable",
     "approval-1",
     "EXPECTED_STATE_VERSION_MISMATCH",
@@ -116,6 +118,8 @@ function projection(status: "current" | "stale" | "missing"): LifecycleProjectio
     obligations: [
       {
         id: "independent-review",
+        obligation_instance_id: "55555555-5555-4555-8555-555555555555",
+        activated_at: "2026-07-18T11:55:00Z",
         kind: "independent_review",
         status: "pending",
         description: "Obtain independent review",
@@ -158,8 +162,24 @@ function projection(status: "current" | "stale" | "missing"): LifecycleProjectio
           event_id: "33333333-3333-4333-8333-333333333333",
           event_type: "bloodbank.v1.lifecycle.snapshot.updated",
           event_time: "2026-07-18T12:00:00Z",
-          ordering_key: "11111111-1111-4111-8111-111111111111",
-          projected_at: "2026-07-18T12:00:01Z"
+          ordering_key: "lifecycle:11111111-1111-4111-8111-111111111111",
+          projected_at: "2026-07-18T12:00:01Z",
+          subject: "bloodbank.evt.v1.lifecycle.snapshot.updated",
+          authority_source: "urn:33god:service:lifecycle",
+          producer: "delorenj/lifecycle",
+          service: "lifecycle",
+          kind: "event",
+          domain: "lifecycle",
+          schema_ref: "bloodbank.v1.lifecycle.snapshot.updated.v3",
+          data_schema:
+            "apicurio://holyfields/bloodbank.v1.lifecycle.snapshot.updated/versions/3",
+          actor: {
+            type: "service",
+            agent_id: "delorenj.lifecycle",
+            instance: "authority-1"
+          },
+          correlation_id: "22222222-2222-4222-8222-222222222222",
+          causation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         },
     command_verdicts: [
       {

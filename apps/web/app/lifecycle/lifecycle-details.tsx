@@ -28,7 +28,11 @@ export function LifecycleDetails({
 }: Props) {
   const canAct =
     projection.projection_status === "current" &&
-    Boolean(projection.state_version && projection.source?.event_id);
+    Boolean(
+      projection.state_version &&
+        projection.source?.event_id &&
+        projection.source.correlation_id
+    );
   const grants = projection.capabilities.filter(
     (grant) => !actorId || grant.actor_id === actorId
   );
@@ -87,6 +91,8 @@ export function LifecycleDetails({
             value={recordValue(projection.provenance, "reconciliation_id")}
           />
           <KeyValue label="Source event" value={projection.source?.event_id ?? "unknown"} />
+          <KeyValue label="Correlation" value={projection.source?.correlation_id ?? "unknown"} />
+          <KeyValue label="Causation" value={projection.source?.causation_id ?? "root event"} />
           <KeyValue label="Observed event time" value={projection.source?.event_time ?? "unknown"} />
           <KeyValue label="Projected at" value={projection.source?.projected_at ?? "unknown"} />
         </Panel>
@@ -194,6 +200,8 @@ export function LifecycleDetails({
               <article className="lifecycle-list-item" key={item.id}>
                 <div><strong>{item.id}</strong><span>{item.status}</span></div>
                 <p>{item.description}</p>
+                <small>Occurrence {item.obligation_instance_id}</small>
+                <small>Activated {item.activated_at}</small>
                 <code>{item.skill_ref.name}@{item.skill_ref.selector}</code>
               </article>
             ))

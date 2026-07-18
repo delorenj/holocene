@@ -75,7 +75,8 @@ export async function submitLifecycleAction(
     !projection.repo ||
     !projection.state_version ||
     !projection.source?.event_id ||
-    !projection.source.event_time
+    !projection.source.event_time ||
+    !projection.source.correlation_id
   ) {
     throw new LifecycleActionError(409, "Lifecycle projection lacks authoritative command context");
   }
@@ -131,6 +132,7 @@ export async function submitLifecycleAction(
     selectedFrontierId: frontier.id,
     authoritySnapshotEventId: projection.source.event_id,
     authoritySnapshotEventTime: projection.source.event_time,
+    authoritySnapshotCorrelationId: projection.source.correlation_id,
     expectedStateVersion,
     intent: {
       name,

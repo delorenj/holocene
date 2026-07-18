@@ -58,6 +58,7 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
       projection.projection_status !== "current" ||
       !projection.state_version ||
       !projection.source?.event_id ||
+      !projection.source.correlation_id ||
       !frontier.allowed ||
       frontier.expected_state_version !== projection.state_version ||
       !projection.legal_frontier.some(

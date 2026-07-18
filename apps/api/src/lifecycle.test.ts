@@ -5,6 +5,7 @@ import { registerLifecycleRoutes, type LifecycleDependencies } from "./lifecycle
 
 const lifecycleId = "11111111-1111-4111-8111-111111111111";
 const snapshotEventId = "33333333-3333-4333-8333-333333333333";
+const snapshotCorrelationId = "22222222-2222-4222-8222-222222222222";
 
 test("GET renders authority fields and POST publishes a deterministic complete command", async () => {
   const published: Published[] = [];
@@ -51,6 +52,8 @@ test("GET renders authority fields and POST publishes a deterministic complete c
   assert.equal(envelope.data.intent.parameters.selected_frontier_id, "transition:planned:active");
   assert.equal(envelope.data.intent.parameters.authority_snapshot_event_id, snapshotEventId);
   assert.equal(envelope.time, "2026-07-18T12:00:00.000Z");
+  assert.equal(envelope.correlationid, snapshotCorrelationId);
+  assert.equal(envelope.causationid, snapshotEventId);
 
   const after = await app.inject({ method: "GET", url: `/api/modules/lifecycle/${lifecycleId}` });
   assert.deepEqual(after.json(), rendered, "Holocene must not optimistically mutate its read model");
@@ -123,6 +126,32 @@ test("missing authoritative capability version degrades and publishes nothing", 
   );
 });
 
+test("untrusted or causal-metadata-free projections publish nothing", async () => {
+  const mutations: Array<(projection: ProjectionFixture) => void> = [
+    (projection) => {
+      projection.source.authority_source = "urn:attacker";
+    },
+    (projection) => {
+      projection.source.producer = "attacker";
+    },
+    (projection) => {
+      projection.source.schema_ref = "bloodbank.v1.lifecycle.snapshot.updated.v2";
+    },
+    (projection) => {
+      projection.provenance.authority = "attacker";
+    },
+    (projection) => {
+      delete (projection.source as { causation_id?: string | null }).causation_id;
+    },
+    (projection) => {
+      projection.source.correlation_id = "not-an-event-id";
+    }
+  ];
+  for (const mutate of mutations) {
+    await assertNoPublish(mutate, actionPayload(), 409);
+  }
+});
+
 test("gate resolution without a choice is rejected; explicit resolution is complete", async () => {
   const mutate = (projection: ProjectionFixture) => {
     projection.legal_frontier = [
@@ -175,9 +204,13 @@ test("material parameter changes produce a different full semantic identity", as
   }
   const first = published[0]!.envelope as any;
   const second = published[1]!.envelope as any;
-  for (const field of ["id", "command_id", "correlationid", "causationid", "idempotency_key"]) {
+  for (const field of ["id", "command_id", "idempotency_key"]) {
     assert.notEqual(first[field], second[field]);
   }
+  assert.equal(first.correlationid, snapshotCorrelationId);
+  assert.equal(second.correlationid, snapshotCorrelationId);
+  assert.equal(first.causationid, snapshotEventId);
+  assert.equal(second.causationid, snapshotEventId);
   await app.close();
 });
 
@@ -308,7 +341,11 @@ function projectionFixture() {
         state_version: 7
       }
     ],
-    provenance: { authority: "delorenj/lifecycle", policy_version: "1.0.0" },
+    provenance: {
+      authority: "delorenj/lifecycle",
+      authority_instance: "lifecycle-authority-1",
+      policy_version: "1.0.0"
+    },
     freshness: {
       status: "fresh",
       observed_through: "2026-07-18T11:59:00Z",
@@ -320,8 +357,24 @@ function projectionFixture() {
       event_id: snapshotEventId,
       event_type: "bloodbank.v1.lifecycle.snapshot.updated",
       event_time: "2026-07-18T12:00:00Z",
-      ordering_key: lifecycleId,
-      projected_at: "2026-07-18T12:00:01Z"
+      ordering_key: `lifecycle:${lifecycleId}`,
+      projected_at: "2026-07-18T12:00:01Z",
+      subject: "bloodbank.evt.v1.lifecycle.snapshot.updated",
+      authority_source: "urn:33god:service:lifecycle",
+      producer: "delorenj/lifecycle",
+      service: "lifecycle",
+      kind: "event",
+      domain: "lifecycle",
+      schema_ref: "bloodbank.v1.lifecycle.snapshot.updated.v3",
+      data_schema:
+        "apicurio://holyfields/bloodbank.v1.lifecycle.snapshot.updated/versions/3",
+      actor: {
+        type: "service",
+        agent_id: "delorenj.lifecycle",
+        instance: "lifecycle-authority-1"
+      },
+      correlation_id: snapshotCorrelationId,
+      causation_id: "44444444-4444-4444-8444-444444444444"
     },
     command_verdicts: [{ verdict: "stale", reason_code: "EXPECTED_STATE_VERSION_MISMATCH" }]
   };
