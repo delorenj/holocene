@@ -78,6 +78,13 @@ export interface BloodbankPublisher {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COMMAND_NAMESPACE = "c447a74d-6a44-4f34-889c-706c51545729";
+const GATE_RESOLUTIONS = new Set([
+  "approved",
+  "rejected",
+  "bypassed",
+  "auto_resolved",
+  "superseded"
+]);
 
 export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   requireText(input.lifecycleId, "lifecycleId");
@@ -107,7 +114,15 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   if (input.capability.scope !== `lifecycle:${input.lifecycleId}`) {
     throw new Error("capability.scope must match lifecycle identity");
   }
+  if (
+    input.intent.name === "resolve_gate" &&
+    (typeof input.intent.parameters.resolution !== "string" ||
+      !GATE_RESOLUTIONS.has(input.intent.parameters.resolution))
+  ) {
+    throw new Error("intent.parameters.resolution is not a canonical Lifecycle resolution");
+  }
 
+  const timestamp = requestedAt.toISOString();
   const parameters = {
     ...input.intent.parameters,
     selected_frontier_id: input.selectedFrontierId,
@@ -126,6 +141,7 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
         repo: input.repo,
         selected_frontier_id: input.selectedFrontierId,
         authority_snapshot_event_id: input.authoritySnapshotEventId,
+        authority_snapshot_event_time: timestamp,
         authority_snapshot_correlation_id: input.authoritySnapshotCorrelationId,
         expected_state_version: input.expectedStateVersion,
         actor: input.actor,
@@ -137,7 +153,6 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   const eventId = uuidV5(`event:${semanticDigest}`, COMMAND_NAMESPACE);
   const commandId = uuidV5(`command:${semanticDigest}`, COMMAND_NAMESPACE);
   const idempotencyKey = `holocene:lifecycle.intent.submit:semantic:${semanticDigest}`;
-  const timestamp = requestedAt.toISOString();
   return {
     specversion: "1.0" as const,
     id: eventId,

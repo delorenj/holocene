@@ -124,7 +124,14 @@ export async function submitLifecycleAction(
   const parameters = value.parameters === undefined ? {} : record(value.parameters, "parameters");
   const [name, target] = frontierIntent(frontier);
   if (name === "resolve_gate") {
-    text(parameters.resolution, "parameters.resolution");
+    const resolution = text(parameters.resolution, "parameters.resolution");
+    if (
+      !["approved", "rejected", "bypassed", "auto_resolved", "superseded"].includes(
+        resolution
+      )
+    ) {
+      throw new LifecycleActionError(400, "parameters.resolution is not canonical");
+    }
   }
   const envelope = buildLifecycleIntentEnvelope({
     lifecycleId,

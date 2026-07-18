@@ -172,6 +172,11 @@ test("gate resolution without a choice is rejected; explicit resolution is compl
     parameters: {}
   };
   await assertNoPublish(mutate, base, 400);
+  await assertNoPublish(
+    mutate,
+    { ...base, parameters: { resolution: "looks-good" } },
+    400
+  );
 
   const published: Published[] = [];
   const app = Fastify();

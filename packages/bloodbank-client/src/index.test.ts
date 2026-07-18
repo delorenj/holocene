@@ -45,9 +45,14 @@ test("Lifecycle command derives complete immutable identity and retries exactly"
       parameters: { evidence: { artifact_id: "review:42" }, confirmed: true }
     }
   });
+  const equivalentTimestamp = buildLifecycleIntentEnvelope({
+    ...input,
+    authoritySnapshotEventTime: "2026-07-18T12:00:00+00:00"
+  });
 
   assert.deepEqual(first, second);
   assert.deepEqual(first, reordered, "object key order is not semantic");
+  assert.deepEqual(first, equivalentTimestamp, "equivalent timestamps normalize identically");
   assert.equal(first.subject, "bloodbank.cmd.v1.lifecycle.intent.submit");
   assert.equal(first.kind, "command");
   assert.equal(first.delivery, "single_consumer");
@@ -79,6 +84,7 @@ test("every material request change yields a new complete semantic identity", ()
     { ...input, actor: { ...input.actor, agent_id: "operator:other" }, capability: { ...input.capability, issued_to: "operator:other" } },
     { ...input, capability: { ...input.capability, capability_id: "other-grant" } },
     { ...input, capability: { ...input.capability, capability_version: 8 } },
+    { ...input, authoritySnapshotEventTime: "2026-07-18T12:00:01Z" },
     { ...input, intent: { ...input.intent, target: "waiting" } },
     { ...input, intent: { ...input.intent, parameters: { confirmed: false } } }
   ];
@@ -107,6 +113,27 @@ test("every material request change yields a new complete semantic identity", ()
   assert.ok(identityFields.every((field) => nextCorrelation[field] !== first[field]));
   assert.equal(nextCorrelation.correlationid, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
   assert.equal(nextCorrelation.causationid, input.authoritySnapshotEventId);
+});
+
+test("gate resolution builder accepts only Lifecycle canonical choices", () => {
+  const gateInput = {
+    ...input,
+    selectedFrontierId: "gate:approval-1:resolve",
+    intent: {
+      name: "resolve_gate",
+      target: "approval-1",
+      parameters: { resolution: "approved" }
+    }
+  };
+  validateWithBloodbank(buildLifecycleIntentEnvelope(gateInput));
+  assert.throws(
+    () =>
+      buildLifecycleIntentEnvelope({
+        ...gateInput,
+        intent: { ...gateInput.intent, parameters: { resolution: "looks-good" } }
+      }),
+    /canonical Lifecycle resolution/
+  );
 });
 
 test("command builder rejects mismatched capability scope and actor", () => {
