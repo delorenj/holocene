@@ -22,6 +22,7 @@ test("current projection preserves authoritative render fields", () => {
   assert.deepEqual(value.freshness, input.freshness);
   assert.deepEqual(value.legal_frontier, input.legal_frontier);
   assert.deepEqual(value.command_verdicts, input.command_verdicts);
+  assert.equal(value.capabilities[0]?.capability_version, 7);
 });
 
 test("stale projection preserves authority state but degrades display health", () => {
@@ -37,6 +38,15 @@ test("identity mismatch fails closed", () => {
   const value = normalizeLifecycleProjection(projection("current"), "different");
   assert.equal(value.projection_status, "missing");
   assert.match(value.read_error ?? "", /identity mismatch/);
+});
+
+test("missing canonical capability version degrades the whole projection", () => {
+  const input = projection("current");
+  delete (input.capabilities[0] as Partial<(typeof input.capabilities)[number]>).capability_version;
+  const value = normalizeLifecycleProjection(input, lifecycleId);
+  assert.equal(value.projection_status, "missing");
+  assert.equal(value.health, "degraded");
+  assert.match(value.read_error ?? "", /client fields/);
 });
 
 function projection(status: "current" | "stale") {
@@ -63,7 +73,18 @@ function projection(status: "current" | "stale") {
     obligations: [],
     blockers: [],
     gates: [],
-    capabilities: [],
+    capabilities: [
+      {
+        capability_id: "holocene-grant",
+        capability_version: 7,
+        actor_id: "operator:holocene",
+        actions: ["lifecycle.intent.submit"],
+        scope: `lifecycle:${lifecycleId}`,
+        issued_at: "2026-07-18T11:00:00Z",
+        expires_at: null,
+        state_version: 7
+      }
+    ],
     provenance: { authority: "delorenj/lifecycle" },
     freshness: { status: status === "current" ? "fresh" : "stale" },
     publication: { event_sequence: 9 },

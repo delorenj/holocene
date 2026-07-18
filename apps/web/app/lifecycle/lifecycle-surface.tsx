@@ -6,10 +6,8 @@ import {
   type LifecycleFrontierItem,
   type LifecycleProjection
 } from "@holocene/lifecycle-client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { LifecycleDetails } from "./lifecycle-details";
-
-type CommandContext = { correlationId: string; idempotencyKey: string };
 
 export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
   const [projection, setProjection] = useState<LifecycleProjection>(() =>
@@ -17,11 +15,9 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
   );
   const [actorId, setActorId] = useState("");
   const [capabilityId, setCapabilityId] = useState("");
-  const [capabilityVersion, setCapabilityVersion] = useState("1");
   const [busyFrontierId, setBusyFrontierId] = useState<string>();
   const [commandMessage, setCommandMessage] = useState<string>();
   const [commandError, setCommandError] = useState<string>();
-  const contexts = useRef(new Map<string, CommandContext>());
 
   const load = useCallback(async () => {
     try {
@@ -58,19 +54,39 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
   }, [load]);
 
   const submit = async (frontier: LifecycleFrontierItem) => {
-    if (!projection.state_version || !projection.source?.event_id) return;
+    if (
+      projection.projection_status !== "current" ||
+      !projection.state_version ||
+      !projection.source?.event_id ||
+      !frontier.allowed ||
+      frontier.expected_state_version !== projection.state_version ||
+      !projection.legal_frontier.some(
+        (item) =>
+          item.id === frontier.id &&
+          item.allowed &&
+          item.expected_state_version === projection.state_version
+      )
+    ) {
+      setCommandError("Lifecycle action is not in the current allowed frontier.");
+      return;
+    }
+    if (frontier.action === "resolve_gate") {
+      setCommandError("Gate resolution is disabled until a resolution choice is selected.");
+      return;
+    }
+    const grant = projection.capabilities.find(
+      (item) => item.capability_id === capabilityId && item.actor_id === actorId
+    );
+    if (!grant) {
+      setCommandError("Select the authoritative capability grant for this actor.");
+      return;
+    }
     if (
       frontier.reason_code === "LEGAL_REQUIRES_CONFIRMATION" &&
       !window.confirm(`Submit confirmed Lifecycle action ${frontier.id}?`)
     ) {
       return;
     }
-    const contextKey = `${frontier.id}:state:${projection.state_version}`;
-    const context = contexts.current.get(contextKey) ?? {
-      correlationId: crypto.randomUUID(),
-      idempotencyKey: `holocene:${projection.lifecycle_id}:${frontier.id}:state:${projection.state_version}`
-    };
-    contexts.current.set(contextKey, context);
     setBusyFrontierId(frontier.id);
     setCommandMessage(undefined);
     setCommandError(undefined);
@@ -83,10 +99,6 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
           expected_state_version: frontier.expected_state_version,
           actor: { type: "operator", agent_id: actorId },
           capability_id: capabilityId,
-          capability_version: Number(capabilityVersion),
-          idempotency_key: context.idempotencyKey,
-          correlation_id: context.correlationId,
-          causation_id: projection.source.event_id,
           parameters:
             frontier.reason_code === "LEGAL_REQUIRES_CONFIRMATION" ? { confirmed: true } : {}
         })
@@ -97,7 +109,9 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
         command_id?: string;
       };
       if (!response.ok) throw new Error(body.error ?? `command API returned ${response.status}`);
-      setCommandMessage(`${body.message ?? "Command queued."} Command ${body.command_id ?? "unknown"}.`);
+      setCommandMessage(
+        `${body.message ?? "Broker processed the command."} Command ${body.command_id ?? "unknown"}.`
+      );
       window.setTimeout(() => void load(), 1_000);
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : "Command publication failed");
@@ -111,13 +125,11 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
       projection={projection}
       actorId={actorId}
       capabilityId={capabilityId}
-      capabilityVersion={capabilityVersion}
       busyFrontierId={busyFrontierId}
       commandMessage={commandMessage}
       commandError={commandError}
       onActorId={setActorId}
       onCapabilityId={setCapabilityId}
-      onCapabilityVersion={setCapabilityVersion}
       onAction={(frontier) => void submit(frontier)}
     />
   );

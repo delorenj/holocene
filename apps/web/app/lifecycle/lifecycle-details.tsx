@@ -7,13 +7,11 @@ type Props = {
   projection: LifecycleProjection;
   actorId: string;
   capabilityId: string;
-  capabilityVersion: string;
   busyFrontierId?: string;
   commandMessage?: string;
   commandError?: string;
   onActorId: (value: string) => void;
   onCapabilityId: (value: string) => void;
-  onCapabilityVersion: (value: string) => void;
   onAction: (frontier: LifecycleFrontierItem) => void;
 };
 
@@ -21,13 +19,11 @@ export function LifecycleDetails({
   projection,
   actorId,
   capabilityId,
-  capabilityVersion,
   busyFrontierId,
   commandMessage,
   commandError,
   onActorId,
   onCapabilityId,
-  onCapabilityVersion,
   onAction
 }: Props) {
   const canAct =
@@ -142,20 +138,10 @@ export function LifecycleDetails({
               <option value="">Select a current grant</option>
               {grants.map((grant) => (
                 <option key={grant.capability_id} value={grant.capability_id}>
-                  {grant.capability_id} · {grant.actor_id}
+                  {grant.capability_id} · {grant.actor_id} · v{grant.capability_version}
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            Issued grant version
-            <input
-              inputMode="numeric"
-              min="1"
-              type="number"
-              value={capabilityVersion}
-              onChange={(event) => onCapabilityVersion(event.target.value)}
-            />
           </label>
         </div>
 
@@ -174,14 +160,17 @@ export function LifecycleDetails({
                 <p>{item.kind} · {item.action}</p>
                 <small>{item.reason_code}</small>
                 <small>Expected state v{item.expected_state_version}</small>
+                {item.action === "resolve_gate" ? (
+                  <small>Disabled: choose a canonical resolution before publishing.</small>
+                ) : null}
                 <button
                   type="button"
                   disabled={
                     !canAct ||
                     !item.allowed ||
+                    item.action === "resolve_gate" ||
                     !actorId ||
                     !capabilityId ||
-                    Number(capabilityVersion) < 1 ||
                     Boolean(busyFrontierId)
                   }
                   onClick={() => onAction(item)}

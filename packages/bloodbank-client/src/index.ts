@@ -45,6 +45,9 @@ export type LifecycleCapabilityContext = {
 export type LifecycleIntentInput = {
   lifecycleId: string;
   repo: string;
+  selectedFrontierId: string;
+  authoritySnapshotEventId: string;
+  authoritySnapshotEventTime: string;
   expectedStateVersion: number;
   intent: {
     name: string;
@@ -53,16 +56,22 @@ export type LifecycleIntentInput = {
   };
   capability: LifecycleCapabilityContext;
   actor: BloodbankActor;
-  idempotencyKey: string;
-  correlationId: string;
-  causationId: string;
-  requestedAt: string;
 };
 
 export type LifecycleIntentEnvelope = ReturnType<typeof buildLifecycleIntentEnvelope>;
 
+export type BloodbankPublishReceipt = {
+  transport: "core_nats";
+  acknowledgment: "server_processed";
+  durable: false;
+  server: string;
+};
+
 export interface BloodbankPublisher {
-  publish(subject: string, envelope: Record<string, unknown>): Promise<void>;
+  publish(
+    subject: string,
+    envelope: Record<string, unknown>
+  ): Promise<BloodbankPublishReceipt>;
 }
 
 const UUID_PATTERN =
@@ -72,6 +81,8 @@ const COMMAND_NAMESPACE = "c447a74d-6a44-4f34-889c-706c51545729";
 export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   requireText(input.lifecycleId, "lifecycleId");
   requireText(input.repo, "repo");
+  requireText(input.selectedFrontierId, "selectedFrontierId");
+  requireUuid(input.authoritySnapshotEventId, "authoritySnapshotEventId");
   requireVersion(input.expectedStateVersion, "expectedStateVersion");
   requireText(input.intent.name, "intent.name");
   requireText(input.intent.target, "intent.target");
@@ -81,11 +92,10 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
   requireText(input.capability.issued_to, "capability.issued_to");
   requireText(input.actor.type, "actor.type");
   requireText(input.actor.agent_id, "actor.agent_id");
-  requireText(input.idempotencyKey, "idempotencyKey");
-  requireUuid(input.correlationId, "correlationId");
-  requireUuid(input.causationId, "causationId");
-  const requestedAt = new Date(input.requestedAt);
-  if (!Number.isFinite(requestedAt.valueOf())) throw new Error("requestedAt must be RFC 3339");
+  const requestedAt = new Date(input.authoritySnapshotEventTime);
+  if (!Number.isFinite(requestedAt.valueOf())) {
+    throw new Error("authoritySnapshotEventTime must be RFC 3339");
+  }
   if (input.capability.action !== "lifecycle.intent.submit") {
     throw new Error("capability.action must be lifecycle.intent.submit");
   }
@@ -96,8 +106,36 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
     throw new Error("capability.scope must match lifecycle identity");
   }
 
-  const eventId = uuidV5(`event:${input.idempotencyKey}`, COMMAND_NAMESPACE);
-  const commandId = uuidV5(`command:${input.idempotencyKey}`, COMMAND_NAMESPACE);
+  const parameters = {
+    ...input.intent.parameters,
+    selected_frontier_id: input.selectedFrontierId,
+    authority_snapshot_event_id: input.authoritySnapshotEventId
+  };
+  const intent = {
+    name: input.intent.name,
+    target: input.intent.target,
+    parameters
+  };
+  const semanticDigest = createHash("sha256")
+    .update(
+      canonicalJson({
+        contract: "holocene.lifecycle.intent.v1",
+        lifecycle_id: input.lifecycleId,
+        repo: input.repo,
+        selected_frontier_id: input.selectedFrontierId,
+        authority_snapshot_event_id: input.authoritySnapshotEventId,
+        expected_state_version: input.expectedStateVersion,
+        actor: input.actor,
+        capability: input.capability,
+        intent
+      })
+    )
+    .digest("hex");
+  const eventId = uuidV5(`event:${semanticDigest}`, COMMAND_NAMESPACE);
+  const commandId = uuidV5(`command:${semanticDigest}`, COMMAND_NAMESPACE);
+  const correlationId = uuidV5(`correlation:${semanticDigest}`, COMMAND_NAMESPACE);
+  const causationId = uuidV5(`causation:${semanticDigest}`, COMMAND_NAMESPACE);
+  const idempotencyKey = `holocene:lifecycle.intent.submit:semantic:${semanticDigest}`;
   const timestamp = requestedAt.toISOString();
   return {
     specversion: "1.0" as const,
@@ -109,8 +147,8 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
     datacontenttype: "application/json" as const,
     dataschema:
       "apicurio://holyfields/bloodbank.v1.lifecycle.intent.submit.command/versions/1" as const,
-    correlationid: input.correlationId,
-    causationid: input.causationId,
+    correlationid: correlationId,
+    causationid: causationId,
     producer: "holocene",
     service: "holocene",
     domain: "lifecycle" as const,
@@ -118,14 +156,14 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
     kind: "command" as const,
     actor: input.actor,
     command_id: commandId,
-    idempotency_key: input.idempotencyKey,
+    idempotency_key: idempotencyKey,
     delivery: "single_consumer" as const,
     data: {
       contract_version: 1 as const,
       lifecycle_id: input.lifecycleId,
       repo: input.repo,
       expected_state_version: input.expectedStateVersion,
-      intent: input.intent,
+      intent,
       capability: input.capability,
       requested_at: timestamp
     }
@@ -135,6 +173,9 @@ export function buildLifecycleIntentEnvelope(input: LifecycleIntentInput) {
 export function encodeNatsPublish(subject: string, envelope: Record<string, unknown>) {
   if (!/^bloodbank\.(?:cmd|evt|rpy)\.v[0-9]+\.[a-z0-9_.]+$/.test(subject)) {
     throw new Error(`invalid Bloodbank subject: ${subject}`);
+  }
+  if (envelope.subject !== subject) {
+    throw new Error("publish subject must equal envelope.subject");
   }
   const payload = Buffer.from(JSON.stringify(envelope));
   return Buffer.concat([
@@ -162,7 +203,12 @@ export class NatsBloodbankPublisher implements BloodbankPublisher {
     for (const value of this.urls) {
       try {
         await publishOne(value, frame, this.timeoutMs);
-        return;
+        return {
+          transport: "core_nats" as const,
+          acknowledgment: "server_processed" as const,
+          durable: false as const,
+          server: value
+        };
       } catch (error) {
         failures.push(`${value}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -235,6 +281,44 @@ function uuidV5(value: string, namespace: string) {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function canonicalJson(value: unknown): string {
+  const active = new Set<object>();
+  const encode = (entry: unknown): string => {
+    if (entry === null || typeof entry === "string" || typeof entry === "boolean") {
+      return JSON.stringify(entry);
+    }
+    if (typeof entry === "number") {
+      if (!Number.isFinite(entry)) throw new Error("semantic request numbers must be finite");
+      return JSON.stringify(entry);
+    }
+    if (Array.isArray(entry)) {
+      if (active.has(entry)) throw new Error("semantic request must not be cyclic");
+      active.add(entry);
+      const encoded = `[${entry.map(encode).join(",")}]`;
+      active.delete(entry);
+      return encoded;
+    }
+    if (typeof entry === "object") {
+      if (active.has(entry)) throw new Error("semantic request must not be cyclic");
+      active.add(entry);
+      const object = entry as Record<string, unknown>;
+      const encoded = `{${Object.keys(object)
+        .sort()
+        .map((key) => {
+          if (object[key] === undefined) {
+            throw new Error(`semantic request field ${key} must not be undefined`);
+          }
+          return `${JSON.stringify(key)}:${encode(object[key])}`;
+        })
+        .join(",")}}`;
+      active.delete(entry);
+      return encoded;
+    }
+    throw new Error("semantic request must contain only JSON values");
+  };
+  return encode(value);
 }
 
 function requireText(value: unknown, name: string): asserts value is string {

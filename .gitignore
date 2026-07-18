@@ -4,6 +4,7 @@ node_modules
 .next
 dist
 coverage
+*.tsbuildinfo
 .env*
 
 # Secrets — .env is materialized by `op inject -i .env.op > .env` on mise enter.

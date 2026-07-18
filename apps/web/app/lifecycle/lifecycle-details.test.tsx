@@ -13,10 +13,8 @@ test("Lifecycle UI renders identity, versions, provenance, work, blockers and ve
       projection={projection("current")}
       actorId="operator:holocene"
       capabilityId="holocene-grant"
-      capabilityVersion="1"
       onActorId={noop}
       onCapabilityId={noop}
-      onCapabilityVersion={noop}
       onAction={noop}
     />
   );
@@ -43,10 +41,8 @@ test("missing and stale UI are degraded and action-disabled", () => {
         projection={projection(status)}
         actorId="operator:holocene"
         capabilityId="holocene-grant"
-        capabilityVersion="1"
         onActorId={noop}
         onCapabilityId={noop}
-        onCapabilityVersion={noop}
         onAction={noop}
       />
     );
@@ -54,6 +50,33 @@ test("missing and stale UI are degraded and action-disabled", () => {
     assert.match(html, /degraded/);
     assert.match(html, /button[^>]*disabled/);
   }
+});
+
+test("gate resolution is explicitly disabled until a resolution choice exists", () => {
+  const value = projection("current");
+  value.legal_frontier = [
+    {
+      id: "gate:approval-1:resolve",
+      kind: "gate_resolution",
+      action: "resolve_gate",
+      allowed: true,
+      capability_required: "lifecycle.intent.submit",
+      reason_code: "LEGAL_GATE_RESOLUTION",
+      expected_state_version: 7
+    }
+  ];
+  const html = renderToStaticMarkup(
+    <LifecycleDetails
+      projection={value}
+      actorId="operator:holocene"
+      capabilityId="holocene-grant"
+      onActorId={noop}
+      onCapabilityId={noop}
+      onAction={noop}
+    />
+  );
+  assert.match(html, /Disabled: choose a canonical resolution before publishing/);
+  assert.match(html, /button[^>]*disabled/);
 });
 
 function projection(status: "current" | "stale" | "missing"): LifecycleProjection {
@@ -107,6 +130,7 @@ function projection(status: "current" | "stale" | "missing"): LifecycleProjectio
     capabilities: [
       {
         capability_id: "holocene-grant",
+        capability_version: 7,
         actor_id: "operator:holocene",
         actions: ["lifecycle.intent.submit"],
         scope: "lifecycle:11111111-1111-4111-8111-111111111111",

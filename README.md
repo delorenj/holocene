@@ -18,9 +18,13 @@ legal frontier, obligations, blockers/gates, and stable command verdicts.
 High-level actions are accepted by
 `POST /api/modules/lifecycle/:lifecycleId/actions`. The API refetches the
 projection, requires a legal frontier item and matching capability grant, then
-publishes the canonical version-checked command through Bloodbank. A queued
-response is transport acknowledgement only: Holocene never advances local
-state optimistically and waits for a later authoritative projection/verdict.
+derives the grant's canonical `capability_version` and the complete semantic
+command identity, then publishes the version-checked command through Bloodbank.
+The current publisher uses core NATS. Its PING/PONG result proves server protocol
+processing only; it is explicitly not a durable JetStream publish acknowledgment
+or Lifecycle acceptance. Holocene never advances local state optimistically and
+waits for a later authoritative projection/verdict. Gate-resolution actions stay
+disabled until the client supplies an explicit resolution choice.
 
 Lifecycle remains the only specification, transition, reconcile, frontier,
 obligation, and capability authority. Candystore is read-only projection/history,

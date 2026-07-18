@@ -21,6 +21,7 @@ export type LifecycleObligation = {
 
 export type LifecycleCapability = {
   capability_id: string;
+  capability_version: number;
   actor_id: string;
   actions: string[];
   scope: string;
@@ -105,7 +106,11 @@ export function normalizeLifecycleProjection(
   if (!Array.isArray(value.blockers) || !Array.isArray(value.gates)) {
     return missingLifecycleProjection(lifecycleId, asOf, "projection blocker fields are invalid");
   }
-  if (!Array.isArray(value.capabilities) || !Array.isArray(value.command_verdicts)) {
+  if (
+    !Array.isArray(value.capabilities) ||
+    !value.capabilities.every(isLifecycleCapability) ||
+    !Array.isArray(value.command_verdicts)
+  ) {
     return missingLifecycleProjection(lifecycleId, asOf, "projection client fields are invalid");
   }
 
@@ -192,6 +197,23 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function isProjectionStatus(value: unknown): value is LifecycleProjection["projection_status"] {
   return value === "current" || value === "stale" || value === "missing";
+}
+
+function isLifecycleCapability(value: unknown): value is LifecycleCapability {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.capability_id === "string" &&
+    Number.isInteger(value.capability_version) &&
+    Number(value.capability_version) >= 1 &&
+    typeof value.actor_id === "string" &&
+    Array.isArray(value.actions) &&
+    value.actions.every((action) => typeof action === "string") &&
+    typeof value.scope === "string" &&
+    typeof value.issued_at === "string" &&
+    (value.expires_at === null || typeof value.expires_at === "string") &&
+    Number.isInteger(value.state_version) &&
+    Number(value.state_version) >= 1
+  );
 }
 
 function textOr(value: unknown, fallback: string) {

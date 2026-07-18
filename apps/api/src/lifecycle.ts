@@ -71,10 +71,26 @@ export async function submitLifecycleAction(
       `Lifecycle projection is ${projection.projection_status}; no command was published`
     );
   }
-  if (!projection.repo || !projection.state_version || !projection.source?.event_id) {
+  if (
+    !projection.repo ||
+    !projection.state_version ||
+    !projection.source?.event_id ||
+    !projection.source.event_time
+  ) {
     throw new LifecycleActionError(409, "Lifecycle projection lacks authoritative command context");
   }
   const value = record(body, "request body");
+  for (const derived of [
+    "capability_version",
+    "idempotency_key",
+    "correlation_id",
+    "causation_id",
+    "requested_at"
+  ]) {
+    if (value[derived] !== undefined) {
+      throw new LifecycleActionError(400, `${derived} is derived from authoritative semantics`);
+    }
+  }
   const frontierId = text(value.frontier_id, "frontier_id");
   const expectedStateVersion = version(value.expected_state_version, "expected_state_version");
   if (expectedStateVersion !== projection.state_version) {
@@ -92,7 +108,6 @@ export async function submitLifecycleAction(
 
   const actor = parseActor(record(value.actor, "actor"));
   const capabilityId = text(value.capability_id, "capability_id");
-  const capabilityVersion = version(value.capability_version, "capability_version");
   const grant = projection.capabilities.find(
     (item) =>
       item.capability_id === capabilityId &&
@@ -105,40 +120,38 @@ export async function submitLifecycleAction(
     throw new LifecycleActionError(403, "no current authoritative capability grant matches the action");
   }
 
-  const correlationId = uuid(value.correlation_id, "correlation_id");
-  const causationId = uuid(value.causation_id, "causation_id");
-  if (causationId !== projection.source.event_id) {
-    throw new LifecycleActionError(409, "causation_id must identify the rendered projection event");
-  }
-  const idempotencyKey = text(value.idempotency_key, "idempotency_key");
   const parameters = value.parameters === undefined ? {} : record(value.parameters, "parameters");
   const [name, target] = frontierIntent(frontier);
+  if (name === "resolve_gate") {
+    text(parameters.resolution, "parameters.resolution");
+  }
   const envelope = buildLifecycleIntentEnvelope({
     lifecycleId,
     repo: projection.repo,
+    selectedFrontierId: frontier.id,
+    authoritySnapshotEventId: projection.source.event_id,
+    authoritySnapshotEventTime: projection.source.event_time,
     expectedStateVersion,
     intent: {
       name,
       target,
-      parameters: { ...parameters, selected_frontier_id: frontier.id }
+      parameters
     },
     capability: {
       capability_id: grant.capability_id,
-      capability_version: capabilityVersion,
+      capability_version: grant.capability_version,
       action: "lifecycle.intent.submit",
       scope: grant.scope,
       issued_to: actor.agent_id
     },
-    actor,
-    idempotencyKey,
-    correlationId,
-    causationId,
-    requestedAt: dependencies.now().toISOString()
+    actor
   });
 
-  await dependencies.publisher.publish(envelope.subject, envelope);
+  const receipt = await dependencies.publisher.publish(envelope.subject, envelope);
   return {
-    queued: true,
+    broker_processed: receipt.acknowledgment === "server_processed",
+    transport: receipt.transport,
+    durable_jetstream_acknowledged: receipt.durable,
     authority_accepted: false,
     lifecycle_id: lifecycleId,
     expected_state_version: expectedStateVersion,
@@ -147,7 +160,10 @@ export async function submitLifecycleAction(
     idempotency_key: envelope.idempotency_key,
     correlation_id: envelope.correlationid,
     causation_id: envelope.causationid,
-    message: "Command queued through Bloodbank; rendered state is unchanged pending authority verdict."
+    message: (
+      "Core NATS processed the publish; this is not a durable JetStream acknowledgment " +
+      "or Lifecycle acceptance. Rendered state is unchanged pending the authority verdict."
+    )
   };
 }
 
@@ -244,12 +260,4 @@ function version(value: unknown, name: string) {
     throw new LifecycleActionError(400, `${name} must be an integer >= 1`);
   }
   return Number(value);
-}
-
-function uuid(value: unknown, name: string) {
-  const parsed = text(value, name);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) {
-    throw new LifecycleActionError(400, `${name} must be a UUID`);
-  }
-  return parsed;
 }
