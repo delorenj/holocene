@@ -40,7 +40,8 @@ and HTTP 202 body, records the explicitly non-authoritative broker receipt, then
 waits for Candystore's later projection to render the matching authority verdict,
 resulting state version, and causal source before writing a JSON receipt plus
 desktop and mobile screenshots. It does not route, replace, or predict any
-Lifecycle response.
+Lifecycle response. The proof context blocks service workers and rejects any
+response that is not tied to the exact captured browser request.
 
 ```bash
 pnpm prove:lifecycle-browser -- \

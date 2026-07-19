@@ -15,6 +15,7 @@ const expectedFrontierId = args.get("frontier-id") ?? null;
 const timeoutMs = positiveInteger(args.get("timeout-ms") ?? "90000", "timeout-ms");
 const pageUrl = `${baseUrl}/lifecycle/${encodeURIComponent(lifecycleId)}`;
 const apiPath = `/api/lifecycle/${encodeURIComponent(lifecycleId)}`;
+const apiUrl = `${baseUrl}${apiPath}`;
 const artifactStem = lifecycleId.replace(/[^a-zA-Z0-9_.-]/g, "-");
 
 await mkdir(dirname(outputPath), { recursive: true });
@@ -26,7 +27,8 @@ let page;
 try {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
-    colorScheme: "dark"
+    colorScheme: "dark",
+    serviceWorkers: "block"
   });
   page = await context.newPage();
   await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
@@ -154,12 +156,12 @@ try {
     });
   });
   const requestPromise = page.waitForRequest(
-    (request) => request.method() === "POST" && new URL(request.url()).pathname === apiPath,
+    (request) => request.method() === "POST" && request.url() === apiUrl,
     { timeout: timeoutMs }
   );
   const responsePromise = page.waitForResponse(
     (response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === apiPath,
+      response.request().method() === "POST" && response.url() === apiUrl,
     { timeout: timeoutMs }
   );
 
@@ -181,6 +183,7 @@ try {
   };
 
   const requestRawBody = request.postData();
+  assert.equal(request.url(), apiUrl, "captured browser request used an unexpected origin or path");
   assertNonEmpty(requestRawBody, "browser POST body");
   const requestBody = JSON.parse(requestRawBody);
   const requestReceipt = {
@@ -203,6 +206,9 @@ try {
   });
 
   const responseRawBody = await response.text();
+  assert.equal(response.request(), request, "HTTP 202 did not belong to the captured browser POST");
+  assert.equal(response.url(), apiUrl, "captured response used an unexpected origin or path");
+  assert.equal(response.fromServiceWorker(), false, "browser response came from a service worker");
   assertNonEmpty(responseRawBody, "HTTP 202 response body");
   const responseBody = JSON.parse(responseRawBody);
   assert.equal(response.status(), 202, "Holocene action response must be HTTP 202");
@@ -226,6 +232,7 @@ try {
     url: response.url(),
     status: response.status(),
     ok: response.ok(),
+    from_service_worker: response.fromServiceWorker(),
     raw_body: responseRawBody,
     body: responseBody
   };
