@@ -160,11 +160,12 @@ legal frontier, obligations, blockers, and capability validation. Bloodbank
 owns canonical schemas/transport, Candystore owns durable history/read models,
 and PJangler owns project/bootstrap identity.
 
-The standalone Lifecycle service and Holocene client are not implemented. The
-current Bloodbank controller is only an extraction embryo; the live Holocene
-Bloodbank client is a stub and Candystore history is not current-state proof.
+The standalone Lifecycle service is implemented as the only deterministic
+authority. Holocene's implemented client submits high-level actions through
+Bloodbank and renders Lifecycle-owned results; Candystore history remains an
+audit/read projection rather than current-state proof.
 
-When the target client exists, every lifecycle view must render:
+Every lifecycle view must render:
 
 - lifecycle/project identity, spec version, and state version;
 - provenance, observed time, freshness, and explicit unavailable/stale state;
