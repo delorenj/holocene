@@ -3,6 +3,7 @@ import test from "node:test";
 import type { LifecycleProjection } from "@holocene/lifecycle-client";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { LifecycleCommandReceipt } from "./lifecycle-action-contract.js";
 import { LifecycleDetails } from "./lifecycle-details.js";
 
 const noop = () => undefined;
@@ -30,10 +31,33 @@ test("Lifecycle UI renders identity, versions, provenance, work, blockers and ve
     "Credential unavailable",
     "approval-1",
     "EXPECTED_STATE_VERSION_MISMATCH",
-    "stale"
+    "stale",
+    'data-proof-contract="holocene-lifecycle-browser-v1"',
+    'data-testid="lifecycle-actor"',
+    'data-testid="lifecycle-capability"',
+    'data-testid="lifecycle-frontier-item"',
+    'data-testid="lifecycle-action"',
+    'data-state-version="7"'
   ]) {
     assert.match(html, new RegExp(expected));
   }
+});
+
+test("current allowed frontier is semantically identified and actionable", () => {
+  const html = renderToStaticMarkup(
+    <LifecycleDetails
+      projection={projection("current")}
+      actorId="operator:holocene"
+      capabilityId="holocene-grant"
+      onActorId={noop}
+      onCapabilityId={noop}
+      onAction={noop}
+    />
+  );
+  assert.match(html, /data-frontier-id="transition:planned:active"/);
+  assert.match(html, /data-frontier-allowed="true"/);
+  assert.match(html, /data-expected-state-version="7"/);
+  assert.doesNotMatch(html, /data-testid="lifecycle-action"[^>]*disabled/);
 });
 
 test("missing and stale UI are degraded and action-disabled", () => {
@@ -52,6 +76,40 @@ test("missing and stale UI are degraded and action-disabled", () => {
     assert.match(html, /degraded/);
     assert.match(html, /button[^>]*disabled/);
   }
+});
+
+test("broker success and command errors render stable proof receipts", () => {
+  const success = renderToStaticMarkup(
+    <LifecycleDetails
+      projection={projection("current")}
+      actorId="operator:holocene"
+      capabilityId="holocene-grant"
+      commandReceipt={commandReceipt()}
+      onActorId={noop}
+      onCapabilityId={noop}
+      onAction={noop}
+    />
+  );
+  assert.match(success, /data-testid="lifecycle-command-success"/);
+  assert.match(success, /data-command-id="command-browser-1"/);
+  assert.match(success, /data-command-event-id="event-browser-1"/);
+  assert.match(success, /data-broker-processed="true"/);
+  assert.match(success, /data-authority-accepted="false"/);
+
+  const error = renderToStaticMarkup(
+    <LifecycleDetails
+      projection={projection("current")}
+      actorId="operator:holocene"
+      capabilityId="holocene-grant"
+      commandError="command API returned 502"
+      onActorId={noop}
+      onCapabilityId={noop}
+      onAction={noop}
+    />
+  );
+  assert.match(error, /data-testid="lifecycle-command-error"/);
+  assert.match(error, /role="alert"/);
+  assert.match(error, /command API returned 502/);
 });
 
 test("gate resolution is explicitly disabled until a resolution choice exists", () => {
@@ -200,5 +258,22 @@ function projection(status: "current" | "stale" | "missing"): LifecycleProjectio
         responded_at: "2026-07-18T12:01:00Z"
       }
     ]
+  };
+}
+
+function commandReceipt(): LifecycleCommandReceipt {
+  return {
+    broker_processed: true,
+    transport: "nats-core",
+    durable_jetstream_acknowledged: false,
+    authority_accepted: false,
+    lifecycle_id: "11111111-1111-4111-8111-111111111111",
+    expected_state_version: 7,
+    command_event_id: "event-browser-1",
+    command_id: "command-browser-1",
+    idempotency_key: "idempotency-browser-1",
+    correlation_id: "22222222-2222-4222-8222-222222222222",
+    causation_id: "33333333-3333-4333-8333-333333333333",
+    message: "Core NATS processed the publish."
   };
 }

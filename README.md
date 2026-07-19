@@ -31,6 +31,26 @@ or Lifecycle acceptance. Holocene never advances local state optimistically and
 waits for a later authoritative projection/verdict. Gate-resolution actions stay
 disabled until the client supplies an explicit resolution choice.
 
+The machine-readable browser gate is `scripts/prove-lifecycle-browser.mjs`.
+It opens the real `/lifecycle/:lifecycleId` page in Chromium, reads the selected
+actor, current capability grant, allowed frontier, and expected state version
+from semantic DOM attributes, accepts the Lifecycle-required confirmation, and
+clicks the enabled UI action. The script observes the browser's unmodified POST
+and HTTP 202 body, records the explicitly non-authoritative broker receipt, then
+waits for Candystore's later projection to render the matching authority verdict,
+resulting state version, and causal source before writing a JSON receipt plus
+desktop and mobile screenshots. It does not route, replace, or predict any
+Lifecycle response.
+
+```bash
+pnpm prove:lifecycle-browser -- \
+  --base-url http://127.0.0.1:3001 \
+  --lifecycle-id <id> \
+  --frontier-id <confirmation-frontier-id> \
+  --output /tmp/holocene-browser-receipt.json \
+  --screenshots-dir /tmp/holocene-browser-screenshots
+```
+
 Lifecycle remains the only specification, transition, reconcile, frontier,
 obligation, and capability authority. Candystore is read-only projection/history,
 Bloodbank owns schemas and transport, Momo is a policy client, and Holocene does

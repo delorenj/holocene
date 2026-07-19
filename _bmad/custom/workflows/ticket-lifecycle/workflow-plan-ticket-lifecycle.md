@@ -19,6 +19,11 @@ authority.
   skill-invocation and lifecycle command intent through Bloodbank.
 - Holocene renders Candystore's projection and publishes high-level canonical
   commands without optimistic local transition state.
+- Holocene owns a reusable Playwright proof that reads the current actor, grant,
+  legal frontier, state version, source identity, and verdict from its rendered
+  surface; accepts the authority-required confirmation; records the actual
+  browser POST and non-authoritative HTTP 202 receipt; and waits for the later
+  authority-owned projection before capturing desktop/mobile evidence.
 
 ## Target responsibilities
 
@@ -55,11 +60,16 @@ authority.
 Clients always refetch after intent and treat queued transport acknowledgement as
 non-authoritative. Lifecycle rejection, stale data, missing grants, or transport
 outage remains visible and fail-closed. Provider state, board state, local files,
-and UI clicks never substitute for the authoritative projection.
+and UI clicks never substitute for the authoritative projection. The browser
+proof observes the unmodified request/response path and the rendered Candystore
+result; it does not install route handlers, synthesize replies, or advance state
+inside Holocene.
 
 ## Success criteria
 
 The source and generated workflow copies are byte-identical. Validation proves
 one writer, deterministic replay, idempotency, version conflicts, capability
 denial, unavailable-service behavior, history continuity, and absence of direct
-Momo/Holocene provider transitions.
+Momo/Holocene provider transitions. The live client gate additionally proves an
+actual confirmation dialog, enabled UI click, browser-originated POST, HTTP 202
+body, success receipt, authority verdict/causality, and two rendered screenshots.

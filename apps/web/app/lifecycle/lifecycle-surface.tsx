@@ -7,6 +7,13 @@ import {
   type LifecycleProjection
 } from "@holocene/lifecycle-client";
 import { useCallback, useEffect, useState } from "react";
+import {
+  buildLifecycleActionRequest,
+  lifecycleActionRequiresConfirmation,
+  lifecycleConfirmationMessage,
+  parseLifecycleCommandReceipt,
+  type LifecycleCommandReceipt
+} from "./lifecycle-action-contract";
 import { LifecycleDetails } from "./lifecycle-details";
 
 export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
@@ -16,7 +23,7 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
   const [actorId, setActorId] = useState("");
   const [capabilityId, setCapabilityId] = useState("");
   const [busyFrontierId, setBusyFrontierId] = useState<string>();
-  const [commandMessage, setCommandMessage] = useState<string>();
+  const [commandReceipt, setCommandReceipt] = useState<LifecycleCommandReceipt>();
   const [commandError, setCommandError] = useState<string>();
 
   const load = useCallback(async () => {
@@ -83,36 +90,25 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
       return;
     }
     if (
-      frontier.reason_code === "LEGAL_REQUIRES_CONFIRMATION" &&
-      !window.confirm(`Submit confirmed Lifecycle action ${frontier.id}?`)
+      lifecycleActionRequiresConfirmation(frontier) &&
+      !window.confirm(lifecycleConfirmationMessage(frontier))
     ) {
       return;
     }
     setBusyFrontierId(frontier.id);
-    setCommandMessage(undefined);
+    setCommandReceipt(undefined);
     setCommandError(undefined);
     try {
       const response = await fetch(`/api/lifecycle/${encodeURIComponent(lifecycleId)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          frontier_id: frontier.id,
-          expected_state_version: frontier.expected_state_version,
-          actor: { type: "operator", agent_id: actorId },
-          capability_id: capabilityId,
-          parameters:
-            frontier.reason_code === "LEGAL_REQUIRES_CONFIRMATION" ? { confirmed: true } : {}
-        })
+        body: JSON.stringify(buildLifecycleActionRequest(frontier, actorId, capabilityId))
       });
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-        command_id?: string;
-      };
-      if (!response.ok) throw new Error(body.error ?? `command API returned ${response.status}`);
-      setCommandMessage(
-        `${body.message ?? "Broker processed the command."} Command ${body.command_id ?? "unknown"}.`
-      );
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (response.status !== 202) {
+        throw new Error(body.error ?? `command API returned ${response.status}`);
+      }
+      setCommandReceipt(parseLifecycleCommandReceipt(body));
       window.setTimeout(() => void load(), 1_000);
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : "Command publication failed");
@@ -127,7 +123,7 @@ export function LifecycleSurface({ lifecycleId }: { lifecycleId: string }) {
       actorId={actorId}
       capabilityId={capabilityId}
       busyFrontierId={busyFrontierId}
-      commandMessage={commandMessage}
+      commandReceipt={commandReceipt}
       commandError={commandError}
       onActorId={setActorId}
       onCapabilityId={setCapabilityId}

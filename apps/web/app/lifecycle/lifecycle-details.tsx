@@ -2,13 +2,14 @@
 
 import type { LifecycleFrontierItem, LifecycleProjection } from "@holocene/lifecycle-client";
 import React from "react";
+import type { LifecycleCommandReceipt } from "./lifecycle-action-contract";
 
 type Props = {
   projection: LifecycleProjection;
   actorId: string;
   capabilityId: string;
   busyFrontierId?: string;
-  commandMessage?: string;
+  commandReceipt?: LifecycleCommandReceipt;
   commandError?: string;
   onActorId: (value: string) => void;
   onCapabilityId: (value: string) => void;
@@ -20,7 +21,7 @@ export function LifecycleDetails({
   actorId,
   capabilityId,
   busyFrontierId,
-  commandMessage,
+  commandReceipt,
   commandError,
   onActorId,
   onCapabilityId,
@@ -38,7 +39,18 @@ export function LifecycleDetails({
   );
 
   return (
-    <main className="lifecycle-shell">
+    <main
+      className="lifecycle-shell"
+      data-testid="lifecycle-surface"
+      data-proof-contract="holocene-lifecycle-browser-v1"
+      data-lifecycle-id={projection.lifecycle_id}
+      data-projection-status={projection.projection_status}
+      data-state-status={projection.status}
+      data-state-version={projection.state_version ?? ""}
+      data-source-event-id={projection.source?.event_id ?? ""}
+      data-source-correlation-id={projection.source?.correlation_id ?? ""}
+      data-source-causation-id={projection.source?.causation_id ?? ""}
+    >
       <header className="lifecycle-hero">
         <div>
           <a className="lifecycle-back" href="/">
@@ -48,7 +60,13 @@ export function LifecycleDetails({
           <h1>{projection.repo ?? projection.lifecycle_id}</h1>
           <p className="lifecycle-id">{projection.lifecycle_id}</p>
         </div>
-        <div className={`lifecycle-state lifecycle-state-${projection.projection_status}`}>
+        <div
+          className={`lifecycle-state lifecycle-state-${projection.projection_status}`}
+          data-testid="lifecycle-state"
+          data-projection-status={projection.projection_status}
+          data-state-status={projection.status}
+          data-state-version={projection.state_version ?? ""}
+        >
           <span>{projection.projection_status}</span>
           <strong>{projection.status}</strong>
           <small>{projection.health}</small>
@@ -80,21 +98,28 @@ export function LifecycleDetails({
 
       <section className="lifecycle-grid">
         <Panel title="Provenance" subtitle="Authority and observation source">
-          <KeyValue label="Authority" value={recordValue(projection.provenance, "authority")} />
-          <KeyValue
-            label="Instance"
-            value={recordValue(projection.provenance, "authority_instance")}
-          />
-          <KeyValue label="Policy" value={recordValue(projection.provenance, "policy_version")} />
-          <KeyValue
-            label="Reconciliation"
-            value={recordValue(projection.provenance, "reconciliation_id")}
-          />
-          <KeyValue label="Source event" value={projection.source?.event_id ?? "unknown"} />
-          <KeyValue label="Correlation" value={projection.source?.correlation_id ?? "unknown"} />
-          <KeyValue label="Causation" value={projection.source?.causation_id ?? "root event"} />
-          <KeyValue label="Observed event time" value={projection.source?.event_time ?? "unknown"} />
-          <KeyValue label="Projected at" value={projection.source?.projected_at ?? "unknown"} />
+          <div
+            data-testid="lifecycle-source"
+            data-source-event-id={projection.source?.event_id ?? ""}
+            data-source-correlation-id={projection.source?.correlation_id ?? ""}
+            data-source-causation-id={projection.source?.causation_id ?? ""}
+          >
+            <KeyValue label="Authority" value={recordValue(projection.provenance, "authority")} />
+            <KeyValue
+              label="Instance"
+              value={recordValue(projection.provenance, "authority_instance")}
+            />
+            <KeyValue label="Policy" value={recordValue(projection.provenance, "policy_version")} />
+            <KeyValue
+              label="Reconciliation"
+              value={recordValue(projection.provenance, "reconciliation_id")}
+            />
+            <KeyValue label="Source event" value={projection.source?.event_id ?? "unknown"} />
+            <KeyValue label="Correlation" value={projection.source?.correlation_id ?? "unknown"} />
+            <KeyValue label="Causation" value={projection.source?.causation_id ?? "root event"} />
+            <KeyValue label="Observed event time" value={projection.source?.event_time ?? "unknown"} />
+            <KeyValue label="Projected at" value={projection.source?.projected_at ?? "unknown"} />
+          </div>
         </Panel>
 
         <Panel title="Freshness" subtitle="As reported by Lifecycle and Candystore">
@@ -130,6 +155,7 @@ export function LifecycleDetails({
           <label>
             Actor ID
             <input
+              data-testid="lifecycle-actor"
               value={actorId}
               onChange={(event) => onActorId(event.target.value)}
               placeholder="operator or agent identity"
@@ -138,12 +164,20 @@ export function LifecycleDetails({
           <label>
             Capability grant
             <select
+              data-testid="lifecycle-capability"
               value={capabilityId}
               onChange={(event) => onCapabilityId(event.target.value)}
             >
               <option value="">Select a current grant</option>
               {grants.map((grant) => (
-                <option key={grant.capability_id} value={grant.capability_id}>
+                <option
+                  key={grant.capability_id}
+                  value={grant.capability_id}
+                  data-actor-id={grant.actor_id}
+                  data-capability-id={grant.capability_id}
+                  data-capability-version={grant.capability_version}
+                  data-grant-state-version={grant.state_version}
+                >
                   {grant.capability_id} · {grant.actor_id} · v{grant.capability_version}
                 </option>
               ))}
@@ -156,7 +190,18 @@ export function LifecycleDetails({
         ) : (
           <div className="lifecycle-cards">
             {projection.legal_frontier.map((item) => (
-              <article className="lifecycle-card" key={item.id}>
+              <article
+                className="lifecycle-card"
+                key={item.id}
+                data-testid="lifecycle-frontier-item"
+                data-frontier-id={item.id}
+                data-frontier-kind={item.kind}
+                data-frontier-action={item.action}
+                data-frontier-allowed={item.allowed}
+                data-frontier-reason-code={item.reason_code}
+                data-expected-state-version={item.expected_state_version}
+                data-capability-required={item.capability_required ?? ""}
+              >
                 <div className="lifecycle-card-head">
                   <strong>{item.id}</strong>
                   <span className={item.allowed ? "lifecycle-allowed" : "lifecycle-denied"}>
@@ -170,6 +215,11 @@ export function LifecycleDetails({
                   <small>Disabled: choose a canonical resolution before publishing.</small>
                 ) : null}
                 <button
+                  data-testid="lifecycle-action"
+                  data-frontier-id={item.id}
+                  data-frontier-action={item.action}
+                  data-frontier-reason-code={item.reason_code}
+                  data-expected-state-version={item.expected_state_version}
                   type="button"
                   disabled={
                     !canAct ||
@@ -187,8 +237,31 @@ export function LifecycleDetails({
             ))}
           </div>
         )}
-        {commandMessage ? <p className="lifecycle-command-ok">{commandMessage}</p> : null}
-        {commandError ? <p className="lifecycle-command-error">{commandError}</p> : null}
+        {commandReceipt ? (
+          <p
+            className="lifecycle-command-ok"
+            role="status"
+            aria-live="polite"
+            data-testid="lifecycle-command-success"
+            data-command-id={commandReceipt.command_id}
+            data-command-event-id={commandReceipt.command_event_id}
+            data-correlation-id={commandReceipt.correlation_id}
+            data-causation-id={commandReceipt.causation_id}
+            data-broker-processed={commandReceipt.broker_processed}
+            data-authority-accepted={commandReceipt.authority_accepted}
+          >
+            {commandReceipt.message} Command {commandReceipt.command_id}.
+          </p>
+        ) : null}
+        {commandError ? (
+          <p
+            className="lifecycle-command-error"
+            role="alert"
+            data-testid="lifecycle-command-error"
+          >
+            {commandError}
+          </p>
+        ) : null}
       </Panel>
 
       <section className="lifecycle-grid">
@@ -230,7 +303,23 @@ export function LifecycleDetails({
         ) : (
           <div className="lifecycle-verdicts">
             {projection.command_verdicts.map((verdict) => (
-              <article key={verdict.reply_event_id}>
+              <article
+                key={verdict.reply_event_id}
+                data-testid="lifecycle-command-verdict"
+                data-reply-event-id={verdict.reply_event_id}
+                data-command-event-id={verdict.command_event_id}
+                data-command-id={verdict.command_id}
+                data-verdict={verdict.verdict}
+                data-mutated={verdict.mutated}
+                data-expected-state-version={verdict.expected_state_version}
+                data-observed-state-version={verdict.observed_state_version}
+                data-resulting-state-version={verdict.resulting_state_version ?? ""}
+                data-applied-event-id={verdict.applied_event_id ?? ""}
+                data-capability-id={verdict.capability_id ?? ""}
+                data-reason-code={verdict.reason_code}
+                data-correlation-id={verdict.correlation_id ?? ""}
+                data-causation-id={verdict.causation_id ?? ""}
+              >
                 <span className={`lifecycle-verdict lifecycle-verdict-${verdict.verdict}`}>
                   {verdict.verdict}
                 </span>
