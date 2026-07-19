@@ -2,7 +2,7 @@
 
 ## App overview
 
-Holocene is a 33GOD control-plane dashboard that surfaces live fleet, tooling,
+Holocene is the 33GOD dashboard and renderer that surfaces live fleet, tooling,
 and pipeline health from API services, Redis-backed stats, and SSE/polling
 feeds. Its UI is built around generic live data components, where specific
 panels like Hook Health are just collection renderers over structured backend
@@ -10,7 +10,7 @@ payloads.
 
 ## Operating model
 
-Holocene is the 33GOD control-plane dashboard for a single operator. There is
+Holocene is the 33GOD dashboard and renderer for a single operator. There is
 no separate staging lane, no dev/prod handoff, and no second human user group
 to protect with release ceremony.
 

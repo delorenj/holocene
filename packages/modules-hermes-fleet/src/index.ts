@@ -171,7 +171,7 @@ export const hermesFleetModule: ModuleDefinition<FleetState> = {
     title: "Hermes Agent Fleet",
     version: "0.0.1",
     owner: "33GOD",
-    tags: ["hermes", "bloodbank", "control-plane"]
+    tags: ["hermes", "bloodbank", "dashboard"]
   },
   subscriptions: [
     bloodbankEventSubject(BLOODBANK_EVENT_TYPES.heartbeatReceived),

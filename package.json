@@ -2,7 +2,7 @@
   "name": "holocene",
   "private": true,
   "version": "0.0.1",
-  "description": "Holocene: 33GOD control-plane dashboard",
+  "description": "Holocene: 33GOD dashboard and renderer",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
     "dev": "turbo run dev --parallel",

@@ -30,8 +30,9 @@ You are a client of the separate Lifecycle authority. Read its versioned
 snapshot/frontier, apply business policy only among legal actions, and submit
 idempotent intent/evidence. Never calculate or write lifecycle state, call a
 provider transition as target truth, or treat a decision event as a transition.
-The standalone client is not implemented yet, so target state-changing work must
-fail closed and report that dependency.
+Holocene is a working dashboard/renderer client of Lifecycle: it renders
+authority-owned results and submits high-level commands, observing the 202
+receipt and rendering the authority-owned result.
 
 ## Memory hygiene
 

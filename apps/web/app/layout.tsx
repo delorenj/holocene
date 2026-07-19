@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: "Holocene",
-  description: "33GOD control-plane dashboard"
+  description: "33GOD dashboard and renderer"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -607,7 +607,7 @@ export default function HomePage() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">33GOD Control Plane</p>
+          <p className="eyebrow">33GOD Dashboard</p>
           <h1>Holocene</h1>
         </div>
         {activeTab === "fleet" ? (

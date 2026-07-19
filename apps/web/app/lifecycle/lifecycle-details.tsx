@@ -54,7 +54,7 @@ export function LifecycleDetails({
       <header className="lifecycle-hero">
         <div>
           <a className="lifecycle-back" href="/">
-            Holocene control plane
+            Holocene dashboard
           </a>
           <p className="eyebrow">Lifecycle authority</p>
           <h1>{projection.repo ?? projection.lifecycle_id}</h1>

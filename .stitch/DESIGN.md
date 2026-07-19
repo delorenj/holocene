@@ -2,7 +2,7 @@
 version: alpha
 name: Holocene
 description: >-
-  33GOD control-plane dashboard. A dark, high-density operator "mission
+  33GOD dashboard and renderer. A dark, high-density operator "mission
   control" that surfaces live fleet, tooling, and pipeline health. The UI is
   built from generic live-data collection renderers over structured backend
   payloads, not bespoke per-panel layouts.
@@ -41,7 +41,7 @@ typography:
     fontFamily: Inter
     fontSize: "1.08rem"
     fontWeight: 700
-  eyebrow:               # "33GOD Control Plane" kicker
+  eyebrow:               # "33GOD Dashboard" kicker
     fontFamily: Inter
     fontSize: "0.78rem"
     fontWeight: 700
@@ -137,9 +137,9 @@ components:
 
 ## Overview
 
-Holocene is the 33GOD control-plane dashboard — the mission-control surface for
+Holocene is the 33GOD dashboard and renderer — the mission-control surface for
 a single operator watching a live agentic development pipeline. The README
-leads with its purpose: *"a 33GOD control-plane dashboard that surfaces live
+leads with its purpose: *"the 33GOD dashboard and renderer that surfaces live
 fleet, tooling, and pipeline health from API services, Redis-backed stats, and
 SSE/polling feeds."* That live-data mandate is the whole design: every screen is
 a dense, always-updating readout, never a marketing page.
