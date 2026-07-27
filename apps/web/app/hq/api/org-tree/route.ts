@@ -34,6 +34,24 @@ export async function GET(request: Request) {
 
   const result = verifyInitData(initDataFromRequest(request), botToken, { allowedUserIds });
   if (!result.ok) {
+    // One-shot diagnostic (no secrets): what does the failing initData claim?
+    let seen = "unparseable";
+    try {
+      const raw = initDataFromRequest(request);
+      const p = new URLSearchParams(raw);
+      let uid: unknown;
+      try {
+        uid = JSON.parse(p.get("user") ?? "{}")?.id;
+      } catch {
+        uid = "?";
+      }
+      const ad = Number(p.get("auth_date") ?? 0);
+      const ageH = ad ? ((Date.now() / 1000 - ad) / 3600).toFixed(1) : "?";
+      seen = `user.id=${uid} auth_age_h=${ageH} has_hash=${p.has("hash")} has_signature=${p.has("signature")} len=${raw.length}`;
+    } catch {
+      /* leave 'unparseable' */
+    }
+    console.warn(`[hq] org-tree unauthorized: ${result.reason} | ${seen} | allowlist=${allowedUserIds.length}`);
     return Response.json({ ok: false, error: "unauthorized", reason: result.reason }, { status: 401 });
   }
 

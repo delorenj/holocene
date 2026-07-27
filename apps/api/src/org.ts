@@ -79,10 +79,11 @@ export async function getOrgTree(): Promise<OrgTree> {
         lastHeartbeatAt: a.active_work?.last_heartbeat_at,
         ageSeconds: a.active_work?.age_seconds
       },
+      planeBinding: a.plane,
       sparkline: sparklines[a.agent_id],
       updatedAt: a.active_work?.updated_at
     };
   }
 
-  return merge({ config, agents, live, generatedAt: snapshot.generatedAt, source: ORG_PATH });
+  return merge({ config, agents, live, bridge: snapshot.bridge, generatedAt: snapshot.generatedAt, source: ORG_PATH });
 }

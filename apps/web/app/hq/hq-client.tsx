@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { BridgeStatus, EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
 
 type Tone = "working" | "idle" | "attention" | "failed" | "unknown";
+
+type ActionResult = { ok: boolean; status: number; data: any };
+type PostAction = (path: string, body?: unknown) => Promise<ActionResult>;
+type GetAction = (path: string) => Promise<ActionResult>;
+type Controls = { postAction: PostAction; getAction: GetAction; refresh: () => void };
 
 type LoadState =
   | { kind: "loading" }
   | { kind: "ok"; tree: OrgTree; at: number }
   | { kind: "not-configured" }
   | { kind: "no-telegram" }
-  | { kind: "unauthorized" }
+  | { kind: "unauthorized"; reason?: string }
   | { kind: "error"; message: string };
 
 declare global {
@@ -106,12 +111,14 @@ function collectAgents(tree: OrgTree): { node: OrgNode; deptName: string }[] {
 export default function HqClient() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const initDataRef = useRef<string>("");
+  const fetchOnceRef = useRef<null | (() => void)>(null);
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const poll = async () => {
+    // One org-tree fetch, no rescheduling — safe to call on demand (refresh).
+    const fetchOnce = async () => {
       try {
         const res = await fetch("/hq/api/org-tree", {
           headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
@@ -121,7 +128,13 @@ export default function HqClient() {
         if (res.status === 503) {
           setState({ kind: "not-configured" });
         } else if (res.status === 401) {
-          setState(initDataRef.current ? { kind: "unauthorized" } : { kind: "no-telegram" });
+          let reason: string | undefined;
+          try {
+            reason = ((await res.json()) as { reason?: string })?.reason;
+          } catch {
+            /* non-JSON body */
+          }
+          setState(initDataRef.current ? { kind: "unauthorized", reason } : { kind: "no-telegram" });
         } else if (!res.ok) {
           setState({ kind: "error", message: `Fleet API returned ${res.status}` });
         } else {
@@ -130,9 +143,15 @@ export default function HqClient() {
         }
       } catch (err) {
         if (!cancelled) setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
-      } finally {
-        if (!cancelled) timer = setTimeout(poll, POLL_MS);
       }
+    };
+    fetchOnceRef.current = () => {
+      fetchOnce().catch(() => undefined);
+    };
+
+    const loop = async () => {
+      await fetchOnce();
+      if (!cancelled) timer = setTimeout(loop, POLL_MS);
     };
 
     (async () => {
@@ -149,14 +168,51 @@ export default function HqClient() {
         }
         initDataRef.current = tg.initData ?? "";
       }
-      poll();
+      loop();
     })();
 
     return () => {
       cancelled = true;
+      fetchOnceRef.current = null;
       if (timer) clearTimeout(timer);
     };
   }, []);
+
+  const postAction = useCallback<PostAction>(async (path, body) => {
+    const res = await fetch("/hq/api/action", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {})
+      },
+      body: JSON.stringify({ path, body: body ?? {} }),
+      cache: "no-store"
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    return { ok: res.ok, status: res.status, data };
+  }, []);
+
+  const getAction = useCallback<GetAction>(async (path) => {
+    const res = await fetch(`/hq/api/action?path=${encodeURIComponent(path)}`, {
+      headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
+      cache: "no-store"
+    });
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    return { ok: res.ok, status: res.status, data };
+  }, []);
+
+  const refresh = useCallback(() => fetchOnceRef.current?.(), []);
+  const controls: Controls = useMemo(() => ({ postAction, getAction, refresh }), [postAction, getAction, refresh]);
 
   if (state.kind === "loading") {
     return (
@@ -194,12 +250,21 @@ export default function HqClient() {
   }
 
   if (state.kind === "unauthorized") {
+    const reasonCopy: Record<string, string> = {
+      "user not allowed": "This Telegram account isn’t on the DeloHQ operator allowlist.",
+      "bad signature": "The Mini App launch data didn’t verify. Fully close and reopen from @DeLoHQBot’s “Open HQ” menu button; if it persists, the server bot token may be misconfigured.",
+      "expired initData": "This session is stale (>24h). Fully close and reopen the Mini App from @DeLoHQBot.",
+      "missing user": "Telegram didn’t include your account in the launch data. Reopen from the @DeLoHQBot menu button.",
+      "missing initData": "No Telegram launch data was sent. Open this from the @DeLoHQBot menu button, not a browser."
+    };
+    const detail = state.reason ? reasonCopy[state.reason] ?? `Verification failed: ${state.reason}.` : "This Telegram account isn’t on the DeloHQ operator allowlist.";
     return (
       <main className="hq-shell">
         <div className="hq-banner hq-banner-attention">
           <strong>Not authorized.</strong>
           <br />
-          This Telegram account isn’t on the DeloHQ operator allowlist.
+          {detail}
+          {state.reason ? <span className="hq-auth-reason"> (reason: {state.reason})</span> : null}
         </div>
       </main>
     );
@@ -217,7 +282,7 @@ export default function HqClient() {
     );
   }
 
-  return <Constellation tree={state.tree} at={state.at} />;
+  return <Constellation tree={state.tree} at={state.at} controls={controls} />;
 }
 
 function Sparkline({ data }: { data?: number[] }) {
@@ -256,14 +321,19 @@ function AgentNode({ node, deptName, onOpen }: { node: OrgNode; deptName: string
       </span>
       <span className="hq-node-sub">
         <span className="hq-node-repo">{node.agentRef?.repo || node.id}</span>
+        {node.flags?.includes("bridge-bound") ? (
+          <span className="hq-node-bridge" title="Bound to the Plane bridge — reacts to its board">
+            ⚡
+          </span>
+        ) : null}
         <span className="hq-node-state">{node.status}</span>
       </span>
     </button>
   );
 }
 
-function Constellation({ tree, at }: { tree: OrgTree; at: number }) {
-  const [selected, setSelected] = useState<{ node: OrgNode; deptName: string } | null>(null);
+function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; controls: Controls }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const departments = useMemo(() => [...(tree.root.children ?? [])].sort((a, b) => a.order - b.order), [tree.root.children]);
   const everyone = useMemo(() => collectAgents(tree), [tree]);
@@ -272,10 +342,16 @@ function Constellation({ tree, at }: { tree: OrgTree; at: number }) {
     [everyone]
   );
   const working = useMemo(() => everyone.filter((e) => toneOf(e.node.status) === "working"), [everyone]);
+  // Re-derive the open agent from the current tree by id so the Office sheet
+  // reflects live polls + control-action results without being reopened.
+  const selected = useMemo(
+    () => (selectedId ? everyone.find((e) => e.node.id === selectedId) ?? null : null),
+    [selectedId, everyone]
+  );
 
   const totals = tree.totals ?? { agents: 0, working: 0, idle: 0, needsAttention: 0, unknown: 0 };
   const updated = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const open = (node: OrgNode, deptName: string) => setSelected({ node, deptName });
+  const open = (node: OrgNode, _deptName: string) => setSelectedId(node.id);
 
   return (
     <main className="hq-shell">
@@ -288,6 +364,8 @@ function Constellation({ tree, at }: { tree: OrgTree; at: number }) {
           {moodGlyph(totals.needsAttention, totals.agents)}
         </span>
       </header>
+
+      {tree.bridge ? <BridgeCard bridge={tree.bridge} controls={controls} /> : null}
 
       {/* CEO node at the top of the constellation */}
       <div className="hq-ceo-wrap">
@@ -377,18 +455,135 @@ function Constellation({ tree, at }: { tree: OrgTree; at: number }) {
         {totals.agents} agents · {departments.length} departments · updated {updated} · refreshes every 5s
       </p>
 
-      {selected ? <Office entry={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? <Office entry={selected} onClose={() => setSelectedId(null)} controls={controls} /> : null}
     </main>
   );
 }
 
-function Office({ entry, onClose }: { entry: { node: OrgNode; deptName: string }; onClose: () => void }) {
+function BridgeCard({ bridge, controls }: { bridge: BridgeStatus; controls: Controls }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const up = bridge.serviceStatus === "active";
+  const tone: Tone = up ? (bridge.healthOk ? "idle" : "attention") : "failed";
+  const statusLabel = up ? (bridge.healthOk ? "live" : "no health") : bridge.serviceStatus;
+
+  const run = async (key: string, path: string, body?: unknown) => {
+    setBusy(key);
+    setErr(null);
+    const r = await controls.postAction(path, body);
+    setBusy(null);
+    if (!r.ok) setErr(r.data?.error || r.data?.message || `HTTP ${r.status}`);
+    else controls.refresh();
+  };
+
+  return (
+    <section className="hq-bridge">
+      <div className="hq-bridge-head">
+        <span className="hq-bridge-title">
+          <StatusDot tone={tone} /> Plane bridge
+        </span>
+        <span className={`hq-pill hq-pill-${tone}`}>{statusLabel}</span>
+      </div>
+      <p className="hq-bridge-meta">
+        {bridge.scope === "fleet"
+          ? "Fleet — every mapped PM reacts to its board"
+          : `Pilot — ${bridge.boundRepos.length} PM${bridge.boundRepos.length === 1 ? "" : "s"} bound`}
+        {" · "}
+        {bridge.projectsMapped} projects mapped {" · "}:{bridge.port}
+      </p>
+      {bridge.scope === "pilot" && bridge.boundRepos.length ? (
+        <div className="hq-bridge-repos">
+          {bridge.boundRepos.map((r) => (
+            <span key={r} className="hq-chip">
+              {r}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {err ? <p className="hq-bridge-err">{err}</p> : null}
+      <div className="hq-bridge-actions">
+        <button
+          type="button"
+          className="hq-btn"
+          disabled={!!busy}
+          onClick={() => run("restart", "/api/modules/hermes-fleet/bridge/service/restart")}
+        >
+          {busy === "restart" ? "…" : "Restart"}
+        </button>
+        {up ? (
+          <button
+            type="button"
+            className="hq-btn hq-btn-danger"
+            disabled={!!busy}
+            onClick={() => run("stop", "/api/modules/hermes-fleet/bridge/service/stop")}
+          >
+            {busy === "stop" ? "…" : "Stop"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="hq-btn"
+            disabled={!!busy}
+            onClick={() => run("start", "/api/modules/hermes-fleet/bridge/service/start")}
+          >
+            {busy === "start" ? "…" : "Start"}
+          </button>
+        )}
+        {bridge.scope === "pilot" ? (
+          <button
+            type="button"
+            className="hq-btn hq-btn-primary"
+            disabled={!!busy}
+            onClick={() => run("fleet", "/api/modules/hermes-fleet/bridge/binding", { scope: "fleet" })}
+          >
+            {busy === "fleet" ? "…" : "Roll fleet-wide →"}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function Office({
+  entry,
+  onClose,
+  controls
+}: {
+  entry: { node: OrgNode; deptName: string };
+  onClose: () => void;
+  controls: Controls;
+}) {
   const { node, deptName } = entry;
   const tone = toneOf(node.status);
   const work = node.live?.activeWork;
   const summary = work?.summary || work?.reason || "";
   const bot = node.agentRef?.botUsername;
   const expertise = node.metadata?.expertise ?? [];
+  const binding = node.live?.planeBinding;
+  const repo = node.agentRef?.repo;
+
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [log, setLog] = useState<string | null>(null);
+
+  const run = async (key: string, path: string, body?: unknown) => {
+    setBusy(key);
+    setErr(null);
+    const r = await controls.postAction(path, body);
+    setBusy(null);
+    if (!r.ok) setErr(r.data?.error || r.data?.message || `HTTP ${r.status}`);
+    else controls.refresh();
+  };
+
+  const viewLog = async () => {
+    setBusy("log");
+    setErr(null);
+    const r = await controls.getAction(`/api/modules/hermes-fleet/agents/${node.id}/log?lines=80`);
+    setBusy(null);
+    if (!r.ok) setErr(r.data?.error || `HTTP ${r.status}`);
+    else setLog(typeof r.data?.content === "string" ? r.data.content : JSON.stringify(r.data, null, 2));
+  };
 
   return (
     <div className="hq-sheet-backdrop" onClick={onClose}>
@@ -440,6 +635,63 @@ function Office({ entry, onClose }: { entry: { node: OrgNode; deptName: string }
             ))}
           </div>
         ) : null}
+
+        {binding?.bindable ? (
+          <div className="hq-sheet-block">
+            <span className="hq-sheet-k">Plane bridge</span>
+            <div className="hq-ctl-row">
+              <span className="hq-sheet-v">
+                {binding.bound ? "Bound — reacts to its board" : "Not bound"}
+                {binding.identifier ? ` · ${binding.identifier}` : ""}
+              </span>
+              <button
+                type="button"
+                className={`hq-btn ${binding.bound ? "hq-btn-danger" : "hq-btn-primary"}`}
+                disabled={!!busy || !repo}
+                onClick={() =>
+                  run("bind", "/api/modules/hermes-fleet/bridge/binding", { repo, bound: !binding.bound })
+                }
+              >
+                {busy === "bind" ? "…" : binding.bound ? "Unbind" : "Bind"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="hq-sheet-block">
+          <span className="hq-sheet-k">Services</span>
+          {(["gateway", "consumer", "sentinel"] as const).map((svc) => (
+            <div key={svc} className="hq-ctl-row">
+              <span className="hq-ctl-name">{svc}</span>
+              <div className="hq-ctl-btns">
+                {(["start", "restart", "stop"] as const).map((act) => (
+                  <button
+                    key={act}
+                    type="button"
+                    className={`hq-btn hq-btn-sm${act === "stop" ? " hq-btn-danger" : ""}`}
+                    disabled={!!busy}
+                    onClick={() => run(`${svc}:${act}`, `/api/modules/hermes-fleet/agents/${node.id}/services/${svc}/${act}`)}
+                  >
+                    {busy === `${svc}:${act}` ? "…" : act}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hq-sheet-block">
+          <span className="hq-sheet-k">Sentinel log</span>
+          {log ? (
+            <pre className="hq-log">{log}</pre>
+          ) : (
+            <button type="button" className="hq-btn" disabled={!!busy} onClick={viewLog}>
+              {busy === "log" ? "…" : "View last 80 lines"}
+            </button>
+          )}
+        </div>
+
+        {err ? <p className="hq-bridge-err">{err}</p> : null}
 
         <button type="button" className="hq-dm" disabled={!bot} onClick={() => openDm(bot)}>
           {bot ? "Open DM →" : "No bot linked"}

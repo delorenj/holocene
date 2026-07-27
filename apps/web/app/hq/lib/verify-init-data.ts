@@ -4,8 +4,11 @@ import crypto from "node:crypto";
 // Algorithm: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 //   secret_key = HMAC_SHA256(key="WebAppData", msg=<bot_token>)
 //   hash       = HMAC_SHA256(key=secret_key, msg=data_check_string)
-// where data_check_string is the alphabetically-sorted `key=value` pairs
-// (excluding `hash` and the third-party `signature` field) joined by "\n".
+// where data_check_string is the alphabetically-sorted `key=value` pairs of
+// EVERY received field except `hash`, joined by "\n". The newer `signature`
+// field (Ed25519, for third-party validation) is part of the received data and
+// MUST be included in this HMAC check-string — Telegram signs `hash` over it.
+// Excluding `signature` here silently breaks every modern client that sends it.
 
 export type TelegramUser = {
   id: number;
@@ -42,7 +45,7 @@ export function verifyInitData(
 
   const pairs: string[] = [];
   for (const [key, value] of params.entries()) {
-    if (key === "hash" || key === "signature") continue;
+    if (key === "hash") continue; // only `hash` is excluded; `signature` IS part of the check-string
     pairs.push(`${key}=${value}`);
   }
   pairs.sort();

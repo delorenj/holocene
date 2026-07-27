@@ -346,6 +346,11 @@
   font-size: 0.72rem;
   text-align: center;
 }
+.hq-auth-reason {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+}
 
 /* ---- office bottom sheet ------------------------------------------------- */
 .hq-sheet-backdrop {
@@ -510,6 +515,130 @@
   background: var(--control, #1d2943);
   color: var(--muted);
   cursor: not-allowed;
+}
+
+/* ---- plane bridge control card ------------------------------------------- */
+.hq-bridge {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.hq-bridge-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.hq-bridge-title {
+  align-items: center;
+  display: inline-flex;
+  font-size: 0.98rem;
+  font-weight: 800;
+  gap: 8px;
+}
+.hq-bridge-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.hq-bridge-repos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hq-chip {
+  background: var(--inset, #0f1729);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  padding: 2px 7px;
+}
+.hq-bridge-err {
+  color: var(--red);
+  font-size: 0.76rem;
+}
+.hq-bridge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---- generic control button ---------------------------------------------- */
+.hq-btn {
+  background: var(--control, #1d2943);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+.hq-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+}
+.hq-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.hq-btn-primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--ink);
+}
+.hq-btn-danger {
+  border-color: rgba(255, 122, 144, 0.5);
+  color: var(--red);
+}
+.hq-btn-sm {
+  font-size: 0.72rem;
+  padding: 5px 10px;
+  text-transform: capitalize;
+}
+
+/* ---- office control rows ------------------------------------------------- */
+.hq-ctl-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.hq-ctl-name {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.76rem;
+}
+.hq-ctl-btns {
+  display: inline-flex;
+  gap: 6px;
+}
+.hq-log {
+  background: var(--inset, #0f1729);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- bridge-bound marker on an agent node -------------------------------- */
+.hq-node-bridge {
+  color: var(--blue);
+  flex: 0 0 auto;
+  font-size: 0.72rem;
 }
 
 @keyframes hq-pulse {

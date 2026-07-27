@@ -1,7 +1,18 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { load } from "js-yaml";
+import type { BridgeStatus, PlaneBinding } from "@holocene/org-model";
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
@@ -13,6 +24,12 @@ const userRuntimeDir = process.env.XDG_RUNTIME_DIR ?? (uid === undefined ? undef
 const LOG_TAIL_MAX_BYTES = 128 * 1024;
 const CANDYSTORE_API_URL = (process.env.CANDYSTORE_API_URL ?? "http://127.0.0.1:8683").replace(/\/$/, "");
 const CANDYSTORE_HISTORY_LIMIT = Math.max(50, Math.min(2000, Number(process.env.CANDYSTORE_HISTORY_LIMIT ?? 800)));
+
+// ---- Plane webhook bridge (fleet-wide, single systemd unit) ----------------
+const HOME_DIR = process.env.HOME ?? "/home/delorenj";
+const BRIDGE_UNIT = process.env.HERMES_PLANE_BRIDGE_UNIT ?? "hermes-plane-webhook-bridge.service";
+const BRIDGE_ENV_PATH = process.env.HERMES_PLANE_BRIDGE_ENV ?? `${HOME_DIR}/.hermes/plane-webhook-bridge.env`;
+const BRIDGE_DEFAULT_PORT = 8477;
 const systemdEnv = {
   ...process.env,
   ...(userRuntimeDir ? { XDG_RUNTIME_DIR: userRuntimeDir } : {}),
@@ -30,6 +47,11 @@ type AgentCfg = {
   display_name?: string;
   project_path?: string;
   profile_name?: string;
+  plane?: {
+    workspace?: string;
+    project_id?: string;
+    identifier?: string;
+  };
   systemd?: {
     gateway_unit?: string;
     consumer_unit?: string;
@@ -88,6 +110,7 @@ export type FleetAgent = {
   sentinel_service_status: string;
   busy_state: "idle" | "busy" | "blocked" | "stalled" | "error" | "unknown";
   active_work: ActiveWork;
+  plane: PlaneBinding;
 };
 
 export type AgentLogTail = {
@@ -486,8 +509,179 @@ function sentinelTimerUnit(agentId: string, cfg: AgentCfg): string {
   return cfg.systemd?.continuous_ticket_sentinel_timer ?? `hermes-${agentId}-continuous-ticket-sentinel.timer`;
 }
 
+type BridgeEnv = { only: string[]; port: number };
+
+// Parse ~/.hermes/plane-webhook-bridge.env for the operator-managed allowlist
+// and port. The file also holds PLANE_WEBHOOK_SECRET, which we never read here
+// and MUST preserve on write (see writeBridgeOnly).
+function readBridgeEnv(): BridgeEnv {
+  let only: string[] = [];
+  let port = Number(process.env.HERMES_PLANE_BRIDGE_PORT ?? BRIDGE_DEFAULT_PORT);
+  if (existsSync(BRIDGE_ENV_PATH)) {
+    for (const raw of readFileSync(BRIDGE_ENV_PATH, "utf8").split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq < 0) continue;
+      const key = line.slice(0, eq).trim();
+      const val = line.slice(eq + 1).trim();
+      if (key === "HERMES_PLANE_BRIDGE_ONLY") {
+        only = val.split(",").map((s) => s.trim()).filter(Boolean);
+      } else if (key === "HERMES_PLANE_BRIDGE_PORT") {
+        const p = Number(val);
+        if (Number.isFinite(p) && p > 0) port = p;
+      }
+    }
+  }
+  return { only, port: Number.isFinite(port) && port > 0 ? port : BRIDGE_DEFAULT_PORT };
+}
+
+// Rewrite ONLY the HERMES_PLANE_BRIDGE_ONLY line, preserving every other line
+// (notably PLANE_WEBHOOK_SECRET). Atomic + 0600.
+function writeBridgeOnly(repos: string[]): void {
+  const value = repos.join(",");
+  let lines = existsSync(BRIDGE_ENV_PATH) ? readFileSync(BRIDGE_ENV_PATH, "utf8").split("\n") : [];
+  let found = false;
+  lines = lines.map((ln) => {
+    if (/^\s*HERMES_PLANE_BRIDGE_ONLY\s*=/.test(ln)) {
+      found = true;
+      return `HERMES_PLANE_BRIDGE_ONLY=${value}`;
+    }
+    return ln;
+  });
+  if (!found) {
+    if (lines.length && lines[lines.length - 1] === "") lines.splice(lines.length - 1, 0, `HERMES_PLANE_BRIDGE_ONLY=${value}`);
+    else lines.push(`HERMES_PLANE_BRIDGE_ONLY=${value}`);
+  }
+  const tmp = `${BRIDGE_ENV_PATH}.tmp`;
+  writeFileSync(tmp, lines.join("\n"), { mode: 0o600 });
+  renameSync(tmp, BRIDGE_ENV_PATH);
+}
+
+// Every repo the bridge could route to (registry maps repo -> plane project).
+function bindableRepos(agents: Record<string, AgentCfg>): string[] {
+  const repos = new Set<string>();
+  for (const cfg of Object.values(agents)) {
+    if (cfg.plane?.project_id && cfg.repo) repos.add(cfg.repo);
+  }
+  return [...repos];
+}
+
+function computePlaneBinding(cfg: AgentCfg, only: string[]): PlaneBinding {
+  const projectId = cfg.plane?.project_id;
+  const bindable = !!projectId && !!cfg.repo;
+  const repo = cfg.repo ?? "";
+  // Empty allowlist = whole fleet bound; otherwise only listed repos are bound.
+  const bound = bindable && (only.length === 0 || only.includes(repo));
+  return { projectId, identifier: cfg.plane?.identifier, bindable, bound };
+}
+
+async function getBridgeHealth(port: number): Promise<{ healthOk: boolean; projectsMapped: number }> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return { healthOk: false, projectsMapped: 0 };
+    const body = (await res.json()) as { ok?: boolean; projects?: number };
+    return {
+      healthOk: body?.ok === true,
+      projectsMapped: typeof body?.projects === "number" ? body.projects : 0
+    };
+  } catch {
+    return { healthOk: false, projectsMapped: 0 };
+  }
+}
+
+async function getBridgeStatus(env: BridgeEnv, boundRepos: string[]): Promise<BridgeStatus> {
+  const serviceStatus = await unitState(BRIDGE_UNIT);
+  const { healthOk, projectsMapped } = await getBridgeHealth(env.port);
+  return {
+    serviceUnit: BRIDGE_UNIT,
+    serviceStatus,
+    host: "127.0.0.1",
+    port: env.port,
+    healthOk,
+    projectsMapped,
+    scope: env.only.length ? "pilot" : "fleet",
+    only: env.only,
+    boundRepos,
+    generatedAt: new Date().toISOString()
+  };
+}
+
+// Start | stop | restart the single fleet-wide plane-webhook-bridge unit.
+export async function controlBridge(action: string) {
+  if (!UNIT_ACTIONS.includes(action as UnitAction)) {
+    return { ok: false as const, error: `Invalid action '${action}'. Use start, stop, or restart.` };
+  }
+  try {
+    await execFileAsync("systemctl", ["--user", action, BRIDGE_UNIT], { env: systemdEnv });
+  } catch (err) {
+    return {
+      ok: false as const,
+      unit: BRIDGE_UNIT,
+      action,
+      error: err instanceof Error ? err.message : String(err)
+    };
+  }
+  let status = "unknown";
+  try {
+    const { stdout } = await execFileAsync("systemctl", ["--user", "is-active", BRIDGE_UNIT], { env: systemdEnv });
+    status = stdout.trim();
+  } catch (err) {
+    const stdout = (err as { stdout?: string | Buffer })?.stdout;
+    status = stdout ? stdout.toString().trim() : "inactive";
+  }
+  return { ok: true as const, unit: BRIDGE_UNIT, action, status };
+}
+
+// Bind/unbind a single PM (by repo) to the bridge, or roll the whole fleet.
+// The panel manages HERMES_PLANE_BRIDGE_ONLY as an explicit allowlist so that
+// per-PM unbind works even at full fleet: any per-PM edit first materializes an
+// empty (=all) allowlist to the full bindable set before applying the change,
+// and a full set collapses back to empty (fleet). Restarts the bridge to apply.
+export async function setBridgeBinding(body: { repo?: string; bound?: boolean; scope?: string }) {
+  const agents = readRegistry();
+  const allBindable = bindableRepos(agents);
+  const current = readBridgeEnv().only;
+
+  let next: string[];
+  if (body?.scope === "fleet") {
+    next = []; // empty = whole fleet (all bindable + any future PM)
+  } else if (typeof body?.repo === "string" && typeof body?.bound === "boolean") {
+    const repo = body.repo;
+    if (!allBindable.includes(repo)) {
+      return { ok: false as const, error: `Repo '${repo}' has no Plane project mapping; not bindable.` };
+    }
+    const base = current.length ? [...current] : [...allBindable];
+    const set = new Set(base);
+    if (body.bound) set.add(repo);
+    else set.delete(repo);
+    next = [...set].filter((r) => allBindable.includes(r));
+    if (next.length === allBindable.length) next = []; // full set = fleet
+  } else {
+    return { ok: false as const, error: "Body must be {repo, bound} or {scope:'fleet'}." };
+  }
+
+  try {
+    writeBridgeOnly(next);
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const restart = await controlBridge("restart");
+  const only = readBridgeEnv().only;
+  return {
+    ok: true as const,
+    only,
+    scope: only.length ? ("pilot" as const) : ("fleet" as const),
+    boundRepos: only.length ? only : allBindable,
+    restarted: restart.ok,
+    service_status: restart.ok ? restart.status : undefined
+  };
+}
+
 export async function getFleetSnapshot() {
   const agents = readRegistry();
+  const bridgeEnv = readBridgeEnv();
   const out: FleetAgent[] = [];
 
   for (const [agent_id, cfg] of Object.entries(agents)) {
@@ -516,18 +710,24 @@ export async function getFleetSnapshot() {
       sentinel_timer_status,
       sentinel_service_status,
       busy_state: busyState(active_work),
-      active_work
+      active_work,
+      plane: computePlaneBinding(cfg, bridgeEnv.only)
     });
   }
 
   const agentsById = new Map(out.map((agent) => [agent.agent_id, agent]));
   const velocity_history = await getVelocityHistory(agentsById);
+  const bridge = await getBridgeStatus(
+    bridgeEnv,
+    out.filter((a) => a.plane.bound).map((a) => a.repo)
+  );
 
   return {
     generatedAt: new Date().toISOString(),
     source: REGISTRY_PATH,
     agents: out,
-    velocity_history
+    velocity_history,
+    bridge
   };
 }
 

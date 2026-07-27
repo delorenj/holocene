@@ -25,9 +25,36 @@ export type EmployeeStatus =
 // Raw busy_state as reported by the Holocene fleet snapshot.
 export type BusyState = "idle" | "busy" | "blocked" | "stalled" | "error" | "unknown";
 
+// ---- Plane webhook bridge dimension ----------------------------------------
+
+// Per-PM binding to the fleet-wide plane-webhook-bridge. `bindable` = the
+// registry maps this PM's repo to a Plane project; `bound` = the bridge will
+// actually route that project's board events to the PM (governed by the
+// bridge's explicit HERMES_PLANE_BRIDGE_ONLY allowlist; empty = whole fleet).
+export type PlaneBinding = {
+  projectId?: string;
+  identifier?: string; // Plane project key, e.g. "BLOPM"
+  bindable: boolean;
+  bound: boolean;
+};
+
+// Health/scope of the single fleet-wide plane-webhook-bridge systemd unit.
+export type BridgeStatus = {
+  serviceUnit: string;
+  serviceStatus: string; // active | inactive | failed | missing | unknown
+  host: string;
+  port: number;
+  healthOk: boolean;
+  projectsMapped: number;
+  scope: "fleet" | "pilot"; // pilot = an explicit allowlist is in force
+  only: string[]; // the raw HERMES_PLANE_BRIDGE_ONLY allowlist ([] = fleet)
+  boundRepos: string[]; // repos actually bound right now
+  generatedAt: string;
+};
+
 // ---- Resolved tree node the Mini App renders -------------------------------
 
-export type NodeFlag = "new-hire" | "unassigned" | "no-heartbeat" | "shipped-recent";
+export type NodeFlag = "new-hire" | "unassigned" | "no-heartbeat" | "shipped-recent" | "bridge-bound";
 
 export type LiveAgentState = {
   agentId: string;
@@ -40,6 +67,7 @@ export type LiveAgentState = {
     lastHeartbeatAt?: string;
     ageSeconds?: number;
   };
+  planeBinding?: PlaneBinding; // plane-webhook-bridge binding (agents only)
   sparkline?: number[]; // recent per-day ticket-velocity counts (oldest → newest)
   updatedAt?: string;
 };
@@ -105,6 +133,7 @@ export type MergeInput = {
   config?: OrgConfig;
   agents: RegistryAgent[];
   live?: Record<string, LiveAgentState>;
+  bridge?: BridgeStatus;
   generatedAt: string;
   source: string;
 };
@@ -116,6 +145,7 @@ export type OrgTree = {
   root: OrgNode; // CEO node; children = departments
   unmapped: string[]; // agent_ids that landed in the Unassigned bucket
   totals: { agents: number; working: number; idle: number; needsAttention: number; unknown: number };
+  bridge?: BridgeStatus; // plane-webhook-bridge status (control-panel dimension)
 };
 
 // ---- resolver --------------------------------------------------------------
@@ -155,7 +185,7 @@ type DeptDef = { id: string; name: string; order: number; managerId?: string; me
  * "Unassigned" bucket so the chart never breaks on registry drift.
  */
 export function merge(input: MergeInput): OrgTree {
-  const { config, agents, live = {}, generatedAt, source } = input;
+  const { config, agents, live = {}, bridge, generatedAt, source } = input;
 
   const company = {
     name: config?.company?.name ?? "Company",
@@ -262,6 +292,7 @@ export function merge(input: MergeInput): OrgTree {
     if (deptId === unassignedId) flags.push("unassigned");
     if (!referenced.has(agentId)) flags.push("new-hire");
     if (!liveState || liveState.busyState === "unknown") flags.push("no-heartbeat");
+    if (liveState?.planeBinding?.bound) flags.push("bridge-bound");
     return {
       id: agentId,
       kind: "agent",
@@ -358,6 +389,7 @@ export function merge(input: MergeInput): OrgTree {
       idle: totalIdle,
       needsAttention: totalAttention,
       unknown: totalUnknown
-    }
+    },
+    bridge
   };
 }
