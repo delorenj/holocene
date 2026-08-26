@@ -15,7 +15,7 @@ script = "python3 '{{config_root}}/.mise/scripts/provision-packs.py' --root '{{c
 [[hooks.enter]]
 script = "python3 '{{config_root}}/.mise/scripts/sync-skills.py' --scope project --root '{{config_root}}'"
 [[hooks.enter]]
-script = "op inject -i .env.op > .env"
+script = "'{{config_root}}/.mise/scripts/materialize-env.sh'"
 
 [[watch_files]]
 patterns = ["AGENTS.md"]
