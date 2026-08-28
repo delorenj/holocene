@@ -149,51 +149,79 @@ const STAT_DEFINITIONS: ToolingStatDefinition[] = [
   }
 ];
 
+// These are the types the CLI hook publishers actually emit today: the
+// version-free grammar `bloodbank.<domain>.<entity>.<action>`. bb-emit rejects
+// a 5-token type outright, so anything still shaped `bloodbank.v1.*` is history,
+// never a live producer. Keep this map in step with the hooks SSOT — a stale
+// entry here makes /api/modules/tooling report a normalizedHook nobody emits.
 const BLOODBANK_HOOK_TYPES: Record<string, string> = {
-  "claude:SessionStart": "bloodbank.v1.agent.session.started",
-  "claude:session-start": "bloodbank.v1.agent.session.started",
-  "claude:Stop": "bloodbank.v1.agent.session.ended",
-  "claude:session-end": "bloodbank.v1.agent.session.ended",
-  "claude:UserPromptSubmit": "bloodbank.v1.conversation.turn.started",
-  "claude:prompt-submitted": "bloodbank.v1.conversation.turn.started",
-  "claude:PreToolUse": "bloodbank.v1.agent.tool.requested",
-  "claude:tool-request": "bloodbank.v1.agent.tool.requested",
-  "claude:PostToolUse": "bloodbank.v1.agent.tool.completed",
-  "claude:tool-action": "bloodbank.v1.agent.tool.completed",
-  "claude:SubagentStop": "bloodbank.v1.agent.invocation.completed",
-  "claude:subagent-stopped": "bloodbank.v1.agent.invocation.completed",
-  "codex:SessionStart": "bloodbank.v1.agent.session.started",
-  "codex:session-start": "bloodbank.v1.agent.session.started",
-  "codex:Stop": "bloodbank.v1.agent.session.ended",
-  "codex:SessionEnd": "bloodbank.v1.agent.session.ended",
-  "codex:session-end": "bloodbank.v1.agent.session.ended",
-  "codex:UserPromptSubmit": "bloodbank.v1.conversation.turn.started",
-  "codex:prompt-submitted": "bloodbank.v1.conversation.turn.started",
-  "codex:PreToolUse": "bloodbank.v1.agent.tool.requested",
-  "codex:tool-request": "bloodbank.v1.agent.tool.requested",
-  "codex:PostToolUse": "bloodbank.v1.agent.tool.completed",
-  "codex:tool-action": "bloodbank.v1.agent.tool.completed",
-  "codex:tool-completed": "bloodbank.v1.agent.tool.completed",
-  "codex:SubagentStart": "bloodbank.v1.agent.invocation.started",
-  "codex:subagent-started": "bloodbank.v1.agent.invocation.started",
-  "codex:SubagentStop": "bloodbank.v1.agent.invocation.completed",
-  "codex:subagent-stopped": "bloodbank.v1.agent.invocation.completed",
-  "codex:notify": "bloodbank.v1.conversation.turn.completed",
-  "gemini:BeforeAgent": "bloodbank.v1.agent.invocation.started",
-  "gemini:AfterTool": "bloodbank.v1.agent.tool.completed",
-  "gemini:SessionEnd": "bloodbank.v1.agent.session.ended"
+  "claude:SessionStart": "bloodbank.agent.session.started",
+  "claude:session-start": "bloodbank.agent.session.started",
+  "claude:Stop": "bloodbank.agent.session.ended",
+  "claude:session-end": "bloodbank.agent.session.ended",
+  "claude:UserPromptSubmit": "bloodbank.conversation.turn.started",
+  "claude:prompt-submitted": "bloodbank.conversation.turn.started",
+  "claude:PreToolUse": "bloodbank.agent.tool.requested",
+  "claude:tool-request": "bloodbank.agent.tool.requested",
+  "claude:PostToolUse": "bloodbank.agent.tool.completed",
+  "claude:tool-action": "bloodbank.agent.tool.completed",
+  "claude:SubagentStop": "bloodbank.agent.invocation.completed",
+  "claude:subagent-stopped": "bloodbank.agent.invocation.completed",
+  "codex:SessionStart": "bloodbank.agent.session.started",
+  "codex:session-start": "bloodbank.agent.session.started",
+  "codex:Stop": "bloodbank.agent.session.ended",
+  "codex:SessionEnd": "bloodbank.agent.session.ended",
+  "codex:session-end": "bloodbank.agent.session.ended",
+  "codex:UserPromptSubmit": "bloodbank.conversation.turn.started",
+  "codex:prompt-submitted": "bloodbank.conversation.turn.started",
+  "codex:PreToolUse": "bloodbank.agent.tool.requested",
+  "codex:tool-request": "bloodbank.agent.tool.requested",
+  "codex:PostToolUse": "bloodbank.agent.tool.completed",
+  "codex:tool-action": "bloodbank.agent.tool.completed",
+  "codex:tool-completed": "bloodbank.agent.tool.completed",
+  "codex:SubagentStart": "bloodbank.agent.invocation.started",
+  "codex:subagent-started": "bloodbank.agent.invocation.started",
+  "codex:SubagentStop": "bloodbank.agent.invocation.completed",
+  "codex:subagent-stopped": "bloodbank.agent.invocation.completed",
+  "codex:notify": "bloodbank.conversation.turn.completed",
+  "gemini:BeforeAgent": "bloodbank.agent.invocation.started",
+  "gemini:AfterTool": "bloodbank.agent.tool.completed",
+  "gemini:SessionEnd": "bloodbank.agent.session.ended"
 };
 
 const HOOK_RELATIONS: Record<string, string> = {
-  "bloodbank.v1.agent.session.started": "Starts the session root used by later correlation and causation links.",
-  "bloodbank.v1.agent.session.ended": "Closes the active agent session and archives the session chain.",
-  "bloodbank.v1.conversation.turn.started": "Starts a user prompt turn inside the active agent session.",
-  "bloodbank.v1.conversation.turn.completed": "Marks a conversation turn terminal inside the active session thread.",
-  "bloodbank.v1.agent.tool.requested": "Records the pre-execution tool request within the active invocation.",
-  "bloodbank.v1.agent.tool.completed": "Records the post-execution tool result within the active invocation.",
-  "bloodbank.v1.agent.invocation.started": "Starts a child or agent invocation linked to the active turn/session.",
-  "bloodbank.v1.agent.invocation.completed": "Completes a child or agent invocation linked to the active turn/session."
+  "bloodbank.agent.session.started": "Starts the session root used by later correlation and causation links.",
+  "bloodbank.agent.session.ended": "Closes the active agent session and archives the session chain.",
+  "bloodbank.conversation.turn.started": "Starts a user prompt turn inside the active agent session.",
+  "bloodbank.conversation.turn.completed": "Marks a conversation turn terminal inside the active session thread.",
+  "bloodbank.agent.tool.requested": "Records the pre-execution tool request within the active invocation.",
+  "bloodbank.agent.tool.completed": "Records the post-execution tool result within the active invocation.",
+  "bloodbank.agent.invocation.started": "Starts a child or agent invocation linked to the active turn/session.",
+  "bloodbank.agent.invocation.completed": "Completes a child or agent invocation linked to the active turn/session."
 };
+
+// TRANSITIONAL, and only on the read side. HOOK_RELATIONS is keyed by the
+// version-free type, but a normalizedHook can still reach us in the retired
+// 5-token `bloodbank.v1.*` shape — from a cached tooling stat written by an
+// earlier deploy, or from a host whose hook config predates the rename. Looking
+// those up literally would silently drop the relation string, so we compare the
+// `<domain>.<entity>.<action>` tail instead. This is tolerance for HISTORY, not
+// permission for a producer to emit the old shape: bb-emit rejects it at the
+// source. Drop the strip once no pre-rename state is left in Redis.
+const BLOODBANK_TYPE_PREFIX = /^bloodbank\.(evt\.|cmd\.|rpy\.)?v?[0-9]*\.?/;
+
+function bloodbankTypeTail(value: string): string {
+  return value.replace(BLOODBANK_TYPE_PREFIX, "");
+}
+
+const HOOK_RELATIONS_BY_TAIL = new Map(
+  Object.entries(HOOK_RELATIONS).map(([type, relation]) => [bloodbankTypeTail(type), relation])
+);
+
+function hookRelation(normalizedHook: string | undefined): string | undefined {
+  if (!normalizedHook) return undefined;
+  return HOOK_RELATIONS_BY_TAIL.get(bloodbankTypeTail(normalizedHook));
+}
 
 const HOOK_HEALTH_COLLECTION_ORDER = ["claude", "hermes", "codex", "kimi", "gemini", "opencode"] as const satisfies readonly AgentCli[];
 const AGENT_CLI_LABELS: Record<AgentCli, string> = {
@@ -431,7 +459,7 @@ function publisherHookArg(cli: AgentCli, command: string, env: Record<string, st
     ok: true,
     note: undefined,
     mappingSource: "publisher" as const,
-    relation: HOOK_RELATIONS[normalizedHook]
+    relation: hookRelation(normalizedHook)
   };
 }
 
@@ -450,7 +478,7 @@ function inferredHookMapping(cli: AgentCli, hook: string) {
     return {
       normalizedHook,
       mappingSource: "hook" as const,
-      relation: HOOK_RELATIONS[normalizedHook]
+      relation: hookRelation(normalizedHook)
     };
   }
 

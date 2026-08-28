@@ -36,22 +36,41 @@ type FleetState = {
   busyAgents: Record<string, boolean>;
 };
 
+// Canonical, version-free Bloodbank grammar: type is
+// `bloodbank.<domain>.<entity>.<action>`, subject is
+// `bloodbank.<kind>.<domain>.<entity>.<action>` with kind = evt|cmd|rpy.
 const BLOODBANK_EVENT_TYPES = {
-  heartbeatReceived: "bloodbank.v1.system.heartbeat.received",
-  invocationStarted: "bloodbank.v1.agent.invocation.started",
-  invocationCompleted: "bloodbank.v1.agent.invocation.completed",
-  invocationFailed: "bloodbank.v1.agent.invocation.failed"
+  heartbeatReceived: "bloodbank.system.heartbeat.received",
+  invocationStarted: "bloodbank.agent.invocation.started",
+  invocationCompleted: "bloodbank.agent.invocation.completed",
+  invocationFailed: "bloodbank.agent.invocation.failed"
 } as const;
 
 type BloodbankEventType = (typeof BLOODBANK_EVENT_TYPES)[keyof typeof BLOODBANK_EVENT_TYPES];
 
 function bloodbankEventSubject(type: BloodbankEventType): string {
-  return type.replace("bloodbank.v1.", "bloodbank.evt.v1.");
+  return type.replace(/^bloodbank\./, "bloodbank.evt.");
+}
+
+// TRANSITIONAL, and only on the read side. No producer emits `bloodbank.v1.*`
+// or `bloodbank.evt.v1.*` any more — bb-emit rejects a 5-token type outright —
+// but ~713k historical rows carry the retired shape forever, and replayed or
+// backfilled history has to keep landing in this reducer. So we compare the
+// `<domain>.<entity>.<action>` tail of both sides rather than the whole string.
+// This is tolerance for HISTORY, not permission for a producer to emit the old
+// shape. Drop the strip once the pre-rename rows age out of retention.
+const BLOODBANK_TYPE_PREFIX = /^bloodbank\.(evt\.)?v?[0-9]*\.?/;
+
+function bloodbankTypeTail(value: string): string {
+  return value.replace(BLOODBANK_TYPE_PREFIX, "");
 }
 
 function matchesBloodbankEvent(event: ModuleEvent, type: BloodbankEventType): boolean {
-  const subject = bloodbankEventSubject(type);
-  return event.type === type || event.type === subject || event.subject === type || event.subject === subject;
+  const tail = bloodbankTypeTail(type);
+  return (
+    (typeof event.type === "string" && bloodbankTypeTail(event.type) === tail) ||
+    (typeof event.subject === "string" && bloodbankTypeTail(event.subject) === tail)
+  );
 }
 
 const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
@@ -174,10 +193,13 @@ export const hermesFleetModule: ModuleDefinition<FleetState> = {
     tags: ["hermes", "bloodbank", "control-plane"]
   },
   subscriptions: [
-    bloodbankEventSubject(BLOODBANK_EVENT_TYPES.heartbeatReceived),
-    bloodbankEventSubject(BLOODBANK_EVENT_TYPES.invocationStarted),
-    bloodbankEventSubject(BLOODBANK_EVENT_TYPES.invocationCompleted),
-    bloodbankEventSubject(BLOODBANK_EVENT_TYPES.invocationFailed)
+    // Live traffic rides the version-free subjects. The `evt.v1.*` entries are
+    // here so replayed/backfilled history still reaches the reducer — history
+    // tolerance, not a shape any producer is allowed to emit.
+    ...Object.values(BLOODBANK_EVENT_TYPES).map(bloodbankEventSubject),
+    ...Object.values(BLOODBANK_EVENT_TYPES).map((type) =>
+      type.replace(/^bloodbank\./, "bloodbank.evt.v1.")
+    )
   ],
   initialState,
   reduce: fleetReducer,
