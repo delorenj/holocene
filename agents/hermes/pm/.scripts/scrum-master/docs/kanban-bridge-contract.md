@@ -139,7 +139,6 @@ Also preserve existing issue-level events from the scrum-master protocol:
 
 - `bloodbank.v1.repo.holocene.issue.evidence.created`
 - `bloodbank.v1.repo.holocene.issue.gate.passed|failed`
-- `bloodbank.v1.repo.holocene.issue.autonomous_review.decided`
 - `bloodbank.v1.repo.holocene.issue.truthcheck.flagged`
 
 ## Rollout plan
