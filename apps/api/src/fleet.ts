@@ -228,16 +228,31 @@ function firstNumber(...values: Array<number | undefined>): number | undefined {
   return values.find((value) => value !== undefined);
 }
 
+// TRANSITIONAL. Bloodbank now publishes the version-free grammar
+// (type `bloodbank.<domain>.<entity>.<action>`, subject
+// `bloodbank.<kind>.<domain>.<entity>.<action>`), but Candystore still holds
+// ~713k historical rows stamped with the old `bloodbank.v1.*` /
+// `bloodbank.evt.v1.*` shape, and a read side that only understood one of the
+// two would silently drop half the window. So we normalize both sides down to
+// the `<domain>.<entity>.<action>` tail and compare that — deliberate
+// tolerance, not the accidental kind: the previous matcher stripped `v1` from
+// its own literals and then did a bare `endsWith`, which matched any subject
+// happening to end in those words. Once the pre-rename rows age out of the
+// retention window, drop the strip and match these literally.
+const BLOODBANK_TYPE_PREFIX = /^bloodbank\.(evt\.)?v?[0-9]*\.?/;
+
+function bloodbankTypeTail(eventType: string): string {
+  return eventType.replace(BLOODBANK_TYPE_PREFIX, "");
+}
+
 const BLOODBANK_HISTORY_TYPES = [
-  "bloodbank.v1.system.heartbeat.received",
-  "bloodbank.evt.v1.system.heartbeat.received",
-  "bloodbank.v1.agent.invocation.started",
-  "bloodbank.evt.v1.agent.invocation.started",
-  "bloodbank.v1.agent.invocation.completed",
-  "bloodbank.evt.v1.agent.invocation.completed",
-  "bloodbank.v1.agent.invocation.failed",
-  "bloodbank.evt.v1.agent.invocation.failed"
+  "bloodbank.system.heartbeat.received",
+  "bloodbank.agent.invocation.started",
+  "bloodbank.agent.invocation.completed",
+  "bloodbank.agent.invocation.failed"
 ];
+
+const BLOODBANK_HISTORY_TAILS = new Set(BLOODBANK_HISTORY_TYPES.map(bloodbankTypeTail));
 
 function extractCandystorePayload(row: Record<string, unknown>): Record<string, unknown> {
   return (
@@ -272,7 +287,7 @@ function candystoreTimestamp(row: Record<string, unknown>): string | undefined {
 }
 
 function matchesVelocityHistoryEvent(eventType: string): boolean {
-  return BLOODBANK_HISTORY_TYPES.some((known) => eventType === known || eventType.endsWith(known.replace(/^bloodbank\.(evt\.)?v1\./, "")));
+  return BLOODBANK_HISTORY_TAILS.has(bloodbankTypeTail(eventType));
 }
 
 function statusFromHistory(eventType: string, payload: Record<string, unknown>): ActiveWork["status"] {
