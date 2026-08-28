@@ -2,7 +2,7 @@
 # Provider-agnostic autonomous delegated-review decision gate.
 #
 # Couples the close gate, an independent-reviewer drift attestation, and the
-# BloodBank decision event so a `closed` decision cannot be emitted while the
+# close gate, so a `closed` decision cannot be reached while the
 # close gate fails or the work significantly drifts from locked intent. Closure
 # goes through the ticket-provider adapter (tp transition <id> completed), so the
 # same logic works on Linear | Plane | Trello.
@@ -30,15 +30,12 @@ ROLE_YAML="$ROLE_DIR/role.yaml"
 ROOT="$(git -C "$ROLE_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-EMIT="$BIN_DIR/emit-event.py"
 CLOSE_GATE="$BIN_DIR/issue-close-gate.sh"
 EVIDENCE="_bmad-output/implementation-artifacts/issue-evidence/$ISSUE.md"
 
 yget() { sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "$ROLE_YAML" 2>/dev/null | head -n1 | tr -d '"' | tr -d '\r'; }
-REPO="$(yget repo)"; REPO="${REPO:-unknown}"
 GRACE_HOURS="${DRUMJANGLER_AUTO_REVIEW_GRACE_HOURS:-$(yget grace_hours)}"; GRACE_HOURS="${GRACE_HOURS:-24}"
 AUTO="$(yget auto_review)"; AUTO="${AUTO:-true}"
-EVT="bloodbank.v1.repo.$REPO.issue.autonomous_review.decided"
 
 if [[ "${SCRUM_MASTER_AUTO_REVIEW:-$AUTO}" == "false" || "${SCRUM_MASTER_AUTO_REVIEW:-}" == "off" ]]; then
   printf 'Autonomous review is disabled (scrum_master.auto_review=false).\n' >&2; exit 3
@@ -72,13 +69,6 @@ if sh "$CLOSE_GATE" "$ISSUE" "$ROOT" >/dev/null 2>&1 </dev/null; then GATE=pass;
 
 if [[ -n "$HOLD" ]]; then DECISION=held; else DECISION=closed; fi
 
-python3 "$EMIT" "$EVT" --root "$ROOT" \
-  --source "repo://scrum-master/bin/issue-autonomous-review.sh" --actor-id "$REVIEWER" \
-  --field issue="$ISSUE" --field decision="$DECISION" --field drift="$DRIFT" \
-  --field close_gate="$GATE" --field reviewer_agent="$REVIEWER" \
-  --field evidence_file="$EVIDENCE" --field report_file="$REPORT" \
-  --field grace_hours="$GRACE_HOURS" --field hold_reasons="${HOLD:-none}" \
-  --quiet </dev/null || printf 'WARN: decision event emission failed; event trail incomplete.\n' >&2
 
 if [[ "$DECISION" == "held" ]]; then
   printf 'AUTONOMOUS REVIEW: HOLD for %s\nReasons: %s\n' "$ISSUE" "$HOLD" >&2
@@ -96,7 +86,7 @@ if [[ "$CLOSE" -eq 1 ]]; then
     TICKET_PROVIDER="$PROV" bash -c '. "$1"; tp comment "$2" "$3"' _ "$SCRIPTS_DIR/lib/ticket-provider.sh" "$ISSUE" \
       "Autonomously closed by $REVIEWER under the delegated-review protocol (drift: $DRIFT, gate: $GATE, grace ${GRACE_HOURS}h). Report: $REPORT." >/dev/null 2>&1 || true
   else
-    printf 'Adapter transition failed; decision event recorded, issue left open.\n' >&2
+    printf 'Adapter transition failed; issue left open.\n' >&2
     exit 1
   fi
 else
