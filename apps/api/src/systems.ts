@@ -5,7 +5,7 @@ import { load } from "js-yaml";
 
 const execFileAsync = promisify(execFile);
 
-const BGLS_BIN = process.env.BGLS_BIN ?? "/home/delorenj/code/infra/bin/bgls";
+const SRVLS_BIN = process.env.SRVLS_BIN ?? "/home/delorenj/code/infra/bin/srvls";
 const PROMETHEUS_URL = (process.env.PROMETHEUS_URL ?? "http://127.0.0.1:9472").replace(/\/$/, "");
 const HERMES_REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
 const PLANE_BASE_URL = (process.env.PLANE_BASE_URL ?? "https://plane.delo.sh").replace(/\/$/, "");
@@ -105,7 +105,7 @@ export async function getSystemsInventory(force = false): Promise<SystemsInvento
   if (!force && inventoryCache && Date.now() - inventoryCache.at < INVENTORY_CACHE_MS) {
     return inventoryCache.value;
   }
-  const { stdout } = await execFileAsync(BGLS_BIN, ["--json"], {
+  const { stdout } = await execFileAsync(SRVLS_BIN, ["--json"], {
     env: systemdEnv,
     timeout: 60_000,
     maxBuffer: 16 * 1024 * 1024
@@ -564,21 +564,21 @@ async function queryRange(query: string, start: number, end: number, stepSeconds
 }
 
 const HISTORY_SERIES: { id: string; label: string; query: string }[] = [
-  { id: "load1", label: "Load (1m)", query: 'bgls_loadavg{window="1m"}' },
+  { id: "load1", label: "Load (1m)", query: 'srvls_loadavg{window="1m"}' },
   {
     id: "containers_running",
     label: "Containers running",
-    query: 'sum(bgls_items{type="docker",state="running"})'
+    query: 'sum(srvls_items{type="docker",state="running"})'
   },
   {
     id: "problems",
     label: "Problem units",
-    query: "sum(bgls_unit_problem) or vector(0)"
+    query: "sum(srvls_unit_problem) or vector(0)"
   },
   {
     id: "usr_failed",
     label: "Failed user services",
-    query: 'sum(bgls_items{type="usr-svc",state="failed"}) or vector(0)'
+    query: 'sum(srvls_items{type="usr-svc",state="failed"}) or vector(0)'
   }
 ];
 
@@ -608,7 +608,7 @@ export async function systemsItemAction(type: string, name: string, action: stri
   if (!ACTIONABLE_TYPES.has(type)) throw new Error(`type ${type} is not actionable from the dashboard`);
   if (!ACTIONS.has(action)) throw new Error(`unsupported action ${action}`);
   if (!SAFE_NAME.test(name)) throw new Error("invalid unit name");
-  await execFileAsync(BGLS_BIN, [action, type, name], { env: systemdEnv, timeout: 60_000 });
+  await execFileAsync(SRVLS_BIN, [action, type, name], { env: systemdEnv, timeout: 60_000 });
   inventoryCache = null;
   return { ok: true, type, name, action };
 }

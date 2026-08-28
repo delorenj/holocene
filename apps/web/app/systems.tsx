@@ -313,7 +313,7 @@ function LineChart({ series, rangeHours }: { series: HistorySeries[]; rangeHours
 
   const drawable = series.filter((s) => s.points.length > 1);
   if (!drawable.length) {
-    return <div className="empty">No history yet. Metrics accumulate every 5 minutes via bgls-metrics.timer.</div>;
+    return <div className="empty">No history yet. Metrics accumulate every 5 minutes via srvls-metrics.timer.</div>;
   }
 
   const allTs = drawable.flatMap((s) => s.points.map((p) => p.t));
@@ -549,7 +549,7 @@ export function SystemsTab({ apiBase }: { apiBase: string }) {
           <div>
             <h2>Over Time</h2>
             <p className="section-note">
-              bgls inventory metrics via node-exporter textfile → Prometheus, collected every 5 minutes.
+              srvls inventory metrics via node-exporter textfile → Prometheus, collected every 5 minutes.
             </p>
           </div>
           <div className="systems-range" role="group" aria-label="History range">
