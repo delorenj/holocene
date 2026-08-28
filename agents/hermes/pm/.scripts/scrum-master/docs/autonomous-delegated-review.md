@@ -71,14 +71,13 @@ Run from the role's bin (couples gate + drift + event + closure):
 The script will not emit a `closed` decision while the close gate fails or drift
 is `significant`.
 
-## Decision event
+## Decision record
 
-```text
-bloodbank.v1.repo.<repo>.issue.autonomous_review.decided
-```
-
-Required data: `issue`, `decision`, `drift`, `close_gate`, `reviewer_agent`,
-`evidence_file`, `report_file`. See `bloodbank-events.md`.
+The verdict is carried by the script's exit code (`0` accepted, `3` held) and
+its stdout/stderr, plus the review report and the ticket comment it posts. The
+durable accountability trail is the review report + evidence file in the repo.
+No event is published; see `bloodbank-events.md` for why the old
+`repo.issue.*` family was retired.
 
 ## Review report shape
 
