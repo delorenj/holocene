@@ -129,17 +129,33 @@ Optional metadata:
 
 ## Event contract
 
-Emit Bloodbank events for each consequential action, reusing existing types:
+Emit Bloodbank events for each consequential action, reusing existing types.
+A type is exactly four tokens — `bloodbank.<domain>.<entity>.<action>` — and the
+repo is **not** one of them; `holocene` goes in `data.repo`, the agent in
+`actor.agent_id`. Schema revision lives in `schemaref`/`dataschema`, never as a
+`v<n>` token.
 
-- `bloodbank.v1.repo.holocene.intake.triaged`
-- `bloodbank.v1.repo.holocene.task.created`
-- `bloodbank.v1.repo.holocene.decision.recorded`
+- `bloodbank.repo.intake.triaged`
+- `bloodbank.repo.task.created`
+- `bloodbank.repo.decision.recorded`
 
-Also preserve existing issue-level events from the scrum-master protocol:
+Each carries `data.repo: "holocene"`. Subjects are the same names with the kind
+infixed: `bloodbank.evt.repo.intake.triaged`, and so on.
 
-- `bloodbank.v1.repo.holocene.issue.evidence.created`
-- `bloodbank.v1.repo.holocene.issue.gate.passed|failed`
-- `bloodbank.v1.repo.holocene.issue.truthcheck.flagged`
+There are no issue-level events. This section used to also list
+`bloodbank.v1.repo.holocene.issue.{evidence.created,gate.passed|failed,
+truthcheck.flagged}`; that whole `repo.issue.*` family was retired on
+2026-08-28. It was never published to NATS and never consumed, and its shape was
+invalid twice over — the repo slug sat inside the type and `issue` is not in the
+Bloodbank §7 entity allowlist. There is no correct version to migrate to, so it
+is gone rather than renamed. `bin/issue-close-gate.sh` and
+`bin/issue-autonomous-review.sh` report their verdicts on stdout/stderr and via
+exit codes; nothing depends on an event trail for them.
+
+Before you add a family, check the name — `bb emit --check --type
+bloodbank.evt.<domain>.<entity>.<action>` exits 1 on anything the contract
+refuses, and `bb contract` prints the legal vocabulary. Shape-valid is not
+contract-valid.
 
 ## Rollout plan
 
