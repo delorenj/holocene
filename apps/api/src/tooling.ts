@@ -146,6 +146,22 @@ const STAT_DEFINITIONS: ToolingStatDefinition[] = [
     presentation: {
       chrome: "minimal"
     }
+  },
+  {
+    // Externally populated by the bloodbank ASM sweeper (asm-sweep.timer, 15s),
+    // like agent-hook-tests above — there is no in-process collector. The key
+    // carries a 90s TTL, under two sweeper ticks, so a dead sweeper surfaces as
+    // "Redis key is missing" rather than as a frozen-but-plausible board.
+    id: "agent-state-machine",
+    title: "Agent State Machine",
+    description: "What every agent CLI on the box is doing right now, folded from the normalized lifecycle hooks.",
+    kind: "table",
+    transport: "polling",
+    redisKey: "holocene:tooling:stat:agent-state-machine",
+    refreshMs: 15_000,
+    presentation: {
+      chrome: "minimal"
+    }
   }
 ];
 
@@ -775,6 +791,7 @@ export async function refreshToolingStat(id: string) {
   // Externally-populated stats have no in-process collector — return whatever
   // the external writer (e.g. the bloodbank agent-hooks health timer) last set.
   if (id === "agent-hook-tests") return getToolingStat(id);
+  if (id === "agent-state-machine") return getToolingStat(id);
   throw new Error(`No refresh collector registered for tooling stat: ${id}`);
 }
 
