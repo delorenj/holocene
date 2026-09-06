@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .card:hover { border-color: #5d6b8a; }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 1440px; background: #0b1020; color: #eef3ff; font-size: 13px; display: flex; flex-direction: column;">
+  <!-- TRUTH STRIP — identical on every route, per SYNTHESIS -->
+  <div style="display: flex; align-items: center; gap: 0; height: 28px; padding: 0 16px; background: #07111f; border-bottom: 1px solid #26324d; font-size: 11.5px; letter-spacing: 0.02em; flex: 0 0 auto;">
+    <sc-for list="{{oracles}}" as="o" hint-placeholder-count="7">
+      <div style="display: flex; align-items: baseline; gap: 5px; padding-right: 18px;">
+        <span style="color: #5d6b8a;">{{o.name}}</span>
+        <span style="color: {{o.color}};">{{o.glyph}}</span>
+        <span style="color: {{o.color}}; font-weight: 600;">{{o.value}}</span>
+      </div>
+    </sc-for>
+    <div style="flex-grow: 1;"></div>
+    <span style="color: #5d6b8a; padding-right: 14px;">{{route}}</span>
+    <span style="color: #7c89a6;">&#8984;K</span>
+  </div>
+
+  <div style="padding: 22px 24px 28px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; align-items: baseline; gap: 12px;">
+    <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; font-weight: 600;">Board</span>
+    <span style="color: #56637f; font-size: 12px;">227 tickets · 12 live boards of 40 bound · keyed on <span style="color: #c3ccdf; font-weight: 600;">tp_band</span>, never <span style="color: #6b7793;">data.phase</span></span>
+    <div style="flex-grow: 1;"></div>
+    <span onClick="{{toggleStale}}" style="cursor: pointer; font-size: 11px; color: {{staleBtnColor}}; border: 1px solid {{staleBtnBorder}}; background: {{staleBtnBg}}; border-radius: 3px; padding: 5px 11px;">{{staleBtnLabel}}</span>
+  </div>
+
+  <!-- BOARD FACETS -->
+  <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+    <sc-for list="{{boards}}" as="b" hint-placeholder-count="8">
+      <div style="display: flex; align-items: baseline; gap: 7px; padding: 5px 10px; border: 1px solid {{b.border}}; background: {{b.bg}}; border-radius: 3px; cursor: pointer;">
+        <span style="color: {{b.color}}; font-size: 11.5px;">{{b.id}}</span>
+        <span style="color: {{b.countColor}}; font-size: 11px; font-weight: 600;">{{b.count}}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 9px; padding: 8px 12px; border: 1px solid #26324d; background: #0e1526; border-radius: 4px;">
+    <span style="color: #5d6b8a;">◇</span>
+    <span style="color: #9aa8c7; font-size: 11.5px;">31 tickets carry no tp_band</span>
+    <span style="color: #56637f; font-size: 11px;">not placeable — plane.ticket.commented events carry neither tp_band nor ticket_key</span>
+  </div>
+
+  <!-- COLUMNS -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start;">
+    <sc-for list="{{columns}}" as="col" hint-placeholder-count="4">
+      <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 8px; padding: 7px 11px; background: #101a2e; border: 1px solid #26324d; border-radius: 4px;">
+          <span style="color: #c3ccdf; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em;">{{col.name}}</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #7c89a6; font-size: 11.5px; font-weight: 600;">{{col.count}}</span>
+        </div>
+        <sc-if value="{{col.empty}}" hint-placeholder-val="{{true}}">
+          <div style="padding: 10px 11px; color: #7c89a6; font-size: 11.5px;">─ none</div>
+        </sc-if>
+        <sc-for list="{{col.cards}}" as="t" hint-placeholder-count="3">
+          <div class="card" style="border: 1px solid {{t.border}}; border-left: 2px solid {{t.accent}}; background: #0d1426; border-radius: 4px; padding: 9px 11px; cursor: pointer;">
+            <div style="display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px;">
+              <span style="color: {{t.accent}}; font-size: 11px;">{{t.glyph}}</span>
+              <span style="color: #c3ccdf; font-size: 11.5px; font-weight: 600;">{{t.key}}</span>
+              <div style="flex-grow: 1;"></div>
+              <span style="color: #7c89a6; font-size: 11.5px; letter-spacing: 0.05em;">{{t.board}}</span>
+            </div>
+            <div style="color: #eef3ff; font-size: 11.5px; line-height: 1.45; margin-bottom: 7px;">{{t.title}}</div>
+            <sc-if value="{{t.hasLease}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; align-items: baseline; gap: 6px; padding-top: 6px; border-top: 1px solid #1b2540;">
+                <span style="color: {{t.leaseColor}}; font-size: 11.5px;">agent:working</span>
+                <span style="color: {{t.leaseColor}}; font-size: 11.5px; font-weight: 600;">{{t.leaseAge}}</span>
+                <div style="flex-grow: 1;"></div>
+                <span class="clip" style="color: #7c89a6; font-size: 11px; border-bottom: {{t.workerUnderline}};">{{t.worker}}</span>
+              </div>
+              <sc-if value="{{t.orphan}}" hint-placeholder-val="{{true}}">
+                <div style="margin-top: 5px; color: #ffd9a0; font-size: 11.5px;">▲ no worker scope matched this lease</div>
+              </sc-if>
+            </sc-if>
+            <sc-if value="{{t.hasState}}" hint-placeholder-val="{{true}}">
+              <div style="padding-top: 6px; border-top: 1px solid #1b2540;">
+                <span style="color: {{t.stateColor}}; font-size: 11.5px;">{{t.stateName}}</span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":820}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { staleOnly: false };
+  }
+
+  renderVals() {
+    const oracles = [
+      { name: 'sweeper',    value: '8s',      color: '#9aa8c7', glyph: '' },
+      { name: 'asm',        value: '36/17',   color: '#9aa8c7', glyph: '' },
+      { name: 'candystore', value: '918,762', color: '#9aa8c7', glyph: '' },
+      { name: 'nats',       value: '143,633', color: '#9aa8c7', glyph: '' },
+      { name: 'probes',     value: '3m',      color: '#9aa8c7', glyph: '' },
+      { name: 'fleet',      value: '41s',     color: '#9aa8c7', glyph: '' },
+      { name: 'bridge',     value: 'DOWN',    color: '#ff9152', glyph: '\u25cf' },
+    ];
+
+
+    const C = { stuck: '#ffd166', nudge: '#7fb0ff', ok: '#6b7793', broken: '#ff9152' };
+    const staleOnly = this.state.staleOnly;
+
+    const card = (key, board, title, opts) => {
+      const o = opts || {};
+      const stale = !!o.stale;
+      return {
+      oracles, route: '/board',
+        key, board, title,
+        glyph: stale ? '▲' : (o.review ? '▪' : '─'),
+        accent: stale ? C.stuck : (o.review ? C.nudge : '#6b7793'),
+        border: stale ? '#4a3d1e' : '#26324d',
+        hasLease: !!o.lease,
+        leaseAge: o.lease || '',
+        leaseColor: stale ? C.stuck : '#7c89a6',
+        // the dotted rule marks a PARSED value; a verdict must never wear it
+        worker: o.worker || '',
+        orphan: !!o.lease && !o.worker,
+        workerUnderline: o.worker ? '1px dotted #5d6b8a' : 'none',
+        hasState: !!o.review,
+        stateName: o.review || '',
+        stateColor: C.nudge,
+        stale,
+      };
+    };
+
+    const all = {
+      backlog: [
+        card('HOLOC-8',  'HOLOC', 'Replace the four-tab shell with real App Router routes'),
+        card('HOLOC-7',  'HOLOC', 'Ladder: map every severity vocabulary onto five rungs'),
+        card('BB-142',   'BB',    'Publish bloodbank.agent.status.updated from the ASM sweeper'),
+        card('CS-31',    'CS',    'Expose dead_letter over HTTP — psql is the only reader today'),
+      ],
+      unstarted: [
+        card('JIMB-291', 'JIMB',  'Reconcile the worker-scope Description parser'),
+        card('33GOD-64', '33GOD', 'Cache the fleet snapshot — 87 systemctl execs per call'),
+        card('HOLOC-6',  'HOLOC', 'Purpose-built renderer for agent-state-machine'),
+      ],
+      started: [
+        card('JIMB-284', 'JIMB',  'Ticket lifecycle: land the tp_band projection', { lease: '4d 02h', stale: true, worker: null }),
+        card('JIMB-269', 'JIMB',  'Evidence-file gate for autonomous review',      { lease: '3h 11m', worker: 'proc_470ce5' }),
+        card('BB-138',   'BB',    'Fix hermes-agent non-UUID correlationids',      { lease: '46m',    worker: 'proc_a91f02' }),
+        card('SLOW-22',  'SLOW',  'Hook fan-out for the antigravity dialect',      { lease: '12m',    worker: 'proc_c3b7de' }),
+      ],
+      completed: [
+        card('JIMB-277', 'JIMB',  'Normalize the attention bell/gate split',       { review: 'Awaiting Decision' }),
+        card('33GOD-61', '33GOD', 'Worktree policy skill + worktrunk integration',  { review: 'Complete but Unacknowledged' }),
+        card('CS-29',    'CS',    'Project registry sync',                          {}),
+      ],
+    };
+
+    const filt = (xs) => staleOnly ? xs.filter((c) => c.stale || c.hasState) : xs;
+
+    const columns = [
+      { name: 'BACKLOG',   empty: filt(all.backlog).length === 0,   count: staleOnly ? filt(all.backlog).length   : 84, cards: filt(all.backlog)   },
+      { name: 'UNSTARTED', empty: filt(all.unstarted).length === 0, count: staleOnly ? filt(all.unstarted).length : 61, cards: filt(all.unstarted) },
+      { name: 'STARTED',   empty: filt(all.started).length === 0,   count: staleOnly ? filt(all.started).length   : 28, cards: filt(all.started)   },
+      { name: 'COMPLETED', empty: filt(all.completed).length === 0, count: staleOnly ? filt(all.completed).length : 23, cards: filt(all.completed) },
+    ];
+
+    const B = (id, count, hot) => ({
+      id, count,
+      border: hot ? '#4a3d1e' : '#26324d',
+      bg: hot ? '#16130a' : 'transparent',
+      color: hot ? '#ffd9a0' : '#9aa8c7',
+      countColor: hot ? '#ffd166' : '#56637f',
+    });
+
+    const boards = [
+      B('JIMB', 134), B('CS', 21), B('PJ', 16), B('33GOD', 14),
+      B('HOLOC', 8), B('BB', 6), B('SLOW', 4), B('DECK', 1), B('+4 boards', 23),
+    ];
+
+    return {
+      columns, boards,
+      toggleStale: () => this.setState({ staleOnly: !this.state.staleOnly }),
+      staleBtnLabel: (staleOnly ? '▣' : '▢') + ' needs attention only',
+      staleBtnColor: staleOnly ? '#eef3ff' : '#7c89a6',
+      staleBtnBorder: staleOnly ? '#5d6b8a' : '#26324d',
+      staleBtnBg: staleOnly ? '#16203a' : 'transparent',
+    };
+  }
+}
+</script>
+</body>
+</html>

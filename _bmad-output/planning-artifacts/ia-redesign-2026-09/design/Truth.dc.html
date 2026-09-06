@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .hatch { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 7px); }
+    .rowhover:hover { background: #151e33; }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 1440px; background: #0b1020; color: #eef3ff; font-size: 13px; display: flex; flex-direction: column;">
+  <!-- TRUTH STRIP — identical on every route, per SYNTHESIS -->
+  <div style="display: flex; align-items: center; gap: 0; height: 28px; padding: 0 16px; background: #07111f; border-bottom: 1px solid #26324d; font-size: 11.5px; letter-spacing: 0.02em; flex: 0 0 auto;">
+    <sc-for list="{{oracles}}" as="o" hint-placeholder-count="7">
+      <div style="display: flex; align-items: baseline; gap: 5px; padding-right: 18px;">
+        <span style="color: #5d6b8a;">{{o.name}}</span>
+        <span style="color: {{o.color}};">{{o.glyph}}</span>
+        <span style="color: {{o.color}}; font-weight: 600;">{{o.value}}</span>
+      </div>
+    </sc-for>
+    <div style="flex-grow: 1;"></div>
+    <span style="color: #5d6b8a; padding-right: 14px;">{{route}}</span>
+    <span style="color: #7c89a6;">&#8984;K</span>
+  </div>
+
+  <div style="padding: 22px 24px 28px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div>
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; font-weight: 600;">Truth</span>
+      <span style="color: #56637f; font-size: 12px;">/truth — what each surface knows, how it knows it, and what it currently cannot see.</span>
+    </div>
+  </div>
+
+  <!-- BLIND ORACLES -->
+  <div style="border: 1px solid #5c3320; border-left: 3px solid #ff9152; background: #150f0a; border-radius: 4px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-bottom: 1px solid #2c1c14;">
+      <span style="color: #ff9152; font-size: 14px;">●</span>
+      <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #ffcfb0;">BLIND ORACLES — A DETECTOR THAT CANNOT SEE IS BROKEN, NOT QUIET</span>
+    </div>
+    <sc-for list="{{blind}}" as="b" hint-placeholder-count="3">
+      <div class="rowhover" style="display: flex; gap: 14px; align-items: baseline; padding: 11px 15px; border-bottom: 1px solid #1f150f;">
+        <span style="color: #ff9152; width: 12px; text-align: center;">●</span>
+        <span class="clip" style="color: #eef3ff; width: 212px; font-size: 12.5px;">{{b.subject}}</span>
+        <span style="color: #ff9152; width: 82px; font-weight: 600; font-size: 12px;">{{b.age}}</span>
+        <span style="color: #c3ccdf; flex-grow: 1; font-size: 11.5px; line-height: 1.45;">{{b.consequence}}</span>
+        <span class="clip" style="color: #7c89a6; width: 250px; font-size: 10.5px; text-align: right;">{{b.source}}</span>
+      </div>
+    </sc-for>
+    <div style="padding: 10px 15px; color: #8d9ab8; font-size: 11.5px; line-height: 1.5;">
+      Consequence for the ladder: <span style="color: #ffcfb0;">BLOCKED is currently under-counted.</span>
+      41 of the live agents run a CLI whose attention hook has never fired, so a gate on any of them produces no row anywhere.
+      An empty queue is not yet a trustworthy claim: it is only as complete as its blindest detector.
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 16px; align-items: flex-start;">
+
+    <!-- ORACLE TABLE -->
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;">
+        <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7;">SOURCES</span>
+        <span style="color: #7c89a6; font-size: 11px;">◇ not sources: Krebs (spec only, no runtime) · Flume (not checked out)</span>
+      </div>
+      <div style="border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+        <div style="display: flex; gap: 12px; padding: 5px 12px; background: #101a2e; border-bottom: 1px solid #26324d; font-size: 10.5px; letter-spacing: 0.07em; color: #7c89a6;">
+          <span style="width: 12px;"></span>
+          <span style="width: 190px;">SOURCE</span>
+          <span style="width: 236px;">LOCATOR</span>
+          <span style="width: 82px;">CADENCE</span>
+          <span style="width: 74px; text-align: right;">LAST</span>
+          <span style="flex-grow: 1;">VERDICT</span>
+        </div>
+        <sc-for list="{{sources}}" as="s" hint-placeholder-count="9">
+          <div class="{{s.klass}} rowhover" style="display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid #17203a;">
+            <span style="color: {{s.color}}; width: 12px; text-align: center;">{{s.glyph}}</span>
+            <span class="clip" style="color: #eef3ff; width: 190px; font-size: 12px;">{{s.name}}</span>
+            <span class="clip" style="color: #6b7793; width: 236px; font-size: 11px;">{{s.locator}}</span>
+            <span class="clip" style="color: #56637f; width: 82px; font-size: 11px;">{{s.cadence}}</span>
+            <span style="color: {{s.ageColor}}; width: 74px; text-align: right; font-size: 11.5px; font-weight: 600;">{{s.age}}</span>
+            <span style="color: {{s.verdictColor}}; flex-grow: 1; font-size: 11.5px;">{{s.verdict}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- SWEEPER -->
+    <div style="width: 340px; flex: 0 0 340px; display: flex; flex-direction: column; gap: 14px;">
+
+      <div style="border: 1px solid #26324d; border-left: 2px solid #46536f; background: #0d1426; border-radius: 4px; padding: 13px 14px;">
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;">
+          <span style="color: #6b7793;">─</span>
+          <span style="color: #9aa8c7; font-size: 11px; font-weight: 600; letter-spacing: 0.07em;">SWEEPER — THE LIVENESS ORACLE</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #9aa8c7; font-size: 12px; font-weight: 600;">8s ago</span>
+        </div>
+        <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.55;">
+          <span style="color: #eef3ff;">asm:sweeper</span> (EX 60) is the liveness oracle for the whole board.
+          <code style="color: #9aa8c7;">stale</code> and <code style="color: #9aa8c7;">gone</code> are only true while something is asking.
+        </div>
+        <div style="margin-top: 9px; padding-top: 9px; border-top: 1px solid #1b2540; color: #7c89a6; font-size: 11px; line-height: 1.5;">
+          If this key disappears, <span style="color: #eef3ff;">/now greys out entirely</span> and says
+          <span style="color: #9aa8c7;">"liveness unverified"</span> — rather than showing a page of confidently green rows that are fiction.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- WHAT LIES TODAY -->
+  <div>
+    <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7; margin-bottom: 8px;">CLAIMS THIS BUILD RETIRES</div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+      <sc-for list="{{lies}}" as="l" hint-placeholder-count="6">
+        <div style="border: 1px solid #26324d; background: #0d1426; border-radius: 4px; padding: 10px 12px;">
+          <div style="display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px;">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="flex: 0 0 11px; margin-top: 2px;" aria-hidden="true">
+              <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" stroke="#5d6b8a" stroke-width="1.4" stroke-linecap="round"></path>
+            </svg>
+            <span style="color: #eef3ff; font-size: 11.5px; font-weight: 600;">{{l.claim}}</span>
+          </div>
+          <div style="color: #7c89a6; font-size: 11px; line-height: 1.5;">{{l.truth}}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const oracles = [
+      { name: 'sweeper',    value: '8s',      color: '#9aa8c7', glyph: '' },
+      { name: 'asm',        value: '36/17',   color: '#9aa8c7', glyph: '' },
+      { name: 'candystore', value: '918,762', color: '#9aa8c7', glyph: '' },
+      { name: 'nats',       value: '143,633', color: '#9aa8c7', glyph: '' },
+      { name: 'probes',     value: '3m',      color: '#9aa8c7', glyph: '' },
+      { name: 'fleet',      value: '41s',     color: '#9aa8c7', glyph: '' },
+      { name: 'bridge',     value: 'DOWN',    color: '#ff9152', glyph: '\u25cf' },
+    ];
+
+
+    const blind = [
+      { subject: 'codex · attention',
+        age: 'never',
+        consequence: '41 codex agents alive. The attention hook has never fired, so a permission gate on any of them produces no row anywhere in the product.',
+        source: 'stat:agent-hook-telemetry' },
+      { subject: 'openclaw · all roles',
+        age: 'never',
+        consequence: 'Declared in hooks.master.json as a supported dialect. Nothing has ever been received from it — it is a contract with no traffic.',
+        source: 'asm:seen · no openclaw prefix' },
+      { subject: 'hermes-plane-webhook-bridge',
+        age: 'down',
+        consequence: '26 agents carry a "bridge-bound" badge claiming they react to their board. Nothing is listening on :8477; projectsMapped is 0.',
+        source: 'systemctl --user is-active · healthOk false' },
+    ];
+
+    // Age colour is DERIVED from age/cadence, so the strip's stated rule
+    // ("each token coloured by its own age against its own cadence") is true,
+    // not aspirational. Hand-assigning it gave Candystore at 8x neutral and
+    // the Hermes fleet at 8.2x yellow.
+    const SEC = { '15s':15, '30s':30, '60s':60, '5s':5, 'push':5, '2s':2, 'none':null, 'never':null };
+    const AGE = { '8s':8, '2s':2, '2m':120, '30s':30, '41s':41, '4m':240, '—':null, 'down':null, 'never':null };
+    const ageOf = (age, cadence) => {
+      const a = AGE[age], c = SEC[cadence];
+      if (a === null || a === undefined || !c) return null;
+      return a / c;
+    };
+    const S = (name, locator, cadence, age, _ignored, verdict, verdictColor, glyph, color, klass) => {
+      const ratio = ageOf(age, cadence);
+      let ageColor = '#9aa8c7';
+      if (ratio === null) ageColor = (age === 'never' || age === '—') ? '#6b7793' : '#ff9152';
+      else if (ratio > 10) ageColor = '#ff9152';
+      else if (ratio > 2)  ageColor = '#ffd166';
+      return {
+      oracles, route: '/truth', name, locator, cadence, age, ageColor, verdict, verdictColor, glyph, color, klass: klass || '' };
+    };
+
+    const OK = '#6b7793', FRESH = '#9aa8c7', WARN = '#ffd166', BAD = '#ff9152';
+
+    const sources = [
+      S('ASM sweeper',       'asm:sweeper (EX 60)',                     '15s',   '8s',    FRESH, 'alive — stale/gone are being observed',        '#9aa8c7', '─', OK),
+      S('ASM live set',      'asm:live (ZSET)',                         'push',  '2s',    FRESH, '36 scopes · 17 observed · 19 never observed',  '#9aa8c7', '─', OK),
+      S('ASM transitions',   'asm:transitions (pub/sub)',               'push',  '2s',    FRESH, 'live edges — coalesce 750ms, flaps at 88ms',   '#9aa8c7', '─', OK),
+      S('ASM history',       'asm:t:<scope> (STREAM)',                  'push',  '2s',    FRESH, '510 edges on the busiest scope, with reasons', '#9aa8c7', '─', OK),
+      S('Candystore',        'GET :8683/events · /lenses · /classes',   '15s',   '2m',    '#9aa8c7', '918,762 rows since 2026-05-24',           '#9aa8c7', '─', OK),
+      S('Candystore DLQ',    'psql · public.dead_letter',               'none',  '—',     BAD,  '285 in 7d, growing — NO endpoint exposes this', '#ff9152', '●', BAD),
+      S('NATS JetStream',    'GET :8222/jsz',                           '30s',   '30s',   '#9aa8c7', '143,633 msgs · 36 bound subjects',        '#9aa8c7', '─', OK),
+      S('Hermes fleet',      '87 × systemctl --user is-active',         '5s',    '41s',   WARN, '0.65–1.3s per snapshot · 87 subprocesses',          '#ffd166', '▲', WARN),
+      S('Plane bridge',      'hermes-plane-webhook-bridge.service',     '30s',   'down',  BAD,  'inactive · healthOk false · 0 projects mapped', '#ff9152', '●', BAD),
+      S('Ticket board',      'GET /events?class=ticket_webhook',        '60s',   '4m',    '#9aa8c7', 'tp_band on 77 of 108 events in 24h',      '#ffd166', '▲', WARN),
+    ];
+
+    const lies = [
+      { claim: '"Needs attention: 26 of 29"',
+        truth: 'Counts busy_state=unknown as attention. 25 agents are unknown for one identical reason: no sentinel file was ever written.' },
+      { claim: 'delodocs-pm — "working"',
+        truth: 'Rendered working, and incrementing the Working tile, on a heartbeat 98 days old.' },
+      { claim: 'Ticket Velocity',
+        truth: 'velocity_history returns 0 rows. Every bar is synthesized client-side at page.tsx:403.' },
+      { claim: '"bridge-bound" badge on 26 agents',
+        truth: 'Tooltip says the agent reacts to its board. The bridge is inactive with 0 projects mapped.' },
+      { claim: 'Hook Health — "Claude FAIL"',
+        truth: 'Contradicted on the same screen by claude · post_tool "live, last 0s ago". Its Redis TTL is 30 days, so it outlives its own producer.' },
+      { claim: '174 of 261 fleet buttons',
+        truth: 'Target systemd units that do not exist. consumer_unit is unset, so fleet.ts:775 invents a name.' },
+    ];
+
+    return { blind, sources, lies };
+  }
+}
+</script>
+</body>
+</html>

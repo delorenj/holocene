@@ -1,5 +1,22 @@
 # Holocene redesign — verified ground truth (2026-09-06)
 
+## HOW TO READ THE NUMBERS IN THIS FILE  — read this first
+
+Three separate reviewers filed "the artboard contradicts this doc" findings that were all the
+same mistake: **this doc was older than the artboard.** Candystore's lenses and classes are 24h
+ROLLING windows and the ASM census changes on every reboot. So:
+
+- **Every count here is a sample, stamped `@ HH:MM`.** A count with no stamp predates this rule
+  and should be assumed stale.
+- **A count older than 24h is quoted as a RATIO, never an absolute.** The ratio is what
+  determines layout and survives; the absolute is a reading.
+- **Before citing any number from this file in a design or a review, re-fetch it.**
+  `curl -s 127.0.0.1:8683/lenses`, `redis-cli ZCARD asm:live`. It takes two seconds.
+
+Measured drift in one working day: `decisions` 22 -> 81 -> 89 · `errors` 171 -> 536 -> 587 ·
+`tools` 15,461 -> 24,583 -> 26,735 · `pm_agent` 3,404 -> 11,009 -> 11,941 ·
+`asm:live` 68 -> 36 (reboot).
+
 Everything below was MEASURED against live services, not read from docs. Docs in 33GOD are
 frequently stale; this file supersedes them.
 
@@ -334,3 +351,17 @@ no deep links, no back button, no shareable view.**
 - The probe target list (`targets.txt`) is three whitespace columns (url, service, container)
   for 80 rows. There is **no auth-walled marker and no `expect` field** — any "expected status"
   design is a stub, not a read.
+
+## CENSUS CORRECTION — 2026-09-06, after a host reboot
+The ASM figures in the first half of this file (68 live / ~13 observed / ~55 unknown) were
+measured BEFORE the box rebooted. Re-measured live afterwards:
+
+    redis-cli ZCARD asm:live               -> 36
+    observed states                        -> 17  (5 starting, 4 idle, 3 working,
+                                                   3 tool_running, 2 delegating)
+    unknown (in /proc, never emitted)      -> 19
+    block_kind present                     -> none (no live attention at measurement)
+
+The artboards use **36 / 17 / 19**. The ratio of observed to unobserved is what matters for
+layout and it survives the reboot (roughly half), but the absolute numbers do not — treat any
+ASM census in this file as a timestamped sample, never a constant.

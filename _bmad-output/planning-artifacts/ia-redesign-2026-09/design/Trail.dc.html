@@ -1,0 +1,295 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .rowhover:hover { background: #151e33; }
+    .chip:hover { border-color: #5d6b8a; }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 1440px; min-height: 940px; background: #0b1020; color: #eef3ff; font-size: 13px; display: flex; flex-direction: column;">
+
+  <!-- TRUTH STRIP — identical on every route, per SYNTHESIS -->
+  <div style="display: flex; align-items: center; gap: 0; height: 28px; padding: 0 16px; background: #07111f; border-bottom: 1px solid #26324d; font-size: 11.5px; letter-spacing: 0.02em; flex: 0 0 auto;">
+    <sc-for list="{{oracles}}" as="o" hint-placeholder-count="7">
+      <div style="display: flex; align-items: baseline; gap: 5px; padding-right: 18px;">
+        <span style="color: #5d6b8a;">{{o.name}}</span>
+        <span style="color: {{o.color}};">{{o.glyph}}</span>
+        <span style="color: {{o.color}}; font-weight: 600;">{{o.value}}</span>
+      </div>
+    </sc-for>
+    <div style="flex-grow: 1;"></div>
+    <span style="color: #5d6b8a; padding-right: 14px;">{{route}}</span>
+    <span style="color: #7c89a6;">&#8984;K</span>
+  </div>
+
+  <div style="padding: 18px 20px 24px 20px; display: flex; flex-direction: column; gap: 14px;">
+
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; font-weight: 600;">Trail</span>
+      <span style="color: #56637f; font-size: 12px;">GET /lenses · 24h rolling counts, server-computed · sampled 14:32</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 14px; padding: 11px 14px; border: 1px solid #5c3320; border-left: 3px solid #ff9152; background: #150f0a; border-radius: 4px;">
+      <span style="color: #ff9152; font-size: 14px;">●</span>
+      <span style="color: #ffcfb0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; white-space: nowrap;">SILENT DATA LOSS</span>
+      <span style="color: #c3ccdf; font-size: 12px; flex-grow: 1;">
+        <span style="color: #eef3ff; font-weight: 600;">285 events dead-lettered</span> in 7 days and still growing —
+        hermes-agent emits non-UUID correlationids, so part of the PM fleet&#39;s own trail never reaches Postgres.
+        <span style="color: #d8a488;">The feed below is incomplete.</span>
+      </span>
+      <span style="color: #7c89a6; font-size: 11px; white-space: nowrap;">psql only · no endpoint exposes this</span>
+    </div>
+
+    <!-- LENS SPINE -->
+    <div style="display: flex; flex-wrap: wrap; gap: 7px;">
+      <sc-for list="{{lenses}}" as="l" hint-placeholder-count="9">
+        <div class="chip" onClick="{{l.pick}}" style="display: flex; align-items: baseline; gap: 8px; padding: 6px 11px; border: 1px solid {{l.border}}; background: {{l.bg}}; border-radius: 3px; cursor: pointer;">
+          <span style="color: {{l.labelColor}}; font-size: 12px;">{{l.label}}</span>
+          <span style="color: {{l.countColor}}; font-size: 11.5px; font-weight: 600;">{{l.glyph}}{{l.count}}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- FOLD BAR -->
+    <div style="display: flex; align-items: center; gap: 12px; padding: 9px 13px; border: 1px solid {{fold.border}}; border-left: 2px solid #26324d; background: {{fold.bg}}; border-radius: 4px;">
+      <span style="color: {{fold.accent}};">{{fold.glyph}}</span>
+      <span style="color: #c3ccdf; font-size: 12px;">{{fold.text}}</span>
+      <div style="flex-grow: 1;"></div>
+      <span onClick="{{toggleTools}}" style="cursor: pointer; font-size: 11px; color: #c3ccdf; font-weight: 600; border: 1px solid #3d4a66; border-radius: 3px; padding: 4px 10px;">{{fold.toggle}}</span>
+    </div>
+
+    <div style="display: flex; gap: 18px; align-items: flex-start;">
+
+      <!-- FEED -->
+      <div style="flex-grow: 1; min-width: 0; border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+        <div style="display: flex; gap: 12px; padding: 5px 12px; background: #101a2e; border-bottom: 1px solid #26324d; font-size: 10.5px; letter-spacing: 0.07em; color: #7c89a6;">
+          <span style="width: 8px;"></span>
+          <span style="width: 62px;">TIME</span>
+          <span style="width: 112px;">CLASS</span>
+          <span style="flex-grow: 1;">HEADLINE — server-rendered summary.row</span>
+          <span style="width: 104px;">PROJECT</span>
+          <span style="width: 56px; text-align: right;">MS</span>
+        </div>
+        <sc-for list="{{events}}" as="e" hint-placeholder-count="12">
+          <div class="rowhover" style="display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid #17203a; cursor: pointer;">
+            <span style="width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid {{e.classColor}}; box-sizing: border-box; align-self: center; flex: 0 0 9px;"></span>
+            <span style="color: #56637f; width: 62px; font-size: 11.5px;">{{e.time}}</span>
+            <span class="clip" style="color: {{e.classColor}}; width: 112px; font-size: 11.5px;">{{e.klass}}</span>
+            <span style="flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <span style="color: {{e.headColor}};">{{e.headGlyph}}{{e.headline}}</span>
+              <span style="color: {{e.bodyColor}}; font-size: 12.5px;">{{e.body}}</span>
+            </span>
+            <span class="clip" style="color: #7c89a6; width: 104px; font-size: 11.5px;">{{e.project}}</span>
+            <span style="color: #5d6b8a; width: 56px; text-align: right; font-size: 11.5px;">{{e.ms}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- SIDE: CLASSES + RATE -->
+      <div style="width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; gap: 14px;">
+
+        <div style="border: 1px solid #26324d; border-radius: 4px; padding: 12px 13px;">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; color: #9aa8c7; margin-bottom: 3px;">PROVENANCE CLASSES</div>
+          <div style="font-size: 10.5px; color: #7c89a6; margin-bottom: 10px; line-height: 1.5;"><span style="color: #c3ccdf; font-weight: 600;">Rings are provenance, not severity.</span> Every rung glyph is solid; nothing else in the product is a ring. Hues are <span style="color: #c3ccdf; font-weight: 600;">GET /classes</span> verbatim.</div>
+          <sc-for list="{{classes}}" as="c" hint-placeholder-count="8">
+            <div style="display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid #141c33;">
+              <span style="width: 9px; height: 9px; border-radius: 50%; border: {{c.ring}}; box-sizing: border-box; align-self: center; flex: 0 0 9px;"></span>
+              <span class="clip" style="color: {{c.nameColor}}; font-size: 11.5px; width: 108px;">{{c.name}}</span>
+              <span style="color: #7c89a6; font-size: 11.5px; width: 52px; text-align: right; font-weight: 600;">{{c.count}}</span>
+              <span style="color: {{c.caveatColor}}; font-size: 11.5px; flex-grow: 1; text-align: right;">{{c.caveat}}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border: 1px solid #26324d; border-radius: 4px; padding: 12px 13px;">
+          <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; color: #9aa8c7;">RATE</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="color: #7c89a6; font-size: 10.5px;">/summary/timeline</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px;">
+            <span style="font-size: 23px; font-weight: 600; color: #eef3ff;">18</span>
+            <span style="color: #7c89a6; font-size: 12px;">events/min</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="color: #7c89a6; font-size: 10.5px;">{{peakLabel}}</span>
+          </div>
+          <div style="display: flex; align-items: flex-end; gap: 2px; height: 40px;">
+            <sc-for list="{{spark}}" as="s" hint-placeholder-count="30">
+              <div style="flex-grow: 1; background: {{s.color}}; height: {{s.h}};"></div>
+            </sc-for>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 5px; color: #5d6b8a; font-size: 11.5px;">
+            <span>−60m</span><span>now</span>
+          </div>
+        </div>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":940}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { lens: 'decisions', foldTools: true };
+  }
+
+  renderVals() {
+    const LENSES = [
+      { id: 'pm',        label: 'PM',        count: 177   },
+      { id: 'decisions', label: 'Decisions', count: 81    },
+      { id: 'sessions',  label: 'Sessions',  count: 221   },
+      { id: 'turns',     label: 'Turns',     count: 287   },
+      { id: 'agents',    label: 'Agents',    count: 324   },
+      { id: 'tools',     label: 'Tools',     count: 24583 },
+      { id: 'errors',    label: 'Errors',    count: 536   },
+      { id: 'ops',       label: 'Ops',       count: 82    },
+      { id: 'reports',   label: 'Reports',   count: 3     },
+    ];
+
+    const active = this.state.lens;
+
+    const lenses = LENSES.map((l) => {
+      const on = l.id === active;
+      const hot = false;
+      return {
+        label: l.label,
+        count: l.count.toLocaleString(),
+        border: on ? '#5d6b8a' : '#26324d',
+        bg: on ? '#16203a' : 'transparent',
+        labelColor: on ? '#eef3ff' : '#9aa8c7',
+        countColor: on ? '#eef3ff' : (hot ? '#ff9152' : '#56637f'),
+        glyph: '',
+        pick: () => this.setState({ lens: l.id }),
+      };
+    });
+
+    const folded = this.state.foldTools;
+    const fold = folded
+      ? { glyph: '', accent: '#33405e', border: '#26324d', bg: '#0d1426',
+          text: 'Tool rows folded — 24,583 of 25,758 events in 24h are agent.tool.* (95.4%). Default is tools=0.',
+          toggle: 'unfold tools' }
+      : { glyph: '', accent: '#5d6b8a', border: '#26324d', bg: '#0d1426',
+          text: 'Tool rows unfolded — 95.4% of the feed is agent.tool.*, arriving at roughly 18/min.',
+          toggle: 'fold tools' };
+
+    const CLS = {
+      agent:          '#3b82f6',
+      subagent:       '#8b5cf6',
+      pm_agent:       '#14b8a6',
+      ticket_webhook: '#ec4899',
+      service:        '#64748b',
+    };
+
+    const decisionRows = [
+      { time: '14:22:08', klass: 'pm_agent',       classColor: CLS.pm_agent,       headline: 'Decision recorded',   body: 'pin candystore ingest to a single wildcard subject',       project: '33god',         ms: '—'    },
+      { time: '14:19:51', klass: 'pm_agent',       classColor: CLS.pm_agent,       headline: 'Decision recorded',   body: 'defer the Krebs runtime; keep tp_band as the pipeline key',  project: 'james-brennan', ms: '—'    },
+      { time: '14:11:03', klass: 'agent',          classColor: CLS.agent,          headline: 'Decision recorded',   body: 'worktrees are directory-keyed for hindsight banks',          project: '33god',         ms: '—'    },
+      { time: '13:58:40', klass: 'pm_agent',       classColor: CLS.pm_agent,       headline: 'Decision recorded',   body: 'retire the v1 repo-slug event grammar',                      project: 'bb',            ms: '—'    },
+      { time: '13:44:17', klass: 'subagent',       classColor: CLS.subagent,       headline: 'Decision recorded',   body: 'hook fan-out stays master-to-dialect, no per-CLI edits',     project: 'slowburns',     ms: '—'    },
+      { time: '13:30:02', klass: 'pm_agent',       classColor: CLS.pm_agent,       headline: 'Decision recorded',   body: 'accept the deferred-QA review lane as the operator inbox',   project: 'james-brennan', ms: '—'    },
+    ];
+
+    const toolRows = [
+      { time: '14:22:11', klass: 'agent',    classColor: CLS.agent,    headline: 'Bash',      body: 'redis-cli ZCARD asm:live',                    project: 'holocene',      ms: '31'   },
+      { time: '14:22:11', klass: 'agent',    classColor: CLS.agent,    headline: 'Read',      body: 'apps/api/src/fleet.ts',                       project: 'holocene',      ms: '12'   },
+      { time: '14:22:10', klass: 'subagent', classColor: CLS.subagent, headline: 'Grep',      body: 'hooks.master.json',                           project: 'bb',            ms: '48'   },
+      { time: '14:22:10', klass: 'agent',    classColor: CLS.agent,    headline: 'Bash',      body: 'systemctl --user list-units --type=scope',    project: 'james-brennan', ms: '208'  },
+      { time: '14:22:09', klass: 'agent',    classColor: CLS.agent,    headline: 'Edit',      body: 'services/agent-hooks/core/sweep.py',          project: 'bb',            ms: '9'    },
+      { time: '14:22:09', klass: 'subagent', classColor: CLS.subagent, headline: 'Bash',      body: 'git status --porcelain',                      project: 'slowburns',     ms: '44'   },
+      { time: '14:22:08', klass: 'pm_agent', classColor: CLS.pm_agent, headline: 'Decision recorded', body: '— pin candystore ingest to one subject', project: '33god',       ms: '—'    },
+      { time: '14:22:08', klass: 'agent',    classColor: CLS.agent,    headline: 'Bash',      body: 'redis-cli HGETALL asm:a:codex:p:70391',       project: 'holocene',      ms: '27'   },
+      { time: '14:22:07', klass: 'agent',    classColor: CLS.agent,    headline: 'Read',      body: 'apps/web/app/tooling.tsx',                    project: 'holocene',      ms: '15'   },
+      { time: '14:22:07', klass: 'agent',    classColor: CLS.agent,    headline: 'Bash',      body: 'curl -s 127.0.0.1:8683/lenses',               project: 'holocene',      ms: '19'   },
+      { time: '14:22:06', klass: 'subagent', classColor: CLS.subagent, headline: 'Glob',      body: '**/*.dc.html',                                project: 'slowburns',     ms: '7'    },
+      { time: '14:22:06', klass: 'agent',    classColor: CLS.agent,    headline: 'Bash',      body: 'psql -c "select count(*) from dead_letter"',  project: 'candystore',    ms: '112'  },
+    ];
+
+    const errorRows = [
+      { time: '14:21:44', klass: 'service',        classColor: CLS.service,        headline: 'Dead letter',        body: '— badly formed hexadecimal UUID string (hermes-agent)',       project: 'candystore',    ms: '—'   },
+      { time: '14:18:02', klass: 'service',        classColor: CLS.service,        headline: 'Dead letter',        body: '— badly formed hexadecimal UUID string (hermes-agent)',       project: 'candystore',    ms: '—'   },
+      { time: '14:09:31', klass: 'agent',          classColor: CLS.agent,          headline: 'Invocation failed',  body: '— worker exited 1, no evidence file written',                 project: 'james-brennan', ms: '—'   },
+      { time: '13:52:18', klass: 'service',        classColor: CLS.service,        headline: 'Maintenance failed', body: '— repo guard rejected a tracked backup file',                 project: 'delodocs',      ms: '—'   },
+      { time: '13:40:55', klass: 'ticket_webhook', classColor: CLS.ticket_webhook, headline: 'Projection breached',body: '— finance projection over threshold',                        project: 'keepy-money',   ms: '—'   },
+    ];
+
+    let rows;
+    if (active === 'errors') rows = errorRows;
+    else if (active === 'tools' || !folded) rows = toolRows;
+    else rows = decisionRows;
+
+    const events = rows.map((r) => {
+      const broken = r.headline === 'Dead letter'
+        || r.headline.indexOf('failed') >= 0
+        || r.headline.indexOf('breached') >= 0;
+      // The lens already names the kind. Drop the constant prefix and let the
+      // differentiator carry the brightness.
+      const constant = r.headline === 'Decision recorded';
+      return {
+        ...r,
+        headline: constant ? '' : r.headline,
+        headColor: broken ? '#ff9152' : '#eef3ff',
+        headGlyph: broken ? '\u25cf ' : '',
+        bodyColor: constant || broken ? '#eef3ff' : '#7c89a6',
+      };
+    });
+
+    const ring = (c) => '1.5px solid ' + (c.hollow ? '#46536f' : c.color);
+    const classes = [
+      { name: 'agent',          color: CLS.agent,          count: '11,223', caveat: '',              caveatColor: '#46536f', nameColor: '#c3ccdf' },
+      { name: 'pm_agent',       color: CLS.pm_agent,       count: '11,009', caveat: '',              caveatColor: '#46536f', nameColor: '#c3ccdf' },
+      { name: 'subagent',       color: CLS.subagent,       count: '3,264',  caveat: '† codex-cli only', caveatColor: '#7c89a6', nameColor: '#c3ccdf' },
+      { name: 'service',        color: CLS.service,        count: '159',    caveat: '',              caveatColor: '#46536f', nameColor: '#c3ccdf' },
+      { name: 'ticket_webhook', color: CLS.ticket_webhook, count: '96',     caveat: '',              caveatColor: '#46536f', nameColor: '#c3ccdf' },
+      { name: 'never fired (3)', color: 'transparent',   count: '0',      caveat: 'n8n_workflow · operator · other', caveatColor: '#56637f', nameColor: '#7c89a6', hollow: true },
+    ];
+
+    // Colour follows the DATA, not the pixel height: exactly one bar — the max — is
+    // marked, and it is labelled. Heights are capped to the 40px box so nothing spills.
+    const heights = [22, 31, 18, 39, 27, 35, 12, 36, 29, 21, 33, 40, 25, 19, 38, 30, 15, 37, 26, 34, 20, 32, 28, 17, 36, 23, 31, 24, 22, 28];
+    const peakAt = heights.indexOf(Math.max.apply(null, heights));
+    const spark = heights.map((h, i) => ({
+      h: h + 'px',
+      color: i === peakAt ? '#c3ccdf' : '#2f4368',
+    }));
+    const peakLabel = 'peak 50 at \u2212' + ((heights.length - peakAt) * 2) + 'm';
+
+    const classesR = classes.map((c) => ({ ...c, ring: ring(c) }));
+
+    const oracles = [
+      { name: 'sweeper',    value: '8s',      color: '#9aa8c7', glyph: '' },
+      { name: 'asm',        value: '36/17',   color: '#9aa8c7', glyph: '' },
+      { name: 'candystore', value: '918,762', color: '#9aa8c7', glyph: '' },
+      { name: 'nats',       value: '143,633', color: '#9aa8c7', glyph: '' },
+      { name: 'probes',     value: '3m',      color: '#9aa8c7', glyph: '' },
+      { name: 'fleet',      value: '41s',     color: '#9aa8c7', glyph: '' },
+      { name: 'bridge',     value: 'DOWN',    color: '#ff9152', glyph: '\u25cf' },
+    ];
+
+    return {
+      oracles, route: '/trail/' + active,
+      lenses, fold, events, classes: classesR, spark,
+      active,
+      toggleTools: () => this.setState({ foldTools: !this.state.foldTools }),
+    };
+  }
+}
+</script>
+</body>
+</html>

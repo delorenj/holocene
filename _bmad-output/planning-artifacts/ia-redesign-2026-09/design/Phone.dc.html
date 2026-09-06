@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .hatch { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 7px); }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 390px; min-height: 844px; background: #0b1020; color: #eef3ff; font-size: 13px; display: flex; flex-direction: column;">
+
+  <!-- header: no fake status bar; the real one paints above this -->
+  <div style="padding: 14px 16px 10px 16px; border-bottom: 1px solid #26324d;">
+    <div style="display: flex; align-items: baseline; gap: 8px;">
+      <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; font-weight: 600;">DeloHQ</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: #7c89a6; font-size: 11px;">sweeper 8s</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 20px 16px;">
+
+    <!-- ATTENTION CHIPS -->
+    <div style="display: flex; gap: 7px;">
+      <sc-for list="{{chips}}" as="c" hint-placeholder-count="3">
+        <div onClick="{{c.pick}}" style="cursor: pointer; flex-grow: 1; min-height: 62px; border: 1px solid {{c.border}}; border-left: 2px solid {{c.accent}}; background: {{c.bg}}; border-radius: 5px; padding: 9px 10px; display: flex; flex-direction: column; justify-content: center; gap: 3px;">
+          <div style="display: flex; align-items: baseline; gap: 5px;">
+            <span style="color: {{c.accent}}; font-size: 11px;">{{c.glyph}}</span>
+            <span style="color: {{c.valueColor}}; font-size: 20px; font-weight: 600; line-height: 1;">{{c.value}}</span>
+          </div>
+          <div style="color: #9aa8c7; font-size: 11px; letter-spacing: 0.05em;">{{c.label}}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- BRIDGE CARD — the one the desktop does not have -->
+    <div style="border: 1px solid #5c3320; border-left: 2px solid #ff9152; background: #150f0a; border-radius: 5px; padding: 12px 13px;">
+      <div style="display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px;">
+        <span style="color: #ff9152;">●</span>
+        <span style="color: #ffcfb0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;">PLANE BRIDGE DOWN</span>
+      </div>
+      <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.5;">
+        Nothing on :8477. <span style="color: #eef3ff;">0 projects mapped</span> — 26 agents believe they are bound to a board that cannot reach them.
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 11px;">
+        <div style="flex-grow: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid #3d4a66; border-radius: 4px; color: #c3ccdf; font-weight: 600; font-size: 12px;">Logs</div>
+        <div onClick="{{armRestart}}" style="min-width: 132px; min-height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid {{restart.border}}; background: {{restart.bg}}; border-radius: 4px; color: {{restart.color}}; font-size: 12px;">{{restart.label}}</div>
+      </div>
+    </div>
+
+    <!-- RIGHT NOW -->
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;">
+        <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #9aa8c7;">RIGHT NOW</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="color: #7c89a6; font-size: 10.5px;">17 of 36</span>
+      </div>
+      <div style="border: 1px solid #26324d; border-radius: 5px; overflow: hidden;">
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+          <div style="display: flex; align-items: baseline; gap: 9px; padding: 10px 11px; border-bottom: 1px solid #17203a; min-height: 44px; box-sizing: border-box;">
+            <span style="color: {{r.color}}; width: 10px; text-align: center; font-size: 11px;">{{r.glyph}}</span>
+            <div style="flex-grow: 1; min-width: 0;">
+              <div style="color: #eef3ff; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{r.repo}}</div>
+              <div style="color: #7c89a6; font-size: 11.5px; margin-top: 2px;">{{r.cli}} · {{r.state}}</div>
+            </div>
+            <span style="color: {{r.heldColor}}; font-size: 12px; font-weight: 600;">{{r.held}}</span>
+          </div>
+        </sc-for>
+        <sc-if value="{{hasMore}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 11px; border-bottom: 1px solid #17203a; min-height: 44px; box-sizing: border-box; cursor: pointer;">
+            <span style="color: #c3ccdf; font-size: 12px; font-weight: 600;">{{moreCount}}</span>
+            <span style="color: #7c89a6; font-size: 11px;">▼</span>
+          </div>
+        </sc-if>
+        <div class="hatch" style="display: flex; align-items: center; gap: 9px; padding: 10px 11px; background: #0e1526; min-height: 44px; box-sizing: border-box;">
+          <span style="color: #5d6b8a; width: 10px; text-align: center; font-size: 11px;">◇</span>
+          <span style="color: #6b7793; font-size: 12px; flex-grow: 1;">19 alive, never observed</span>
+          <span style="color: #5d6b8a; font-size: 11px;">▼</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLEAR RECEIPT -->
+    <div style="border: 1px solid #1e2841; background: #0d1426; border-radius: 5px; padding: 11px 13px;">
+      <div style="display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px;">
+        <span style="color: #6b7793;">─</span>
+        <span style="color: #c3ccdf; font-size: 12.5px;">No gates.</span>
+        <span style="color: #9aa8c7; font-size: 12px;">You are not the bottleneck.</span>
+      </div>
+      <div style="color: #6b7793; font-size: 11px; line-height: 1.55; margin-bottom: 7px;">
+        None of the <span style="color: #ff9152;">● 37 broken</span> or
+        <span style="color: #ffd166;">▲ 3 stuck</span> needs a decision from you.
+      </div>
+      <div style="color: #7c89a6; font-size: 10.5px; line-height: 1.6; padding-top: 7px; border-top: 1px solid #1b2540;">
+        9 detectors evaluated, newest 4s ago.<br>
+        <span style="color: #ff9152;">● 1 of them is blind</span> — codex attention has never fired.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- tab bar -->
+  <div style="display: flex; border-top: 1px solid #26324d; background: #07111f; padding-bottom: 22px;">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+      <div style="flex-grow: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-top: 2px solid {{t.edge}}; background: {{t.bg}};">
+        <span style="color: {{t.color}}; font-size: 12px;">{{t.label}}</span>
+        <span style="color: {{t.badgeColor}}; font-size: 11.5px; font-weight: 600;">{{t.badgeGlyph}}{{t.badge}}</span>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { armed: false, filter: null };
+  }
+
+  renderVals() {
+    const C = { blocked: '#ff5f6d', broken: '#ff9152', stuck: '#ffd166', nudge: '#7fb0ff', ok: '#6b7793' };
+
+    const pick = (id) => () => this.setState({ filter: this.state.filter === id ? null : id });
+    const chips = [
+      { id: 'gates',  glyph: '◆', value: '0',  label: 'GATES',  accent: '#6b7793', border: '#1e2841', bg: '#0d1426', valueColor: '#6b7793', pick: pick('gates') },
+      { id: 'broken', glyph: '●', value: '37', label: 'BROKEN', accent: C.broken,  border: '#5c3320', bg: '#150f0a', valueColor: '#ffcfb0', pick: pick('broken') },
+      { id: 'stuck',  glyph: '▲', value: '3',  label: 'STUCK',  accent: C.stuck,   border: '#4a3d1e', bg: '#16130a', valueColor: '#ffd9a0', pick: pick('stuck') },
+    ];
+
+    const row = (repo, cli, state, held, kind) => ({
+      repo, cli, state, held,
+      glyph: kind === 'stuck' ? '▲' : '─',
+      color: kind === 'stuck' ? C.stuck : C.ok,
+      heldColor: kind === 'stuck' ? C.stuck : '#9aa8c7',
+    });
+
+    const rows = [
+      row('holocene',       'claude', 'starting',     '10m 11s', 'stuck'),
+      row('skillex',        'codex',  'tool_running', '66m',     'stuck'),
+      row('33GOD',          'hermes', 'delegating',   '2h 36m',  'stuck'),
+      row('TonnyBox',       'hermes', 'tool_running', '1m 28s'),
+      row('james-brennan',  'claude', 'working',      '14s'),
+      row('PoopToTheMoon',  'codex',  'tool_running', '40s'),
+    ];
+
+    const GLYPH_FOR = { '#ff5f6d': '\u25c6 ', '#ff9152': '\u25cf ', '#ffd166': '\u25b2 ', '#7fb0ff': '\u25aa ' };
+    const tab = (label, badge, badgeColor, active) => ({
+      label, badge,
+      badgeGlyph: badge ? (GLYPH_FOR[badgeColor] || '') : '',
+      badgeColor: badgeColor || '#46536f',
+      color: active ? '#eef3ff' : '#7c89a6',
+      edge: active ? '#9aa8c7' : 'transparent',
+      bg: active ? '#0d1426' : 'transparent',
+    });
+
+    const tabs = [
+      tab('Now',   '',    '#46536f', true),
+      tab('Fleet', '1',   C.stuck),
+      tab('Trail', '',    '#46536f'),
+      tab('Truth', '3',   C.broken),
+    ];
+
+    const armed = this.state.armed;
+    const restart = armed
+      ? { label: 'Confirm restart', color: '#ff5f6d', border: '#5c2733', bg: '#180d14' }
+      : { label: 'Restart bridge',  color: '#c3ccdf', border: '#3d4a66', bg: 'transparent' };
+
+    return {
+      chips, rows, tabs, restart,
+      moreCount: (17 - rows.length) + ' more observed',
+      hasMore: rows.length < 17,
+      armRestart: () => this.setState({ armed: !armed }),
+    };
+  }
+}
+</script>
+</body>
+</html>

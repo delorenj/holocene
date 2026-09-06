@@ -1,0 +1,418 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .hatch {
+      background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 7px);
+    }
+    .rowhover:hover { background: #151e33; }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 1440px; min-height: 1000px; background: #0b1020; color: #eef3ff; font-size: 13px; display: flex; flex-direction: column;">
+
+  <!-- TRUTH STRIP -->
+  <div style="display: flex; align-items: center; gap: 0; height: 28px; padding: 0 16px; background: #07111f; border-bottom: 1px solid #26324d; font-size: 11.5px; letter-spacing: 0.02em; flex: 0 0 auto;">
+    <sc-for list="{{oracles}}" as="o" hint-placeholder-count="6">
+      <div style="display: flex; align-items: baseline; gap: 5px; padding-right: 18px;">
+        <span style="color: #5d6b8a;">{{o.name}}</span>
+        <span style="color: {{o.color}};">{{o.glyph}}</span>
+        <span style="color: {{o.color}}; font-weight: 600;">{{o.value}}</span>
+      </div>
+    </sc-for>
+    <div style="flex-grow: 1;"></div>
+    <span style="color: #7c89a6;">⌘K</span>
+  </div>
+
+  <div style="display: flex; flex-grow: 1; align-items: stretch;">
+
+    <!-- LEFT RAIL -->
+    <div style="width: 188px; flex: 0 0 188px; background: #0d1426; border-right: 1px solid #26324d; display: flex; flex-direction: column; padding: 14px 0 0 0;">
+      <div style="padding: 0 14px 16px 14px;">
+        <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">Holocene</div>
+        <div style="font-size: 10.5px; color: #7c89a6; letter-spacing: 0.06em; margin-top: 2px;">33GOD CONTROL PLANE</div>
+      </div>
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="7">
+        <div class="rowhover" style="display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; border-left: 2px solid {{n.edge}}; background: {{n.bg}};">
+          <span style="color: {{n.labelColor}}; flex-grow: 1; font-size: 12.5px;">{{n.label}}</span>
+          <span style="color: {{n.badgeColor}}; font-size: 11.5px;">{{n.badgeGlyph}}</span>
+          <span style="color: {{n.badgeColor}}; font-size: 11px; font-weight: 600;">{{n.badge}}</span>
+        </div>
+      </sc-for>
+      <div style="flex-grow: 1;"></div>
+      <div style="padding: 12px 14px; border-top: 1px solid #1b2540; font-size: 10.5px; color: #7c89a6; line-height: 1.5;">
+        one operator<br>big-chungus
+      </div>
+    </div>
+
+    <!-- MAIN COLUMN -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding: 18px 20px 24px 20px;">
+
+      <!-- ATTENTION BAND -->
+      <div style="border: 1px solid {{band.border}}; border-left: 3px solid {{band.accent}}; background: {{band.bg}}; border-radius: 4px;">
+
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: {{band.headerBorder}};">
+          <span style="color: {{band.accent}}; font-size: 13px;">{{band.glyph}}</span>
+          <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: {{band.titleColor}};">{{band.title}}</span>
+          <div style="flex-grow: 1;"></div>
+          <span onClick="{{toggleBand}}" style="cursor: pointer; font-size: 11.5px; color: #c3ccdf; font-weight: 600; border: 1px solid #3d4a66; border-radius: 3px; padding: 4px 10px;">{{band.toggleLabel}}</span>
+        </div>
+
+        <sc-if value="{{band.hasItems}}" hint-placeholder-val="{{true}}">
+          <div>
+            <sc-for list="{{queue}}" as="q" hint-placeholder-count="4">
+              <div class="rowhover" style="display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid #17203a; cursor: pointer;">
+                <span style="color: {{q.color}}; width: 12px; text-align: center;">{{q.glyph}}</span>
+                <span style="color: {{q.color}}; font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; width: 62px;">{{q.rung}}</span>
+                <span style="color: #eef3ff; width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{q.subject}}</span>
+                <span style="color: {{q.ageColor}}; width: 74px; font-weight: 600;">{{q.age}}</span>
+                <span style="color: #8d9ab8; flex-grow: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{q.detail}}</span>
+                <span style="color: #c3ccdf; font-weight: 600; font-size: 11.5px; border: 1px solid #3d4a66; border-radius: 3px; padding: 3px 8px; white-space: nowrap;">{{q.action}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{band.isClear}}" hint-placeholder-val="{{true}}">
+          <div style="padding: 12px 14px 14px 14px;">
+            <div style="font-size: 13px; color: #c3ccdf; margin-bottom: 4px;">
+              No gates. <span style="color: #9aa8c7;">You are not the bottleneck.</span>
+            </div>
+            <div style="font-size: 12px; margin-bottom: 11px;">
+              <span style="color: #ff9152; font-weight: 600;">● {{tally.broken}} broken</span>
+              <span style="color: #5d6b8a;"> · </span>
+              <span style="color: #ffd166; font-weight: 600;">▲ {{tally.stuck}} stuck</span>
+              <span style="color: #6b7793;"> · none of it needs a decision from you</span>
+            </div>
+            <div style="font-size: 10.5px; color: #7c89a6; letter-spacing: 0.05em; margin-bottom: 7px; padding-bottom: 6px; border-bottom: 1px solid #1b2540;">
+              9 DETECTORS EVALUATED, NEWEST 4s AGO
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 20px;">
+              <sc-for list="{{detectors}}" as="d" hint-placeholder-count="9">
+                <div style="display: flex; align-items: baseline; gap: 7px; font-size: 11px; padding: 2px 0;">
+                  <span style="color: {{d.color}};">{{d.glyph}}</span>
+                  <span class="clip" style="color: {{d.nameColor}}; width: 84px;">{{d.name}}</span>
+                  <span style="color: {{d.scannedColor}}; flex-grow: 1;">{{d.scanned}}</span>
+                  <span style="color: #7c89a6;">{{d.age}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <!-- WORKING NOW -->
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;">
+          <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7;">WORKING NOW</span>
+          <span style="font-size: 11px; color: #56637f;">17 observed of 36 live · asm:transitions · coalesced 750ms</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: #5d6b8a;">severity ↓ then held ↓</span>
+        </div>
+
+        <div style="border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+          <div style="display: flex; gap: 12px; padding: 5px 12px; background: #101a2e; border-bottom: 1px solid #26324d; font-size: 10.5px; letter-spacing: 0.07em; color: #7c89a6;">
+            <span style="width: 12px;"></span>
+            <span style="width: 112px;">STATE</span>
+            <span style="width: 62px; text-align: right;">HELD</span>
+            <span style="width: 74px;">CLI</span>
+            <span style="width: 168px;">REPO</span>
+            <span style="width: 62px;">PANE</span>
+            <span style="width: 86px; text-align: right;">TOOLS/SUBS</span>
+            <span style="flex-grow: 1;">LAST TRANSITION &#183; asm:t:&lt;scope&gt;</span>
+          </div>
+
+          <sc-for list="{{scopes}}" as="s" hint-placeholder-count="10">
+            <div class="rowhover" style="display: flex; gap: 12px; padding: 5px 12px; border-bottom: 1px solid #17203a; cursor: pointer; opacity: {{s.opacity}};">
+              <span style="color: {{s.color}}; width: 12px; text-align: center;">{{s.glyph}}</span>
+              <span class="clip" style="color: {{s.color}}; width: 112px; font-size: 12px;">{{s.state}}</span>
+              <span style="color: {{s.heldColor}}; width: 62px; text-align: right; font-weight: 600;">{{s.held}}</span>
+              <span class="clip" style="color: #8d9ab8; width: 74px;">{{s.cli}}</span>
+              <span class="clip" style="color: #eef3ff; width: 168px;">{{s.repo}}</span>
+              <span class="{{s.paneKlass}}" style="color: {{s.paneColor}}; width: 62px; font-size: 11.5px;">{{s.pane}}</span>
+              <span style="color: #6b7793; width: 86px; text-align: right;">{{s.counters}}</span>
+              <span class="clip" style="color: {{s.reasonColor}}; flex-grow: 1; font-size: 11px;">{{s.reason}}</span>
+            </div>
+          </sc-for>
+
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #17203a; cursor: pointer;">
+            <span style="color: #c3ccdf; font-size: 12px; font-weight: 600;">{{moreCount}}</span>
+            <span style="color: #7c89a6; font-size: 11px;">▼</span>
+          </div>
+
+          <!-- UNOBSERVED COLLAPSE -->
+          <div class="hatch" onClick="{{toggleUnknown}}" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; cursor: pointer; background: #0e1526; border-bottom: 1px solid #17203a;">
+            <span style="color: #5d6b8a; width: 12px; text-align: center;">◇</span>
+            <span style="color: #6b7793; font-size: 12px;">19 alive, never observed</span>
+            <span style="color: #5d6b8a; font-size: 11px;">found in /proc, no hook ever fired — cannot be healthy or broken</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="color: #5d6b8a; font-size: 11px;">{{unknownToggle}}</span>
+          </div>
+
+          <sc-if value="{{unknownOpen}}" hint-placeholder-val="{{true}}">
+            <div>
+              <sc-for list="{{unknowns}}" as="u" hint-placeholder-count="4">
+                <div class="hatch rowhover" style="display: flex; gap: 12px; padding: 6px 12px 6px 36px; border-bottom: 1px solid #141c33; font-size: 12px;">
+                  <span class="clip" style="color: #56637f; width: 74px;">{{u.cli}}</span>
+                  <span style="color: {{u.cwdColor}}; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{u.cwd}}</span>
+                  <span style="color: {{u.tagColor}}; font-size: 10.5px; letter-spacing: 0.05em;">{{u.tag}}</span>
+                  <span style="color: #5d6b8a; width: 66px; text-align: right;">{{u.age}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <!-- WEDGE RAIL -->
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;">
+          <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7;">DELEGATED WORK</span>
+          <span style="font-size: 11px; color: #56637f;">12 worker scopes · systemctl --user list-units --type=scope</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+          <sc-for list="{{workers}}" as="w" hint-placeholder-count="3">
+            <div style="border: 1px solid {{w.border}}; border-left: 2px solid {{w.accent}}; background: #101a2e; border-radius: 4px; padding: 10px 12px;">
+              <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;">
+                <span style="color: {{w.accent}};">{{w.glyph}}</span>
+                <span style="color: #eef3ff; font-size: 12.5px; flex-grow: 1;">{{w.parent}}</span>
+                <span style="color: {{w.accent}}; font-weight: 600; font-size: 12px;">{{w.age}}</span>
+              </div>
+              <div style="color: #8d9ab8; font-size: 11.5px; margin-bottom: 3px;">{{w.count}}</div>
+              <div style="color: #7c89a6; font-size: 10.5px; border-bottom: 1px dotted #3d4a66; display: inline-block;">{{w.inferred}}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { bandExpanded: false, unknownOpen: false };
+  }
+
+  renderVals() {
+    const C = {
+      blocked: '#ff5f6d',
+      broken: '#ff9152',
+      stuck:  '#ffd166',
+      nudge:  '#7fb0ff',
+      ok:     '#6b7793',
+    };
+
+    const expanded = this.state.bandExpanded;
+
+    // Rung tally — ONE source, used by the receipt AND the rail badges so the
+    // two can never contradict each other on screen.
+    const tally = { gates: 0, bells: 0, broken: 37, stuck: 3 };
+
+    const band = expanded
+      ? {
+          glyph: '◆',
+          title: 'NEEDS YOU — 1 GATE',
+          titleColor: '#ffd9dd',
+          accent: C.blocked,
+          border: '#5c2733',
+          bg: '#180d14',
+          headerBorder: '1px solid #2c1620',
+          toggleLabel: 'show clear state',
+          hasItems: true,
+          isClear: false,
+        }
+      : {
+          glyph: '─',
+          title: 'NO GATES',
+          titleColor: '#7c89a6',
+          accent: '#33405e',
+          border: '#1e2841',
+          bg: '#0d1426',
+          headerBorder: '1px solid #17203a',
+          toggleLabel: 'show a gate',
+          hasItems: false,
+          isClear: true,
+        };
+
+    const queue = [
+      {
+        glyph: '◆', rung: 'BLOCKED', color: C.blocked,
+        subject: 'codex · skillex',
+        age: '4m 12s', ageColor: C.blocked,
+        detail: 'permission prompt — gate, no 30m cap, you are the bottleneck',
+        action: '→ pane 21',
+      },
+      {
+        glyph: '●', rung: 'BROKEN', color: C.broken,
+        subject: 'codex · attention hook',
+        age: 'never', ageColor: C.broken,
+        detail: 'blind oracle — 41 codex alive, hook has never fired, gates invisible',
+        action: '→ /truth',
+      },
+      {
+        glyph: '▲', rung: 'STUCK', color: C.stuck,
+        subject: 'james-brennan-pm',
+        age: '4d 02h', ageColor: C.stuck,
+        detail: '10 worker scopes ACTIVE since 2026-09-02, no transitions',
+        action: '→ /fleet',
+      },
+    ];
+
+    // A detector that found something is NOT grey. The receipt itemizes what is
+    // wrong; it never launders a non-zero count into a calm row.
+    const det = (name, scanned, age, rung) => {
+      const style = {
+        broken: { glyph: '●', color: C.broken, nameColor: '#ffcfb0', scannedColor: '#d8a488' },
+        stuck:  { glyph: '▲', color: C.stuck,  nameColor: '#ffd9a0', scannedColor: '#c9b077' },
+        clear:  { glyph: '─', color: '#6b7793', nameColor: '#7c89a6', scannedColor: '#56637f' },
+      }[rung || 'clear'];
+      return { name, scanned, age, ...style };
+    };
+
+    const detectors = [
+      det('gates',       '0 of 17 observed',   '4s'),
+      det('bells',       '0 of 17 observed',   '4s'),
+      det('failed',      '0 of 17 observed',   '4s'),
+      det('wedged',      '3 over budget',      '4s',  'stuck'),
+      det('sweeper',     'alive, 8s ago',      '8s'),
+      det('blind hooks', '1 of 6 CLIs silent', '11m', 'broken'),
+      det('dead letter', '285 in 7d, growing', '2m',  'broken'),
+      det('probes',      '26 of 80 broken',    '3m',  'broken'),
+      det('units',       '9 of 476 failed',    '41s', 'broken'),
+    ];
+
+    // STUCK is TIME-derived, never state-derived — the ladder's own rule.
+    // Budgets from Ladder.dc.html. idle never escalates.
+    const BUDGET = {
+      tool_running: 900000,    // 15m
+      working:      1800000,   // 30m, turn unchanged
+      delegating:   7200000,   // 2h
+      starting:     300000,    // 5m
+      idle:         Infinity,
+    };
+
+    const fmt = (ms) => {
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      const mm = Math.floor(s / 60);
+      if (mm < 60) return mm + 'm ' + String(s % 60).padStart(2, '0') + 's';
+      return Math.floor(mm / 60) + 'h ' + String(mm % 60).padStart(2, '0') + 'm';
+    };
+
+    const row = (state, heldMs, cli, repo, pane, counters, basis, edge) => {
+      const budget = BUDGET[state] === undefined ? Infinity : BUDGET[state];
+      const over = heldMs > budget;
+      return {
+        state,
+        held: fmt(heldMs),
+        heldMs,
+        cli, repo,
+        // 'absent' and 'structurally impossible' are different facts.
+        // agent-env scopes are Hermes profiles: they CANNOT hold a pane.
+        pane: basis === 'agent-env' ? 'n/a' : (pane || '—'),
+        paneColor: pane ? '#8d9ab8' : (basis === 'agent-env' ? '#5d6b8a' : '#7c89a6'),
+        paneKlass: basis === 'agent-env' ? 'hatch' : '',
+        counters,
+        color: over ? C.stuck : C.ok,
+        glyph: over ? '▲' : '─',
+        heldColor: '#9aa8c7',
+        reason: over
+          ? 'over ' + fmt(budget) + ' budget · no edge since ' + edge
+          : edge,
+        reasonColor: over ? C.stuck : '#56637f',
+        rank: over ? 0 : 1,
+        opacity: '1',
+      };
+    };
+
+    const scopes = [
+      row('starting',     611000,  'claude', 'holocene',       'pane 16', '0 / 0',   'proc-env',  'session_start'),
+      row('tool_running', 3964000, 'codex',  'skillex',        'pane 21', '241 / 0', 'proc-env',  'tool_req'),
+      row('delegating',   9360000, 'hermes', '33GOD',          '',        '412 / 3', 'agent-env', 'subagent_stop'),
+      row('delegating',   3138000, 'codex',  'slowburns',      'pane 2',  '88 / 2',  'proc-env',  'subagent_stop'),
+      row('tool_running', 88000,   'hermes', 'TonnyBox',       '',        '17 / 0',  'agent-env', 'tool_req'),
+      row('working',      122000,  'codex',  'jimb',           'pane 9',  '54 / 1',  'proc-env',  'tool_done'),
+      row('tool_running', 40000,   'codex',  'PoopToTheMoon',  'pane 4',  '9 / 0',   'proc-env',  'tool_req'),
+      row('working',      14000,   'claude', 'james-brennan',  'pane 13', '3 / 0',   'proc-env',  'prompt_submit'),
+      row('idle',         4800000, 'hermes', 'james-brennan',  '',        '0 / 0',   'agent-env', 'quiesce'),
+      row('idle',         570000,  'hermes', 'skillex',        '',        '0 / 0',   'agent-env', 'quiesce'),
+    ].sort((a, b) => a.rank - b.rank || b.heldMs - a.heldMs);
+
+    const unknowns = [
+      { cli: 'codex',  cwd: '/tmp/jimb-169-prod-incident-20260901 (deleted)', tag: 'ABANDONED', tagColor: '#ff9152', cwdColor: '#7c89a6', age: '19h 33m' },
+      { cli: 'codex',  cwd: '/apps/voice (deleted)',                          tag: 'ABANDONED', tagColor: '#ff9152', cwdColor: '#7c89a6', age: '19h 33m' },
+      { cli: 'hermes', cwd: '/home/delorenj/code/33GOD/candystore',           tag: '',          tagColor: '#46536f', cwdColor: '#6b7793', age: '3h 04m' },
+      { cli: 'claude', cwd: '/home/delorenj/code/Dompacolypse',               tag: '',          tagColor: '#46536f', cwdColor: '#6b7793', age: '46m' },
+    ];
+
+    const workers = [
+      { glyph: '▲', accent: C.stuck, border: '#4a3d1e', parent: 'james-brennan-pm', age: '4d 02h',
+        count: '10 scopes · all entered ACTIVE 2026-09-02',
+        inferred: 'parsed from Description= (no ExecStart)' },
+      { glyph: '─', accent: '#33405e', border: '#26324d', parent: '33god-pm', age: '18m',
+        count: '1 scope · board-cranker',
+        inferred: 'parsed from Description= (no ExecStart)' },
+      { glyph: '─', accent: '#33405e', border: '#26324d', parent: 'candystore-pm', age: '6m',
+        count: '1 scope',
+        inferred: 'parsed from Description= (no ExecStart)' },
+    ];
+
+    const oracles = [
+      { name: 'sweeper',    value: '8s',      color: '#9aa8c7', glyph: '' },
+      { name: 'asm',        value: '36/17',   color: '#9aa8c7', glyph: '' },
+      { name: 'candystore', value: '918,762', color: '#9aa8c7', glyph: '' },
+      { name: 'nats',       value: '143,633', color: '#9aa8c7', glyph: '' },
+      { name: 'probes',     value: '3m',      color: '#9aa8c7', glyph: '' },
+      { name: 'fleet',      value: '41s',     color: '#9aa8c7', glyph: '' },
+      { name: 'bridge',     value: 'DOWN',    color: '#ff9152', glyph: '\u25cf' },
+    ];
+
+    const GLYPH_FOR = { '#ff5f6d': '\u25c6', '#ff9152': '\u25cf', '#ffd166': '\u25b2', '#7fb0ff': '\u25aa' };
+    const navItem = (label, badge, badgeColor, active) => ({
+      label, badge,
+      badgeGlyph: badge ? (GLYPH_FOR[badgeColor] || '') : '',
+      badgeColor: badgeColor || '#46536f',
+      labelColor: active ? '#eef3ff' : '#9aa8c7',
+      edge: active ? '#9aa8c7' : 'transparent',
+      bg: active ? '#16203a' : 'transparent',
+    });
+
+    const nav = [
+      navItem('Now',     expanded ? '3' : '', expanded ? C.blocked : '#46536f', true),
+      navItem('Trail',   '',    '#46536f'),
+      navItem('Board',   '227', '#46536f'),
+      navItem('Fleet',   '1',   C.stuck),
+      navItem('Systems', '35',  C.broken),
+      navItem('Hooks',   '1',   C.broken),
+      navItem('Truth',   '3',   C.broken),
+    ];
+
+    return {
+      band, queue, detectors, scopes, unknowns, workers, oracles, nav, tally,
+      moreCount: (17 - scopes.length) + ' more observed',
+      unknownOpen: this.state.unknownOpen,
+      unknownToggle: this.state.unknownOpen ? 'collapse ▲' : 'expand ▼',
+      toggleBand: () => this.setState({ bandExpanded: !this.state.bandExpanded }),
+      toggleUnknown: () => this.setState({ unknownOpen: !this.state.unknownOpen }),
+    };
+  }
+}
+</script>
+</body>
+</html>

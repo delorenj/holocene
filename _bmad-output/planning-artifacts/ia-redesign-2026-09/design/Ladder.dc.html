@@ -1,0 +1,230 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
+    a:hover { color: #eef3ff; text-decoration: underline; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .hatch { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 7px); }
+  </style>
+</helmet>
+
+<div class="mono" style="width: 1440px; min-height: 900px; background: #0b1020; color: #eef3ff; font-size: 13px; padding: 26px 28px 32px 28px; display: flex; flex-direction: column; gap: 22px;">
+
+  <div>
+    <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.01em;">One severity ladder</div>
+    <div style="color: #7c89a6; font-size: 12.5px; margin-top: 4px;">
+      Replaces four incompatible vocabularies (busy_state · HTTP status · stateBucket · ok/warning/critical) plus the ASM ten-state ladder.
+    </div>
+  </div>
+
+  <!-- THE RUNGS -->
+  <div style="display: flex; flex-direction: column; gap: 0; border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+    <div style="display: flex; gap: 16px; padding: 8px 16px; background: #101a2e; border-bottom: 1px solid #26324d; font-size: 10.5px; letter-spacing: 0.07em; color: #7c89a6;">
+      <span style="width: 20px;"></span>
+      <span style="width: 92px;">RUNG</span>
+      <span style="width: 330px;">MEANS</span>
+      <span style="flex-grow: 1;">SOLE AUTHORITY</span>
+    </div>
+    <sc-for list="{{rungs}}" as="r" hint-placeholder-count="6">
+      <div style="display: flex; gap: 16px; align-items: baseline; padding: 13px 16px; border-bottom: 1px solid #17203a; background: {{r.bg}};">
+        <span style="color: {{r.color}}; width: 20px; text-align: center; font-size: 17px;">{{r.glyph}}</span>
+        <span style="color: {{r.color}}; width: 92px; font-weight: 600; letter-spacing: 0.07em; font-size: 12px;">{{r.name}}</span>
+        <span style="color: #c3ccdf; width: 330px; font-size: 12px; line-height: 1.45;">{{r.means}}</span>
+        <span style="color: #7c89a6; flex-grow: 1; font-size: 11.5px; line-height: 1.45;">{{r.authority}}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; gap: 22px; align-items: stretch;">
+
+    <!-- CONFIDENCE AXIS -->
+    <div style="width: 560px; flex: 0 0 560px; display: flex; flex-direction: column; gap: 10px;">
+      <div>
+        <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7;">CONFIDENCE — A SECOND, ORTHOGONAL AXIS</div>
+        <div style="color: #56637f; font-size: 11.5px; margin-top: 4px; line-height: 1.5;">
+          Rendered as <span style="color: #9aa8c7;">form only, never hue</span>. The same row, three confidences.
+          An unobserved thing can never be green, never be red, and never enters the queue.
+        </div>
+      </div>
+
+      <div style="border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+        <sc-for list="{{confidences}}" as="c" hint-placeholder-count="3">
+          <div>
+            <div style="padding: 7px 12px; background: #0e1526; border-bottom: 1px solid #17203a; display: flex; align-items: baseline; gap: 10px;">
+              <span style="color: #9aa8c7; font-size: 11px; font-weight: 600; letter-spacing: 0.07em;">{{c.label}}</span>
+              <span style="color: #7c89a6; font-size: 10.5px;">{{c.rule}}</span>
+            </div>
+            <div class="{{c.klass}}" style="display: flex; gap: 12px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid #17203a; border-left: {{c.edge}}; opacity: {{c.opacity}};">
+              <span style="color: {{c.glyphColor}}; width: 14px; text-align: center;">{{c.glyph}}</span>
+              <span class="clip" style="color: {{c.stateColor}}; width: 108px; font-size: 12px;">{{c.state}}</span>
+              <span style="color: {{c.valueColor}}; width: 70px; text-align: right;">{{c.held}}</span>
+              <span style="color: #8d9ab8; width: 60px;">hermes</span>
+              <span style="color: {{c.repoColor}}; flex-grow: 1;">delodocs</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="border: 1px solid #26324d; border-left: 2px solid #46536f; background: #0d1426; border-radius: 4px; padding: 11px 13px;">
+        <div style="color: #9aa8c7; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; margin-bottom: 5px;">WHY THIS RULE EXISTS</div>
+        <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.55;">
+          Today <span style="color: #eef3ff;">delodocs-pm renders "working"</span> on a heartbeat 98 days old, and increments
+          the Working tile. And <span style="color: #eef3ff;">"Needs attention 26 of 29"</span> counts 25 agents that are
+          <span style="color: #9aa8c7;">unknown</span> for one identical, boring reason — no sentinel file was ever written.
+          Both die to the same rule.
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPPING -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div>
+        <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; color: #9aa8c7;">EVERY EXISTING VOCABULARY, MAPPED</div>
+        <div style="color: #56637f; font-size: 11.5px; margin-top: 4px;">Nothing is left unmapped. Anything not listed lands on OK.</div>
+      </div>
+
+      <div style="border: 1px solid #26324d; border-radius: 4px; overflow: hidden;">
+        <sc-for list="{{maps}}" as="m" hint-placeholder-count="6">
+          <div>
+            <div style="padding: 6px 12px; background: #101a2e; border-bottom: 1px solid #1b2540; border-top: 1px solid #1b2540;">
+              <span style="color: #c3ccdf; font-size: 11px; font-weight: 600;">{{m.source}}</span>
+              <span style="color: #7c89a6; font-size: 10.5px;"> — {{m.note}}</span>
+            </div>
+            <sc-for list="{{m.rows}}" as="x" hint-placeholder-count="4">
+              <div style="display: flex; gap: 10px; align-items: baseline; padding: 5px 12px; border-bottom: 1px solid #141c33; font-size: 11.5px;">
+                <span class="clip" style="color: #9aa8c7; width: 268px;">{{x.from}}</span>
+                <span style="color: #5d6b8a;">→</span>
+                <span class="clip" style="color: {{x.color}}; width: 116px; font-weight: 600; letter-spacing: 0.05em; font-size: 11px;">{{x.to}}</span>
+                <span style="color: #56637f; flex-grow: 1; font-size: 11px;">{{x.why}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 14px;">
+    <div style="flex-grow: 1; border: 1px solid #1e3a2e; border-left: 2px solid #69d3a5; background: #0a1a14; border-radius: 4px; padding: 11px 13px;">
+      <div style="color: #69d3a5; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; margin-bottom: 5px;">GREEN IS QUARANTINED</div>
+      <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.55;">
+        OK is <span style="color: #6b7793;">grey</span>, not green. A wall of green rewards the machine for a claim it has not earned.
+        Green means exactly one thing: <span style="color: #eef3ff;">a row that left the queue in the last 6 hours</span>.
+      </div>
+    </div>
+    <div style="flex-grow: 1; border: 1px solid #26324d; border-left: 2px solid #46536f; background: #0d1426; border-radius: 4px; padding: 11px 13px;">
+      <div style="color: #9aa8c7; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; margin-bottom: 5px;">NEVER COLOUR ALONE</div>
+      <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.55;">
+        No rung hue ever appears without its glyph immediately preceding it — badges, counts and inline text included.
+        BROKEN and NUDGE differ by 1.01:1 in luminance, so the glyph is doing the work, not the colour.
+      </div>
+    </div>
+    <div style="flex-grow: 1; border: 1px solid #26324d; border-left: 2px solid #46536f; background: #0d1426; border-radius: 4px; padding: 11px 13px;">
+      <div style="color: #9aa8c7; font-size: 11px; font-weight: 600; letter-spacing: 0.07em; margin-bottom: 5px;">STUCK IS TIME-DERIVED ONLY</div>
+      <div style="color: #c3ccdf; font-size: 11.5px; line-height: 1.55;">
+        Never state-derived. tool_running &gt; 15m, working &gt; 30m with turn unchanged, delegating &gt; 2h, starting &gt; 5m.
+        <span style="color: #6b7793;">idle never escalates.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const C = { blocked: '#ff5f6d', broken: '#ff9152', stuck: '#ffd166', nudge: '#7fb0ff', ok: '#6b7793' };
+
+    const rungs = [
+      { glyph: '◆', name: 'BLOCKED', color: C.blocked, bg: '#150c11',
+        means: 'You are the bottleneck. Wall-clock burning right now.',
+        authority: 'ASM awaiting_human with block_kind=gate. Nothing else in the platform may ever be BLOCKED. A gate has a 12h ceiling and no surface may clear it.' },
+      { glyph: '●', name: 'BROKEN', color: C.broken, bg: '#150f0a',
+        means: 'It failed and stays failed without intervention. Includes a blind oracle — an detector that cannot see.',
+        authority: 'ASM failed · systemd Attention · probe 404/410/408/5xx/timeout · a dead sweeper · a hook that has never fired while its agents are alive.' },
+      { glyph: '▲', name: 'STUCK', color: C.stuck, bg: '#14120a',
+        means: 'Running, but past its own budget and not progressing.',
+        authority: 'Time-derived only, never state-derived. Also: a lease older than its band budget with no matching worker scope.' },
+      { glyph: '▪', name: 'NUDGE', color: C.nudge, bg: '#0c1120',
+        means: 'Soft attention that self-clears.',
+        authority: 'ASM bell (30-minute cap) · probe 429 · a ticket sitting in a review state.' },
+      { glyph: '─', name: 'OK', color: C.ok, bg: '#0b1020',
+        means: 'Normal operation. idle, working, tool_running, delegating, 2xx/3xx, scheduled.',
+        authority: 'Everything else. Rendered grey, never green.' },
+      { glyph: '─', name: 'CLEARED', color: '#69d3a5', bg: '#0a1510',
+        means: 'Left the queue in the last 6 hours.',
+        authority: 'The ONLY permitted use of green in the product. Decays to OK grey at 6h.' },
+    ];
+
+    const confidences = [
+      { label: 'OBSERVED', rule: 'a hook fired; the row is real',
+        klass: '', opacity: '1', edge: '2px solid transparent', glyph: '─', glyphColor: C.ok,
+        state: 'working', stateColor: C.ok, held: '2m 02s', valueColor: '#9aa8c7', repoColor: '#eef3ff' },
+      { label: 'STALE', rule: 'heartbeat older than 50m — ~ prefix and a dashed rule carry it, not dimming alone',
+        klass: '', opacity: '0.86', edge: '2px dashed #5d6b8a', glyph: '─', glyphColor: C.ok,
+        state: 'working', stateColor: C.ok, held: '~2m 02s', valueColor: '#9aa8c7', repoColor: '#eef3ff' },
+      { label: 'UNOBSERVED', rule: 'never emitted, or heartbeat older than 24h — state suppressed',
+        klass: 'hatch', opacity: '1', edge: '2px solid #26324d', glyph: '◇', glyphColor: '#46536f',
+        state: 'no signal 98d', stateColor: '#6b7793', held: '—', valueColor: '#3d4a66', repoColor: '#7c89a6' },
+    ];
+
+    const m = (from, to, color, why) => ({ from, to, color, why });
+
+    const maps = [
+      { source: 'ASM state', note: 'asm:a:<scope>.state — priority-ordered by asm.lua. THE live vocabulary', rows: [
+        m('awaiting_human + block_kind=gate', 'BLOCKED', C.blocked, 'the only BLOCKED authority in the platform'),
+        m('awaiting_human + block_kind=bell', 'NUDGE', C.nudge, '30m cap, self-clears'),
+        m('failed', 'BROKEN', C.broken, ''),
+        m('gone', 'BROKEN', C.broken, 'sweeper-confirmed exit'),
+        m('stale', 'OK @ STALE', C.ok, 'only knowable while the sweeper is alive'),
+        m('delegating · tool_running · working · starting · idle', 'OK', C.ok, 'escalates to STUCK only on time, never on state'),
+        m('unknown', 'OK @ UNOBSERVED', C.ok, 'state suppressed — 19 of 36 scopes right now'),
+      ]},
+      { source: 'busy_state', note: 'the Hermes fleet snapshot — a DIFFERENT source from ASM', rows: [
+        m('error', 'BROKEN', C.broken, ''),
+        m('stalled', 'STUCK', C.stuck, ''),
+        m('blocked', 'STUCK', C.stuck, 'a sentinel file carries no block_kind, so it cannot prove a gate'),
+        m('busy · idle', 'OK', C.ok, ''),
+        m('unknown', 'OK @ UNOBSERVED', C.ok, 'prints active_work.reason verbatim'),
+      ]},
+      { source: 'HTTP status', note: '80 probes', rows: [
+        m('2xx · 3xx', 'OK', C.ok, '204 is 2xx — fixes naipkins rendering red today'),
+        m('401 · 403 · 405', 'OK · walled', C.ok, 'the probe cannot see past the auth wall'),
+        m('429', 'NUDGE', C.nudge, ''),
+        m('404 · 410 · 408 · 5xx · timeout', 'BROKEN', C.broken, ''),
+      ]},
+      { source: 'stateBucket', note: '476 inventory items — client-derived, not an API field', rows: [
+        m('Attention', 'BROKEN', C.broken, '9 items today'),
+        m('Running · Waiting', 'OK', C.ok, ''),
+        m('Inactive · Other', 'OK @ UNOBSERVED', C.ok, ''),
+      ]},
+      { source: 'ok / warning / critical', note: 'tooling stat severity', rows: [
+        m('critical', 'BROKEN', C.broken, ''),
+        m('warning', 'NUDGE', C.nudge, ''),
+        m('ok', 'OK', C.ok, ''),
+      ]},
+      { source: 'tp_band', note: 'Plane state.group — the one lifecycle field consistently populated', rows: [
+        m('started, lease over budget', 'STUCK', C.stuck, 'only when no worker scope matches — an orphan lease'),
+        m('ticket.state.name in review set', 'NUDGE', C.nudge, 'NOT tp_band — in_review occurs zero times'),
+        m('completed + state.name Cancelled', 'OK', C.ok, 'rendered distinctly from done'),
+        m('backlog · unstarted · rest', 'OK', C.ok, ''),
+      ]},
+    ];
+
+    return { rungs, confidences, maps };
+  }
+}
+</script>
+</body>
+</html>

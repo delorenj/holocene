@@ -1,0 +1,116 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "title": "/ \u2014 Now (landing)",
+      "is_interactive": true
+    },
+    {
+      "file": "Ladder.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 940,
+      "title": "The severity ladder"
+    },
+    {
+      "file": "Trail.dc.html",
+      "x": 0,
+      "y": 1120,
+      "w": 1440,
+      "h": 980,
+      "title": "/trail \u2014 past tense",
+      "is_interactive": true
+    },
+    {
+      "file": "Truth.dc.html",
+      "x": 1560,
+      "y": 1120,
+      "w": 1440,
+      "h": 830,
+      "title": "/truth \u2014 sources & trust"
+    },
+    {
+      "file": "Board.dc.html",
+      "x": 0,
+      "y": 2400,
+      "w": 1440,
+      "h": 760,
+      "title": "/board \u2014 tp_band",
+      "is_interactive": true
+    },
+    {
+      "file": "Phone.dc.html",
+      "x": 1560,
+      "y": 2400,
+      "w": 390,
+      "h": 900,
+      "title": "/hq \u2014 phone"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "principle",
+      "x": 0,
+      "y": -250,
+      "w": 700,
+      "text": "PRESENT TENSE ON TOP, PAST TENSE UNDERNEATH,\nAND THE MACHINE MUST PAY FOR ITS SILENCE.\n\nRedis is authoritative for \"now\", Candystore for \"what happened\". Nothing renders\nas healthy that hasn't proved it, and an empty alarm state is a claim that gets\nitemized rather than left blank.\n\nOne route, not two: the attention band expands to a ranked queue when something\nwants you and collapses to an auditable receipt when nothing does."
+    },
+    {
+      "id": "try-me",
+      "x": 740,
+      "y": -250,
+      "w": 620,
+      "text": "CLICK THESE\n\n\u00b7 \"show a gate\" on the attention band \u2014 the default is the receipt, because\n  that IS the honest current state. One click shows the populated queue.\n\n\u00b7 \"expand\" on the 19-unknown row \u2014 the long tail is real garbage (codex\n  processes sitting in deleted worktrees for 19h; `gone` will never fire\n  for them because they're alive in /proc).\n\n\u00b7 on /trail: the lens chips, and \"unfold tools\" \u2014 watch 95.4% noise arrive.\n\n\u00b7 on /board: \"show needs-attention only\"."
+    },
+    {
+      "id": "ladder-note",
+      "x": 1560,
+      "y": -250,
+      "w": 640,
+      "text": "ONE LADDER REPLACES FIVE VOCABULARIES\n\nASM state \u00b7 busy_state \u00b7 HTTP status \u00b7 stateBucket \u00b7 ok/warning/critical.\nNothing is left unmapped \u2014 and the mapping table leads with ASM, because that is\nthe vocabulary actually driving / and /hq."
+    },
+    {
+      "id": "truth-note",
+      "x": 1560,
+      "y": 960,
+      "w": 640,
+      "text": "WHY /truth IS NOT AN ADMIN PAGE\n\n`agent-hook-telemetry` already computes `codex|attention \u2192 {verdict: silent,\nagentsAlive: 41}`. Gates on 41 live agents are undetectable, so BLOCKED is\nunder-counted and an empty queue is not yet a trustworthy claim. Ships with no\nnew backend."
+    },
+    {
+      "id": "board-note",
+      "x": 0,
+      "y": 2160,
+      "w": 700,
+      "text": "REVIEW IS NOT A BAND \u2014 and three other corrections\n\n\u00b7 `in_review` occurs ZERO times. Plane's state.group has no review value. Review\n  lives in `ticket.state.name` and renders as a NUDGE tag inside started/completed.\n\u00b7 31 of 227 tickets carry no `tp_band` at all \u2014 shown, never silently dropped.\n\u00b7 `agent:working` is the only ownership signal; its age is always visible and\n  cross-checked against a live worker scope.\n\u00b7 Never poll the 14-day ticket slice: 12.2 MB, because every event carries\n  description, _html, _json, _binary and _stripped."
+    },
+    {
+      "id": "phone-note",
+      "x": 2010,
+      "y": 2400,
+      "w": 440,
+      "text": "WHY THE PHONE IS NOT THE DESKTOP\n\nFour tabs, not seven. `Board` was cut \u2014 nobody triages 227 tickets on a phone \u2014\nand `Trail` took the slot, because \"what just happened\" is the question you ask\nwhile away from the box.\n\nEverything tappable is \u226544px, including the unobserved row and the \"more\nobserved\" footer.\n\n`Restart bridge` is two-step and sits AFTER `Logs`. The desktop's floating\n\"Restart gateways\" button \u2014 one misclick from the page title, no confirm \u2014 is\nexactly the pattern this replaces.\n\nThe Plane bridge card exists here and nowhere else today. It is the one thing\n/hq has that the desktop does not, and the bridge is currently down."
+    },
+    {
+      "id": "seams",
+      "x": 1560,
+      "y": 3420,
+      "w": 660,
+      "text": "FUTURE SEAMS \u2014 nothing here is built on data that doesn't exist\n\n\u00b7 FLUME \u2192 /fleet already speaks its vocabulary via packages/org-model. Needs a\n  checkout and a contract; the repo is 6.5 months cold.\n\u00b7 DeLoCompany \u2192 /hq is the phone surface today; a second Mini App skins the\n  shared token layer rather than forking it.\n\u00b7 KREBS \u2192 /board is keyed on tp_band. A `phase` column appears the day Krebs\n  emits anything. Today it has zero executable code.\n\u00b7 DISPATCH \u2192 exactly one command is wired end to end. Cmd-K `>` prefix, not a\n  console for six schemas with no consumer.\n\u00b7 EVENT DOMAINS \u2192 /trail reads /lenses and /classes at runtime. Build nav from\n  live counts, never the schema list: 6 of 14 declared domains have never fired."
+    },
+    {
+      "id": "house-rules",
+      "x": 740,
+      "y": 3420,
+      "w": 700,
+      "text": "HOUSE RULES (moved off the routes \u2014 a control plane should not lecture its operator)\n\n\u00b7 A rung hue never appears on chrome, controls, filters, captions or explainers \u2014\n  only on a row, cell or badge whose severity it states.\n\u00b7 No rung hue appears without its glyph. BROKEN and NUDGE differ by 1.01:1 in\n  luminance, so the glyph carries the meaning, not the colour.\n\u00b7 OK is grey. Green means one thing: left the queue in the last 6 hours.\n\u00b7 Confidence is form, never hue \u2014 and no confidence treatment may push text\n  under 3:1.\n\u00b7 10.5px for static chrome at \u22654.5:1; 11.5px minimum for anything variable.\n  Density comes from leading, not from shrinking type.\n\u00b7 An inferred edge renders dotted, names its own derivation, and may NEVER\n  drive a severity count."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
