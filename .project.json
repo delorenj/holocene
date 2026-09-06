@@ -8,12 +8,19 @@
     "workspace": "33god",
     "identifier": "HOLOC",
     "board_id": "727a2b17-a1dd-46f6-b583-afa5a2d2cdae",
-    "board_url": "https://plane.delo.sh/33god/projects/727a2b17-a1dd-46f6-b583-afa5a2d2cdae/issues/"
+    "state": "linked"
   },
   "agents": {
     "holocene-pm": {
       "role": "pm",
       "role_dir": "agents/hermes/pm"
+    }
+  },
+  "automation": {
+    "reconcile": {
+      "enabled": false,
+      "grace_hours": 0,
+      "auto_review": true
     }
   }
 }
