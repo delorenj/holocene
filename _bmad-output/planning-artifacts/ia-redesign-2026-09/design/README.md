@@ -36,6 +36,9 @@ Enforced mechanically, not by eye — each was verified with a script after the 
   palette — `agent` measures 0.2 degrees from NUDGE — so the mark's form carries it instead.
 - **An inferred edge renders dotted, names its own derivation, and may never drive a severity
   count.** A verdict never wears the dotted rule.
+- **Hollowness is never the sole signal.** It now carries two meanings — provenance rings and
+  the UNOBSERVED `◇` — so UNOBSERVED always pairs the glyph with the diagonal hatch, and
+  provenance marks stay strictly circular. The diamond belongs to the ladder alone.
 
 ## Regenerating
 

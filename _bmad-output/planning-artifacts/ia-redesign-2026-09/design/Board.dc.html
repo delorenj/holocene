@@ -12,6 +12,7 @@
     body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
     a { color: #c3ccdf; font-weight: 600; text-decoration: none; }
     a:hover { color: #eef3ff; text-decoration: underline; }
+    .hatch { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 7px); }
     .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
     .card:hover { border-color: #5d6b8a; }
@@ -52,7 +53,7 @@
     </sc-for>
   </div>
 
-  <div style="display: flex; align-items: baseline; gap: 9px; padding: 8px 12px; border: 1px solid #26324d; background: #0e1526; border-radius: 4px;">
+  <div class="hatch" style="display: flex; align-items: baseline; gap: 9px; padding: 8px 12px; border: 1px solid #26324d; background: #0e1526; border-radius: 4px;">
     <span style="color: #5d6b8a;">◇</span>
     <span style="color: #9aa8c7; font-size: 11.5px;">31 tickets carry no tp_band</span>
     <span style="color: #56637f; font-size: 11px;">not placeable — plane.ticket.commented events carry neither tp_band nor ticket_key</span>
