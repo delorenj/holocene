@@ -152,6 +152,23 @@ const STAT_DEFINITIONS: ToolingStatDefinition[] = [
     // like agent-hook-tests above — there is no in-process collector. The key
     // carries a 90s TTL, under two sweeper ticks, so a dead sweeper surfaces as
     // "Redis key is missing" rather than as a frozen-but-plausible board.
+    // Successor to agent-hook-health and agent-hook-tests, which between them
+    // only ever asked "does the config LOOK right?" This asks whether each
+    // (cli, role) pair actually fired, cross-referenced against which agents
+    // are alive — so a config that parses but cannot fire is visible, and an
+    // idle agent is not mistaken for a broken one.
+    id: "agent-hook-telemetry",
+    title: "Agent Hook Telemetry",
+    description: "Which agent hooks are actually firing, per CLI and role, cross-referenced with live agents.",
+    kind: "table",
+    transport: "polling",
+    redisKey: "holocene:tooling:stat:agent-hook-telemetry",
+    refreshMs: 60_000,
+    presentation: {
+      chrome: "minimal"
+    }
+  },
+  {
     id: "agent-state-machine",
     title: "Agent State Machine",
     description: "What every agent CLI on the box is doing right now, folded from the normalized lifecycle hooks.",
@@ -792,6 +809,7 @@ export async function refreshToolingStat(id: string) {
   // the external writer (e.g. the bloodbank agent-hooks health timer) last set.
   if (id === "agent-hook-tests") return getToolingStat(id);
   if (id === "agent-state-machine") return getToolingStat(id);
+  if (id === "agent-hook-telemetry") return getToolingStat(id);
   throw new Error(`No refresh collector registered for tooling stat: ${id}`);
 }
 
