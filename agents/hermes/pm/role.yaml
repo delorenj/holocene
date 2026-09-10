@@ -29,9 +29,10 @@ ticket_provider:
   workspace: "33god"
   project: "727a2b17-a1dd-46f6-b583-afa5a2d2cdae"
   # Optional normalized-state name overrides for non-standard boards.
-  in_review: ""   # e.g. "In Review"
-  completed: ""   # e.g. "Done"
-
+  in_review: "E2E Testing & QA"
+  completed: "Done"
+  started: "In Progress"
+  unstarted: "Todo"
 # Scrum Master sentinel knobs (only meaningful for role: scrum-master).
 scrum_master:
   grace_hours: 24            # delegated-review grace window (hours)
