@@ -1,5 +1,7 @@
-.hook-shell { max-width: 1560px; gap: 20px; }
-.hook-home { font-size: 1.9rem; font-weight: 700; line-height: 1.1; color: var(--text); text-decoration: none; }
+.hook-shell { max-width: 1560px; gap: 16px; padding-top: 20px; }
+.hook-shell .topbar { padding-bottom: 12px; }
+.hook-shell .eyebrow { font-size: .65rem; }
+.hook-home { font-size: 1.5rem; font-weight: 700; line-height: 1.1; color: var(--text); text-decoration: none; }
 .hook-shell button, .hook-shell input, .hook-shell select, .hook-shell a { -webkit-tap-highlight-color: transparent; }
 .hook-shell :is(button, input, select, a, summary):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .hook-live-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -7,12 +9,12 @@
 .hook-live i { height: 6px; width: 6px; border-radius: 50%; background: currentColor; }
 .hook-live.is-offline { color: var(--red); }
 .hook-live.is-paused { color: var(--yellow); }
-.hook-nav { flex-wrap: wrap; }
+.hook-nav { flex-wrap: wrap; padding-bottom: 10px; }
 .hook-nav a { padding: 8px 12px; border: 1px solid transparent; color: var(--muted); text-decoration: none; border-radius: 8px; font-size: .92rem; }
 .hook-nav a:hover { color: var(--text); border-color: var(--line); }
 .hook-nav a[aria-current="page"] { color: var(--text); background: #1d2943; border-color: var(--blue); }
 .hook-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.hook-heading h1 { font-size: 1.55rem; margin-bottom: 6px; }
+.hook-heading h1 { font-size: 1.3rem; margin-bottom: 4px; }
 .hook-heading p, .hook-overview { color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .hook-overview { display: flex; gap: 18px; flex-wrap: wrap; }
 .hook-overview strong { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -37,7 +39,7 @@
 .hook-explorer-section > button:hover { background: var(--panel-2); }
 .hook-explorer-section > button.is-selected { background: #1b2d49; color: var(--blue); border-color: #395b89; }
 .hook-explorer .hook-dim { font-size: .75rem; line-height: 1.6; padding: 7px; }
-.hook-main { min-width: 0; display: grid; gap: 22px; }
+.hook-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
 .hook-topology, .hook-history { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: clip; }
 .hook-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 20px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .hook-panel-heading h2 { font-size: .95rem; font-weight: 600; }
@@ -50,6 +52,8 @@
 .hook-chips { display: flex; gap: 7px; flex-wrap: wrap; }
 .hook-chip { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; min-height: 32px; background: var(--bg); font-size: .72rem; border-radius: 5px; text-align: left; }
 .hook-chip small { font-variant-numeric: tabular-nums; color: var(--muted); background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: .65rem; }
+.hook-chip { max-width: 100%; }
+.hook-chip > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .hook-chip.is-selected small { background: #31466a; color: var(--text); }
 .hook-map-mark { color: var(--green) !important; font-size: .625rem; font-weight: 600; }
 .hook-mapping { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 18px; padding: 14px 16px; background: var(--bg); border: 1px solid #395b89; border-radius: 5px; }

@@ -83,8 +83,8 @@ export function HookObservatory() {
   const [detailLoading, setDetailLoading] = useState(false);
   const requestGeneration = useRef(0);
 
-  const bindings = snapshot?.bindings ?? [];
-  const groups = useMemo(() => normalizedGroups(bindings), [bindings]);
+  const bindings = useMemo(() => (snapshot?.bindings ?? []).filter((binding) => !["planned", "unsupported"].includes(binding.support_status ?? "")), [snapshot?.bindings]);
+  const groups = useMemo(() => normalizedGroups(bindings.filter((binding) => binding.event_type)), [bindings]);
   const cliBindings = bindings.filter((b) => b.cli === cli);
   const installation = snapshot?.installed_inventory?.clis.find((entry) => entry.cli === cli);
   const selected = cliBindings.find((b) => b.native === native) ?? cliBindings.find((b) => b.role === role) ?? cliBindings[0];
@@ -92,6 +92,7 @@ export function HookObservatory() {
   const visibleBindings = cliBindings.filter((b) => `${b.native} ${b.role} ${eventName(b)}`.toLowerCase().includes(search.toLowerCase()));
   const attached = (selected?.handler_ids ?? []).map((id) => snapshot?.handlers.find((h) => h.id === id)).filter((h): h is NonNullable<typeof h> => Boolean(h));
   const cliOptions = [...new Set([...CLI_ORDER, ...bindings.map((b) => b.cli)])];
+  const expandedUpdatedAt = history?.items.find((invocation) => invocation.invocation_id === expandedId)?.updated_at;
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const generation = ++requestGeneration.current;
@@ -129,7 +130,7 @@ export function HookObservatory() {
       .catch((reason) => { if (!controller.signal.aborted) setDetailError(reason instanceof Error ? reason.message : "Receipt unavailable."); })
       .finally(() => { if (!controller.signal.aborted) setDetailLoading(false); });
     return () => controller.abort();
-  }, [expandedId]);
+  }, [expandedId, expandedUpdatedAt]);
 
   function chooseBinding(binding: HookBinding) { setNative(binding.native); setRole(binding.role); setHandler(""); setOffset(0); }
   function chooseRole(nextRole: string) {
@@ -163,13 +164,13 @@ export function HookObservatory() {
         <section className="hook-topology" aria-label="Hook topology">
           <div className="hook-panel-heading"><h2>Hook mapping</h2><span>Badges count attached handlers</span></div>
           <div className="hook-tier"><div className="hook-tier-heading"><h3>Bloodbank</h3><span>Normalized events · shared across CLIs</span></div><div className="hook-chips">{groups.map((g) => <button type="button" className={`hook-chip ${selectedGroup?.role === g.role ? "is-selected" : ""}`} key={g.role} aria-pressed={selectedGroup?.role === g.role} onClick={() => chooseRole(g.role)}><span>{g.label}</span><small>{g.handlerIds.length}</small></button>)}</div></div>
-          {selected ? <div className="hook-mapping" aria-label="Selected native to normalized mapping"><div><span>{CLI_NAMES[cli] ?? cli} native hook</span><code>{selected.native}</code></div><span className="hook-connector" aria-hidden="true">normalizes to <b>⟶</b></span><div><span>Bloodbank event</span><code>{eventName(selected)}</code></div><State value={selected.state} /></div> : <div className="hook-empty">{snapshot ? <><h3>No adapter registered</h3><p>{CLI_NAMES[cli] ?? cli} has no canonical native-to-Bloodbank mapping. Its absence is visible here; no successful executions are implied.</p></> : <><h3>Loading hook definitions</h3><p>The hub supplies the current mapping and handler registry.</p></>}</div>}
+          {selected ? <div className="hook-mapping" aria-label="Selected native to normalized mapping"><div><span>{CLI_NAMES[cli] ?? cli} native hook</span><code>{selected.native}</code></div><span className="hook-connector" aria-hidden="true">normalizes to <b>⟶</b></span><div><span>{selected.event_type ? "Bloodbank event" : "Hub lifecycle signal"}</span><code>{eventName(selected)}</code></div><State value={selected.state} /></div> : <div className="hook-empty">{snapshot ? <><h3>No adapter registered</h3><p>{CLI_NAMES[cli] ?? cli} has no canonical native-to-Bloodbank mapping. Its absence is visible here; no successful executions are implied.</p></> : <><h3>Loading hook definitions</h3><p>The hub supplies the current mapping and handler registry.</p></>}</div>}
           <div className="hook-tier"><div className="hook-tier-heading"><h3>{CLI_NAMES[cli] ?? cli}</h3><span>Native hooks · {cliBindings.length} bindings</span></div><div className="hook-chips">{visibleBindings.map((b) => <button type="button" className={`hook-chip ${selected?.native === b.native ? "is-selected" : ""}`} key={b.native} aria-pressed={selected?.native === b.native} onClick={() => chooseBinding(b)}><span>{b.native}</span><span className="hook-map-mark" title={`Bloodbank: ${eventName(b)}`}>BB</span><small>{b.handler_ids.length}</small></button>)}</div></div>
           <div className="hook-handlers"><div className="hook-tier-heading"><h3>Attached handlers <span>{attached.length}</span></h3><span>Click a handler to inspect its receipts</span></div><div className="hook-handler-list">{attached.map((h) => {
             const activity = snapshot?.handler_activity.filter((a) => a.handler_id === h.id && a.cli === cli) ?? [];
             const failures = activity.filter((a) => FAILED.has(a.status)).reduce((n, a) => n + a.count, 0);
             return <button key={h.id} type="button" className={`hook-handler ${handler === h.id ? "is-selected" : ""}`} aria-pressed={handler === h.id} onClick={() => { setHandler(handler === h.id ? "" : h.id); setOffset(0); }}><strong>{handlerName(h.id)}</strong><span>{h.mode === "sync" ? "Before CLI continues" : "Background"}</span><span className="hook-handler-meta">{durationLabel(h.timeout_ms)} limit{failures ? <b>{failures} failed</b> : <span>{activity.reduce((n, a) => n + a.count, 0)} receipts</span>}</span></button>;
-          })}</div>{selected && !attached.length ? <p className="hook-dim">No executable handlers are attached to this binding.</p> : null}{selected ? <p className="hook-topology-note">{selected.activity ? <>Last received {timestamp(selected.activity.last_received_at, true)} · {selected.activity.invocations} invocations since {timestamp(snapshot?.observed_since, true)}.</> : "Configured mapping; no invocation has been observed in the receipt journal yet."} {selected.event_type ? <code>{selected.event_type}</code> : null}</p> : null}</div>
+          })}</div>{selected && !attached.length ? <p className="hook-dim">No executable handlers are attached to this binding.</p> : null}{selected ? <p className="hook-topology-note">{selected.activity ? <>Last received {timestamp(selected.activity.last_received_at, true)} · {selected.activity.invocations} invocations since {timestamp(snapshot?.observed_since, true)}.</> : "Configured mapping; no invocation has been observed in the receipt journal yet."} {selected.event_type ? <code>{selected.event_type}</code> : " This native signal runs locally; it has no Bloodbank event contract."}</p> : null}</div>
         </section>
         <details className="hook-wiring" key={`wiring-${cli}`} open={installation?.status === "drift"}>
           <summary><span>Installed wiring <strong>{CLI_NAMES[cli] ?? cli}</strong></span><span>{installation ? <><State value={installation.status} /><span>{installation.configs.length} config {installation.configs.length === 1 ? "source" : "sources"}</span></> : "Inventory unavailable"}</span></summary>

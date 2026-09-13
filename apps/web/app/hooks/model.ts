@@ -35,6 +35,7 @@ export type HookBinding = {
   role: string;
   event_type?: string | null;
   configured: boolean;
+  support_status?: string;
   state: string;
   handler_ids: string[];
   activity?: { invocations: number; last_received_at: string; deduplicated: number; failed: number } | null;
@@ -103,7 +104,7 @@ export const CLI_ORDER = Object.keys(CLI_NAMES);
 export const FAILED = new Set(["failed", "timed_out", "interrupted", "missing", "duplicate", "drift", "unavailable", "error"]);
 
 export function eventName(binding: Pick<HookBinding, "event_type" | "role">) {
-  return binding.event_type?.replace(/^bloodbank\.agent\./, "") ?? binding.role.replaceAll("_", ".");
+  return binding.event_type?.replace(/^bloodbank\.(?:agent\.|conversation\.)?/, "") ?? binding.role.replaceAll("_", ".");
 }
 
 export function handlerName(id: string) {
