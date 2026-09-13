@@ -2,6 +2,7 @@ import { config } from "dotenv";
 config({ path: new URL("../../../.env", import.meta.url) });
 
 import Fastify from "fastify";
+import { registerHookHubRoutes } from "./hook-hub.js";
 import {
   controlAgentUnit,
   controlBridge,
@@ -34,6 +35,7 @@ const N8N_WEBHOOK_BASE_URL = (process.env.N8N_WEBHOOK_BASE_URL ?? "https://n8n.d
 const N8N_WEBHOOK_AUTH_HEADER = process.env.N8N_WEBHOOK_AUTH_HEADER ?? "";
 
 const app = Fastify({ logger: true });
+registerHookHubRoutes(app);
 
 if (!N8N_WEBHOOK_AUTH_HEADER) {
   app.log.warn("N8N_WEBHOOK_AUTH_HEADER is not set; /api/clock routes will fail.");
