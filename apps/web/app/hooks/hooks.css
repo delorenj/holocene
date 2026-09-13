@@ -85,7 +85,8 @@
 .hook-history-controls > span { font-size: .72rem; color: var(--muted); margin-left: auto; }
 .hook-filter-clear { min-height: 28px; font-size: .72rem; padding: 3px 8px; background: #1b2d49; border-color: #395b89; }
 .hook-filter-clear > span[aria-hidden] { margin-left: 10px; }
-.hook-table-scroll { overflow: auto; }
+.hook-table-scroll { overflow: auto; position: relative; }
+.hook-map-local { color: var(--muted); font-size: .625rem; font-weight: 500; }
 .hook-history-table, .hook-executions { width: 100%; border-collapse: collapse; text-align: left; font-size: .72rem; }
 .hook-history-table th, .hook-executions th { background: var(--bg); padding: 10px 12px; color: var(--muted); font-size: .65rem; font-weight: 500; white-space: nowrap; }
 .hook-history-table th:first-child, .hook-history-table td:first-child { padding-left: 18px; }

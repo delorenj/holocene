@@ -59,7 +59,7 @@ export type HookSnapshot = {
   schema_version: number;
   generated_at: string;
   observed_since?: string | null;
-  hub: { state: string; started_at: string; pid: number; registry_error?: string | null; journal_error?: string | null; publish_enabled: boolean; async_running: number };
+  hub: { state: string; started_at: string; pid: number; registry_error?: string | null; journal_error?: string | null; transport_error?: string | null; publish_enabled: boolean; async_running: number };
   bindings: HookBinding[];
   handlers: HookHandler[];
   totals: Record<string, number>;
