@@ -98,6 +98,21 @@ button:disabled {
   color: var(--text);
 }
 
+.section-link {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  text-decoration: none;
+}
+
+.section-link:hover,
+.section-link:focus-visible {
+  border-color: var(--blue);
+  color: var(--text);
+}
+
 .eyebrow {
   color: var(--blue);
   font-size: 0.78rem;

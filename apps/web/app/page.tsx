@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ClockCard } from "./clock-card";
 import { ToolingTab } from "./tooling";
 import { SystemsTab } from "./systems";
@@ -457,6 +458,10 @@ function ServiceControls({
 export default function HomePage() {
   const [apiBase] = useState(resolveApiBase);
   const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems" | "containers">("fleet");
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "fleet" || tab === "tooling" || tab === "systems" || tab === "containers") setActiveTab(tab);
+  }, []);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -647,6 +652,7 @@ export default function HomePage() {
         >
           Tooling
         </button>
+        <Link className="tab section-link" href={{ pathname: "/hooks" }}>Hooks</Link>
         <button
           aria-selected={activeTab === "systems"}
           className={activeTab === "systems" ? "tab tab-active" : "tab"}
