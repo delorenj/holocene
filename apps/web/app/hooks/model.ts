@@ -73,7 +73,7 @@ export type HookSnapshot = {
       support_status: string;
       binary_available: boolean;
       status: string;
-      trust_verification: string;
+      trust_verification?: string;
       configs: { label: string; source: string; status: string; errors: string[] }[];
       natives: {
         native: string;
@@ -119,7 +119,7 @@ export function handlerName(id: string) {
 export function statusLabel(status: string) {
   const names: Record<string, string> = {
     timed_out: "Timed out", unobserved: "No receipts yet", active: "Receiving hooks", idle: "Quiet",
-    running: "Running", selected: "Selected", started: "Running", succeeded: "Succeeded", failed: "Failed",
+    running: "Running", selected: "Selected", started: "Running", succeeded: "Succeeded", failed: "Failed", interrupted: "Interrupted",
     skipped: "Skipped", deduplicated: "Duplicate suppressed", completed: "Completed", received: "Received",
     configured: "Configured", unavailable: "Unavailable", not_installed: "Not installed", unsupported: "No adapter", duplicate: "Duplicate wiring", drift: "Wiring drift", missing: "Missing wiring",
   };
