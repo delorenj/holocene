@@ -2,9 +2,14 @@
 
 ## App overview
 
-Holocene is a 33GOD control-plane dashboard that surfaces live fleet, tooling,
-and pipeline health from API services, Redis-backed stats, and SSE/polling
-feeds.
+Holocene collects Bloodbank events and renders them through filters and read
+projections. Bloodbank owns event distribution; Holocene is a sink and does
+not publish domain events. The Hooks screen is a view of the shared event
+collection, not a client of the hook hub's HTTP API or receipt database.
+
+Existing fleet and tooling surfaces also use API services and Redis-backed
+stats. New event views must use the shared Bloodbank collection rather than
+introducing another producer-specific feed.
 
 ## Operating model
 
@@ -27,9 +32,11 @@ served before you call the work done.
 
 ## Serving path
 
-The live frontend is the `holocene-web` Docker Compose service in
-`compose.yml`. It serves `https://holocene.delo.sh` through Traefik and rebuilds
-the Next.js app when the container starts.
+The live frontend is the `holocene-web` service in the parent platform's
+`../33god-platform/compose.yaml`, under Compose project `33god-platform`.
+It serves `https://holocene.delo.sh` through Traefik and rebuilds the Next.js
+app when the container starts. Verify container Compose labels before deploying;
+the component-local `compose.yml` does not own the current live container.
 
 The live API is the user systemd service `holocene-api.service`. It runs
 `apps/api/dist/server.js` on port `4000`.
@@ -59,8 +66,8 @@ Use this workflow for normal Holocene changes:
    changed, restart the live web service from the repo root:
 
    ```bash
-   docker compose up -d --force-recreate holocene-web
-   docker compose ps holocene-web
+   docker compose -f ../33god-platform/compose.yaml -p 33god-platform up -d --no-deps --force-recreate holocene-web
+   docker compose -f ../33god-platform/compose.yaml -p 33god-platform ps holocene-web
    docker logs --tail 100 holocene-web
    ```
 

@@ -15,6 +15,7 @@ export type HookExecution = {
 
 export type HookInvocation = {
   invocation_id: string;
+  revision?: number;
   cli: string;
   native: string;
   role?: string;
@@ -27,6 +28,8 @@ export type HookInvocation = {
   deduplicated?: number;
   executions: HookExecution[];
   timeline?: { sequence: number; handler_id?: string; status: string; reason?: string; at: string }[];
+  timeline_total?: number;
+  timeline_truncated?: boolean;
 };
 
 export type HookBinding = {
@@ -64,6 +67,17 @@ export type HookSnapshot = {
   handlers: HookHandler[];
   totals: Record<string, number>;
   handler_activity: { handler_id: string; cli: string; status: string; count: number; last_at: string; mean_duration_ms?: number | null }[];
+  collection?: {
+    state: "starting" | "connecting" | "live" | "reconnecting" | "stopped" | "error";
+    cursor: number;
+    checkpoint?: number;
+    catching_up?: boolean;
+    last_event_at: string | null;
+    error: string | null;
+    hook_snapshot_state: "waiting" | "fresh" | "stale";
+    hook_snapshot_at: string | null;
+    history_gap: boolean;
+  };
   installed_inventory?: {
     generated_at: string;
     status: string;

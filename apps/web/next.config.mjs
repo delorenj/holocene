@@ -11,6 +11,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: "/api/events/:path*",
+        destination: `${apiInternalUrl}/api/events/:path*`
+      },
+      {
         source: "/api/modules/:path*",
         destination: `${apiInternalUrl}/api/modules/:path*`
       }

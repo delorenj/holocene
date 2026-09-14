@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "pnpm --filter @holocene/org-model build && tsc -p tsconfig.json",
+    "build": "pnpm --filter @holocene/org-model build && pnpm --filter @holocene/bloodbank-client build && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@fastify/sse": "^0.6.0",
+    "@holocene/bloodbank-client": "workspace:^",
     "@holocene/org-model": "workspace:*",
     "@holocene/system-actions": "workspace:*",
     "dotenv": "^17.4.2",
@@ -24,5 +26,8 @@
     "@types/node": "^22.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

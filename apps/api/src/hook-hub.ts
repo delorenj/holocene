@@ -1,81 +1,67 @@
 import type { FastifyInstance } from "fastify";
+import type { EventCollector } from "./event-collector.js";
+import type { HookFilter } from "./event-store.js";
+import { sendEvent, streamHeaders } from "./event-stream.js";
 
-const DEFAULT_HUB_URL = "http://127.0.0.1:8685";
 const FILTERS = ["cli", "native", "role", "handler", "status", "limit", "offset"] as const;
-
-export type HookHubOptions = {
-  baseUrl?: string;
-  fetch?: typeof globalThis.fetch;
-  timeoutMs?: number;
+const querystring = {
+  type: "object", additionalProperties: false,
+  properties: Object.fromEntries(FILTERS.map(key => [key,
+    key === "limit" ? { type: "integer", minimum: 1, maximum: 200 } :
+    key === "offset" ? { type: "integer", minimum: 0, maximum: 100000 } : { type: "string", maxLength: 160 },
+  ])),
 };
 
-/** A bounded, read-only bridge to the host's canonical hook receipts. */
-export function registerHookHubRoutes(app: FastifyInstance, options: HookHubOptions = {}) {
-  const baseUrl = (options.baseUrl ?? process.env.HOOK_HUB_URL ?? DEFAULT_HUB_URL).replace(/\/$/, "");
-  const request = options.fetch ?? globalThis.fetch;
-  const timeoutMs = options.timeoutMs ?? 4000;
-
-  async function read(path: string) {
-    const response = await request(`${baseUrl}/v1/hooks/${path}`, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) {
-      if (response.status === 404) return { status: 404, body: { error: "Hook invocation was not found." } };
-      throw new Error(`Hook hub returned HTTP ${response.status}.`);
-    }
-    return { status: 200, body: await response.json() };
-  }
-
-  async function serve(path: string, reply: { code: (status: number) => unknown; header: (name: string, value: string) => unknown }) {
+/** Hooks are one view over collected Bloodbank facts. No producer service is queried here. */
+export function registerHookHubRoutes(app: FastifyInstance, collector: EventCollector) {
+  const streams = new Set<() => void>();
+  app.addHook("preClose", async () => { for (const close of streams) close(); });
+  app.get("/api/modules/hooks/status", async (_req, reply) => {
+    reply.header("Cache-Control", "no-store"); return collector.hookSnapshot();
+  });
+  app.get<{ Querystring: HookFilter }>("/api/modules/hooks/invocations", { schema: { querystring } }, async (req, reply) => {
+    reply.header("Cache-Control", "no-store"); return collector.store.hookHistory(req.query);
+  });
+  app.get<{ Params: { id: string } }>("/api/modules/hooks/invocations/:id", {
+    schema: { params: { type: "object", required: ["id"], properties: { id: { type: "string", pattern: "^[A-Za-z0-9_.:-]{1,160}$" } } } },
+  }, async (req, reply) => {
     reply.header("Cache-Control", "no-store");
-    try {
-      const result = await read(path);
-      reply.code(result.status);
-      return result.body;
-    } catch (error) {
-      app.log.warn({ err: error }, "Hook hub observability is unavailable");
-      reply.code(503);
-      return {
-        schema_version: 1,
-        generated_at: new Date().toISOString(),
-        available: false,
-        error: "The hook hub is unavailable. Execution history cannot be refreshed. Retry when the hub is running.",
-      };
-    }
-  }
-
-  app.get("/api/modules/hooks/status", async (_request, reply) => serve("status", reply));
-
-  app.get<{ Querystring: Partial<Record<(typeof FILTERS)[number], string>> }>(
-    "/api/modules/hooks/invocations",
-    {
-      schema: {
-        querystring: {
-          type: "object",
-          additionalProperties: false,
-          properties: Object.fromEntries(FILTERS.map((key) => [key,
-            key === "limit" ? { type: "integer", minimum: 1, maximum: 200 } :
-            key === "offset" ? { type: "integer", minimum: 0, maximum: 100000 } :
-            { type: "string", maxLength: 160 },
-          ])),
-        },
-      },
-    },
-    async (req, reply) => {
-      const query = new URLSearchParams();
-      for (const key of FILTERS) {
-        const value = req.query[key];
-        if (value !== undefined && value !== "") query.set(key, String(value));
+    const invocation = collector.store.hookDetail(req.params.id);
+    return invocation ? { invocation } : reply.code(404).send({ error: "Hook invocation was not found in the event collection." });
+  });
+  app.get<{ Querystring: HookFilter }>("/api/modules/hooks/stream", { sse: "only", schema: { querystring } }, async (req, reply) => {
+    streamHeaders(reply);
+    let closed = false, pumping = false, needsStatus = true, needsHistory = true;
+    let queued: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = collector.subscribe(change => {
+      if (change.kind === "receipt") needsHistory = true;
+      if (change.kind === "snapshot" || change.kind === "status") needsStatus = true;
+      if ((needsHistory || needsStatus) && !queued && !pumping) {
+        // Coalesce bursts of handler transitions, without a polling refresh loop.
+        queued = setTimeout(() => { queued = undefined; void pump(); }, 20);
       }
-      if (!query.has("limit")) query.set("limit", "50");
-      return serve(`invocations?${query}`, reply);
-    },
-  );
-
-  app.get<{ Params: { id: string } }>(
-    "/api/modules/hooks/invocations/:id",
-    { schema: { params: { type: "object", required: ["id"], properties: { id: { type: "string", pattern: "^[A-Za-z0-9_.:-]{1,160}$" } } } } },
-    async (req, reply) => serve(`invocations/${encodeURIComponent(req.params.id)}`, reply),
-  );
+    });
+    const cleanup = () => { if (closed) return; closed = true; clearTimeout(queued); unsubscribe(); streams.delete(close); };
+    const close = () => { cleanup(); reply.sse.close(); };
+    reply.sse.onClose(cleanup); reply.sse.keepAlive(); streams.add(close);
+    async function pump() {
+      if (closed || pumping) return;
+      pumping = true;
+      try {
+        while ((needsStatus || needsHistory) && !closed) {
+          // Capture both projections synchronously at one cursor before any write yields.
+          const cursor = collector.store.cursor;
+          const status = needsStatus ? collector.hookSnapshot() : null;
+          const history = needsHistory ? collector.store.hookHistory(req.query) : null;
+          needsStatus = false; needsHistory = false;
+          if (status) await sendEvent(reply, { event: "hooks-status", id: String(cursor), data: status });
+          if (history) await sendEvent(reply, { event: "hooks-history", id: String(cursor), data: history });
+        }
+      } catch { close(); }
+      finally { pumping = false; }
+    }
+    // Projection streams resnapshot on reconnect, including filter changes and row removals.
+    // The generic /api/events/stream provides exact envelope replay by cursor.
+    await pump();
+  });
 }

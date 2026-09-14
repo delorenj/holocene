@@ -3,6 +3,8 @@ config({ path: new URL("../../../.env", import.meta.url) });
 
 import Fastify from "fastify";
 import { registerHookHubRoutes } from "./hook-hub.js";
+import { createEventCollector } from "./event-collector.js";
+import { registerEventRoutes } from "./event-routes.js";
 import {
   controlAgentUnit,
   controlBridge,
@@ -35,7 +37,13 @@ const N8N_WEBHOOK_BASE_URL = (process.env.N8N_WEBHOOK_BASE_URL ?? "https://n8n.d
 const N8N_WEBHOOK_AUTH_HEADER = process.env.N8N_WEBHOOK_AUTH_HEADER ?? "";
 
 const app = Fastify({ logger: true });
-registerHookHubRoutes(app);
+const eventCollector = createEventCollector(app.log);
+await registerEventRoutes(app, eventCollector);
+registerHookHubRoutes(app, eventCollector);
+eventCollector.start();
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => { void app.close().then(() => process.exit(0)); });
+}
 
 if (!N8N_WEBHOOK_AUTH_HEADER) {
   app.log.warn("N8N_WEBHOOK_AUTH_HEADER is not set; /api/clock routes will fail.");

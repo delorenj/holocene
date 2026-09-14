@@ -21,6 +21,8 @@
 .hook-alert { padding: 16px 18px; border: 1px solid var(--red); border-radius: 8px; background: #241925; font-size: .875rem; line-height: 1.6; }
 .hook-alert strong { color: var(--red); }
 .hook-alert p { max-width: 90ch; }
+.hook-notice { padding: 12px 18px; border: 1px solid var(--yellow); border-radius: 8px; color: var(--yellow); font-size: .8125rem; line-height: 1.6; }
+.hook-history-note { padding: 10px 18px; color: var(--muted); font-size: .75rem; line-height: 1.6; border-bottom: 1px solid var(--line); }
 .hook-cli-bar { display: flex; gap: 6px; flex-wrap: wrap; }
 .hook-cli-bar button { min-height: 34px; font-size: .8125rem; padding: 6px 10px; background: transparent; display: flex; gap: 8px; align-items: center; }
 .hook-cli-bar .is-selected, .hook-chip.is-selected, .hook-handler.is-selected { background: #1b2d49; border-color: var(--blue); }
