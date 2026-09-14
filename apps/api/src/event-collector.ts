@@ -47,7 +47,8 @@ export class EventCollector {
       event_count: this.store.count, rejected_count: this.store.rejectedCount,
       last_event_at: this.lastEventAt ?? this.store.lastEventAt, error: this.error,
       checkpoint: this.store.checkpointSequence,
-      catching_up: this.store.checkpointSequence < Number(this.store.meta("stream_tail") ?? 0),
+      catching_up: this.store.catchingUp,
+      pending: this.store.pendingCount,
       hook_snapshot_state: expiresAt ? (Date.parse(expiresAt) > Date.now() ? "fresh" : "stale") : "waiting",
       hook_snapshot_at: expiresAt ? String(snapshot.generated_at) : null,
       history_gap: this.store.meta("history_gap") !== null,
@@ -56,9 +57,9 @@ export class EventCollector {
   }
   hookSnapshot() { return { ...this.store.hookSnapshot().snapshot, collection: this.status() }; }
   ingest(delivery: BloodbankDelivery) {
-    const wasCatchingUp = this.store.checkpointSequence < Number(this.store.meta("stream_tail") ?? 0);
+    const wasCatchingUp = this.store.catchingUp;
     const change = this.store.ingest(delivery);
-    if (wasCatchingUp && this.store.checkpointSequence >= Number(this.store.meta("stream_tail") ?? 0)) {
+    if (wasCatchingUp !== this.store.catchingUp) {
       this.notify({ kind: "status", cursor: this.store.cursor });
     }
     if (!change) return;

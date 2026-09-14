@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -264,4 +265,43 @@ test("collector reports safe transport error class/code without leaking error te
     assert.doesNotMatch(JSON.stringify({ status: collector.status(), reported }), /credential-bearing/);
     assert.deepEqual(reported, [{ name: "JetStreamApiError", code: 10148, phase: "connect" }]);
   } finally { await collector.stop(); value.close(); }
+});
+
+
+test("catch-up follows committed consumer pending count when the stream grows beyond its initial tail", () => {
+  const value = store(); value.checkpoint({ ...position, last: 2 });
+  const collector = new EventCollector(value); const changes: boolean[] = [];
+  const unsubscribe = collector.subscribe(change => { if (change.kind === "status") changes.push(collector.status().catching_up); });
+  try {
+    assert.equal(collector.status().catching_up, true);
+    collector.ingest({ ...delivery(1), pending: 3 });
+    collector.ingest({ ...delivery(2), pending: 2 });
+    assert.equal(collector.status().catching_up, true, "reaching startup tail does not imply current backlog is drained");
+    collector.ingest({ ...delivery(3), pending: 1 });
+    assert.equal(collector.status().pending, 1);
+    collector.ingest({ ...delivery(4), pending: 0 });
+    assert.equal(collector.status().catching_up, false);
+    collector.ingest({ ...delivery(5), pending: 1 });
+    assert.equal(collector.status().catching_up, true);
+    assert.deepEqual(changes, [false, true]);
+    // A failed commit must preserve pending along with the prior sequence/projection.
+    value.db.exec("CREATE TRIGGER reject_pending_fixture BEFORE INSERT ON hook_invocations BEGIN SELECT RAISE(ABORT, 'pending fixture'); END;");
+    assert.throws(() => collector.ingest({ ...receipt(6), pending: 0 }), /pending fixture/);
+    assert.equal(value.pendingCount, 1); assert.equal(value.checkpointSequence, 5);
+  } finally { unsubscribe(); value.close(); }
+});
+
+test("existing checkpoint schema upgrades without losing position and pending survives restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "holocene-pending-")); const path = join(directory, "events.sqlite3");
+  try {
+    const prior = new DatabaseSync(path);
+    prior.exec("CREATE TABLE checkpoints (stream TEXT PRIMARY KEY,created TEXT NOT NULL,sequence INTEGER NOT NULL)");
+    prior.prepare("INSERT INTO checkpoints VALUES (?,?,?)").run(position.name, created, 1); prior.close();
+    const first = new EventStore(path);
+    assert.equal(first.checkpointSequence, 1); assert.equal(first.pendingCount, null);
+    first.ingest({ ...delivery(2), pending: 7 }); first.close();
+    const reopened = new EventStore(path);
+    assert.equal(reopened.checkpointSequence, 2); assert.equal(reopened.pendingCount, 7);
+    assert.equal(reopened.catchingUp, true); reopened.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

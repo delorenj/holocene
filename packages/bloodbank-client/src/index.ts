@@ -11,7 +11,7 @@ export type BloodbankEvent = {
   [key: string]: unknown;
 };
 export type StreamPosition = { name: string; created: string; first: number; last: number };
-export type BloodbankDelivery = { stream: string; sequence: number; subject: string; data: Uint8Array };
+export type BloodbankDelivery = { stream: string; sequence: number; subject: string; data: Uint8Array; pending?: number };
 export type BloodbankConnection = { messages: AsyncIterable<BloodbankDelivery>; close(): Promise<void> };
 export interface BloodbankClient {
   connect(options: {
@@ -59,7 +59,7 @@ export class NatsBloodbankClient implements BloodbankClient {
       return {
         messages: (async function* () {
           for await (const message of messages) {
-            yield { stream, sequence: message.seq, subject: message.subject, data: message.data };
+            yield { stream, sequence: message.seq, subject: message.subject, data: message.data, pending: message.info.pending };
           }
         })(),
         async close() {

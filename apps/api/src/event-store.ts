@@ -29,7 +29,7 @@ export class EventStore {
         type TEXT NOT NULL, source TEXT, collected_at TEXT NOT NULL, envelope TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS events_type_cursor ON events(type,cursor);
       CREATE INDEX IF NOT EXISTS events_subject_cursor ON events(subject,cursor);
-      CREATE TABLE IF NOT EXISTS checkpoints (stream TEXT PRIMARY KEY, created TEXT NOT NULL, sequence INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS checkpoints (stream TEXT PRIMARY KEY, created TEXT NOT NULL, sequence INTEGER NOT NULL, pending INTEGER);
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS rejected_events (
         stream TEXT NOT NULL, sequence INTEGER NOT NULL, reason TEXT NOT NULL, collected_at TEXT NOT NULL,
@@ -44,6 +44,9 @@ export class EventStore {
         singleton INTEGER PRIMARY KEY CHECK(singleton=1), hub_id TEXT NOT NULL, revision INTEGER NOT NULL,
         generated_at TEXT NOT NULL, expires_at TEXT NOT NULL, data TEXT NOT NULL);
     `);
+    if (!this.db.prepare("PRAGMA table_info(checkpoints)").all().some(column => column.name === "pending")) {
+      this.db.exec("ALTER TABLE checkpoints ADD COLUMN pending INTEGER");
+    }
   }
   close() { this.db.close(); }
   meta(key: string): string | null {
@@ -60,7 +63,7 @@ export class EventStore {
       this.setMeta("history_gap", JSON.stringify({ stream: stream.name, after, first_available: stream.first, detected_at: new Date().toISOString() }));
     }
     const next = after <= stream.last ? after : 0;
-    this.db.prepare("INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(stream) DO UPDATE SET created=excluded.created,sequence=excluded.sequence").run(stream.name, stream.created, next);
+    this.db.prepare("INSERT INTO checkpoints(stream,created,sequence,pending) VALUES (?,?,?,NULL) ON CONFLICT(stream) DO UPDATE SET created=excluded.created,sequence=excluded.sequence,pending=NULL").run(stream.name, stream.created, next);
     this.setMeta("stream_tail", String(stream.last));
     return next;
   }
@@ -68,6 +71,14 @@ export class EventStore {
   get oldestCursor(): number { return Number(this.db.prepare("SELECT COALESCE(MIN(cursor),0) AS n FROM events").get()!.n); }
   get count(): number { return Number(this.db.prepare("SELECT COUNT(*) AS n FROM events").get()!.n); }
   get checkpointSequence(): number { return Number(this.db.prepare("SELECT COALESCE(MAX(sequence),0) AS n FROM checkpoints").get()!.n); }
+  get pendingCount(): number | null {
+    const pending = this.db.prepare("SELECT SUM(pending) AS n FROM checkpoints").get()!.n;
+    return pending === null ? null : Number(pending);
+  }
+  get catchingUp(): boolean {
+    const pending = this.pendingCount;
+    return pending === null ? this.checkpointSequence < Number(this.meta("stream_tail") ?? 0) : pending > 0;
+  }
   get lastEventAt(): string | null { return this.db.prepare("SELECT collected_at FROM events ORDER BY cursor DESC LIMIT 1").get()?.collected_at as string | undefined ?? null; }
   get rejectedCount(): number { return Number(this.db.prepare("SELECT COUNT(*) AS n FROM rejected_events").get()!.n); }
 
@@ -97,7 +108,8 @@ export class EventStore {
       if (rejection) {
         this.db.prepare("INSERT OR IGNORE INTO rejected_events VALUES (?,?,?,?)").run(delivery.stream, delivery.sequence, rejection, at);
       }
-      this.db.prepare("UPDATE checkpoints SET sequence=MAX(sequence,?) WHERE stream=?").run(delivery.sequence, delivery.stream);
+      this.db.prepare("UPDATE checkpoints SET pending=CASE WHEN ?>=sequence THEN ? ELSE pending END,sequence=MAX(sequence,?) WHERE stream=?")
+        .run(delivery.sequence, integer(delivery.pending) ? delivery.pending : null, delivery.sequence, delivery.stream);
       this.db.exec("COMMIT");
       return change;
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
