@@ -38,7 +38,7 @@ function history(items: HookInvocation[], offset = 0): HookHistory {
 }
 
 function connect(once = false) {
-  const source = new FakeSource();
+  const sources: FakeSource[] = [];
   const pages: HookHistory[] = [];
   const snapshots: HookSnapshot[] = [];
   const states: HookConnection[] = [];
@@ -48,9 +48,9 @@ function connect(once = false) {
     query: hookQuery({ limit: 25, offset: 0, cli: "claude", status: "started" }), once,
     onHistory: (value) => pages.push(value), onSnapshot: (value) => snapshots.push(value),
     onConnection: (state) => states.push(state), onError: (error) => errors.push(error),
-    createSource: (url) => { urls.push(url); return source as unknown as EventSource; },
+    createSource: (url) => { urls.push(url); const source = new FakeSource(); sources.push(source); return source as unknown as EventSource; },
   });
-  return { source, pages, snapshots, states, errors, urls, close };
+  return { get source() { return sources.at(-1)!; }, sources, pages, snapshots, states, errors, urls, close };
 }
 
 test("filters select the projection and each committed page replaces previous matching rows", () => {
@@ -71,7 +71,8 @@ test("filters select the projection and each committed page replaces previous ma
   feed.close();
 });
 
-test("reconnect retains the previous page and becomes live after a complete current view", () => {
+test("reconnect retains the previous page and becomes live after a complete current view", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const feed = connect();
   feed.source.open();
   feed.source.send("hooks-status", snapshot, 10);
@@ -79,6 +80,7 @@ test("reconnect retains the previous page and becomes live after a complete curr
   feed.source.error();
   assert.equal(feed.states.at(-1), "reconnecting");
   assert.equal(feed.pages.at(-1)?.items[0].revision, 10);
+  t.mock.timers.tick(1000);
   feed.source.open();
   feed.source.send("hooks-status", snapshot, 12);
   assert.equal(feed.states.at(-1), "reconnecting");
@@ -108,12 +110,14 @@ test("late updates from a paused, unmounted, or superseded subscription cannot c
   resumed.close();
 });
 
-test("reconnect accepts an authoritative bootstrap after the collector cursor restarts", () => {
+test("reconnect accepts an authoritative bootstrap after the collector cursor restarts", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const feed = connect();
   feed.source.open();
   feed.source.send("hooks-status", { ...snapshot, collection: { ...snapshot.collection, cursor: 20 } }, 20);
   feed.source.send("hooks-history", history([invocation("before-rebuild", 20)]), 20);
   feed.source.error();
+  t.mock.timers.tick(1000);
   feed.source.open();
   feed.source.send("hooks-status", { ...snapshot, collection: { ...snapshot.collection, cursor: 2 } }, 2);
   assert.equal(feed.states.at(-1), "reconnecting");
@@ -160,7 +164,7 @@ test("cursor replay cannot regress a row, and repeated invocation ids keep the n
   feed.close();
 });
 
-test("invalid data preserves the last projection and a terminal disconnect offers refresh", () => {
+test("invalid data preserves the last projection and a terminal disconnect schedules recovery", () => {
   const feed = connect();
   feed.source.send("hooks-status", snapshot, 1);
   feed.source.send("hooks-history", history([invocation("safe", 1)]), 1);
@@ -170,9 +174,98 @@ test("invalid data preserves the last projection and a terminal disconnect offer
   feed.source.send("hooks-history", history([invocation("safe", 2, "succeeded")]), 2);
   assert.equal(feed.pages.at(-1)?.items[0].status, "succeeded");
   feed.source.error(true);
-  assert.equal(feed.states.at(-1), "offline");
-  assert.match(feed.errors.at(-1) ?? "", /Refresh to reconnect/);
+  assert.equal(feed.states.at(-1), "reconnecting");
+  assert.match(feed.errors.at(-1) ?? "", /Reconnecting automatically/);
   feed.close();
+});
+
+test("a failed reconnect gets a fresh source until the retained view can catch up", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const feed = connect();
+  feed.source.open();
+  feed.source.send("hooks-status", snapshot, 20);
+  feed.source.send("hooks-history", history([invocation("retained", 20)]), 20);
+  feed.source.error();
+  t.mock.timers.tick(1000);
+  assert.equal(feed.sources.length, 2);
+  // A reverse proxy responds 502 to the next connection; native EventSource
+  // would permanently close here. The subscription still owns its recovery.
+  feed.source.error(true);
+  assert.equal(feed.states.at(-1), "reconnecting");
+  assert.equal(feed.pages.at(-1)?.items[0].invocation_id, "retained");
+  t.mock.timers.tick(1999);
+  assert.equal(feed.sources.length, 2);
+  t.mock.timers.tick(1);
+  assert.equal(feed.sources.length, 3);
+  feed.source.open();
+  feed.source.send("hooks-status", snapshot, 24);
+  feed.source.send("hooks-history", history([invocation("arrived-during-outage", 24)]), 24);
+  assert.equal(feed.states.at(-1), "live");
+  assert.equal(feed.pages.at(-1)?.items[0].invocation_id, "arrived-during-outage");
+  feed.sources[0].queued[0](new MessageEvent("hooks-history", { data: JSON.stringify(history([invocation("retired-source", 99)])), lastEventId: "99" }));
+  assert.equal(feed.pages.at(-1)?.items[0].invocation_id, "arrived-during-outage");
+  assert.deepEqual(feed.sources.map((source) => source.closes), [1, 1, 0]);
+  feed.close();
+});
+
+test("retry backoff is capped and resets after a complete successful projection", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const feed = connect();
+  for (const delay of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+    const attempts = feed.sources.length;
+    feed.source.error(true);
+    t.mock.timers.tick(delay - 1);
+    assert.equal(feed.sources.length, attempts);
+    t.mock.timers.tick(1);
+    assert.equal(feed.sources.length, attempts + 1);
+    feed.source.open();
+  }
+  feed.source.send("hooks-status", snapshot, 1);
+  feed.source.send("hooks-history", history([]), 1);
+  const attempts = feed.sources.length;
+  feed.source.error(true);
+  t.mock.timers.tick(999);
+  assert.equal(feed.sources.length, attempts);
+  t.mock.timers.tick(1);
+  assert.equal(feed.sources.length, attempts + 1);
+  feed.close();
+});
+
+test("pause, filter changes, and manual refresh cancel the old pending retry", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const paused = connect();
+  paused.source.error(true);
+  paused.close();
+  t.mock.timers.tick(30000);
+  assert.equal(paused.sources.length, 1);
+
+  const superseded = connect();
+  superseded.source.error(true);
+  superseded.close();
+  const refreshed = connect();
+  assert.equal(refreshed.sources.length, 1);
+  refreshed.source.send("hooks-status", snapshot, 2);
+  refreshed.source.send("hooks-history", history([invocation("current", 2)]), 2);
+  t.mock.timers.tick(30000);
+  assert.equal(superseded.sources.length, 1);
+  assert.equal(refreshed.sources.length, 1);
+  assert.equal(refreshed.states.at(-1), "live");
+  refreshed.close();
+});
+
+test("one-shot history stops retrying after a recovered initial page completes", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const feed = connect(true);
+  feed.source.error(true);
+  t.mock.timers.tick(1000);
+  assert.equal(feed.sources.length, 2);
+  feed.source.send("hooks-status", snapshot, 2);
+  feed.source.send("hooks-history", history([invocation("history", 2)], 25), 2);
+  feed.source.error(true);
+  t.mock.timers.tick(60000);
+  assert.equal(feed.sources.length, 2);
+  assert.equal(feed.source.closes, 1);
+  assert.equal(feed.pages.length, 1);
 });
 
 test("query changes preserve encoded native names and remove filters that were cleared", () => {

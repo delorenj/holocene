@@ -58,76 +58,113 @@ type HookStreamOptions = {
 // The API projects each committed collection update. Replace the current page
 // atomically so a changed outcome can remove a row from an active filter.
 export function subscribeToHooks(options: HookStreamOptions) {
-  const source = (options.createSource ?? ((url) => new EventSource(url)))(`/api/modules/hooks/stream?${options.query}`);
+  const createSource = options.createSource ?? ((url) => new EventSource(url));
   let active = true;
   let ready = false;
-  let hasSnapshot = false;
-  let hasHistory = false;
-  const cursors = { snapshot: -1, history: -1 };
-  const listeners: [string, EventListener][] = [];
+  let retryDelay = 1000;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let releaseSource: (() => void) | undefined;
+
+  function disconnect() {
+    releaseSource?.();
+    releaseSource = undefined;
+  }
 
   function close() {
     active = false;
-    for (const [name, listener] of listeners) source.removeEventListener(name, listener);
-    source.close();
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    disconnect();
   }
 
-  function listen(name: string, listener: (event: MessageEvent<string>) => void) {
-    const guarded: EventListener = (event) => {
-      if (active) listener(event as MessageEvent<string>);
-    };
-    listeners.push([name, guarded]);
-    source.addEventListener(name, guarded);
+  function reconnect() {
+    if (!active) return;
+    disconnect();
+    options.onConnection("reconnecting");
+    options.onError("Live updates were interrupted. Reconnecting automatically; you can also refresh.");
+    retryTimer = setTimeout(connect, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 30000);
   }
 
-  function receive(kind: keyof typeof cursors, event: MessageEvent<string>) {
-    const cursor = event.lastEventId ? Number(event.lastEventId) : undefined;
-    if (cursor !== undefined && Number.isFinite(cursor) && cursor < cursors[kind]) return;
+  function connect() {
+    retryTimer = undefined;
+    if (!active) return;
+    let source: Source;
     try {
-      const value = JSON.parse(event.data);
-      if (kind === "snapshot") {
-        if (!value || !Array.isArray(value.bindings) || !Array.isArray(value.handlers) || !Array.isArray(value.handler_activity) || !value.hub || !value.totals) throw new Error("Invalid hook overview");
-        options.onSnapshot(value as HookSnapshot);
-        hasSnapshot = true;
-      } else {
-        if (!value || !Array.isArray(value.items) || !Number.isFinite(value.total) || !Number.isFinite(value.offset)) throw new Error("Invalid execution history");
-        const history = value as HookHistory;
-        if (history.items.some((invocation) => !invocation || typeof invocation.invocation_id !== "string" || typeof invocation.updated_at !== "string" || !Array.isArray(invocation.executions))) throw new Error("Invalid invocation");
-        // Replayed updates may repeat an invocation; one invocation owns one row.
-        const unique = new Map<string, HookHistory["items"][number]>();
-        for (const invocation of history.items) {
-          const previous = unique.get(invocation.invocation_id);
-          if (!previous || (invocation.revision ?? Date.parse(invocation.updated_at)) >= (previous.revision ?? Date.parse(previous.updated_at))) unique.set(invocation.invocation_id, invocation);
-        }
-        options.onHistory({ ...history, items: [...unique.values()] });
-        hasHistory = true;
-      }
-      if (cursor !== undefined && Number.isFinite(cursor)) cursors[kind] = cursor;
-      if (hasSnapshot && hasHistory) {
-        ready = true;
-        options.onConnection("live");
-        if (options.once) close();
-      }
+      source = createSource(`/api/modules/hooks/stream?${options.query}`);
     } catch {
-      options.onError(kind === "snapshot" ? "The hook overview could not be read. Refresh to try again." : "The execution history could not be read. Refresh to try again.");
+      reconnect();
+      return;
     }
+    let current = true;
+    let hasSnapshot = false;
+    let hasHistory = false;
+    const cursors = { snapshot: -1, history: -1 };
+    const listeners: [string, EventListener][] = [];
+    releaseSource = () => {
+      current = false;
+      for (const [name, listener] of listeners) source.removeEventListener(name, listener);
+      source.close();
+    };
+
+    function listen(name: string, listener: (event: MessageEvent<string>) => void) {
+      const guarded: EventListener = (event) => {
+        if (active && current) listener(event as MessageEvent<string>);
+      };
+      listeners.push([name, guarded]);
+      source.addEventListener(name, guarded);
+    }
+
+    function receive(kind: keyof typeof cursors, event: MessageEvent<string>) {
+      const cursor = event.lastEventId ? Number(event.lastEventId) : undefined;
+      if (cursor !== undefined && Number.isFinite(cursor) && cursor < cursors[kind]) return;
+      try {
+        const value = JSON.parse(event.data);
+        if (kind === "snapshot") {
+          if (!value || !Array.isArray(value.bindings) || !Array.isArray(value.handlers) || !Array.isArray(value.handler_activity) || !value.hub || !value.totals) throw new Error("Invalid hook overview");
+          options.onSnapshot(value as HookSnapshot);
+          hasSnapshot = true;
+        } else {
+          if (!value || !Array.isArray(value.items) || !Number.isFinite(value.total) || !Number.isFinite(value.offset)) throw new Error("Invalid execution history");
+          const history = value as HookHistory;
+          if (history.items.some((invocation) => !invocation || typeof invocation.invocation_id !== "string" || typeof invocation.updated_at !== "string" || !Array.isArray(invocation.executions))) throw new Error("Invalid invocation");
+          // Replayed updates may repeat an invocation; one invocation owns one row.
+          const unique = new Map<string, HookHistory["items"][number]>();
+          for (const invocation of history.items) {
+            const previous = unique.get(invocation.invocation_id);
+            if (!previous || (invocation.revision ?? Date.parse(invocation.updated_at)) >= (previous.revision ?? Date.parse(previous.updated_at))) unique.set(invocation.invocation_id, invocation);
+          }
+          options.onHistory({ ...history, items: [...unique.values()] });
+          hasHistory = true;
+        }
+        if (cursor !== undefined && Number.isFinite(cursor)) cursors[kind] = cursor;
+        if (hasSnapshot && hasHistory) {
+          ready = true;
+          retryDelay = 1000;
+          options.onConnection("live");
+          if (options.once) close();
+        }
+      } catch {
+        options.onError(kind === "snapshot" ? "The hook overview could not be read. Refresh to try again." : "The execution history could not be read. Refresh to try again.");
+      }
+    }
+
+    listen("open", () => {
+      // Every connection bootstraps an authoritative projection. Its local
+      // cursor may restart after the collector's read model is rebuilt.
+      cursors.snapshot = -1;
+      cursors.history = -1;
+      hasSnapshot = false;
+      hasHistory = false;
+      options.onConnection(ready || retryDelay > 1000 ? "reconnecting" : "connecting");
+    });
+    listen("hooks-status", (event) => receive("snapshot", event));
+    listen("hooks-history", (event) => receive("history", event));
+    // Browsers stop retrying after some HTTP failures, including a reverse
+    // proxy's 502. Own recovery for all failures and retire the old source.
+    listen("error", reconnect);
   }
 
-  listen("open", () => {
-    // Every connection bootstraps an authoritative projection. Its local
-    // cursor may restart after the collector's read model is rebuilt.
-    cursors.snapshot = -1;
-    cursors.history = -1;
-    hasSnapshot = false;
-    hasHistory = false;
-    options.onConnection(ready ? "reconnecting" : "connecting");
-  });
-  listen("hooks-status", (event) => receive("snapshot", event));
-  listen("hooks-history", (event) => receive("history", event));
-  listen("error", () => {
-    const closed = source.readyState === 2;
-    options.onConnection(closed ? "offline" : "reconnecting");
-    options.onError(closed ? "Live updates are unavailable. Refresh to reconnect." : "Live updates were interrupted. Reconnecting automatically; you can also refresh.");
-  });
+  connect();
   return close;
 }
