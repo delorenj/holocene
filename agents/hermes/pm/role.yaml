@@ -28,11 +28,15 @@ ticket_provider:
   board_url: "https://plane.delo.sh/33god/projects/727a2b17-a1dd-46f6-b583-afa5a2d2cdae/issues/"
   workspace: "33god"
   project: "727a2b17-a1dd-46f6-b583-afa5a2d2cdae"
-  # Optional normalized-state name overrides for non-standard boards.
+  # Normalized-state -> Plane lane names. REQUIRED, not optional: the
+  # adapter refuses to guess when a Plane state group holds more than one
+  # lane, so every band must be named or the transition fails.
+  backlog:   "Backlog"
+  unstarted: "Todo"
+  started:   "In Progress"
   in_review: "E2E Testing & QA"
   completed: "Done"
-  started: "In Progress"
-  unstarted: "Todo"
+  cancelled: "Cancelled"
 # Scrum Master sentinel knobs (only meaningful for role: scrum-master).
 scrum_master:
   grace_hours: 24            # delegated-review grace window (hours)
