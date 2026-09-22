@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BridgeStatus, EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
+import type { EmployeeStatus, OrgNode, OrgTree } from "@holocene/org-model";
 
 type Tone = "working" | "idle" | "attention" | "failed" | "unknown";
 
@@ -321,11 +321,6 @@ function AgentNode({ node, deptName, onOpen }: { node: OrgNode; deptName: string
       </span>
       <span className="hq-node-sub">
         <span className="hq-node-repo">{node.agentRef?.repo || node.id}</span>
-        {node.flags?.includes("bridge-bound") ? (
-          <span className="hq-node-bridge" title="Bound to the Plane bridge — reacts to its board">
-            ⚡
-          </span>
-        ) : null}
         <span className="hq-node-state">{node.status}</span>
       </span>
     </button>
@@ -364,8 +359,6 @@ function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; cont
           {moodGlyph(totals.needsAttention, totals.agents)}
         </span>
       </header>
-
-      {tree.bridge ? <BridgeCard bridge={tree.bridge} controls={controls} /> : null}
 
       {/* CEO node at the top of the constellation */}
       <div className="hq-ceo-wrap">
@@ -460,91 +453,6 @@ function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; cont
   );
 }
 
-function BridgeCard({ bridge, controls }: { bridge: BridgeStatus; controls: Controls }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const up = bridge.serviceStatus === "active";
-  const tone: Tone = up ? (bridge.healthOk ? "idle" : "attention") : "failed";
-  const statusLabel = up ? (bridge.healthOk ? "live" : "no health") : bridge.serviceStatus;
-
-  const run = async (key: string, path: string, body?: unknown) => {
-    setBusy(key);
-    setErr(null);
-    const r = await controls.postAction(path, body);
-    setBusy(null);
-    if (!r.ok) setErr(r.data?.error || r.data?.message || `HTTP ${r.status}`);
-    else controls.refresh();
-  };
-
-  return (
-    <section className="hq-bridge">
-      <div className="hq-bridge-head">
-        <span className="hq-bridge-title">
-          <StatusDot tone={tone} /> Plane bridge
-        </span>
-        <span className={`hq-pill hq-pill-${tone}`}>{statusLabel}</span>
-      </div>
-      <p className="hq-bridge-meta">
-        {bridge.scope === "fleet"
-          ? "Fleet — every mapped PM reacts to its board"
-          : `Pilot — ${bridge.boundRepos.length} PM${bridge.boundRepos.length === 1 ? "" : "s"} bound`}
-        {" · "}
-        {bridge.projectsMapped} projects mapped {" · "}:{bridge.port}
-      </p>
-      {bridge.scope === "pilot" && bridge.boundRepos.length ? (
-        <div className="hq-bridge-repos">
-          {bridge.boundRepos.map((r) => (
-            <span key={r} className="hq-chip">
-              {r}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {err ? <p className="hq-bridge-err">{err}</p> : null}
-      <div className="hq-bridge-actions">
-        <button
-          type="button"
-          className="hq-btn"
-          disabled={!!busy}
-          onClick={() => run("restart", "/api/modules/hermes-fleet/bridge/service/restart")}
-        >
-          {busy === "restart" ? "…" : "Restart"}
-        </button>
-        {up ? (
-          <button
-            type="button"
-            className="hq-btn hq-btn-danger"
-            disabled={!!busy}
-            onClick={() => run("stop", "/api/modules/hermes-fleet/bridge/service/stop")}
-          >
-            {busy === "stop" ? "…" : "Stop"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="hq-btn"
-            disabled={!!busy}
-            onClick={() => run("start", "/api/modules/hermes-fleet/bridge/service/start")}
-          >
-            {busy === "start" ? "…" : "Start"}
-          </button>
-        )}
-        {bridge.scope === "pilot" ? (
-          <button
-            type="button"
-            className="hq-btn hq-btn-primary"
-            disabled={!!busy}
-            onClick={() => run("fleet", "/api/modules/hermes-fleet/bridge/binding", { scope: "fleet" })}
-          >
-            {busy === "fleet" ? "…" : "Roll fleet-wide →"}
-          </button>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
 function Office({
   entry,
   onClose,
@@ -560,8 +468,6 @@ function Office({
   const summary = work?.summary || work?.reason || "";
   const bot = node.agentRef?.botUsername;
   const expertise = node.metadata?.expertise ?? [];
-  const binding = node.live?.planeBinding;
-  const repo = node.agentRef?.repo;
 
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -636,28 +542,6 @@ function Office({
           </div>
         ) : null}
 
-        {binding?.bindable ? (
-          <div className="hq-sheet-block">
-            <span className="hq-sheet-k">Plane bridge</span>
-            <div className="hq-ctl-row">
-              <span className="hq-sheet-v">
-                {binding.bound ? "Bound — reacts to its board" : "Not bound"}
-                {binding.identifier ? ` · ${binding.identifier}` : ""}
-              </span>
-              <button
-                type="button"
-                className={`hq-btn ${binding.bound ? "hq-btn-danger" : "hq-btn-primary"}`}
-                disabled={!!busy || !repo}
-                onClick={() =>
-                  run("bind", "/api/modules/hermes-fleet/bridge/binding", { repo, bound: !binding.bound })
-                }
-              >
-                {busy === "bind" ? "…" : binding.bound ? "Unbind" : "Bind"}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
         <div className="hq-sheet-block">
           <span className="hq-sheet-k">Services</span>
           {(["gateway", "consumer", "sentinel"] as const).map((svc) => (
@@ -691,7 +575,7 @@ function Office({
           )}
         </div>
 
-        {err ? <p className="hq-bridge-err">{err}</p> : null}
+        {err ? <p className="hq-err">{err}</p> : null}
 
         <button type="button" className="hq-dm" disabled={!bot} onClick={() => openDm(bot)}>
           {bot ? "Open DM →" : "No bot linked"}

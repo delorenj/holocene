@@ -60,7 +60,7 @@ async function relay(upstream: Response): Promise<Response> {
   });
 }
 
-// POST { path, body } — forwards a control action (bridge/agent service/binding).
+// POST { path, body } — forwards a control action (agent service).
 export async function POST(request: Request) {
   const auth = authorize(request);
   if (!auth.ok) return auth.response;

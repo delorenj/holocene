@@ -7,11 +7,9 @@ import { createEventCollector } from "./event-collector.js";
 import { registerEventRoutes } from "./event-routes.js";
 import {
   controlAgentUnit,
-  controlBridge,
   getAgentLogTail,
   getFleetSnapshot,
   restartGateways,
-  setBridgeBinding,
   syncTemplateDefaults
 } from "./fleet.js";
 import {
@@ -492,26 +490,6 @@ app.post<{ Params: { agentId: string; service: string; action: string } }>(
   async (req, reply) => {
     const { agentId, service, action } = req.params;
     const result = await controlAgentUnit(agentId, service, action);
-    if (!result.ok) return reply.status(400).send(result);
-    return result;
-  }
-);
-
-// Plane webhook bridge — start | stop | restart the single fleet-wide unit.
-app.post<{ Params: { action: string } }>(
-  "/api/modules/hermes-fleet/bridge/service/:action",
-  async (req, reply) => {
-    const result = await controlBridge(req.params.action);
-    if (!result.ok) return reply.status(400).send(result);
-    return result;
-  }
-);
-
-// Bind/unbind a PM to the bridge ({repo, bound}) or roll the fleet ({scope:'fleet'}).
-app.post<{ Body: { repo?: string; bound?: boolean; scope?: string } }>(
-  "/api/modules/hermes-fleet/bridge/binding",
-  async (req, reply) => {
-    const result = await setBridgeBinding(req.body ?? {});
     if (!result.ok) return reply.status(400).send(result);
     return result;
   }
