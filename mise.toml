@@ -38,6 +38,18 @@ run = "python3 '{{config_root}}/.mise/scripts/sync-skills.py' --scope project --
 description = "Provision every Skillex pack declared in .agents/skills.json"
 run = "python3 '{{config_root}}/.mise/scripts/provision-packs.py' --root '{{config_root}}'"
 
+[tasks."deploy"]
+description = "Build and redeploy everything: API (systemd holocene-api) then web (holocene-web container)"
+run = "'{{config_root}}/.mise/scripts/deploy.sh' all"
+
+[tasks."deploy:api"]
+description = "Build @holocene/api, restart holocene-api.service, wait for /health"
+run = "'{{config_root}}/.mise/scripts/deploy.sh' api"
+
+[tasks."deploy:web"]
+description = "Restart holocene-web (it rebuilds on start) and wait for its healthcheck"
+run = "'{{config_root}}/.mise/scripts/deploy.sh' web"
+
 # >>> mise-versioning >>>  (managed block — do not edit by hand; re-run init to update)
 [tasks."version"]
 description = "Print the current version (vX.Y.Z)"
