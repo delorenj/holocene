@@ -14,7 +14,7 @@
 
 import { type ErrorDetail, type ProjectionState, PROJECTION_STATES, isProjectionState, validateErrorDetail } from "./errors.js";
 import { type EvidenceRef, type ProjectionSource, validateEvidenceRef, validateProjectionSource } from "./evidence.js";
-import { CLOCK_SKEW_TOLERANCE_SECONDS, type Freshness, validateFreshness } from "./freshness.js";
+import { CLOCK_SKEW_TOLERANCE_SECONDS, type Freshness, stateForAge, validateFreshness } from "./freshness.js";
 import {
   type DeloHqSurface,
   DELOHQ_CONTRACT_REGISTRY,
@@ -162,6 +162,13 @@ export function validateProjectionEnvelope<T = unknown>(
             `envelope.freshness.age_seconds: ${freshness.age_seconds} disagrees with generated_at - observed_at (${impliedAge}s) by more than ${CLOCK_SKEW_TOLERANCE_SECONDS}s`
           );
         }
+        // The skew tolerance must not let a producer cross a state boundary.
+        const impliedState = stateForAge(impliedAge, freshness.max_age_seconds);
+        if (freshness.state !== impliedState) {
+          issues.push(
+            `envelope.freshness.state: "${freshness.state}" contradicts generated_at - observed_at (${impliedAge}s implies "${impliedState}")`
+          );
+        }
       }
     }
     for (const [i, at] of evidenceObservedAt) {
@@ -217,7 +224,9 @@ export function validateProjectionEnvelope<T = unknown>(
       } catch (err) {
         result = { ok: false, issues: [`validateData threw: ${err instanceof Error ? err.message : String(err)}`] };
       }
-      if (result.ok) {
+      if (result.ok && (result.value === null || result.value === undefined)) {
+        issues.push(`envelope.data: validateData returned no value for ${state}`);
+      } else if (result.ok) {
         data = { value: result.value };
       } else {
         issues.push(...prefixIssues(result.issues, "envelope.data"));

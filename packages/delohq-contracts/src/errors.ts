@@ -52,8 +52,8 @@ export function validateErrorDetail(value: unknown, path = "error"): ValidationR
   if (hasOwn(value, "kind") && !isErrorKind(value.kind)) {
     issues.push(`${path}.kind: expected one of ${ERROR_KINDS.join(", ")}, got ${JSON.stringify(value.kind)}`);
   }
-  if (hasOwn(value, "message") && !isNonEmptyString(value.message)) {
-    issues.push(`${path}.message: expected a non-empty string`);
+  if (hasOwn(value, "message") && !(isNonEmptyString(value.message) && value.message.trim().length > 0)) {
+    issues.push(`${path}.message: expected a non-empty, non-blank string`);
   }
   if (hasOwn(value, "retryable") && typeof value.retryable !== "boolean") {
     issues.push(`${path}.retryable: expected a boolean`);

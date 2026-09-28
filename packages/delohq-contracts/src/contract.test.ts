@@ -445,3 +445,97 @@ test("ContractViolationError keeps a frozen copy of its issues", () => {
   assert.deepEqual([...err.issues], ["a"]);
   assert.ok(Object.isFrozen(err.issues));
 });
+
+// ---- review amendments (loop 2) ---------------------------------------------
+
+test("tolerance cannot cross a freshness boundary (170s old reported as 115s fresh)", () => {
+  const seen = new Date(Date.parse(now) - 170 * 1000).toISOString();
+  const env = {
+    ...healthy(),
+    observed_at: seen,
+    evidence: [{ ...evidence, observed_at: seen }],
+    freshness: { state: "fresh", max_age_seconds: 120, age_seconds: 115 }
+  };
+  assertIssue(validateProjectionEnvelope(env), /envelope\.freshness\.state: "fresh" contradicts generated_at - observed_at \(170s implies "stale"\)/);
+});
+
+for (const empty of [null, undefined]) {
+  test(`validateData returning ${String(empty)} for ok/degraded is rejected`, () => {
+    const validateData = (): ValidationResult<unknown> => ({ ok: true, value: empty });
+    assertIssue(validateProjectionEnvelope(healthy(), validateData), /envelope\.data: validateData returned no value for ok/);
+    assertIssue(validateProjectionEnvelope(degraded(), validateData), /envelope\.data: validateData returned no value for degraded/);
+  });
+}
+
+const withEvidence = (patch: Record<string, unknown>, omit?: string) => {
+  const item: Record<string, unknown> = { ...evidence, ...patch };
+  if (omit) delete item[omit];
+  return { ...healthy(), evidence: [item] };
+};
+
+const NEGATIVE_CASES: Array<[string, Record<string, unknown>, RegExp]> = [
+  ["unknown error.kind", { ...degraded(), error: { kind: "oops", message: "x" } }, /^envelope\.error\.kind: expected one of/],
+  ["empty error.message", { ...degraded(), error: { kind: "internal", message: "" } }, /^envelope\.error\.message: /],
+  ["blank error.message", { ...degraded(), error: { kind: "internal", message: "  \t\n" } }, /^envelope\.error\.message: /],
+  ['retryable: "yes"', { ...degraded(), error: { kind: "internal", message: "x", retryable: "yes" } }, /^envelope\.error\.retryable: expected a boolean/],
+  ['source.system: "jira"', { ...healthy(), source: { system: "jira", adapter: "org.ts" } }, /^envelope\.source\.system: expected one of/],
+  ["empty source.adapter", { ...healthy(), source: { system: "flume", adapter: "" } }, /^envelope\.source\.adapter: /],
+  ["evidence missing source", withEvidence({}, "source"), /^envelope\.evidence\[0\]: missing required field "source"/],
+  ['evidence_ref: ""', withEvidence({ evidence_ref: "" }), /^envelope\.evidence\[0\]\.evidence_ref: /],
+  ["non-string summary", withEvidence({ summary: 5 }), /^envelope\.evidence\[0\]\.summary: expected a string/],
+  ["extra key on freshness", { ...healthy(), freshness: { ...classifyFreshness(observed, now, policy), budget: 1 } }, /^envelope\.freshness: unknown field "budget"/],
+  ["extra key on error", { ...degraded(), error: { kind: "internal", message: "x", code: 7 } }, /^envelope\.error: unknown field "code"/],
+  ["extra key on evidence[i]", withEvidence({ label: "Momo" }), /^envelope\.evidence\[0\]: unknown field "label"/],
+  ["extra key on source", { ...healthy(), source: { ...source, host: "big-chungus" } }, /^envelope\.source: unknown field "host"/],
+  ["degraded with unknown freshness", { ...degraded(), freshness: unknownFreshness(policy) }, /^envelope\.freshness\.state: degraded requires a known freshness/]
+];
+
+for (const [name, env, pattern] of NEGATIVE_CASES) {
+  test(`rejects ${name}`, () => assertIssue(validateProjectionEnvelope(env), pattern));
+}
+
+test("every constructor rejects an unregistered surface", () => {
+  const freshness = classifyFreshness(observed, now, policy);
+  const base = { surface: "posture" as unknown as "company", source, generated_at: now };
+  const failed = { ...base, freshness: unknownFreshness(policy), error: { kind: "internal", message: "x" } } as const;
+  const cases: Array<[string, () => unknown]> = [
+    ["ok", () => okProjection({ ...base, observed_at: observed, freshness, evidence: [evidence], data: {} })],
+    ["degraded", () => degradedProjection({ ...base, observed_at: observed, freshness, evidence: [evidence], data: {}, error: { kind: "internal", message: "x" } })],
+    ["error", () => errorProjection(failed)],
+    ["unknown", () => unknownProjection(failed)]
+  ];
+  for (const [name, build] of cases) {
+    assert.throws(build, (err: unknown) => {
+      assert.ok(err instanceof ContractViolationError, name);
+      assert.ok(err.issues.some((i) => /^envelope\.surface: unregistered surface "posture"/.test(i)), `${name}: ${err.issues.join("; ")}`);
+      return true;
+    });
+  }
+});
+
+test("error projection with observed_at, stale freshness, and evidence validates", () => {
+  const seen = new Date(Date.parse(now) - 180 * 1000).toISOString();
+  const env = {
+    ...healthy(),
+    state: "error",
+    observed_at: seen,
+    freshness: classifyFreshness(seen, now, policy),
+    evidence: [{ ...evidence, observed_at: seen }],
+    error: { kind: "source_timeout", message: "flume slow; last snapshot attached", retryable: true },
+    data: null
+  };
+  assert.equal(env.freshness.state, "stale");
+  const result = validateProjectionEnvelope(env);
+  assert.equal(result.ok, true, result.ok ? "" : result.issues.join("\n"));
+});
+
+test("a valid evidence subject and summary are preserved", () => {
+  const item = { ...evidence, subject: { kind: "employee", id: " Agent-X/01 " }, summary: "snapshot row for Momo" };
+  const result = validateEvidenceRef(JSON.parse(JSON.stringify(item)), "evidence");
+  assert.equal(result.ok, true, result.ok ? "" : result.issues.join("\n"));
+  if (result.ok) {
+    assert.deepEqual(result.value.subject, { kind: "employee", id: " Agent-X/01 " });
+    assert.equal(result.value.summary, "snapshot row for Momo");
+  }
+  assert.equal(validateProjectionEnvelope({ ...healthy(), evidence: [item] }).ok, true);
+});

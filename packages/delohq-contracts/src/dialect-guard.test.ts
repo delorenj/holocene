@@ -32,7 +32,9 @@ const HQ_WEB_DIR = join(holoceneRoot, "apps", "web", "app", "hq");
 const API_SRC_DIR = join(holoceneRoot, "apps", "api", "src");
 
 const SOURCE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
-const HQ_MENTION = /\b(delo)?hq\b/i;
+// (delo)?hq, any case, not followed by a lowercase letter: matches `hq/`,
+// `HQ_`, `deloHqProjection`, `hqClient`; not `hqs`-style words.
+const HQ_MENTION = /(?:[Dd][Ee][Ll][Oo])?[Hh][Qq](?![a-z])/;
 
 export const DIALECT_REASONS = [
   "schema_version",
@@ -66,9 +68,16 @@ interface Lexed {
   shape: string;
 }
 
-const REGEX_PRECEDER = /[(,=:[!&|?{};+\-*%<>~^]$|(?:^|[^\w$])(?:return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await)$/;
+// No "<": in JSX, `</p>` must not start a regex literal.
+const REGEX_PRECEDER = /[(,=:[!&|?{};+\-*%>~^]$|(?:^|[^\w$])(?:return|typeof|case|in|of|delete|void|throw|new|else|do|yield|await)$/;
 
-export function lex(source: string): Lexed {
+export interface LexOptions {
+  // .tsx/.jsx: an apostrophe between two word characters is JSX text
+  // (`don't`), not the start of a string.
+  jsx?: boolean;
+}
+
+export function lex(source: string, options: LexOptions = {}): Lexed {
   let code = "";
   let shape = "";
   let i = 0;
@@ -133,6 +142,12 @@ export function lex(source: string): Lexed {
       shape += " ";
       continue;
     }
+    if (c === "'" && options.jsx && /\w/.test(source[i - 1] ?? "") && /\w/.test(next ?? "")) {
+      code += c;
+      shape += c;
+      i++;
+      continue;
+    }
     if (c === '"' || c === "'") {
       const end = skipQuoted(i, c);
       emitString(source.slice(i, end), source.slice(i + 1, end - 1));
@@ -177,6 +192,8 @@ export interface BraceLiteral {
   // Byte offset of "{" within the shape text.
   start: number;
   keys: Map<string, string>;
+  // True when the literal is the body of an `interface` or a `type X =`.
+  typeLiteral: boolean;
 }
 
 // Splits a brace body on top-level `,` / `;` and returns each segment's key
@@ -210,6 +227,14 @@ function topLevelKeys(body: string): Map<string, string> {
   return keys;
 }
 
+const INTERFACE_HEAD = /\binterface\s+[\w$]+(?:\s*<[^{]*>)?(?:\s+extends\s+[^{]+)?\s*$/;
+const TYPE_ALIAS_HEAD = /\btype\s+[\w$]+(?:\s*<[^=]*>)?\s*=[^;={}]*$/;
+
+function isTypeLiteralContext(before: string): boolean {
+  const tail = before.slice(-300);
+  return INTERFACE_HEAD.test(tail) || TYPE_ALIAS_HEAD.test(tail);
+}
+
 export function braceLiterals(shape: string): BraceLiteral[] {
   const out: BraceLiteral[] = [];
   const stack: number[] = [];
@@ -218,7 +243,7 @@ export function braceLiterals(shape: string): BraceLiteral[] {
     else if (shape[i] === "}") {
       const start = stack.pop();
       if (start === undefined) continue;
-      out.push({ start, keys: topLevelKeys(shape.slice(start + 1, i)) });
+      out.push({ start, keys: topLevelKeys(shape.slice(start + 1, i)), typeLiteral: isTypeLiteralContext(shape.slice(0, start)) });
     }
   }
   return out.sort((a, b) => a.start - b.start);
@@ -248,13 +273,14 @@ export interface DialectViolation {
   detail: string;
 }
 
-export interface DetectOptions {
+export interface DetectOptions extends LexOptions {
   // Web /hq files may not take browser payload types from other packages.
   browserSurface?: boolean;
 }
 
 export function findDialectViolations(content: string, options: DetectOptions = {}): DialectViolation[] {
-  const { code, shape } = lex(content);
+  const { code, shape } = lex(content, options);
+  const literals = braceLiterals(shape);
   const found: DialectViolation[] = [];
   if (/\bschema_version\b/.test(shape)) {
     found.push({ reason: "schema_version", detail: "writes schema_version (constructors stamp it)" });
@@ -264,10 +290,16 @@ export function findDialectViolations(content: string, options: DetectOptions = 
   if (/\bgeneratedAt\b/.test(shape) && /\bobservedAt\b/.test(shape)) {
     found.push({ reason: "camel-envelope-fields", detail: "declares generatedAt + observedAt" });
   }
-  if (!IMPORTS_CONTRACTS.test(code) && /\bgenerated_at\b/.test(shape) && /\bobserved_at\b/.test(shape)) {
+  // A local type carrying both fields is a local envelope whatever the file
+  // imports; an object literal (a constructor argument) is fine when the
+  // contract is imported.
+  const localType = literals.find((l) => l.typeLiteral && l.keys.has("generated_at") && l.keys.has("observed_at"));
+  if (localType) {
+    found.push({ reason: "snake-envelope-fields", detail: "declares a local type with generated_at + observed_at" });
+  } else if (!IMPORTS_CONTRACTS.test(code) && /\bgenerated_at\b/.test(shape) && /\bobserved_at\b/.test(shape)) {
     found.push({ reason: "snake-envelope-fields", detail: "declares generated_at + observed_at without importing the contract" });
   }
-  const legacy = braceLiterals(shape).filter((literal) => isLegacyOkLiteral(literal.keys));
+  const legacy = literals.filter((literal) => isLegacyOkLiteral(literal.keys));
   if (legacy.length > 0) {
     const shapes = [...new Set(legacy.map((l) => `{ ${[...l.keys.keys()].join(", ")} }`))];
     found.push({ reason: "legacy-ok-dialect", detail: `legacy { ok, error|status } literal: ${shapes.join(" | ")}` });
@@ -312,10 +344,17 @@ function toRel(file: string): string {
   return relative(holoceneRoot, file).split(sep).join("/");
 }
 
+// Pure: is this apps/api/src file (path relative to apps/api/src) DeloHQ code?
+export function isGuardedApiFile(relPath: string, content: string): boolean {
+  return HQ_MENTION.test(relPath) || HQ_MENTION.test(content) || IMPORTS_CONTRACTS.test(content);
+}
+
+const JSX_FILE = /\.(tsx|jsx)$/;
+
 function guardedFiles(): GuardedFile[] {
   const web = walk(HQ_WEB_DIR).map((path) => ({ path, rel: toRel(path), browserSurface: true }));
   const api = walk(API_SRC_DIR)
-    .filter((file) => HQ_MENTION.test(relative(API_SRC_DIR, file)) || HQ_MENTION.test(readFileSync(file, "utf8")))
+    .filter((file) => isGuardedApiFile(relative(API_SRC_DIR, file).split(sep).join("/"), readFileSync(file, "utf8")))
     .map((path) => ({ path, rel: toRel(path), browserSurface: false }));
   return [...web, ...api];
 }
@@ -377,6 +416,42 @@ test("detector ignores plain guards, comments, strings, and unrelated shapes", (
   assert.deepEqual(reasonsOf(`import type { OrgTree } from "@holocene/org-model";`, {}), []);
 });
 
+test("JSX text does not derail the lexer", () => {
+  const jsx = { jsx: true };
+  const cases = [
+    `return <div>don't panic</div>; const r = { ok: false, error };`,
+    `const el = <p>it's fine</p>; Response.json({ ok: false, error: "x" });`,
+    `const el = <span>a</span>; const r = { ok: false, error };`
+  ];
+  for (const source of cases) {
+    assert.ok(reasonsOf(source, jsx).includes("legacy-ok-dialect"), source);
+  }
+  const { shape } = lex(`return <div>don't panic</div>; const r = { ok: false, error };`, jsx);
+  assert.ok(shape.includes("{ ok: false, error }"), shape);
+  // Outside JSX files an apostrophe still opens a string.
+  assert.deepEqual(reasonsOf(`const s = 'x { ok: false, error } y';`, {}), []);
+});
+
+test("a local snake_case envelope type is flagged even when the package is imported", () => {
+  const imports = `import { okProjection } from "@holocene/delohq-contracts";\n`;
+  for (const decl of [
+    `interface CompanySnapshot { generated_at: string; observed_at: string }`,
+    `export interface Snap<T> extends Base { readonly generated_at: string; observed_at: string | null; data: T }`,
+    `type Snap = { generated_at: string; observed_at: string };`
+  ]) {
+    assert.ok(reasonsOf(`${imports}${decl}`, {}).includes("snake-envelope-fields"), decl);
+  }
+  assert.deepEqual(reasonsOf(`${imports}const e = okProjection({ generated_at: now, observed_at: seen });`, {}), []);
+});
+
+test("isGuardedApiFile selects DeloHQ api code only", () => {
+  assert.equal(isGuardedApiFile("hq/company.ts", "export const x = 1;"), true);
+  assert.equal(isGuardedApiFile("company.ts", `import { okProjection } from "@holocene/delohq-contracts";`), true);
+  assert.equal(isGuardedApiFile("company.ts", "export function deloHqProjection() {}"), true);
+  assert.equal(isGuardedApiFile("company.ts", "const hqClient = make();"), true);
+  assert.equal(isGuardedApiFile("hook-hub.ts", "export const schema_version = 1; // hook hub receipts"), false);
+});
+
 // ---- the tree ----------------------------------------------------------------
 
 test("the guard actually sees the /hq tree and only the /hq tree", () => {
@@ -400,7 +475,10 @@ test("every allowlist entry names a scanned file and known reasons", () => {
 test("no /hq file defines a local dialect beyond the shrink-only allowlist", () => {
   const failures: string[] = [];
   for (const file of guardedFiles()) {
-    const violations = findDialectViolations(readFileSync(file.path, "utf8"), { browserSurface: file.browserSurface });
+    const violations = findDialectViolations(readFileSync(file.path, "utf8"), {
+      browserSurface: file.browserSurface,
+      jsx: JSX_FILE.test(file.path)
+    });
     const allowed = LEGACY_DIALECT_ALLOWLIST[file.rel];
     if (!allowed) {
       for (const v of violations) failures.push(`${file.rel}: ${v.reason} — ${v.detail} (import from @holocene/delohq-contracts instead)`);
@@ -457,22 +535,26 @@ function assertRejectedAsLegacy(name: string, fixture: unknown): void {
   }
 }
 
-test("legacy payloads read from the real /hq routes are rejected", () => {
-  let count = 0;
-  for (const route of ["action", "org-tree", "snapshot"]) {
-    const file = join(HQ_WEB_DIR, "api", route, "route.ts");
-    const fixtures = routeFixtures(file);
-    assert.ok(fixtures.length > 0, `${route}: no Response.json literals found`);
-    for (const fixture of fixtures) {
-      if (!Object.prototype.hasOwnProperty.call(fixture, "ok")) continue;
-      count++;
-      assert.equal(fixture.ok, false, `${route}: ${JSON.stringify(fixture)}`);
-      assertRejectedAsLegacy(`${route} ${JSON.stringify(fixture)}`, fixture);
-      const issues = validateProjectionEnvelope(fixture);
-      if (!issues.ok) assert.ok(issues.issues.some((i) => /unknown field "ok"/.test(i)));
+// Only routes still allowlisted for the legacy dialect are read. Once a route
+// is migrated and its entry removed, it simply drops out of this test.
+const LEGACY_ROUTES = Object.entries(LEGACY_DIALECT_ALLOWLIST)
+  .filter(([file, reasons]) => /^apps\/web\/app\/hq\/api\/.+\/route\.ts$/.test(file) && reasons.includes("legacy-ok-dialect"))
+  .map(([file]) => file);
+
+test("legacy payloads read from the allowlisted /hq routes are rejected", () => {
+  for (const rel of LEGACY_ROUTES) {
+    const legacy = routeFixtures(join(holoceneRoot, rel)).filter((f) => Object.prototype.hasOwnProperty.call(f, "ok"));
+    assert.ok(
+      legacy.length > 0,
+      `${rel}: no legacy Response.json({ ok, ... }) body left — if the route is migrated, remove its LEGACY_DIALECT_ALLOWLIST entry`
+    );
+    for (const fixture of legacy) {
+      const name = `${rel} ${JSON.stringify(fixture)}`;
+      assertRejectedAsLegacy(name, fixture);
+      const result = validateProjectionEnvelope(fixture);
+      if (!result.ok) assert.ok(result.issues.some((i) => /unknown field "ok"/.test(i)), name);
     }
   }
-  assert.ok(count >= 5, `expected the routes' legacy failure bodies, found ${count}`);
 });
 
 // Hand-copied: the raw org-tree body the org-tree route relays verbatim
