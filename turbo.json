@@ -19,6 +19,11 @@
       "dependsOn": ["^test"],
       "outputs": ["coverage/**"]
     },
+    "@holocene/delohq-contracts#test": {
+      "dependsOn": ["^test"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/web/app/hq/**", "$TURBO_ROOT$/apps/api/src/**"],
+      "outputs": ["coverage/**"]
+    },
     "clean": {
       "cache": false
     }

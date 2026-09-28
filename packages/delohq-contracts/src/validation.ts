@@ -11,6 +11,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Own-property presence. Never use `in`: an inherited key (a polluted
+// prototype, a class instance) must not satisfy a required field.
+export function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
@@ -36,7 +42,7 @@ export function checkKeys(
 ): string[] {
   const issues: string[] = [];
   for (const key of required) {
-    if (!(key in value)) issues.push(`${path}: missing required field "${key}"`);
+    if (!hasOwn(value, key)) issues.push(`${path}: missing required field "${key}"`);
   }
   const allowed = new Set([...required, ...optional]);
   for (const key of Object.keys(value)) {

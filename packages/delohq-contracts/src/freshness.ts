@@ -2,7 +2,7 @@
 // max_age_seconds is a caller-supplied policy owned by the Holocene API.
 // Classification is pure and takes `now` as a parameter.
 
-import { type ValidationResult, checkKeys, describe, isIsoUtc, isRecord } from "./validation.js";
+import { type ValidationResult, checkKeys, describe, hasOwn, isIsoUtc, isRecord } from "./validation.js";
 
 export const FRESHNESS_STATES = ["fresh", "stale", "expired", "unknown"] as const;
 
@@ -48,6 +48,9 @@ export function unknownFreshness(policy: FreshnessPolicy): Freshness {
 // and yields "unknown".
 export function classifyFreshness(observedAt: string | null | undefined, now: string | Date, policy: FreshnessPolicy): Freshness {
   assertPolicy(policy);
+  if (typeof now === "string" && !isIsoUtc(now)) {
+    throw new RangeError("classifyFreshness: now must be an ISO-8601 UTC timestamp ending in Z");
+  }
   const nowMs = typeof now === "string" ? Date.parse(now) : now.getTime();
   if (Number.isNaN(nowMs)) throw new RangeError("classifyFreshness: now is not a valid time");
   if (observedAt == null || !isIsoUtc(observedAt)) return unknownFreshness(policy);
@@ -66,7 +69,7 @@ function assertPolicy(policy: FreshnessPolicy): void {
 export function validateFreshnessPolicy(value: unknown): ValidationResult<FreshnessPolicy> {
   if (!isRecord(value)) return { ok: false, issues: [`policy: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, "policy", ["max_age_seconds"]);
-  if ("max_age_seconds" in value && !isValidMaxAge(value.max_age_seconds)) {
+  if (hasOwn(value, "max_age_seconds") && !isValidMaxAge(value.max_age_seconds)) {
     issues.push("policy.max_age_seconds: expected a positive finite number");
   }
   if (issues.length > 0) return { ok: false, issues };
@@ -77,13 +80,13 @@ export function validateFreshness(value: unknown): ValidationResult<Freshness> {
   if (!isRecord(value)) return { ok: false, issues: [`freshness: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, "freshness", ["state", "max_age_seconds", "age_seconds"]);
   const { state, max_age_seconds: maxAge, age_seconds: age } = value;
-  if ("state" in value && !isFreshnessState(state)) {
+  if (hasOwn(value, "state") && !isFreshnessState(state)) {
     issues.push(`freshness.state: expected one of ${FRESHNESS_STATES.join(", ")}, got ${JSON.stringify(state)}`);
   }
-  if ("max_age_seconds" in value && !isValidMaxAge(maxAge)) {
+  if (hasOwn(value, "max_age_seconds") && !isValidMaxAge(maxAge)) {
     issues.push("freshness.max_age_seconds: expected a positive finite number");
   }
-  if ("age_seconds" in value && age !== null && !(typeof age === "number" && Number.isFinite(age) && age >= 0)) {
+  if (hasOwn(value, "age_seconds") && age !== null && !(typeof age === "number" && Number.isFinite(age) && age >= 0)) {
     issues.push("freshness.age_seconds: expected null or a non-negative finite number");
   }
   if (issues.length > 0) return { ok: false, issues };

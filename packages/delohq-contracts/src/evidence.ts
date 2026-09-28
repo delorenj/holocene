@@ -6,10 +6,10 @@ import {
   type ValidationResult,
   checkKeys,
   describe,
+  hasOwn,
   isIsoUtc,
   isNonEmptyString,
-  isRecord,
-  prefixIssues
+  isRecord
 } from "./validation.js";
 
 export const CANONICAL_SYSTEMS = [
@@ -47,10 +47,10 @@ export function isCanonicalSystem(value: unknown): value is CanonicalSystem {
 export function validateProjectionSource(value: unknown, path = "source"): ValidationResult<ProjectionSource> {
   if (!isRecord(value)) return { ok: false, issues: [`${path}: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, path, ["system", "adapter"]);
-  if ("system" in value && !isCanonicalSystem(value.system)) {
+  if (hasOwn(value, "system") && !isCanonicalSystem(value.system)) {
     issues.push(`${path}.system: expected one of ${CANONICAL_SYSTEMS.join(", ")}, got ${JSON.stringify(value.system)}`);
   }
-  if ("adapter" in value && !isNonEmptyString(value.adapter)) {
+  if (hasOwn(value, "adapter") && !isNonEmptyString(value.adapter)) {
     issues.push(`${path}.adapter: expected a non-empty string`);
   }
   if (issues.length > 0) return { ok: false, issues };
@@ -60,25 +60,25 @@ export function validateProjectionSource(value: unknown, path = "source"): Valid
 export function validateEvidenceRef(value: unknown, path = "evidence"): ValidationResult<EvidenceRef> {
   if (!isRecord(value)) return { ok: false, issues: [`${path}: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, path, ["evidence_ref", "source", "observed_at"], ["subject", "summary"]);
-  if ("evidence_ref" in value && !isNonEmptyString(value.evidence_ref)) {
+  if (hasOwn(value, "evidence_ref") && !isNonEmptyString(value.evidence_ref)) {
     issues.push(`${path}.evidence_ref: expected a non-empty opaque string`);
   }
   let source: ProjectionSource | undefined;
-  if ("source" in value) {
+  if (hasOwn(value, "source")) {
     const result = validateProjectionSource(value.source, `${path}.source`);
     if (result.ok) source = result.value;
     else issues.push(...result.issues);
   }
-  if ("observed_at" in value && !isIsoUtc(value.observed_at)) {
+  if (hasOwn(value, "observed_at") && !isIsoUtc(value.observed_at)) {
     issues.push(`${path}.observed_at: expected an ISO-8601 UTC timestamp ending in Z`);
   }
   let subject: CanonicalRef | undefined;
-  if ("subject" in value) {
-    const result = validateCanonicalRef(value.subject);
+  if (hasOwn(value, "subject")) {
+    const result = validateCanonicalRef(value.subject, undefined, `${path}.subject`);
     if (result.ok) subject = result.value;
-    else issues.push(...prefixIssues(result.issues, `${path}.subject`));
+    else issues.push(...result.issues);
   }
-  if ("summary" in value && typeof value.summary !== "string") {
+  if (hasOwn(value, "summary") && typeof value.summary !== "string") {
     issues.push(`${path}.summary: expected a string`);
   }
   if (issues.length > 0 || !source) return { ok: false, issues };
@@ -89,7 +89,7 @@ export function validateEvidenceRef(value: unknown, path = "evidence"): Validati
       source,
       observed_at: value.observed_at as string,
       ...(subject ? { subject } : {}),
-      ...("summary" in value ? { summary: value.summary as string } : {})
+      ...(hasOwn(value, "summary") ? { summary: value.summary as string } : {})
     }
   };
 }

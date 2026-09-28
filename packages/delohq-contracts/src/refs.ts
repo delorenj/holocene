@@ -3,7 +3,7 @@
 // case-folding). Display names never go in a ref; pair one with a ref through
 // Labeled<R> instead.
 
-import { type ValidationResult, checkKeys, describe, isNonEmptyString, isRecord } from "./validation.js";
+import { type ValidationResult, checkKeys, describe, hasOwn, isNonEmptyString, isRecord } from "./validation.js";
 
 export const CANONICAL_REF_KINDS = [
   "employee",
@@ -41,21 +41,24 @@ export function isCanonicalRefKind(value: unknown): value is CanonicalRefKind {
   return typeof value === "string" && (CANONICAL_REF_KINDS as readonly string[]).includes(value);
 }
 
-export function validateCanonicalRef(value: unknown): ValidationResult<CanonicalRef>;
+// `path` names where the ref sits, so a nested failure reads
+// `envelope.evidence[0].subject.kind` rather than `...subject.ref.kind`.
+export function validateCanonicalRef(value: unknown, expectedKind?: undefined, path?: string): ValidationResult<CanonicalRef>;
 export function validateCanonicalRef<K extends CanonicalRefKind>(
   value: unknown,
-  expectedKind: K
+  expectedKind: K,
+  path?: string
 ): ValidationResult<CanonicalRef<K>>;
-export function validateCanonicalRef(value: unknown, expectedKind?: CanonicalRefKind): ValidationResult<CanonicalRef> {
-  if (!isRecord(value)) return { ok: false, issues: [`ref: expected object, got ${describe(value)}`] };
-  const issues = checkKeys(value, "ref", ["kind", "id"]);
-  if ("kind" in value && !isCanonicalRefKind(value.kind)) {
-    issues.push(`ref.kind: expected one of ${CANONICAL_REF_KINDS.join(", ")}, got ${JSON.stringify(value.kind)}`);
-  } else if (expectedKind !== undefined && "kind" in value && value.kind !== expectedKind) {
-    issues.push(`ref.kind: expected "${expectedKind}", got "${String(value.kind)}"`);
+export function validateCanonicalRef(value: unknown, expectedKind?: CanonicalRefKind, path = "ref"): ValidationResult<CanonicalRef> {
+  if (!isRecord(value)) return { ok: false, issues: [`${path}: expected object, got ${describe(value)}`] };
+  const issues = checkKeys(value, path, ["kind", "id"]);
+  if (hasOwn(value, "kind") && !isCanonicalRefKind(value.kind)) {
+    issues.push(`${path}.kind: expected one of ${CANONICAL_REF_KINDS.join(", ")}, got ${JSON.stringify(value.kind)}`);
+  } else if (expectedKind !== undefined && hasOwn(value, "kind") && value.kind !== expectedKind) {
+    issues.push(`${path}.kind: expected "${expectedKind}", got "${String(value.kind)}"`);
   }
-  if ("id" in value && !isNonEmptyString(value.id)) {
-    issues.push("ref.id: expected a non-empty opaque string");
+  if (hasOwn(value, "id") && !isNonEmptyString(value.id)) {
+    issues.push(`${path}.id: expected a non-empty opaque string`);
   }
   if (issues.length > 0) return { ok: false, issues };
   return { ok: true, value: { kind: value.kind as CanonicalRefKind, id: value.id as string } };

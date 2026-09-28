@@ -3,7 +3,7 @@
 // "the data contradicts itself" (NFR-7).
 
 import { type ProjectionSource, validateProjectionSource } from "./evidence.js";
-import { type ValidationResult, checkKeys, describe, isNonEmptyString, isRecord } from "./validation.js";
+import { type ValidationResult, checkKeys, describe, hasOwn, isNonEmptyString, isRecord } from "./validation.js";
 
 export const PROJECTION_STATES = ["ok", "degraded", "unknown", "error"] as const;
 
@@ -49,17 +49,17 @@ export function isAuthErrorKind(value: unknown): value is AuthErrorKind {
 export function validateErrorDetail(value: unknown, path = "error"): ValidationResult<ErrorDetail> {
   if (!isRecord(value)) return { ok: false, issues: [`${path}: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, path, ["kind", "message"], ["retryable", "source"]);
-  if ("kind" in value && !isErrorKind(value.kind)) {
+  if (hasOwn(value, "kind") && !isErrorKind(value.kind)) {
     issues.push(`${path}.kind: expected one of ${ERROR_KINDS.join(", ")}, got ${JSON.stringify(value.kind)}`);
   }
-  if ("message" in value && !isNonEmptyString(value.message)) {
+  if (hasOwn(value, "message") && !isNonEmptyString(value.message)) {
     issues.push(`${path}.message: expected a non-empty string`);
   }
-  if ("retryable" in value && typeof value.retryable !== "boolean") {
+  if (hasOwn(value, "retryable") && typeof value.retryable !== "boolean") {
     issues.push(`${path}.retryable: expected a boolean`);
   }
   let source: ProjectionSource | undefined;
-  if ("source" in value) {
+  if (hasOwn(value, "source")) {
     const result = validateProjectionSource(value.source, `${path}.source`);
     if (result.ok) source = result.value;
     else issues.push(...result.issues);
@@ -70,7 +70,7 @@ export function validateErrorDetail(value: unknown, path = "error"): ValidationR
     value: {
       kind: value.kind as ErrorKind,
       message: value.message as string,
-      ...("retryable" in value ? { retryable: value.retryable as boolean } : {}),
+      ...(hasOwn(value, "retryable") ? { retryable: value.retryable as boolean } : {}),
       ...(source ? { source } : {})
     }
   };

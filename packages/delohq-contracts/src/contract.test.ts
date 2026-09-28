@@ -295,3 +295,153 @@ test("constructors refuse incoherent input", () => {
     ContractViolationError
   );
 });
+
+// ---- review amendments (loop 1) ---------------------------------------------
+
+function degraded(): Record<string, unknown> {
+  return { ...healthy(), state: "degraded", error: { kind: "source_timeout", message: "hermes runtime slow" } };
+}
+
+test("degraded projection validates", () => {
+  const result = validateProjectionEnvelope(degraded());
+  assert.equal(result.ok, true, result.ok ? "" : result.issues.join("\n"));
+});
+
+test("degraded without error, evidence, or data is rejected", () => {
+  assertIssue(validateProjectionEnvelope({ ...degraded(), error: null }), /degraded requires error detail/);
+  assertIssue(validateProjectionEnvelope({ ...degraded(), evidence: [] }), /degraded requires evidence/);
+  assertIssue(validateProjectionEnvelope({ ...degraded(), data: null }), /degraded requires non-null data/);
+});
+
+test("ok with an observed_at but unknown freshness is rejected", () => {
+  const env = { ...healthy(), freshness: unknownFreshness(policy) };
+  const issues = issuesOf(validateProjectionEnvelope(env));
+  assert.deepEqual(issues, ["envelope.freshness.state: ok requires a known freshness"]);
+});
+
+for (const state of ["error", "unknown"]) {
+  test(`${state} with non-null data is rejected`, () => {
+    const env = { ...healthy(), state, error: { kind: "internal", message: "x" }, freshness: unknownFreshness(policy) };
+    assertIssue(validateProjectionEnvelope(env), new RegExp(`${state} must have data null`));
+  });
+}
+
+for (const version of ["1.0", "v1.0.0", "01.0.0", "1.0.0-rc.1", ""]) {
+  test(`non-semver schema_version ${JSON.stringify(version)} is rejected`, () => {
+    assertIssue(validateProjectionEnvelope({ ...healthy(), schema_version: version }), /unsupported schema_version/);
+  });
+}
+
+test("validateData does not run for error or unknown projections", () => {
+  let calls = 0;
+  const validateData = (d: unknown): ValidationResult<unknown> => {
+    calls++;
+    return { ok: true, value: d };
+  };
+  const failed = { ...healthy(), error: { kind: "internal", message: "x" }, data: null, observed_at: null, evidence: [], freshness: unknownFreshness(policy) };
+  assert.equal(validateProjectionEnvelope({ ...failed, state: "error" }, validateData).ok, true);
+  assert.equal(validateProjectionEnvelope({ ...failed, state: "unknown" }, validateData).ok, true);
+  assert.equal(calls, 0);
+  assert.equal(validateProjectionEnvelope(healthy(), validateData).ok, true);
+  assert.equal(calls, 1);
+});
+
+test("a throwing validateData is reported as an issue, not thrown", () => {
+  const validateData = (): ValidationResult<unknown> => {
+    throw new Error("boom");
+  };
+  let result: ValidationResult<unknown> | undefined;
+  assert.doesNotThrow(() => {
+    result = validateProjectionEnvelope(healthy(), validateData);
+  });
+  assertIssue(result!, /^envelope\.data\.validateData threw: boom/);
+});
+
+test("validateProjectionEnvelope returns the data validateData produced", () => {
+  const validateData = (d: unknown): ValidationResult<{ count: number }> => ({
+    ok: true,
+    value: { count: ((d as { departments: unknown[] }).departments ?? []).length }
+  });
+  const result = validateProjectionEnvelope(healthy(), validateData);
+  assert.equal(result.ok, true);
+  if (result.ok && contracts.hasProjectionData(result.value)) assert.deepEqual(result.value.data, { count: 0 });
+});
+
+test("inherited keys do not satisfy required fields", () => {
+  const proto = healthy();
+  const env = Object.create(proto) as Record<string, unknown>;
+  assertIssue(validateProjectionEnvelope(env), /missing required field "schema_version"/);
+  const ref = Object.create({ kind: "employee", id: "momo" });
+  assert.equal(validateCanonicalRef(ref).ok, false);
+});
+
+test("nested ref issues carry the full path", () => {
+  const env = { ...healthy(), evidence: [{ ...evidence, subject: { kind: "person", id: "x" } }] };
+  const issues = issuesOf(validateProjectionEnvelope(env));
+  assert.ok(issues.some((i) => i.startsWith("envelope.evidence[0].subject.kind:")), issues.join("\n"));
+  assert.ok(!issues.some((i) => i.includes("subject.ref.")), issues.join("\n"));
+  const direct = validateCanonicalRef({ kind: "employee" }, "employee", "company.owner");
+  assert.ok(!direct.ok && direct.issues.some((i) => i.startsWith('company.owner: missing required field "id"')));
+});
+
+test("a forged age_seconds cannot disguise old data as fresh", () => {
+  const weekAgo = "2026-09-20T12:00:00Z";
+  const env = {
+    ...healthy(),
+    observed_at: weekAgo,
+    evidence: [{ ...evidence, observed_at: weekAgo }],
+    freshness: { state: "fresh", max_age_seconds: 120, age_seconds: 10 }
+  };
+  assertIssue(validateProjectionEnvelope(env), /freshness\.age_seconds: 10 disagrees with generated_at - observed_at \(604800s\)/);
+});
+
+test("age_seconds within skew of generated_at - observed_at is accepted", () => {
+  const env = { ...healthy(), freshness: { state: "fresh", max_age_seconds: 120, age_seconds: 100 } };
+  assert.equal(validateProjectionEnvelope(env).ok, true);
+});
+
+test("observed_at after generated_at beyond skew is rejected", () => {
+  const future = "2026-09-27T12:05:00Z";
+  const env = { ...healthy(), observed_at: future, freshness: { state: "fresh", max_age_seconds: 120, age_seconds: 0 } };
+  assertIssue(validateProjectionEnvelope(env), /envelope\.observed_at: later than generated_at/);
+  const withinSkew = { ...healthy(), observed_at: "2026-09-27T12:00:30Z", freshness: { state: "fresh", max_age_seconds: 120, age_seconds: 0 } };
+  assert.equal(validateProjectionEnvelope(withinSkew).ok, true);
+});
+
+test("future-dated evidence is rejected", () => {
+  const env = { ...healthy(), evidence: [evidence, { ...evidence, evidence_ref: "e2", observed_at: "2030-01-01T00:00:00Z" }] };
+  assertIssue(validateProjectionEnvelope(env), /envelope\.evidence\[1\]\.observed_at: later than generated_at/);
+});
+
+test("classifyFreshness rejects a non-Z string now", () => {
+  for (const bad of ["2026-09-27T12:00:00+00:00", "2026-09-27T12:00:00", "2026-09-27"]) {
+    assert.throws(() => classifyFreshness(observed, bad, policy), RangeError, bad);
+  }
+});
+
+test("each constructor throws ContractViolationError on incoherent input", () => {
+  const freshness = classifyFreshness(observed, now, policy);
+  const base = { surface: "company", source, generated_at: now } as const;
+  const cases: Array<[string, () => unknown]> = [
+    ["ok", () => okProjection({ ...base, observed_at: observed, freshness, evidence: [], data: {} })],
+    ["degraded", () => degradedProjection({ ...base, observed_at: observed, freshness, evidence: [evidence], data: null, error: { kind: "internal", message: "x" } })],
+    ["error", () => errorProjection({ ...base, freshness, error: { kind: "internal", message: "x" } })],
+    ["unknown", () => unknownProjection({ ...base, freshness, error: { kind: "internal", message: "x" } })]
+  ];
+  for (const [name, build] of cases) {
+    assert.throws(build, (err: unknown) => {
+      assert.ok(err instanceof ContractViolationError, name);
+      assert.ok(err.issues.length > 0, name);
+      assert.ok(Object.isFrozen(err.issues), `${name}: issues must be frozen`);
+      return true;
+    });
+  }
+});
+
+test("ContractViolationError keeps a frozen copy of its issues", () => {
+  const source = ["a"];
+  const err = new ContractViolationError(source);
+  source.push("b");
+  assert.deepEqual([...err.issues], ["a"]);
+  assert.ok(Object.isFrozen(err.issues));
+});

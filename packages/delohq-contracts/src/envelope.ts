@@ -6,10 +6,15 @@
 //   unknown  error detail explaining why, data null, freshness "unknown"
 //   error    error detail, data null, freshness never "fresh"
 // A null observed_at always means freshness "unknown".
+//
+// Timestamps are cross-checked against generated_at (CLOCK_SKEW_TOLERANCE_SECONDS
+// of slack): observed_at and every evidence observed_at may not postdate it, and
+// a known freshness.age_seconds must equal max(0, generated_at - observed_at).
+// A self-reported age can therefore never disguise old data as fresh.
 
 import { type ErrorDetail, type ProjectionState, PROJECTION_STATES, isProjectionState, validateErrorDetail } from "./errors.js";
 import { type EvidenceRef, type ProjectionSource, validateEvidenceRef, validateProjectionSource } from "./evidence.js";
-import { type Freshness, validateFreshness } from "./freshness.js";
+import { CLOCK_SKEW_TOLERANCE_SECONDS, type Freshness, validateFreshness } from "./freshness.js";
 import {
   type DeloHqSurface,
   DELOHQ_CONTRACT_REGISTRY,
@@ -22,6 +27,7 @@ import {
   type Validator,
   checkKeys,
   describe,
+  hasOwn,
   isIsoUtc,
   isRecord,
   prefixIssues
@@ -90,7 +96,7 @@ export function validateProjectionEnvelope<T = unknown>(
 ): ValidationResult<ProjectionEnvelope<T>> {
   if (!isRecord(value)) return { ok: false, issues: [`envelope: expected object, got ${describe(value)}`] };
   const issues = checkKeys(value, "envelope", ENVELOPE_FIELDS);
-  const has = (key: string) => key in value;
+  const has = (key: string) => hasOwn(value, key);
 
   const surfaceOk = has("surface") && isRegisteredSurface(value.surface);
   if (has("surface") && !surfaceOk) {
@@ -125,6 +131,7 @@ export function validateProjectionEnvelope<T = unknown>(
     issues.push(`envelope.state: expected one of ${PROJECTION_STATES.join(", ")}, got ${JSON.stringify(value.state)}`);
   }
   let evidenceCount = 0;
+  const evidenceObservedAt: Array<[number, string]> = [];
   if (has("evidence")) {
     if (!Array.isArray(value.evidence)) {
       issues.push(`envelope.evidence: expected array, got ${describe(value.evidence)}`);
@@ -132,8 +139,35 @@ export function validateProjectionEnvelope<T = unknown>(
       evidenceCount = value.evidence.length;
       value.evidence.forEach((item, i) => {
         const result = validateEvidenceRef(item, `envelope.evidence[${i}]`);
-        if (!result.ok) issues.push(...result.issues);
+        if (result.ok) evidenceObservedAt.push([i, result.value.observed_at]);
+        else issues.push(...result.issues);
       });
+    }
+  }
+
+  // Timestamp cross-checks against generated_at.
+  if (has("generated_at") && isIsoUtc(value.generated_at)) {
+    const generatedMs = Date.parse(value.generated_at);
+    const skewMs = CLOCK_SKEW_TOLERANCE_SECONDS * 1000;
+    const observedOk = has("observed_at") && isIsoUtc(value.observed_at);
+    if (observedOk) {
+      const observedMs = Date.parse(value.observed_at as string);
+      if (observedMs > generatedMs + skewMs) {
+        issues.push(`envelope.observed_at: later than generated_at by more than ${CLOCK_SKEW_TOLERANCE_SECONDS}s`);
+      }
+      if (freshness && freshness.age_seconds !== null) {
+        const impliedAge = Math.max(0, (generatedMs - observedMs) / 1000);
+        if (Math.abs(freshness.age_seconds - impliedAge) > CLOCK_SKEW_TOLERANCE_SECONDS) {
+          issues.push(
+            `envelope.freshness.age_seconds: ${freshness.age_seconds} disagrees with generated_at - observed_at (${impliedAge}s) by more than ${CLOCK_SKEW_TOLERANCE_SECONDS}s`
+          );
+        }
+      }
+    }
+    for (const [i, at] of evidenceObservedAt) {
+      if (Date.parse(at) > generatedMs + skewMs) {
+        issues.push(`envelope.evidence[${i}].observed_at: later than generated_at by more than ${CLOCK_SKEW_TOLERANCE_SECONDS}s`);
+      }
     }
   }
   if (has("error") && value.error !== null) {
@@ -142,6 +176,7 @@ export function validateProjectionEnvelope<T = unknown>(
   }
 
   // Cross-field coherence, only once the state itself is known.
+  let data: { value: T } | undefined;
   if (stateOk) {
     const state = value.state as ProjectionState;
     const carriesData = state === "ok" || state === "degraded";
@@ -176,13 +211,25 @@ export function validateProjectionEnvelope<T = unknown>(
       }
     }
     if (carriesData && validateData && has("data") && value.data !== null && value.data !== undefined) {
-      const result = validateData(value.data);
-      if (!result.ok) issues.push(...prefixIssues(result.issues, "envelope.data"));
+      let result: ValidationResult<T>;
+      try {
+        result = validateData(value.data);
+      } catch (err) {
+        result = { ok: false, issues: [`validateData threw: ${err instanceof Error ? err.message : String(err)}`] };
+      }
+      if (result.ok) {
+        data = { value: result.value };
+      } else {
+        issues.push(...prefixIssues(result.issues, "envelope.data"));
+      }
     }
   }
 
   if (issues.length > 0) return { ok: false, issues };
-  return { ok: true, value: value as unknown as ProjectionEnvelope<T> };
+  // Return the data validateData produced (it may normalize or narrow), not
+  // the raw input.
+  const envelope = data ? { ...value, data: data.value } : value;
+  return { ok: true, value: envelope as unknown as ProjectionEnvelope<T> };
 }
 
 // ---- constructors ----------------------------------------------------------
@@ -195,7 +242,7 @@ export class ContractViolationError extends Error {
   constructor(issues: string[]) {
     super(`DeloHQ contract violation: ${issues.join("; ")}`);
     this.name = "ContractViolationError";
-    this.issues = issues;
+    this.issues = Object.freeze([...issues]);
   }
 }
 

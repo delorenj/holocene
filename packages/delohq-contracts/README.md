@@ -28,18 +28,39 @@ if (!parsed.ok) { /* render contract_violation, never a healthy default */ }
   Join on `refKey(ref)`, never on a label. Labels go in `Labeled<R>`.
 - `ok` needs data, evidence, and `observed_at`. `degraded` needs the same plus
   an error. `unknown` and `error` need error detail and never claim `fresh`.
+- `ok` may carry `stale` or `expired` freshness. `state` says the read
+  succeeded; it says nothing about age. Views must render `freshness.state`
+  and never infer "current" from `state: "ok"`.
+- `observed_at` and every evidence `observed_at` may not postdate
+  `generated_at` (60s skew), and a known `freshness.age_seconds` must match
+  `generated_at - observed_at`. A self-reported age cannot hide old data.
 - Freshness budgets are policy. Callers pass `max_age_seconds`; this package
   picks none.
 - Validators return `{ ok, value } | { ok: false, issues }` and never throw.
   Constructors throw `ContractViolationError` so an adapter cannot emit a bad
-  payload.
+  payload. Constructors stamp `schema_version`; consumers never write it.
 
 ## Migration rule
 
-An incompatible change bumps the surface's `schema_version` major in
-`src/registry.ts`. Adding a surface means adding a registry entry. Minor and
-patch versions must be additive. The validator accepts any version with the
-registered major.
+The envelope and every nested object in it (`freshness`, `error`, `evidence`,
+`source`, refs) have a fixed key set per major version, and validators reject
+unknown keys. So adding, removing, or renaming any of those fields is a
+**major** bump of the affected surfaces in `src/registry.ts`, shipped to web
+and API together. Minor and patch versions may change only a surface's `data`,
+and only additively. The validator accepts any version with the registered
+major. Adding a surface means adding a registry entry.
+
+## Dialect guard
+
+`src/dialect-guard.test.ts` scans `apps/web/app/hq/**` and any `apps/api/src`
+file about hq/delohq. It fails on a local `schema_version`, a local
+`*Envelope`/`*Projection` type, `generatedAt` + `observedAt`, un-imported
+`generated_at` + `observed_at`, the legacy `{ ok, error | status }` dialect, and
+browser payload types imported from `@holocene/org-model` or
+`@holocene/modules-hermes-fleet`. Importing this package does not exempt a
+file. Files that still violate today are listed in `LEGACY_DIALECT_ALLOWLIST`
+with their reasons. The list can only shrink: when a file is migrated, the
+test fails until its entry is removed.
 
 ## Checks
 
