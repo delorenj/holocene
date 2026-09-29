@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
@@ -8,90 +8,33 @@ on:
 
 jobs:
   test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20.x]
+    name: Lint, typecheck, test
+    runs-on: [self-hosted, Linux, delonet]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      # pnpm version comes from "packageManager" in package.json
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Run linting
-        run: npm run lint
+      # Workspace packages resolve to dist/, so apps/api cannot typecheck on a
+      # fresh checkout until they are built.
+      - name: Build workspace packages
+        run: pnpm --filter "./packages/*" build
 
-      - name: Run type checking
-        run: npm run typecheck
+      - name: Lint
+        run: pnpm lint
 
-      - name: Run unit tests
-        run: npm run test:unit -- --coverage
+      - name: Typecheck
+        run: pnpm typecheck
 
-      - name: Run integration tests
-        run: npm run test:integration
-
-      - name: Run architectural tests
-        run: npm run test:architectural
-
-      - name: Run contract tests
-        run: npm run test:contracts
-
-      - name: Generate coverage report
-        run: npm run test:coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/lcov.info
-          flags: unittests
-          name: codecov-umbrella
-
-      - name: Check coverage thresholds
-        run: |
-          if [ -f coverage/coverage-summary.json ]; then
-            echo "Coverage summary:"
-            cat coverage/coverage-summary.json
-          fi
-
-  quality-gates:
-    name: Quality Gates
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify no failing tests
-        run: npm run test:ci
-
-      - name: Check architectural fitness
-        run: npm run test:architectural
-
-      - name: Verify contract compliance
-        run: npm run test:contracts
-
-      - name: Block merge on test failures
-        run: |
-          if [ $? -ne 0 ]; then
-            echo "❌ Quality gates failed - blocking merge"
-            exit 1
-          fi
-          echo "✅ All quality gates passed"
+      - name: Test
+        run: pnpm test
