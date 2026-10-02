@@ -6,8 +6,9 @@
 - Worker: opencode-holoc-9-recovery-1 (automaticai personal sol carrier).
 - Orchestrated by: momo.
 - Request: `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9/dispatch.md:38–48`; parent authoritative `_bmad-output/specs/spec-holocene-auto/SPEC.md` and its three companions. SDK authorization `c6ed9929df55b3db34d1c716745cd1e17c0eb13a`; corrected spec `fbf6bb387b950b08c8c9ae93f7fc916106df2c8f`.
-- Current authorization: focused source remediation of the two P2 receipt-publication/staging permission findings after the original three fixes were independently verified; scoped tests/evidence and feature-only commit/push. This same sole implementer has no board, main-merge, deploy, live SDK/AVD repair or product-feature authority. Independent focused quality probe remains required.
-- Detailed source evidence: [holoc-9-feasibility-evidence.md](../holoc-9-feasibility-evidence.md), updated for tooling repairs; child BMAD plan: [holoc-9-recovery-plan.md](../holoc-9-recovery-plan.md), preserved.
+- Current authorization: docs-only finalization after independent final quality ACCEPT; edit only this canonical evidence and the detailed evidence, run the static close gate, commit/push only those two documents to the feature. No application/tools/mise/SDK/AVD/emulator changes, board mutation, main merge or deploy. Parent owns post-documentation integration; canonical main has not been integrated by this worker.
+- Detailed source evidence: [holoc-9-feasibility-evidence.md](../holoc-9-feasibility-evidence.md), updated for accepted bounded-spike disposition; child BMAD plan: [holoc-9-recovery-plan.md](../holoc-9-recovery-plan.md), preserved.
+- Independent final quality report: `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9-recovery-1/quality-final.md:1–61`, reviewer `opencode-holoc9-final-quality-reviewer`, independent of implementer `opencode-holoc-9-recovery-1`; ACCEPT at full reviewed HEAD `fdbd151716f107c78ebc2ec1880ac1ecb65b5353`, eight targeted probe groups passed. Original three findings and final two P2 findings are independently cleared.
 - Independent specification review: `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9-recovery-1/spec-review.md:1–127`, PASS for all five bounded criteria, expressly separate from code-quality approval and driving acceptance.
 
 ## Acceptance Criteria
@@ -15,15 +16,15 @@
 2. **Delivered assessment; independent spec PASS.** Actual category eligibility, Automotive testing/distribution/device compatibility and Civic installation are separate gates. Category-eligible in-app CarAudioRecord and genuine VIA/default-assistant integration are independent branches. No established legitimate category fit is claimed, and no software-agent-as-IoT, speech-as-media, navigation/messaging disguise or host bypass exists. Internal testing has no car form-factor review; closed review is non-blocking; neither establishes eligibility or privileges. No Play upload or vehicle install occurred.
 3. **Delivered capability ledger and reproduced limitations; independent spec PASS for this spike.** Explicit app launch, public unrestricted UX callback, runtime microphone grant, focus acquisition/release and bounded silent PCM capture are demonstrated. ASR reached provider-ready then ERROR_NO_MATCH=7, without a final transcript. Parked screen cancel and independent in-flight mic/ASR pause cancellation are demonstrated, not hands-free voice cancel. ACTION_ASSIST fails resolution; injected voice key provides no active-session proof. Role available=true/held=false, Google remains selected. Moving UX injection is blocked by the Honda user-image SecurityException; call/navigation focus loss, spoken confirmation and non-screen capture/stop require further proof. Zero-screen driving remains mandatory.
 4. **Delivered current read-only owner assessment; independent spec PASS.** Holocene/Bloodbank/Candystore identity and source freshness joins, dedicated runtime logical-route continuity, processing-versus-answer receipts, authenticated mobile ingress, HeyMa/infra ASR and Voxxy synthesis/playback/cancel are source-backed. Finalized canonical Wax transcript fields now exist; the older missing-fields claim is superseded. Gateway post-claim rejection closure improved, but answer content is still discarded. Narrow owner requests are recorded; sibling sources were not changed.
-5. **Delivered handoff; independent spec PASS.** Child plan, detailed evidence, exact reviewed application range, artifact identity, route decision and owner next actions are retained. Emulator feasibility is demonstrated; distribution confirmation, Civic installation, live integration and verified driving usability remain separate beyond-spike gates. CAP-8 is not closed. Independent quality evidence is still required before an acceptance recommendation.
+5. **Delivered handoff; independent spec PASS.** Child plan, detailed evidence, exact reviewed application range, artifact identity, route decision and owner next actions are retained. Emulator feasibility is demonstrated; distribution confirmation, Civic installation, live integration and verified driving usability remain separate beyond-spike gates. CAP-8 is not closed. Independent specification PASS and final quality ACCEPT now support close recommendation for the bounded spike only.
 
 ## Repo Changes
 - Branch: `holoc-9-aaos-feasibility`; worktree `/home/delorenj/code/33GOD/holocene/.worktrees/holoc-9-aaos-feasibility`.
 - Reviewed application BASE: `1c0d76009ac757508584ba494112ecc1b3555a7f`.
 - Previously reviewed application HEAD: `13e040f374c6ea4b789e16054f2061172510a0c8`; both independent reports are locked to that range.
 - First patched application HEAD: `8a5aa9ac0cb6ee2bd2926c115e9de85647fdc6e5`, published with evidence at `a9708d556e734f7354baf79e2d7299369a3b2621`; original three findings independently fixed in `quality-rereview.md`.
-- Second patched application HEAD: `9f61353c844454203bd0bfb1b73d931f5afcb3c9`; new focused range `a9708d556e734f7354baf79e2d7299369a3b2621` → `9f61353c844454203bd0bfb1b73d931f5afcb3c9`. Only installer/its existing test file changed; subsequent documentation checkpoint records this exact code range. Independent acceptance of the two new fixes is not claimed.
-- The previous specification PASS is not a quality acceptance of the new patch. Independent focused quality rereview must use the published patch commit and its exact diff.
+- Accepted patched source HEAD: `9f61353c844454203bd0bfb1b73d931f5afcb3c9`; final quality reviewed feature HEAD `fdbd151716f107c78ebc2ec1880ac1ecb65b5353`, whose relevant application/tools/mise paths are identical. Final focused reviewed range `a9708d556e734f7354baf79e2d7299369a3b2621` → `fdbd151716f107c78ebc2ec1880ac1ecb65b5353`; original BASE `1c0d76009ac757508584ba494112ecc1b3555a7f`.
+- Specification PASS for all five criteria and independent final quality ACCEPT are separate evidence. This later docs-only checkpoint records the full accepted code pointers without a self-referential documentation SHA or broadened product approval.
 - Reviewed application changes:
   - `apps/auto/` — isolated native Kotlin/platform diagnostic app, fixture state tests, Android manifest/resources, pinned Gradle wrapper/plugins and emulator/image tools.
   - `mise.toml` — four bounded Android task entrypoints.
@@ -33,6 +34,7 @@
 - Migrations / schema: none. No incumbent API/web source or workspace dependency refactor, sibling/root source change, production deploy, board mutation or default-assistant change.
 
 ## Verification
+- Docs-only finalization executed `git diff --check` and `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/.scripts/sentinel/bin/issue-close-gate.sh HOLOC-9 /home/delorenj/code/33GOD/holocene/.worktrees/holoc-9-aaos-feasibility`: exit0, `CLOSE GATE: PASS for HOLOC-9 (repo: holocene)`. Explicit target root prevents accidental canonical-main evidence lookup. No autonomous gate, long suite or emulator was executed in this finalization.
 - Latest focused suite: **27 stdlib tests, zero failures/errors/skips**, retaining all original21 and adding actual UID1000 parent0555/sdk0755 success; licenses0555 failure with no published package then identical permission-restored retry; injected receipt write/flush failures after staging preserving prior receipt bytes/mode/mtime and successful retry; rename failure retaining valid receipt with recoverable retry; wholly read-only matching no-op unchanged.
 - Receipt is atomically written/flushed/fsynced/replaced before staged payload publication; staging is now within SDK, not parent. Both resulting license acceptance and payload completeness are verified. Failure cleanup removes temporary payload/receipt files. SDK-root/licenses-directory mtimes or newly created empty directories can change due to temporary-entry bookkeeping; no preexisting payload or receipt is clobbered and no package is published on receipt failure. Exact matching no-op and malformed-archive refusal assertions remain intact.
 - Actual installed SDK JAXB/checkAccepted verifies successful permission/I/O retries in fake SDKs, and preserved actual Honda legal text still hashes to `6adc41d89657f43cd09a826aa4e383d8bf4208e4`. Existing wrapper exact-ZIP/cold-start tests remain passing. Logs: `repair2-tool-tests.log`; no host SDK/receipt mutation.
@@ -43,6 +45,8 @@
 - Actual installed SDK JAXB parser/License.checkAccepted on temporary fake SDKs returns true for both selected saved-feed and generated-package license, actual-Honda hash `6adc41d89657f43cd09a826aa4e383d8bf4208e4`. CR references preserve legal text semantically; unrelated license is not accepted and existing receipt bytes are not overwritten. Historical host Honda receipt remains untouched and is not claimed corrected.
 - Reproduction from apps/auto: `JAVA_HOME=<jbr> ANDROID_HOME=<sdk> HOLOCENE_HONDA_FEED=<saved-feed> HOLOCENE_GRADLE_ZIP=<verified-zip> /usr/bin/python3 -B -m unittest discover -s tools/tests -v`. Evidence: recovery spool `repair-tool-tests-final.log`, `gradle-official.sha256`, `gradle-8.11.1-bin.zip`. Without optional actual-file inputs, three integration tests explicitly skip; this executed run supplied both and skipped none.
 - Repair reruns: ten Android JVM tests, substantive Android lint zero errors/six warnings, APK build; nine uncached TS checks plus direct API/web checks; pnpm lint remains nine stubs. Logs: `repair-android-checks.log`, `repair-typecheck.log`, `repair-api-typecheck.log`, `repair-web-typecheck.log`, `repair-pnpm-lint.log`. Exact APK hash below is unchanged. No emulator repeat for tooling-only changes; earlier independent runtime proof remains distinct.
+- Parent independently reran 27 tooling tests with zero skips, installed SDK JAXB acceptance and isolated cold-wrapper checks, ten Android tests/substantive lint/build, unchanged APK SHA256, nine TypeScript checks/direct API/web checks and 89 contract tests: all passed. Existing pnpm lint scripts are stubs, not substantive lint. Parent-owned executions are distinct from implementer tests; no extra execution is claimed by this docs-only finalization.
+- Final independent quality reviewer ran eight targeted probe groups under UID1000: receipt permission/write/flush failure cleanup and retry, rename failure recovery, writable SDK/read-only parent, complete read-only no-op and SDK normalization, original payload refusal controls and exact wrapper positive/corrupt-ZIP controls. Harness exit0; no findings; original three plus final two findings cleared. See `quality-final.md:26–59`. This reviewer did not rerun the long suites; parent did.
 - Existing implementer execution: `./gradlew tasks --all`; `./gradlew testDebugUnitTest lintDebug assembleDebug --rerun-tasks --console=plain` succeeded. Ten Android JVM tests, zero failures/errors/skips; substantive Android lint passed with six warnings and zero errors; debug APK built.
 - Existing TypeScript execution: nine cache-bypassed checks via `pnpm exec turbo run typecheck --force`, plus direct API/web typechecks passed after local ignored declaration builds. `pnpm exec turbo run lint --force` completed nine placeholder scripts; this is not substantive lint evidence.
 - Parent reports independent reruns of ten Android tests/lint/build, the same APK hash, nine uncached TypeScript checks, direct API/web checks and 89 contract tests. The 89 contract tests are parent execution evidence, not additional implementer execution; no command or result is fabricated here.
@@ -51,30 +55,33 @@
 - Toolchain: Gradle 8.11.1 with distribution checksum, AGP 8.9.2, Kotlin 2.1.20, JUnit 4.13.2; Studio JBR 21.0.10; SDK command-line tools20, emulator36.5.10, platform-tools37.0.0, build-tools35.0.0.
 - Image: official Honda `system-images;android-33;Honda-ivi-9inch-LHD`, API33/x86_64, feed revision `25.03.120114`. Archive size2723426521 bytes/SHA1 `c1862179041240cf9a698bd5ee716eba68769824`; archive `Pkg.Revision=1` preserved and separately disclosed. This is not exact Civic firmware.
 - AVD: `/home/delorenj/.android/avd/HOLOC_9_Honda_API33.avd`; name `HOLOC_9_Honda_API33`, Honda9-inch LHD, 1280×720/density160. Existing phone AVD unchanged.
-- Exact build APK: `/home/delorenj/code/33GOD/holocene/.worktrees/holoc-9-aaos-feasibility/apps/auto/app/build/outputs/apk/debug/app-debug.apk`.
+- Historical build APK: `apps/auto/app/build/outputs/apk/debug/app-debug.apk` in the reserved worktree, independently matched below. Durable artifact for post-integration reproduction is the retained identical APK, not an assumed canonical build output.
 - Retained identical APK: `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9-recovery-1/holocene-auto-fixture.apk`.
 - APK SHA256: `88f74c255a50d91b87b100cf4d4c5fa03ba656f68673ee7f93d9a69328ad5381`; application ID `sh.delo.holocene.auto.feasibility`, versionCode1/versionName `0.1.0-fixture`, min/target/compile API33, debug-signed. No network publication capability or broker/engine credentials.
 - Durable ignored evidence root: `/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9-recovery-1/`. Records include `android-checks-final.log`, `android-test-results.xml`, `android-lint-results.xml`, `pnpm-typecheck-final.log`, `api-typecheck-2.log`, `web-typecheck-2.log`, `pnpm-lint-final.log`, `emulator-probe-commands.json`, `mic-asr-probe.log`, `ux-transition-attempt.log`, `checks-summary.txt`, PNG/XML fixtures and `spec-review.md`. The original `workers/HOLOC-9` bundle remains untouched.
-- Reproduction commands below document the original emulator work; no emulator/SDK/AVD action was performed during this tooling remediation. From the reserved worktree, after confirming no emulator owns the named AVD or port:
+- Post-integration reproduction below uses the canonical checkout `W=/home/delorenj/code/33GOD/holocene` after the parent merges the final documentation checkpoint. It does not assert that canonical main already contains this feature. No build/emulator/SDK/AVD action is executed during docs-only finalization; confirm the scoped AVD/port is free and the evidence directory is appropriate before a future probe:
 
 ```bash
 export ANDROID_HOME="$HOME/Android/Sdk"
 export JAVA_HOME="$HOME/.local/share/android-studio/jbr"
-W=/home/delorenj/code/33GOD/holocene/.worktrees/holoc-9-aaos-feasibility
+W=/home/delorenj/code/33GOD/holocene
 E=/home/delorenj/code/33GOD/holocene/agents/hermes/pm/runtime/workers/HOLOC-9-recovery-1
+export HOLOCENE_HONDA_FEED="$E/honda-ivi-sys.xml"
+export HOLOCENE_GRADLE_ZIP="$E/gradle-8.11.1-bin.zip"
+(cd "$W/apps/auto" && /usr/bin/python3 -B -m unittest discover -s tools/tests -v)
 "$W/apps/auto/gradlew" -p "$W/apps/auto" tasks --all
 "$W/apps/auto/gradlew" -p "$W/apps/auto" testDebugUnitTest lintDebug assembleDebug --rerun-tasks --console=plain
 "$ANDROID_HOME/emulator/emulator" -avd HOLOC_9_Honda_API33 -port 5580 -no-window -no-audio -no-snapshot -no-metrics -gpu swiftshader_indirect -memory 4096 -cores 4
 "$ANDROID_HOME/platform-tools/adb" -s emulator-5580 wait-for-device
-"$ANDROID_HOME/platform-tools/adb" -s emulator-5580 install -r "$W/apps/auto/app/build/outputs/apk/debug/app-debug.apk"
+"$ANDROID_HOME/platform-tools/adb" -s emulator-5580 install -r "$E/holocene-auto-fixture.apk"
 "$ANDROID_HOME/platform-tools/adb" -s emulator-5580 shell am start -W -n sh.delo.holocene.auto.feasibility/sh.delo.holocene.auto.MainActivity
 /usr/bin/python3 "$W/apps/auto/tools/emulator_probe.py" --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5580 --evidence "$E"
 "$ANDROID_HOME/platform-tools/adb" -s emulator-5580 emu kill
-pnpm --filter @holocene/org-model --filter @holocene/bloodbank-client build
-pnpm exec turbo run typecheck --force
-pnpm --filter @holocene/api typecheck
-pnpm --filter @holocene/web typecheck
-pnpm exec turbo run lint --force
+pnpm --dir "$W" --filter @holocene/org-model --filter @holocene/bloodbank-client build
+pnpm --dir "$W" exec turbo run typecheck --force
+pnpm --dir "$W" --filter @holocene/api typecheck
+pnpm --dir "$W" --filter @holocene/web typecheck
+pnpm --dir "$W" exec turbo run lint --force
 ```
 
 - Emulator boot is a long-lived process; perform subsequent commands in a separate terminal only after boot completion. Image/license setup commands and official feed/archive provenance are in the detailed evidence; do not reinstall or overwrite another AVD during review.
@@ -87,7 +94,7 @@ pnpm exec turbo run lint --force
 - Attribution: momo owns the board/decision write and evidence readback. This implementer performs no ledger mutation or new board query; the existing receipt is supplied by the parent, not an inferred write. Parent-directed QA-to-implementation recovery is separate from the retained QA receipt.
 
 ## Known Gaps
-- Independent `quality-rereview.md` cleared the original three fixes but held featureHEADa9708d5 for two P2 receipt-publication/staging failures. These now have passing deterministic permission/I/O retry regressions, but independent focused quality acceptance of the new exact range is still required. Specification PASS alone is not code-quality approval, acceptance, merge or close authority.
+- Historical independent `quality-rereview.md` held featureHEADa9708d5 for two P2 receipt-publication/staging failures after clearing the original three. Final independent `quality-final.md` ACCEPT at `fdbd151716f107c78ebc2ec1880ac1ecb65b5353` clears both and confirms the original fixes. No blocking finding remains within the bounded tooling/spike scope; this is not product, vehicle or CAP-8 approval.
 - Real intentional speech, endpointing/final ASR and latency are not demonstrated. Microphone permission, silent PCM acquisition and focus do not prove speech recognition or a conversational loop.
 - Supported non-screen activation/capture, verbal frozen-target confirmation and non-screen stop/mute/cancel remain undetermined. Screen controls and Home/pause are diagnostic evidence only.
 - Moving host UX callbacks, actual concurrent call/navigation focus loss, playback interruption and echo prevention require supported Honda/OEM tests. User-build shell injection denial is a reproduced limitation, not permission to bypass restrictions.
@@ -98,7 +105,7 @@ pnpm exec turbo run lint --force
 - No placeholder evidence is used. Undetermined behavior is described as a limitation with its demonstrated boundary, owner and next proof.
 
 ## Close Recommendation
-- Close recommendation: hold
-- Rationale: canonical evidence records previous specification PASS, reproduced tooling defects and passing focused repairs; independent focused quality acceptance of the patched commit has not yet arrived. Do not set acceptance or close eligibility before that rereview.
-- Expected gate result: hold because the required affirmative close recommendation is intentionally absent. The gate is neither weakened nor represented as passed.
-- Next action: parent independently rereviews the exact published repair commit, resolves any further actionable finding through explicit authorization, then directs final evidence disposition. Seek category/OEM-VIA confirmation and narrow cross-owner seams for product progression; do not close CAP-8 from this spike.
+- Close recommendation: ready
+- Rationale: all five bounded-spike criteria independently spec PASS, final independent quality ACCEPT clears all five tooling findings at the exact reviewed HEAD, and parent verification suites pass. Recommendation applies to HOLOC-9 feasibility only; CAP-8/OEM/category/Civic/live/zero-screen voice gates remain explicit above.
+- Static close gate evaluates this evidence using the explicit worktree root; it does not itself mutate the board or authorize this implementer to merge/deploy. No autonomous review gate is rerun against canonical main before parent integration.
+- Next action: parent integrates the authorized docs-only feature checkpoint, performs its final readback/closeout, and owns board/main actions. Further category/OEM-VIA and cross-owner live work remains separately scoped; do not close CAP-8 from this spike.
