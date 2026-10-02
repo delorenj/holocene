@@ -39,6 +39,7 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
+    private val timers = Handler(Looper.getMainLooper())
     private val session = DiagnosticSession()
     private val preview get() = session.preview
     private lateinit var body: LinearLayout
@@ -233,7 +234,7 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            main.postDelayed({
+            timers.postDelayed({
                 if (session.isCapturing(token) && recorder === record) cancelDiagnostic("Mic probe timed out; no transcript", "mic-timeout")
             }, MIC_WINDOW_MS + 1500L)
         } catch (error: SecurityException) {
@@ -306,7 +307,7 @@ class MainActivity : Activity() {
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
             engine.startListening(intent)
-            main.postDelayed({
+            timers.postDelayed({
                 if (session.isCapturing(token) && recognizer === engine) {
                     probe("asr_timeout", "bound_ms=$ASR_BOUND_MS")
                     cancelDiagnostic("ASR 15-second timeout; no final transcript", "asr-timeout")
@@ -374,7 +375,7 @@ class MainActivity : Activity() {
             }
         }
         speech = engine
-        main.postDelayed({
+        timers.postDelayed({
             if (session.isAcknowledging(token) && speech === engine) {
                 probe("tts_timeout", "bound_ms=$TTS_BOUND_MS")
                 cancelDiagnostic("TTS 10-second timeout; acknowledgement cancelled", "tts-timeout")
@@ -395,7 +396,7 @@ class MainActivity : Activity() {
 
     private fun releaseAll(reason: String, clearPreview: Boolean = true) {
         capturing = false
-        main.removeCallbacksAndMessages(null)
+        timers.removeCallbacksAndMessages(null)
         recorder?.let {
             try { it.stop() } catch (error: IllegalStateException) { Log.i(TAG, "Recorder already stopped") }
             it.release()
@@ -433,6 +434,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         session.cancel()
         releaseAll("Activity destroyed")
+        main.removeCallbacksAndMessages(null)
         ux?.unregisterListener()
         car?.disconnect()
         super.onDestroy()
