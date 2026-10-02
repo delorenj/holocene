@@ -78,3 +78,7 @@ run = "./gradlew tasks --all"
 [tasks."auto:install-honda"]
 description = "Verify and install the official Honda feed/archive with explicit license acceptance"
 run = "/usr/bin/python3 '{{config_root}}/apps/auto/tools/install_honda_image.py' ${@}"
+
+[tasks."auto:probe"]
+description = "Run emulator-only parked UI/microphone probes into an existing ignored evidence directory"
+run = "/usr/bin/python3 '{{config_root}}/apps/auto/tools/emulator_probe.py' ${@}"

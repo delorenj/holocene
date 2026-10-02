@@ -23,3 +23,7 @@
 - Backend identity/freshness, continuity, answer publication, authenticated ingress, canonical ASR and Vox adapters: source reverification PENDING.
 
 All CAP-1 through CAP-8 remain parent requirements. Fixtures and parked diagnostic controls cannot satisfy integrated voice or zero-screen driving acceptance; CAP-8 remains open.
+
+## Recovery checkpoint
+
+Native source/build and actual Honda boot/install/launch now exist. Source checkpoint `e954f35` published on the reserved feature branch. Ten Android JVM tests and Android lint/build passed; microphone permission/focus and 32000-sample bounded capture observed; silent-input ASR yielded ERROR_NO_MATCH, not a transcript. See `holoc-9-feasibility-evidence.md` for final results, route branches, reproduction, source-qualified seam changes, and remaining gates. Original worker bundle unchanged; no PM/board mutation or main merge.
