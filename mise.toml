@@ -66,9 +66,14 @@ run = "{{config_root}}/.mise/scripts/versioning.sh sync"
 # <<< mise-versioning <<<
 
 [tasks."auto:check"]
-description = "Test, lint and build the isolated AAOS fixture experiment"
+description = "Test Android tooling, lint and build the isolated AAOS fixture experiment"
 dir = "{{config_root}}/apps/auto"
-run = "./gradlew testDebugUnitTest lintDebug assembleDebug --console=plain"
+run = ["/usr/bin/python3 -B -m unittest discover -s tools/tests -v", "./gradlew testDebugUnitTest lintDebug assembleDebug --console=plain"]
+
+[tasks."auto:tool-tests"]
+description = "Test image recovery, SDK license parsing and Gradle integrity without modifying the host SDK"
+dir = "{{config_root}}/apps/auto"
+run = "/usr/bin/python3 -B -m unittest discover -s tools/tests -v"
 
 [tasks."auto:tasks"]
 description = "List the Android Gradle tasks"
