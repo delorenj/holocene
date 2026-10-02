@@ -127,7 +127,7 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.install()
         self.assertEqual(before, snapshot(self.sdk))
-        self.assertFalse(list(self.root.glob(".holoc9-image-*")))
+        self.assertFalse(list(self.sdk.glob(".holoc9-image-*")))
 
     def test_checksum_mismatch_precedes_sdk_mutation(self):
         self.feed.find("remotePackage/archives/archive/complete/checksum").text = "0" * 40
@@ -168,6 +168,131 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(receipt.read_bytes().startswith(b"operator-receipt\n"))
         self.assertEqual(2, len(receipt.read_bytes().splitlines()))
 
+    def test_writable_sdk_with_read_only_parent_succeeds(self):
+        self.assertNotEqual(0, os.geteuid(), "Permission regression requires an unprivileged process")
+        self.sdk.chmod(0o755)
+        self.root.chmod(0o555)
+        try:
+            self.sdk_check()
+            self.assertEqual(0o555, stat.S_IMODE(self.root.stat().st_mode))
+            for name, content in self.payload.items():
+                self.assertEqual(content, (self.target / name).read_bytes())
+            self.assertFalse(list(self.sdk.glob(".holoc9-image-*")))
+        finally:
+            self.root.chmod(0o755)
+
+    def test_read_only_licenses_failure_publishes_no_payload_then_retries(self):
+        self.assertNotEqual(0, os.geteuid(), "Permission regression requires an unprivileged process")
+        licenses = self.sdk / "licenses"
+        licenses.mkdir()
+        licenses.chmod(0o555)
+        try:
+            with self.assertRaises(PermissionError):
+                self.install()
+            self.assertFalse(self.target.exists())
+            self.assertFalse((licenses / INSTALLER.LICENSE_ID).exists())
+            self.assertFalse(list(self.sdk.glob(".holoc9-image-*")))
+            self.assertEqual([], list(licenses.iterdir()))
+        finally:
+            licenses.chmod(0o755)
+        self.sdk_check()
+
+    def receipt_failure_then_retry(self, operation):
+        receipt = self.sdk / "licenses" / INSTALLER.LICENSE_ID
+        receipt.parent.mkdir()
+        receipt.write_bytes(b"operator-receipt")
+        receipt.chmod(0o640)
+        before = snapshot(receipt.parent)
+        factory = tempfile.NamedTemporaryFile
+        case = self
+
+        class FailingReceipt:
+            def __init__(self, output):
+                self.output = output
+                self.name = output.name
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.output.close()
+
+            def write(self, data):
+                if operation == "write":
+                    case.assertFalse(case.target.exists())
+                    case.assertTrue(list(case.sdk.glob(".holoc9-image-*/payload/x86_64/package.xml")))
+                    self.output.write(data[:3])
+                    raise OSError("injected receipt write failure")
+                return self.output.write(data)
+
+            def flush(self):
+                if operation == "flush":
+                    case.assertFalse(case.target.exists())
+                    case.assertTrue(list(case.sdk.glob(".holoc9-image-*/payload/x86_64/package.xml")))
+                    raise OSError("injected receipt flush failure")
+                return self.output.flush()
+
+            def fileno(self):
+                return self.output.fileno()
+
+        def failing_factory(*args, **kwargs):
+            return FailingReceipt(factory(*args, **kwargs))
+
+        with patch.object(tempfile, "NamedTemporaryFile", side_effect=failing_factory):
+            with self.assertRaisesRegex(OSError, "injected receipt"):
+                self.install()
+        self.assertFalse(self.target.exists())
+        self.assertFalse(list(self.sdk.glob(".holoc9-image-*")))
+        self.assertEqual(before, snapshot(receipt.parent))
+        self.assertIn("Installed complete verified", self.install())
+        self.assertTrue(receipt.read_bytes().startswith(b"operator-receipt\n"))
+        self.assertEqual(0o640, stat.S_IMODE(receipt.stat().st_mode))
+        self.assert_sdk_accepted()
+
+    def test_receipt_write_failure_preserves_previous_bytes_and_retry(self):
+        self.receipt_failure_then_retry("write")
+
+    def test_receipt_flush_failure_preserves_previous_bytes_and_retry(self):
+        self.receipt_failure_then_retry("flush")
+
+    def test_payload_rename_failure_retains_valid_receipt_and_retry(self):
+        with patch.object(Path, "rename", side_effect=OSError("injected payload publication failure")):
+            with self.assertRaisesRegex(OSError, "publication"):
+                self.install()
+        self.assertFalse(self.target.exists())
+        self.assertFalse(list(self.sdk.glob(".holoc9-image-*")))
+        receipt = self.sdk / "licenses" / INSTALLER.LICENSE_ID
+        selected = next(node for node in self.feed.findall("license") if node.get("id") == INSTALLER.LICENSE_ID)
+        expected = hashlib.sha1(INSTALLER.sdk_license_text(selected.text).encode()).hexdigest()
+        self.assertEqual(expected, receipt.read_text().strip())
+        before = snapshot(receipt.parent)
+        self.assertIn("Installed complete verified", self.install())
+        self.assertEqual(before, snapshot(receipt.parent))
+        self.assert_sdk_accepted()
+
+    def test_fully_matching_read_only_installation_is_unchanged(self):
+        self.install()
+        files = [path for path in self.sdk.rglob("*") if path.is_file()]
+        directories = [path for path in self.sdk.rglob("*") if path.is_dir()]
+        for path in files:
+            path.chmod(0o444)
+        for path in directories:
+            path.chmod(0o555)
+        self.sdk.chmod(0o555)
+        try:
+            before = snapshot(self.sdk)
+            root_stat = self.sdk.stat()
+            self.assertIn("unchanged", self.install())
+            self.assertEqual(before, snapshot(self.sdk))
+            self.assertEqual(root_stat.st_mtime_ns, self.sdk.stat().st_mtime_ns)
+            self.assertEqual(root_stat.st_mode, self.sdk.stat().st_mode)
+        finally:
+            self.sdk.chmod(0o755)
+            for path in directories:
+                path.chmod(0o755)
+            for path in files:
+                path.chmod(0o644)
+
     def test_existing_payload_missing_receipt_refused(self):
         self.install()
         (self.sdk / "licenses/honda-ivi-sdk-license").unlink()
@@ -181,15 +306,19 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(before, snapshot(self.sdk))
 
     def sdk_check(self, feed=None):
-        sdk = Path(os.environ.get("ANDROID_HOME", Path.home() / "Android/Sdk"))
-        classpath = sdk / "cmdline-tools/latest/lib/avdmanager-classpath.jar"
-        self.assertTrue(classpath.is_file(), "Installed SDK command-line-tools required for JAXB regression")
         if feed is not None:
             self.feed = feed
             self.save_feed()
         self.install()
+        self.assert_sdk_accepted()
+
+    def assert_sdk_accepted(self):
+        sdk = Path(os.environ.get("ANDROID_HOME", Path.home() / "Android/Sdk"))
+        classpath = sdk / "cmdline-tools/latest/lib/avdmanager-classpath.jar"
+        self.assertTrue(classpath.is_file(), "Installed SDK command-line-tools required for JAXB regression")
         metadata = self.target / "x86_64/package.xml"
-        receipt_hash = (self.sdk / "licenses/honda-ivi-sdk-license").read_text().strip()
+        selected = next(node for node in self.feed.findall("license") if node.get("id") == INSTALLER.LICENSE_ID)
+        receipt_hash = hashlib.sha1(INSTALLER.sdk_license_text(selected.text).encode()).hexdigest()
         before = snapshot(self.sdk)
         for xml in (self.feed_path, metadata):
             result = subprocess.run([java_path(), "--class-path", str(classpath), str(TOOLS / "tests/SdkLicenseCheck.java"), str(xml), str(self.sdk), receipt_hash], capture_output=True, text=True, timeout=30)

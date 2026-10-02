@@ -1,6 +1,7 @@
 import argparse
 import copy
 import hashlib
+import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
@@ -108,6 +109,22 @@ def reject_symlink_path(path, sdk):
             raise SystemExit("SDK target path conflicts or contains symlinks")
 
 
+def commit_receipt(receipt, previous, license_hash):
+    receipt.parent.mkdir(exist_ok=True)
+    output = tempfile.NamedTemporaryFile(mode="wb", prefix=".holoc9-license-", dir=receipt.parent, delete=False)
+    temporary = Path(output.name)
+    try:
+        with output:
+            output.write(previous + (b"\n" if previous and not previous.endswith(b"\n") else b"") + license_hash.encode() + b"\n")
+            output.flush()
+            os.fsync(output.fileno())
+        if receipt.exists():
+            temporary.chmod(stat.S_IMODE(receipt.stat().st_mode))
+        os.replace(temporary, receipt)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def install(sdk, feed_path, archive_path):
     sdk = sdk.resolve(strict=True)
     if not sdk.is_dir():
@@ -144,20 +161,18 @@ def install(sdk, feed_path, archive_path):
                 raise SystemExit("Existing license receipt differs; explicit recovery required")
             print(f"Verified existing complete matching installation unchanged: {destination}/x86_64")
             return
-        with tempfile.TemporaryDirectory(prefix=".holoc9-image-", dir=sdk.parent) as temporary:
+        with tempfile.TemporaryDirectory(prefix=".holoc9-image-", dir=sdk) as temporary:
             stage = Path(temporary) / "payload"
             stage.mkdir()
             archive.extractall(stage)
             (stage / "x86_64/package.xml").write_bytes(metadata)
             verify_payload(stage, archive, members, metadata)
+            if not accepted:
+                commit_receipt(receipt, previous, license_hash)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists() or destination.is_symlink():
                 raise SystemExit("Destination appeared during staging; refusing overwrite")
             stage.rename(destination)
-    if not accepted:
-        receipt.parent.mkdir(exist_ok=True)
-        with receipt.open("ab") as output:
-            output.write((b"\n" if previous and not previous.endswith(b"\n") else b"") + license_hash.encode() + b"\n")
     revision = ".".join(package.findtext("revision/" + tag) for tag in ("major", "minor", "micro"))
     print(f"Verified SHA1={checksum}; bytes={archive_path.stat().st_size}; package={PACKAGE}; ABI=x86_64; feed revision={revision}")
     print(f"SDK-normalized referenced Honda license accepted: hash={license_hash}; receipt={receipt}")
