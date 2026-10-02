@@ -1,0 +1,16 @@
+{
+  "channels": 1,
+  "sample_width_bytes": 2,
+  "sample_rate": 16000,
+  "samples": 24240,
+  "duration_s": 1.515,
+  "peak": 22973,
+  "rms": 5525.9,
+  "sha256": "66fb4170674a0986d4d608e9d1ec4a4e04a020233f6df44dcfa88185be01e84b",
+  "phrase": "summarize recent work",
+  "voice": "flite cmu_us_slt",
+  "library": "libflite 2.2 via ctypes",
+  "generator": "apps/auto/tools/make_known_utterance.py --voice slt",
+  "license_note": "Locally synthesized by the system Flite (CMU, BSD-style license) library; contains no human or room recording, no secrets. Benign fixed phrase.",
+  "claim_boundary": "Input asset bytes only. Injected microphone samples, Android-captured samples and physical hearing are separate evidence."
+}
