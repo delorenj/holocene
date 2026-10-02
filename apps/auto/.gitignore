@@ -2,3 +2,6 @@
 .kotlin/
 **/build/
 local.properties
+.venv/
+tools/.venv/
+tools/_gen/
