@@ -6,7 +6,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-APP = "sh.delo.holocene.auto.feasibility"
+APP = "io.automaticai.holocene"
 ACTIVITY = APP + "/sh.delo.holocene.auto.MainActivity"
 
 
