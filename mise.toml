@@ -70,6 +70,11 @@ description = "Test Android tooling, lint and build the isolated AAOS fixture ex
 dir = "{{config_root}}/apps/auto"
 run = ["/usr/bin/python3 -B -m unittest discover -s tools/tests -v", "./gradlew testDebugUnitTest lintDebug assembleDebug --console=plain"]
 
+[tasks."auto:release-bundle"]
+description = "Resolve vault signing and build the signed Android Automotive OS AAB"
+dir = "{{config_root}}/apps/auto"
+run = "tools/build_release_bundle.sh"
+
 [tasks."auto:tool-tests"]
 description = "Test image recovery, SDK license parsing and Gradle integrity without modifying the host SDK"
 dir = "{{config_root}}/apps/auto"
