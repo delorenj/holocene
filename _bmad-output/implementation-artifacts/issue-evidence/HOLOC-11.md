@@ -2,9 +2,9 @@
 
 ## Local release artifact
 
-Status: **PLAY_UPLOAD_PENDING_V6**. The dedicated-AAOS-track feature error is resolved for the v6 bundle; the upload needs to be retried in the console.
+Status: **INTERNAL_TESTING_LIVE**. v6 is rolled out on the Internal testing track (Active, available to internal testers as of 2026-10-03 11:09 AM).
 
-- Source branch: `holoc-11-play-version-6` (local, unpushed)
+- Source branch: `holoc-11-play-version-6` (merged to `main`, `6384c3a`, pushed)
 - Built with: `mise run auto:release-bundle`
 - Signing identity: `op://DeLoSecrets/Holocene Android Auto release signing/password`
 - Keystore alias: `holocene-auto-release`
@@ -45,6 +45,12 @@ The API 35 target follows Google Play's current Android Automotive OS new-app re
 - Per Google's docs, bundles that **require** `android.hardware.type.automotive` are only allowed on the AAOS dedicated track; mobile tracks reject them regardless of form-factor opt-in (<https://developer.android.com/training/cars/distribute> — "Choose a track type for Android Automotive OS" restriction table). Relaxing `android:required` lets the same bundle pass mobile-track validation.
 - Head-unit installability is kept: a non-required feature claim only softens the store-level "requires automotive hardware" filter; the AAOS form-factor opt-in remains in place and the app remains installable on the head unit.
 
+## Rollout (2026-10-03 11:09 AM)
+
+- v5 draft discarded; fresh Internal-testing draft created (`releases/3`), v6 AAB (`holocene-auto-release-926b2a6b.aab`) uploaded and processed as `App bundle 6 (0.2.4-internal), API 33+, Target SDK 35`.
+- The dedicated-AAOS-track error no longer appears at review; only the non-blocking R8-deobfuscation warning remains.
+- `Save and publish` → confirm dialog → **Track Active**: `Latest release: 6 (0.2.4-internal)`, `Available to internal testers`, `Released on Oct 3 11:09 AM`, `Not reviewed`. App temporarily listed as `io.automaticai.holocene (unreviewed)` until store listing/review completes.
+
 ## Remaining external gates
 
-AAOS policy agreement (or manifest relaxation), successful internal-track release save + rollout, tester grant, device-catalog check, and Civic install/launch. Honda states that actual-vehicle ADB is unavailable, so install must use the head unit's Google Play path rather than a sideload assumption.
+Tester grant on the Internal testing track (up to 100 testers), Civic head-unit install via the head unit's Google Play path (actual-vehicle ADB unavailable per Honda), device-catalog check, and launch/verification on the vehicle. AAOS store screenshots (optional) and the AAOS quality-policy agreement remain open for dedicated-track opt-in later.
