@@ -90,6 +90,15 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(AUDIO.mask("denied secret123 for secret123", "secret123"), "denied <redacted> for <redacted>")
         self.assertEqual(AUDIO.mask("plain", ""), "plain")
 
+    def test_running_emulator_token_is_preferred_by_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            running = Path(directory) / "running"
+            running.mkdir()
+            (running / "pid_1.ini").write_text("grpc.port=8590\ngrpc.token=running-token\n")
+            (running / "pid_2.ini").write_text("grpc.port=8591\ngrpc.token=other-token\n")
+            self.assertEqual(AUDIO.running_token(8590, running), "running-token")
+            self.assertIsNone(AUDIO.running_token(8592, running))
+
 
 class CanonicalAssetTests(unittest.TestCase):
     def test_asset_matches_provenance_and_limits(self):
@@ -152,6 +161,9 @@ class GrpcHarnessTests(unittest.TestCase):
         self.assertLess(report["blocked_elapsed_s"], 1.0)
         self.assertLessEqual(report["blocked_packets_before_cancel"], 1)
         self.assertTrue(report["server_saw_inject_cancel"])
+        self.assertTrue(report["deadline_exceeded"])
+        self.assertLess(report["deadline_elapsed_s"], 1.0)
+        self.assertTrue(report["server_saw_deadline_cancel"])
         self.assertEqual(report["capture_error"], "CANCELLED")
         self.assertLess(report["capture_bounded_s"], 2.0)
         self.assertTrue(report["capture_matches_signal"])

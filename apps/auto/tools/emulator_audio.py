@@ -28,6 +28,24 @@ def read_token(path=TOKEN_FILE):
     return Path(path).read_text().strip()
 
 
+def running_token(port, directory=None):
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+    running = directory or runtime / "avd" / "running"
+    for candidate in running.glob("pid_*.ini"):
+        values = {}
+        for line in candidate.read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                values[key.strip()] = value.strip()
+        if values.get("grpc.port") == str(port) and values.get("grpc.token"):
+            return values["grpc.token"]
+    return None
+
+
+def auth_token(port):
+    return running_token(port) or read_token()
+
+
 def read_wav(path):
     with wave.open(str(path), "rb") as source:
         channels = source.getnchannels()
@@ -160,6 +178,9 @@ class Controller:
         watcher.start()
         try:
             call.result(timeout=timeout)
+        except self.grpc.FutureTimeoutError:
+            call.cancel()
+            sent["deadline_exceeded"] = True
         except self.grpc.FutureCancelledError:
             if cancelled_rpc.is_set():
                 sent["cancelled"] = True
@@ -203,7 +224,7 @@ class Controller:
 
 
 def command_status(args):
-    token = read_token()
+    token = auth_token(args.port)
     ctrl = Controller(args.port, token)
     report = {"unauthenticated": None, "authenticated": None, "microphone_real_audio": None}
     try:
@@ -218,7 +239,7 @@ def command_status(args):
 
 
 def command_inject(args):
-    token = read_token()
+    token = auth_token(args.port)
     ctrl = Controller(args.port, token)
     rate, pcm = read_wav(args.wav)
     result = ctrl.inject(pcm, args.lead_ms, args.tail_ms)
@@ -228,7 +249,7 @@ def command_inject(args):
 
 
 def command_capture(args):
-    token = read_token()
+    token = auth_token(args.port)
     ctrl = Controller(args.port, token)
     pcm, stamps, error = ctrl.capture(args.seconds)
     if args.out:
@@ -263,7 +284,7 @@ def main(argv=None):
     except Exception as failure:
         token = ""
         try:
-            token = read_token()
+            token = auth_token(args.port)
         except OSError:
             pass
         print(mask("%s: %s" % (type(failure).__name__, failure), token), file=sys.stderr)

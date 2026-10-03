@@ -67,6 +67,7 @@ class MainActivity : Activity() {
         setContentView(scroll)
         status = label("Host UX unknown; capture and detail disabled", 18f)
         connectHost()
+        scheduleDiagnosticIntent(intent)
     }
 
     private fun label(text: String, size: Float = 16f): TextView = TextView(this).apply {
@@ -84,6 +85,20 @@ class MainActivity : Activity() {
             minHeight = 56
             setOnClickListener { action() }
         })
+    }
+
+    private fun scheduleDiagnosticIntent(intent: Intent) {
+        val mic = intent.getBooleanExtra(EXTRA_RUN_MIC, false)
+        val asr = intent.getBooleanExtra(EXTRA_RUN_ASR, false)
+        if (mic == asr) return
+        timers.postDelayed({
+            probe("diagnostic_intent", "mic=$mic asr=$asr unrestricted=$unrestricted")
+            when {
+                mic && unrestricted -> microphoneProbe()
+                asr && unrestricted -> recognitionProbe()
+                else -> report("Diagnostic intent refused: host restricted or unknown")
+            }
+        }, HOST_SETTLE_MS)
     }
 
     private fun probe(event: String, detail: String = "") {
@@ -459,8 +474,11 @@ class MainActivity : Activity() {
 
     private companion object {
         const val TAG = "HoloceneProbe"
+        const val EXTRA_RUN_MIC = "sh.delo.holocene.extra.RUN_MIC"
+        const val EXTRA_RUN_ASR = "sh.delo.holocene.extra.RUN_ASR"
         const val SAMPLE_RATE = 16000
         const val MIC_WINDOW_MS = 6000L
+        const val HOST_SETTLE_MS = 1500L
         const val ASR_BOUND_MS = 15000L
         const val TTS_BOUND_MS = 10000L
     }

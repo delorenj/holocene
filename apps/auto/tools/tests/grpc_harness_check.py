@@ -105,6 +105,13 @@ def main():
         out["blocked_elapsed_s"] = blocked["elapsed_s"]
         out["blocked_packets_before_cancel"] = len(fake.packets)
         out["server_saw_inject_cancel"] = fake.inject_cancelled.wait(2)
+        fake.packets.clear()
+        fake.inject_cancelled.clear()
+        fake.block_next_injection = True
+        deadline = ctrl.inject(pcm, timeout=0.25)
+        out["deadline_exceeded"] = deadline["deadline_exceeded"]
+        out["deadline_elapsed_s"] = deadline["elapsed_s"]
+        out["server_saw_deadline_cancel"] = fake.inject_cancelled.wait(2)
         began = time.monotonic()
         captured, stamps, error = ctrl.capture(0.5)
         out["capture_bytes"] = len(captured)
