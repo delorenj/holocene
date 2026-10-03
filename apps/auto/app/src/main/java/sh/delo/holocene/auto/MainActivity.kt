@@ -262,9 +262,19 @@ class MainActivity : Activity() {
             try {
                 engine.checkRecognitionSupport(intent, mainExecutor, object : RecognitionSupportCallback {
                     override fun onSupportResult(support: RecognitionSupport) {
+                        if (!session.isCapturing(token) || recognizer !== engine) {
+                            probe("asr_support_ignored", "origin_gen=$token online=${support.onlineLanguages} installed=${support.installedOnDeviceLanguages}")
+                            return
+                        }
                         probe("asr_support", "online=${support.onlineLanguages} installed=${support.installedOnDeviceLanguages} pending=${support.pendingOnDeviceLanguages} supported=${support.supportedOnDeviceLanguages}")
                     }
-                    override fun onError(error: Int) { probe("asr_support_error", "error=$error") }
+                    override fun onError(error: Int) {
+                        if (!session.isCapturing(token) || recognizer !== engine) {
+                            probe("asr_support_error_ignored", "origin_gen=$token error=$error")
+                            return
+                        }
+                        probe("asr_support_error", "origin_gen=$token error=$error")
+                    }
                 })
             } catch (error: Exception) { probe("asr_support_exception", "type=${error.javaClass.simpleName} message=${error.message}") }
             engine.setRecognitionListener(object : RecognitionListener {
@@ -338,7 +348,8 @@ class MainActivity : Activity() {
                     return@post
                 }
                 val language = current.setLanguage(Locale.US)
-                probe("tts_ready", "engine=${current.defaultEngine} language_result=$language available=${current.engines.joinToString(",") { it.name }}")
+                val boundEngine = boundTtsEngine(current)
+                probe("tts_ready", "bound_engine=$boundEngine default_preference=${current.defaultEngine} language_result=$language available=${current.engines.joinToString(",") { it.name }}")
                 if (language < TextToSpeech.LANG_AVAILABLE) {
                     finishAcknowledgement(token, "TTS en-US voice unavailable ($language); no acknowledgement")
                     return@post
@@ -386,6 +397,12 @@ class MainActivity : Activity() {
     private fun finishAcknowledgement(token: Int, reason: String) {
         if (!session.completeAcknowledgement(token)) return
         releaseAll(reason)
+    }
+
+    private fun boundTtsEngine(engine: TextToSpeech): String = try {
+        engine.javaClass.getMethod("getCurrentEngine").invoke(engine) as String? ?: "none"
+    } catch (error: Exception) {
+        "unreported"
     }
 
     private fun cancelDiagnostic(reason: String, source: String) {

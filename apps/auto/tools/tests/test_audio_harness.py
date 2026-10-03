@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 import wave
+from unittest import mock
 
 TESTS = Path(__file__).resolve().parent
 TOOLS = TESTS.parent
@@ -72,6 +73,19 @@ class InputValidationTests(unittest.TestCase):
             rate, pcm = AUDIO.read_wav(self.write(directory, "ok.wav", 1, 2, 16000, 5))
             self.assertEqual((rate, len(pcm)), (16000, 160000))
 
+    def test_overlong_wav_is_rejected_before_samples_are_loaded(self):
+        source = mock.MagicMock()
+        source.__enter__.return_value = source
+        source.__exit__.return_value = None
+        source.getnchannels.return_value = 1
+        source.getsampwidth.return_value = 2
+        source.getframerate.return_value = AUDIO.RATE
+        source.getnframes.return_value = AUDIO.RATE * 6
+        with mock.patch.object(AUDIO.wave, "open", return_value=source):
+            with self.assertRaises(ValueError):
+                AUDIO.read_wav("overlong.wav")
+        source.readframes.assert_not_called()
+
     def test_token_is_masked_in_error_text(self):
         self.assertEqual(AUDIO.mask("denied secret123 for secret123", "secret123"), "denied <redacted> for <redacted>")
         self.assertEqual(AUDIO.mask("plain", ""), "plain")
@@ -134,6 +148,10 @@ class GrpcHarnessTests(unittest.TestCase):
         self.assertEqual(report["inject_bytes"], 41600)
         self.assertTrue(report["cancelled_inject"])
         self.assertEqual(report["cancelled_packets"], 0)
+        self.assertTrue(report["blocked_cancelled"])
+        self.assertLess(report["blocked_elapsed_s"], 1.0)
+        self.assertLessEqual(report["blocked_packets_before_cancel"], 1)
+        self.assertTrue(report["server_saw_inject_cancel"])
         self.assertEqual(report["capture_error"], "CANCELLED")
         self.assertLess(report["capture_bounded_s"], 2.0)
         self.assertTrue(report["capture_matches_signal"])

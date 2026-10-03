@@ -30,16 +30,18 @@ def read_token(path=TOKEN_FILE):
 
 def read_wav(path):
     with wave.open(str(path), "rb") as source:
-        if source.getnchannels() != 1 or source.getsampwidth() != 2:
-            raise ValueError("input must be mono signed 16-bit PCM")
+        channels = source.getnchannels()
+        width = source.getsampwidth()
         rate = source.getframerate()
         frames = source.getnframes()
+        if channels != 1 or width != 2:
+            raise ValueError("input must be mono signed 16-bit PCM")
+        if rate != RATE:
+            raise ValueError("input must be %d Hz" % RATE)
+        if frames / rate > MAX_INPUT_SECONDS:
+            raise ValueError("input exceeds %.1f seconds" % MAX_INPUT_SECONDS)
         pcm = source.readframes(frames)
-    if rate != RATE:
-        raise ValueError("input must be %d Hz" % RATE)
-    if frames / rate > MAX_INPUT_SECONDS:
-        raise ValueError("input exceeds %.1f seconds" % MAX_INPUT_SECONDS)
-    return rate, pcm
+        return rate, pcm
 
 
 def split_frames(pcm, rate=RATE, frame_ms=FRAME_MS):
@@ -133,6 +135,8 @@ class Controller:
         payload = silence(lead_ms) + pcm + silence(tail_ms)
         fmt = self.audio_format()
         sent = {"packets": 0, "bytes": 0, "cancelled": False}
+        finished = threading.Event()
+        cancelled_rpc = threading.Event()
 
         def requests():
             for chunk in split_frames(payload):
@@ -143,7 +147,31 @@ class Controller:
                 sent["bytes"] += len(chunk)
                 yield self.pb.AudioPacket(format=fmt, timestamp=int(time.time() * 1e6), audio=chunk)
         started = time.monotonic()
-        self.stub.injectAudio(requests(), metadata=self.metadata(), timeout=timeout)
+        call = self.stub.injectAudio.future(requests(), metadata=self.metadata(), timeout=timeout)
+
+        def cancel_when_requested():
+            while not finished.wait(0.05):
+                if cancel is not None and cancel.is_set():
+                    cancelled_rpc.set()
+                    call.cancel()
+                    return
+
+        watcher = threading.Thread(target=cancel_when_requested, daemon=True)
+        watcher.start()
+        try:
+            call.result(timeout=timeout)
+        except self.grpc.FutureCancelledError:
+            if cancelled_rpc.is_set():
+                sent["cancelled"] = True
+            else:
+                raise
+        except self.grpc.RpcError as failure:
+            if failure.code() == self.grpc.StatusCode.CANCELLED and cancelled_rpc.is_set():
+                sent["cancelled"] = True
+            else:
+                raise
+        finally:
+            finished.set()
         sent["elapsed_s"] = round(time.monotonic() - started, 3)
         sent["lead_ms"] = lead_ms
         sent["tail_ms"] = tail_ms

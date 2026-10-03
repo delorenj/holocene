@@ -31,6 +31,8 @@ class Fake(rpc.EmulatorControllerServicer):
         self.packets = []
         self.mic = True
         self.stream_cancelled = threading.Event()
+        self.inject_cancelled = threading.Event()
+        self.block_next_injection = False
 
     def getStatus(self, request, context):
         return pb.EmulatorStatus(uptime=7, booted=True)
@@ -43,8 +45,12 @@ class Fake(rpc.EmulatorControllerServicer):
         return empty_pb2.Empty()
 
     def injectAudio(self, request_iterator, context):
+        context.add_callback(self.inject_cancelled.set)
         for packet in request_iterator:
             self.packets.append((packet.format.samplingRate, packet.format.channels, packet.format.format, len(packet.audio)))
+            if self.block_next_injection:
+                while context.is_active():
+                    time.sleep(0.01)
         return empty_pb2.Empty()
 
     def streamAudio(self, request, context):
@@ -90,6 +96,15 @@ def main():
         cancelled = ctrl.inject(pcm, cancel=cancel)
         out["cancelled_inject"] = cancelled["cancelled"]
         out["cancelled_packets"] = cancelled["packets"]
+        blocking_cancel = threading.Event()
+        fake.packets.clear()
+        fake.block_next_injection = True
+        threading.Timer(0.15, blocking_cancel.set).start()
+        blocked = ctrl.inject(pcm, timeout=1.5, cancel=blocking_cancel)
+        out["blocked_cancelled"] = blocked["cancelled"]
+        out["blocked_elapsed_s"] = blocked["elapsed_s"]
+        out["blocked_packets_before_cancel"] = len(fake.packets)
+        out["server_saw_inject_cancel"] = fake.inject_cancelled.wait(2)
         began = time.monotonic()
         captured, stamps, error = ctrl.capture(0.5)
         out["capture_bytes"] = len(captured)
