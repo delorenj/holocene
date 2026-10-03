@@ -2,9 +2,9 @@
 
 ## Local release artifact
 
-Status: **LOCAL_SIGNING_READY**. This is not vehicle proof and not a Play upload.
+Status: **PLAY_UPLOAD_BLOCKED_AAOS_TRACK**. The bundle itself is accepted; the save is gated on Android Automotive OS track policy.
 
-- Source branch: `holoc-11-play-version-5`
+- Source branch: `holoc-11-play-version-5` (merged to `main`, 61a8c84, pushed)
 - Built with: `mise run auto:release-bundle`
 - Signing identity: `op://DeLoSecrets/Holocene Android Auto release signing/password`
 - Keystore alias: `holocene-auto-release`
@@ -30,6 +30,15 @@ The API 35 target follows Google Play's current Android Automotive OS new-app re
 - Android: `testDebugUnitTest`, `lintDebug`, and `assembleDebug` passed.
 - Unsigned `bundleRelease` invocation: failed closed with all four missing signing variables named.
 
+## Play Console state (2026-10-03)
+
+- v5 AAB (`holocene-auto-release-72bdb442.aab`) uploaded to the Internal testing draft via the console file input; Play processed it and shows `App bundle 5 (0.2.3-internal), API 33+, Target SDK 35`. Release name set to `5 (0.2.3-internal)`.
+- Save is blocked at Preview-and-confirm with exactly one error: `APKs and bundles must not require following features: android.hardware.type.automotive. Some features can only be required in dedicated tracks.` The manifest declares `<uses-feature android:name="android.hardware.type.automotive" android:required="true" />` (`apps/auto/app/src/main/AndroidManifest.xml:2`).
+- The Android Automotive OS form factor is already opted in (Advanced settings → Form factors → Android Automotive OS, dedicated-release-track mode saved). Its remaining checklist: upload AAOS store screenshots (optional), release an AAOS bundle to a testing track (link currently routes back to the same mobile internal-testing editor), and agree to the AAOS quality-guidelines policy review (locked).
+- Non-blocking warning: no R8 deobfuscation file uploaded; ignorable for internal testing.
+- Unblock options: (a) complete the AAOS policy agreement so AAOS-specific track selection unlocks, or (b) set `android:required="false"` on the automotive uses-feature so the bundle passes mobile-track validation (weaker claim, still installable on the head unit).
+- versionCode 4 is permanently consumed; `f495241f` and all prior artifacts must never be re-uploaded.
+
 ## Remaining external gates
 
-No Play Console app record, Automotive form-factor opt-in, internal-testing track, tester grant, device-catalog check, upload, or Civic install/launch has occurred. Honda states that actual-vehicle ADB is unavailable, so those steps must use the head unit's Google Play path rather than a sideload assumption.
+AAOS policy agreement (or manifest relaxation), successful internal-track release save + rollout, tester grant, device-catalog check, and Civic install/launch. Honda states that actual-vehicle ADB is unavailable, so install must use the head unit's Google Play path rather than a sideload assumption.
