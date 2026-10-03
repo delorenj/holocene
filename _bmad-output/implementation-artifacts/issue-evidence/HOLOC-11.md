@@ -4,17 +4,17 @@
 
 Status: **LOCAL_SIGNING_READY**. This is not vehicle proof and not a Play upload.
 
-- Source branch: `holoc-11-play-version-4`
+- Source branch: `holoc-11-play-version-5`
 - Built with: `mise run auto:release-bundle`
 - Signing identity: `op://DeLoSecrets/Holocene Android Auto release signing/password`
 - Keystore alias: `holocene-auto-release`
 - Application ID: `io.automaticai.holocene`
-- Version: `0.2.2-internal` (`versionCode=4`)
+- Version: `0.2.3-internal` (`versionCode=5`)
 - SDK: compile/target API 35, minimum API 33
-- AAB SHA256: `f495241f5da7982affaf535fd9a8d3f1fed04bac7a53af243459ce26e2d7e04d`
-- Retained ignored runtime artifact: `agents/hermes/pm/runtime/workers/HOLOC-11-recovery-1/holocene-auto-release-f495241f.aab`
+- AAB SHA256: `72bdb442a936a56210224804b4ce5220cd24ad717ee6c2f13166f69e0d1c261e`
+- Retained ignored runtime artifact: `agents/hermes/pm/runtime/workers/HOLOC-11-recovery-1/holocene-auto-release-72bdb442.aab`
 
-Play Console rejected the first local AAB because its app record requires package `io.automaticai.holocene`. The corrected application ID is `io.automaticai.holocene`; the Kotlin namespace remains `sh.delo.holocene.auto`, and the signed bundle manifest was inspected to confirm both values. Play then reported that `versionCode=3` was already consumed, so this upload uses `versionCode=4`. The prior `9a49b657` and `4eb560b8` artifacts are superseded and must not be uploaded again.
+Play Console rejected the first local AAB because its app record requires package `io.automaticai.holocene`. The corrected application ID is `io.automaticai.holocene`; the Kotlin namespace remains `sh.delo.holocene.auto`, and the signed bundle manifest was inspected to confirm both values. Play then reported that `versionCode=3` was already consumed, so this upload uses `versionCode=4`. The prior `9a49b657` and `4eb560b8` artifacts are superseded and must not be uploaded again. versionCode 4 was permanently consumed by Play when the bundle was dropped into a draft release (later discarded); drafts do not free consumed version codes, so the upload now uses versionCode 5.
 
 The build resolves the keystore attachment and password from DeLoSecrets into a private temporary directory, never stores either value in Git, and cleans the temporary signing material after Gradle finishes. A release build without all four signing environment values fails with an explicit missing-input error.
 
@@ -23,7 +23,7 @@ The API 35 target follows Google Play's current Android Automotive OS new-app re
 ## Verification
 
 - `mise run auto:release-bundle`: PASS, 49 Gradle tasks.
-- Corrected signed APK inspection: application-id `io.automaticai.holocene`, version-code `4`, version-name `0.2.2-internal`.
+- Corrected signed APK inspection: application-id `io.automaticai.holocene`, version-code `5`, version-name `0.2.3-internal`.
 - `jarsigner -verify`: `jar verified` (self-signed release identity, expected for this private testing identity).
 - `ANDROID_HOME="$HOME/Android/Sdk" mise run auto:check`: PASS.
 - Python tooling: 44 tests passed, 4 environment-dependent skips.
