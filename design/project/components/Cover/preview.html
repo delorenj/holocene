@@ -1,0 +1,58 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>33GOD</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--ground); color: var(--ink); font-family: var(--font-sans); overflow: hidden; }
+  .cover { position: relative; width: 960px; height: 288px; overflow: hidden; }
+  .art { position: absolute; top: 0; left: 480px; width: 480px; height: 288px; overflow: hidden; }
+  .art svg { display: block; width: 480px; height: 288px; }
+  .deep { fill: var(--ink); }
+  .lake { fill: var(--lake); }
+  .ochre { fill: var(--ochre); }
+  .heather { fill: var(--heather); }
+  .brick { fill: var(--brick); }
+  .cut { fill: var(--ground); }
+  .lit { fill: var(--ochre); }
+  .blk { rx: var(--radius-2); }
+  .words { position: absolute; left: 32px; bottom: 32px; max-width: 440px; }
+  .name { margin: 0; font: 400 120px/0.92 var(--font-display); letter-spacing: -0.02em; font-variation-settings: 'opsz' 72; color: var(--ink); }
+  .tag { margin: 12px 0 0 6px; font: 400 14px/20px var(--font-sans); color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="480 0 480 288" width="480" height="288">
+<!--
+  blocks      ink slab 448×136 bled off the right (the deep ground of the brand) · lake band 352×40 above it, bled right · ochre layer 208×32 below (the signature, the lit window) · heather 184×12 and brick 48×12 as thin state strata — together ≈ 34% of 960×288
+  arrangement strata: unequal horizontal bands, left edges stepped like an outcrop, a space-8 seam between every layer, all bleeding off the right edge
+  pattern     the mark's split disc, from "Ochre means you": seven discs cut from the slab in ground, each split by a space-4 seam, the right half of one lit in ochre
+  scales      band heights and gaps in space-8 multiples; disc pitch space-48 + space-8; disc radius 20 (space-20), seam space-4; block corners radius-2
+-->
+<rect class="lake blk" x="608" y="32" width="360" height="40" rx="2"/>
+<rect class="deep blk" x="512" y="80" width="456" height="136" rx="2"/>
+<rect class="ochre blk" x="560" y="224" width="208" height="32" rx="2"/>
+<rect class="heather blk" x="776" y="224" width="192" height="12" rx="2"/>
+<rect class="brick blk" x="776" y="244" width="48" height="12" rx="2"/>
+<g transform="translate(0 148)">
+  <path class="cut" d="M574 -20A20 20 0 0 0 574 20Z"/><path class="cut" d="M578 -20A20 20 0 0 1 578 20Z"/>
+  <path class="cut" d="M630 -20A20 20 0 0 0 630 20Z"/><path class="cut" d="M634 -20A20 20 0 0 1 634 20Z"/>
+  <path class="cut" d="M686 -20A20 20 0 0 0 686 20Z"/><path class="cut" d="M690 -20A20 20 0 0 1 690 20Z"/>
+  <path class="cut" d="M742 -20A20 20 0 0 0 742 20Z"/><path class="cut" d="M746 -20A20 20 0 0 1 746 20Z"/>
+  <path class="cut" d="M798 -20A20 20 0 0 0 798 20Z"/><path class="lit" d="M802 -20A20 20 0 0 1 802 20Z"/>
+  <path class="cut" d="M854 -20A20 20 0 0 0 854 20Z"/><path class="cut" d="M858 -20A20 20 0 0 1 858 20Z"/>
+  <path class="cut" d="M910 -20A20 20 0 0 0 910 20Z"/><path class="cut" d="M914 -20A20 20 0 0 1 914 20Z"/>
+</g>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">33GOD</h1>
+<p class="tag">Quiet by default. Warm where you are needed.</p>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Generated from tracked sources by scripts/build.mjs and scripts/previews.py
+/tokens.css
+/_render/
+/project/components/bundle.js
+/project/components/lib/
+/project/components/*/preview.html
+!/project/components/Cover/preview.html

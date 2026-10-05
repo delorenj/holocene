@@ -1,0 +1,277 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-05T01:37:54Z"
+  },
+  "title": "33GOD",
+  "namespace": "ThirtyThree",
+  "libraries": [
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "global": "React",
+      "file": "components/lib/react.production.min.js"
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "global": "ReactDOM",
+      "file": "components/lib/react-dom.production.min.js"
+    }
+  ],
+  "sections": {},
+  "groups": [
+    "Logos",
+    "Glyphs",
+    "Icons"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "33god-mark.svg",
+        "33god-mark-dark.svg",
+        "33god-mark-mono.svg",
+        "33god-lockup.svg",
+        "33god-lockup-dark.svg",
+        "33god-app-icon.svg"
+      ],
+      "files": {
+        "33god-mark.svg": {
+          "name": "33god-mark.svg",
+          "blob": "aebd5856aa3316effad8cb2bc92f0936",
+          "size": 312,
+          "type": "image/svg+xml"
+        },
+        "33god-mark-dark.svg": {
+          "name": "33god-mark-dark.svg",
+          "blob": "7df621232061bdbce61568f84d324d4e",
+          "size": 312,
+          "type": "image/svg+xml"
+        },
+        "33god-mark-mono.svg": {
+          "name": "33god-mark-mono.svg",
+          "blob": "280d1bfa40cb2ee9ecd3c7e5856c81c8",
+          "size": 312,
+          "type": "image/svg+xml"
+        },
+        "33god-lockup.svg": {
+          "name": "33god-lockup.svg",
+          "blob": "7d4b1e0252dd695adb0fc491b9b1446a",
+          "size": 11784,
+          "type": "image/svg+xml"
+        },
+        "33god-lockup-dark.svg": {
+          "name": "33god-lockup-dark.svg",
+          "blob": "2578637405b301a1a7488ef0015a0376",
+          "size": 11784,
+          "type": "image/svg+xml"
+        },
+        "33god-app-icon.svg": {
+          "name": "33god-app-icon.svg",
+          "blob": "aac26c51c545467b5901ae3f435f623f",
+          "size": 374,
+          "type": "image/svg+xml"
+        }
+      }
+    },
+    "Glyphs": {
+      "name": "Glyphs",
+      "tile": "s",
+      "order": [
+        "signal-you.svg",
+        "signal-broken.svg",
+        "signal-stuck.svg",
+        "signal-working.svg",
+        "signal-unknown.svg",
+        "signal-quiet.svg",
+        "signal-cleared.svg"
+      ],
+      "files": {
+        "signal-you.svg": {
+          "name": "signal-you.svg",
+          "blob": "815d95014fef6bf1e3a08252f6f91dce",
+          "size": 145,
+          "type": "image/svg+xml"
+        },
+        "signal-broken.svg": {
+          "name": "signal-broken.svg",
+          "blob": "33401f57f63370a04ba760356034578e",
+          "size": 155,
+          "type": "image/svg+xml"
+        },
+        "signal-stuck.svg": {
+          "name": "signal-stuck.svg",
+          "blob": "48f9a46f8eef94c81fc37eeb46e2b2e8",
+          "size": 155,
+          "type": "image/svg+xml"
+        },
+        "signal-working.svg": {
+          "name": "signal-working.svg",
+          "blob": "c11db7b727fabb12bf9da67a0a2f472b",
+          "size": 296,
+          "type": "image/svg+xml"
+        },
+        "signal-unknown.svg": {
+          "name": "signal-unknown.svg",
+          "blob": "f2dc993b562db4629e4641c783c39de3",
+          "size": 200,
+          "type": "image/svg+xml"
+        },
+        "signal-quiet.svg": {
+          "name": "signal-quiet.svg",
+          "blob": "0728307a9d17e6f9ef0315408fc3d7d1",
+          "size": 165,
+          "type": "image/svg+xml"
+        },
+        "signal-cleared.svg": {
+          "name": "signal-cleared.svg",
+          "blob": "dc43f1870217f806b5034372476b8a1e",
+          "size": 136,
+          "type": "image/svg+xml"
+        }
+      }
+    },
+    "Icons": {
+      "name": "Icons",
+      "tile": "xs",
+      "order": [
+        "copy.svg",
+        "check.svg",
+        "external-link.svg",
+        "chevron-right.svg",
+        "chevron-down.svg",
+        "square-terminal.svg",
+        "git-commit-horizontal.svg",
+        "git-branch.svg",
+        "search.svg",
+        "x.svg",
+        "corner-down-left.svg",
+        "rotate-ccw.svg",
+        "pause.svg",
+        "play.svg",
+        "filter.svg",
+        "ticket.svg",
+        "box.svg"
+      ],
+      "files": {
+        "copy.svg": {
+          "name": "copy.svg",
+          "blob": "a912f0ef9718cfb49099fc6b7fff4eb5",
+          "size": 337,
+          "type": "image/svg+xml"
+        },
+        "check.svg": {
+          "name": "check.svg",
+          "blob": "7f288d362debdea3f0237e0c4d064266",
+          "size": 237,
+          "type": "image/svg+xml"
+        },
+        "external-link.svg": {
+          "name": "external-link.svg",
+          "blob": "91e2977fc9ac05863f9cfd88c1a97bec",
+          "size": 330,
+          "type": "image/svg+xml"
+        },
+        "chevron-right.svg": {
+          "name": "chevron-right.svg",
+          "blob": "0489ee5f69741e6e30bf81014de3e4a3",
+          "size": 235,
+          "type": "image/svg+xml"
+        },
+        "chevron-down.svg": {
+          "name": "chevron-down.svg",
+          "blob": "649e011f4d6cab76f03568c79fd8ee33",
+          "size": 234,
+          "type": "image/svg+xml"
+        },
+        "square-terminal.svg": {
+          "name": "square-terminal.svg",
+          "blob": "bd99756df2761d0a2ba66af2728ff797",
+          "size": 319,
+          "type": "image/svg+xml"
+        },
+        "git-commit-horizontal.svg": {
+          "name": "git-commit-horizontal.svg",
+          "blob": "9d87ffaf8641d7e2b2fc3ac69f8021a7",
+          "size": 325,
+          "type": "image/svg+xml"
+        },
+        "git-branch.svg": {
+          "name": "git-branch.svg",
+          "blob": "0702f966639934af5ed67e272a757024",
+          "size": 349,
+          "type": "image/svg+xml"
+        },
+        "search.svg": {
+          "name": "search.svg",
+          "blob": "7f0f8819df4593ed757a6fc55193b1d2",
+          "size": 271,
+          "type": "image/svg+xml"
+        },
+        "x.svg": {
+          "name": "x.svg",
+          "blob": "caa078faf381f3ea0cf0c08e147bc3e6",
+          "size": 258,
+          "type": "image/svg+xml"
+        },
+        "corner-down-left.svg": {
+          "name": "corner-down-left.svg",
+          "blob": "9a1ae782d09499af6b21d9a2d0753307",
+          "size": 284,
+          "type": "image/svg+xml"
+        },
+        "rotate-ccw.svg": {
+          "name": "rotate-ccw.svg",
+          "blob": "ed5ec5bde973d138f04c1377198c0d65",
+          "size": 295,
+          "type": "image/svg+xml"
+        },
+        "pause.svg": {
+          "name": "pause.svg",
+          "blob": "384ccdc75f260055f4da6526a9177ba0",
+          "size": 311,
+          "type": "image/svg+xml"
+        },
+        "play.svg": {
+          "name": "play.svg",
+          "blob": "7ab2baca10b476ae4d6218bfd0c4a1cb",
+          "size": 248,
+          "type": "image/svg+xml"
+        },
+        "filter.svg": {
+          "name": "filter.svg",
+          "blob": "98f28399c84aed6e2e53afc2f509340d",
+          "size": 273,
+          "type": "image/svg+xml"
+        },
+        "ticket.svg": {
+          "name": "ticket.svg",
+          "blob": "3e4bf47e17719645968874ed28acee48",
+          "size": 394,
+          "type": "image/svg+xml"
+        },
+        "box.svg": {
+          "name": "box.svg",
+          "blob": "fa4bae13679cced47e75d67eec3ff0f3",
+          "size": 399,
+          "type": "image/svg+xml"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "lastChange": {
+    "by": "delorenj",
+    "at": "2026-10-05T01:37:54Z",
+    "via": "Claude Code",
+    "note": "First release: two themes, 40 colour tokens, 3 families, 20 components, the Home page, logos, glyphs and icons."
+  }
+}
