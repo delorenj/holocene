@@ -138,3 +138,26 @@ test("components map to projects by repo path; unparented projects become island
   assert.ok(edges.some((e) => e.from === "holocene" && e.to === "bloodbank"));
   assert.ok(edges.every((e) => by.has(e.from) && by.has(e.to)));
 });
+
+test("an idle agent's recency is when it went idle, not the sweeper's last pass", () => {
+  const now = Date.parse("2026-10-05T16:38:14Z");
+  const sweep = now - 500;
+  const model = buildAgents({
+    nowMs: now,
+    registry,
+    projects,
+    asm: new Map([
+      ["hermes:a:flume-pm", { scope: "hermes:a:flume-pm", state: "idle", sinceMs: now - 3_600_000, lastMs: sweep }],
+      ["hermes:a:bloodbank-pm", { scope: "hermes:a:bloodbank-pm", state: "unknown", sinceMs: now - 86_400_000, lastMs: sweep }],
+      ["hermes:a:holocene-pm", { scope: "hermes:a:holocene-pm", state: "working", sinceMs: now - 60_000, lastMs: sweep }]
+    ]),
+    gateways: new Map(),
+    invocations: [{ id: "e1", type: "completed", at: new Date(now - 120_000).toISOString(), agentId: "bloodbank-pm", invocationId: "i1" }],
+    scopes: [],
+    tickets: new Map()
+  });
+  const by = new Map(model.agents.map((a) => [a.id, a]));
+  assert.equal(by.get("flume-pm")!.lastActiveAt, new Date(now - 3_600_000).toISOString());
+  assert.equal(by.get("bloodbank-pm")!.lastActiveAt, new Date(now - 120_000).toISOString());
+  assert.equal(by.get("holocene-pm")!.lastActiveAt, new Date(sweep).toISOString());
+});
