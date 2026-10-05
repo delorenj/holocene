@@ -1,0 +1,12 @@
+Font licences
+
+The fonts in this folder are variable WOFF2 files (Latin subset) distributed under the SIL Open Font License 1.1. They may be bundled, embedded and redistributed with this design system; they may not be sold on their own.
+
+- `AtkinsonHyperlegibleMono-Italic-Variable.woff2`: Atkinson Hyperlegible Mono, italic, weights 200–800. Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)
+- `AtkinsonHyperlegibleMono-Variable.woff2`: Atkinson Hyperlegible Mono, upright, weights 200–800. Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)
+- `AtkinsonHyperlegibleNext-Italic-Variable.woff2`: Atkinson Hyperlegible Next, italic, weights 200–800. Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
+- `AtkinsonHyperlegibleNext-Variable.woff2`: Atkinson Hyperlegible Next, upright, weights 200–800. Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
+- `Newsreader-Italic-Variable.woff2`: Newsreader, italic, weights 200–800, optical sizes 6–72. Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
+- `Newsreader-Variable.woff2`: Newsreader, upright, weights 200–800, optical sizes 6–72. Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
+
+Full licence text: https://openfontlicense.org/open-font-license-official-text/
