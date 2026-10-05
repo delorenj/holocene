@@ -16,6 +16,7 @@ import {
   getContainersSnapshot
 } from "./containers.js";
 import { getOrgTree } from "./org.js";
+import { getHubAgents, getHubProjects } from "./hub.js";
 import {
   getToolingStat,
   getToolingStatDefinitions,
@@ -344,6 +345,16 @@ app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
 // P2 — the fleet arranged into the operator's real reporting hierarchy
 // (~/.hermes/org.yaml merged with project_path derivation + live overlay).
 app.get("/api/modules/org/tree", async () => getOrgTree());
+
+// The hub's two canvas views: agents (with their pjangler project) and projects.
+app.get("/api/modules/hub/agents", async (_req, reply) => {
+  reply.header("Cache-Control", "no-store");
+  return getHubAgents(eventCollector.store);
+});
+app.get("/api/modules/hub/projects", async (_req, reply) => {
+  reply.header("Cache-Control", "no-store");
+  return getHubProjects(eventCollector.store);
+});
 
 app.get<{ Querystring: { force?: string } }>("/api/modules/systems/inventory", async (req) =>
   getSystemsInventory(req.query.force === "1")

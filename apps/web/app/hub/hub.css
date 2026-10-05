@@ -1,0 +1,1277 @@
+/* Holocene hub, Ledger theme on the 33GOD tokens.
+   Ruled ledger stock, black rules, hard offset shadows. The vermilion pop is
+   reserved for you, focus and selection. "ledger-night" is a provisional dark
+   pass behind the theme toggle; it is not locked in yet.
+
+   Every rule is prefixed with .hub-root so it outranks the legacy globals
+   (bare button, h2 and p rules) without !important. */
+
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url("/fonts/AtkinsonHyperlegibleNext-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Mono";
+  src: url("/fonts/AtkinsonHyperlegibleMono-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader-Italic-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ---------- themes ---------- */
+
+.hub-root {
+  --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --canvas-h: clamp(520px, calc(100vh - 236px), 960px);
+}
+
+.hub-root[data-theme="ledger"] {
+  color-scheme: light;
+  --ground: #f1f0eb;
+  --surface: #fbfaf7;
+  --sunken: #e6e5de;
+  --line: #d3d2ca;
+  --line-strong: #23231f;
+  --ink: #121210;
+  --ink-2: #3a3a35;
+  --ink-3: #57574f;
+  --on-ink: #f1f0eb;
+  --pop: #bb2d14;
+  --pop-soft: #fae8e3;
+  --broken: #9b2c6f;
+  --stuck: #5b4f99;
+  --working: #2f5d6b;
+  --cleared: #3e6b34;
+  --wash: rgba(18, 18, 16, 0.05);
+  --shadow: #121210;
+  --canvas: #f3f2ed;
+  --rule: rgba(60, 96, 84, 0.22);
+  --margin: #d9534f;
+
+  /* inverse: the header, the CEO card, the bus and the project link block */
+  --x-bg: #121210;
+  --x-ink: #f1f0eb;
+  --x-ink-2: #d2d0c7;
+  --x-ink-3: #b0aea4;
+  --x-sunken: #2a2a26;
+  --x-surface: #3d3d38;
+  --x-line: #3d3d38;
+  --x-line-strong: #8a897f;
+  --x-pop: #ff7a5c;
+  --x-broken: #f08fc4;
+  --x-stuck: #b9adf0;
+  --x-working: #8fc4d4;
+  --x-cleared: #a3d39a;
+  --x-wash: rgba(241, 240, 235, 0.08);
+
+  --h-bg: var(--x-bg);
+  --h-ink: var(--x-ink);
+  --h-ink-2: var(--x-ink-2);
+  --h-ink-3: var(--x-ink-3);
+  --h-line: var(--x-line);
+  --h-line-strong: var(--x-line-strong);
+  --h-pop: var(--x-pop);
+  --h-broken: var(--x-broken);
+  --h-stuck: var(--x-stuck);
+  --h-working: var(--x-working);
+  --h-cleared: var(--x-cleared);
+}
+
+.hub-root[data-theme="ledger-night"] {
+  color-scheme: dark;
+  --ground: #1c1a17;
+  --surface: #26231f;
+  --sunken: #141210;
+  --line: #35312b;
+  --line-strong: #b8afa1;
+  --ink: #ede7dd;
+  --ink-2: #c9c1b4;
+  --ink-3: #a59c8f;
+  --on-ink: #1c1a17;
+  --pop: #ff6a4d;
+  --pop-soft: #4a2a22;
+  --broken: #e88fc0;
+  --stuck: #b9adf0;
+  --working: #8fc4d4;
+  --cleared: #a3d39a;
+  --wash: rgba(237, 231, 221, 0.06);
+  --shadow: #000;
+  --canvas: #181613;
+  --rule: rgba(220, 210, 190, 0.08);
+  --margin: #c2412d;
+
+  --x-bg: #ede7dd;
+  --x-ink: #141210;
+  --x-ink-2: #3d3830;
+  --x-ink-3: #57514a;
+  --x-sunken: #ddd5c8;
+  --x-surface: #f5f0e8;
+  --x-line: #cfc7ba;
+  --x-line-strong: #57514a;
+  --x-pop: #b8270f;
+  --x-broken: #9b2c6f;
+  --x-stuck: #5b4f99;
+  --x-working: #2f5d6b;
+  --x-cleared: #3e6b34;
+  --x-wash: rgba(20, 18, 16, 0.06);
+
+  --h-bg: #0f0e0c;
+  --h-ink: #ede7dd;
+  --h-ink-2: #c9c1b4;
+  --h-ink-3: #a59c8f;
+  --h-line: #35312b;
+  --h-line-strong: #8a8174;
+  --h-pop: #ff6a4d;
+  --h-broken: #e88fc0;
+  --h-stuck: #b9adf0;
+  --h-working: #8fc4d4;
+  --h-cleared: #a3d39a;
+}
+
+/* Inverse blocks swap the working tokens for their inverse set. */
+.hub-root .hub-link-block,
+.hub-root .hub-node.kind-ceo,
+.hub-root .hub-node.is-bus,
+.hub-root .hub-frame-head,
+.hub-root .hub-edge-label {
+  --ink: var(--x-ink);
+  --ink-2: var(--x-ink-2);
+  --ink-3: var(--x-ink-3);
+  --sunken: var(--x-sunken);
+  --surface: var(--x-surface);
+  --ground: var(--x-bg);
+  --line: var(--x-line);
+  --line-strong: var(--x-line-strong);
+  --pop: var(--x-pop);
+  --broken: var(--x-broken);
+  --stuck: var(--x-stuck);
+  --working: var(--x-working);
+  --cleared: var(--x-cleared);
+  --wash: var(--x-wash);
+  background: var(--x-bg);
+  color: var(--x-ink);
+}
+
+.hub-root .hub-header {
+  --ink: var(--h-ink);
+  --ink-2: var(--h-ink-2);
+  --ink-3: var(--h-ink-3);
+  --line: var(--h-line);
+  --line-strong: var(--h-line-strong);
+  --pop: var(--h-pop);
+  --broken: var(--h-broken);
+  --stuck: var(--h-stuck);
+  --working: var(--h-working);
+  --cleared: var(--h-cleared);
+}
+
+html[data-hub-theme="ledger"] body {
+  background: #f1f0eb;
+}
+html[data-hub-theme="ledger-night"] body {
+  background: #1c1a17;
+}
+
+/* ---------- base ---------- */
+
+.hub-root {
+  min-height: 100vh;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 14px/20px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.hub-root button {
+  appearance: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.hub-root button:focus-visible,
+.hub-root a:focus-visible {
+  outline: 2px solid var(--pop);
+  outline-offset: 2px;
+}
+
+.hub-root p,
+.hub-root h2 {
+  margin: 0;
+}
+
+.hub-root .hub-label {
+  font: 600 11px/14px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.hub-root .hub-note {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--ink-3);
+}
+
+/* ---------- header ---------- */
+
+.hub-root .hub-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding: 10px 16px;
+  background: var(--h-bg);
+  color: var(--ink);
+}
+
+.hub-root .hub-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  color: var(--ink);
+  text-decoration: none;
+}
+.hub-root .hub-brand svg {
+  display: block;
+}
+.hub-root .brand-ink {
+  fill: currentColor;
+}
+.hub-root .brand-pop {
+  fill: var(--pop);
+}
+.hub-root .brand-word {
+  font: 500 19px/1 var(--font-display);
+  letter-spacing: -0.005em;
+}
+.hub-root .brand-app {
+  font-size: 13px;
+  color: var(--ink-3);
+  padding-left: 10px;
+  border-left: 1px solid var(--line-strong);
+}
+
+.hub-root .hub-tabs {
+  display: inline-flex;
+  border: 2px solid var(--line-strong);
+}
+.hub-root .hub-tab {
+  height: 28px;
+  padding: 0 14px;
+  font: 600 12px/28px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.hub-root .hub-tab:hover {
+  color: var(--ink);
+  background: var(--wash);
+}
+.hub-root .hub-tab[aria-current="page"] {
+  background: var(--ink);
+  color: var(--h-bg);
+  box-shadow: inset 0 -3px 0 var(--pop);
+}
+
+.hub-root .hub-header-end {
+  flex: 1 1 320px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.hub-root .hub-sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.hub-root .hub-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 400 11px/16px var(--font-mono);
+  white-space: nowrap;
+}
+.hub-root .hub-source-name {
+  color: var(--ink-3);
+}
+.hub-root .hub-source-val {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.hub-root .hub-source.is-stale .hub-source-val {
+  color: var(--stuck);
+}
+.hub-root .hub-source.is-down .hub-source-val {
+  color: var(--broken);
+  font-weight: 700;
+}
+
+.hub-root .hub-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 2px solid var(--line-strong);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.hub-root .hub-theme:hover {
+  border-color: var(--ink);
+}
+
+/* ---------- body ---------- */
+
+.hub-root .hub-body {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 0 16px 24px;
+}
+
+.hub-root .hub-lede {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 0 14px;
+}
+.hub-root .hub-statement {
+  max-width: 110ch;
+  font: 600 21px/28px var(--font-mono);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+@media (max-width: 600px) {
+  .hub-root .hub-statement {
+    font-size: 17px;
+    line-height: 24px;
+  }
+}
+.hub-root .hub-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 12px/16px var(--font-mono);
+  color: var(--broken);
+}
+.hub-root .hub-error .hub-label {
+  color: var(--broken);
+}
+
+.hub-root .hub-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 64px 24px;
+  border: 2px dashed var(--ink-3);
+  text-align: center;
+}
+.hub-root .hub-placeholder p {
+  font: 400 13px/18px var(--font-mono);
+  color: var(--ink-2);
+}
+
+.hub-root .hub-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 20px;
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .hub-foot a {
+  color: var(--ink-2);
+  text-underline-offset: 3px;
+}
+
+/* ---------- canvas panel ---------- */
+
+.hub-root .hub-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.hub-root .hub-canvas-panel {
+  flex: 1 1 640px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.hub-root .hub-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.hub-root .hub-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font: 600 11px/24px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  transition: transform 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+.hub-root .hub-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--shadow);
+}
+.hub-root .hub-btn.is-ghost {
+  border-color: transparent;
+  box-shadow: none;
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.hub-root .hub-btn.is-ghost:hover {
+  text-decoration-color: currentColor;
+}
+
+.hub-root .hub-canvas {
+  height: var(--canvas-h);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background-color: var(--canvas);
+  background-image:
+    linear-gradient(90deg, transparent 63px, var(--margin) 63px, var(--margin) 64px, transparent 64px, transparent 67px, var(--margin) 67px, var(--margin) 68px, transparent 68px),
+    repeating-linear-gradient(transparent 0, transparent 23px, var(--rule) 23px, var(--rule) 24px);
+  background-size: 100% 100%, 100% 24px;
+  background-repeat: no-repeat, repeat;
+  background-attachment: local;
+}
+
+.hub-root .hub-host {
+  position: relative;
+}
+
+.hub-root .hub-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.hub-root .hub-edge {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+.hub-root .hub-edge.is-inferred {
+  stroke-dasharray: 4 4;
+}
+.hub-root .hub-edge.is-hot {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+
+.hub-root .hub-dep .dep-line {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+}
+.hub-root .hub-dep .dep-head {
+  fill: var(--ink-2);
+}
+.hub-root .hub-dep.is-inferred .dep-line {
+  stroke-dasharray: 5 4;
+}
+.hub-root .hub-dep.is-hot .dep-line {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.hub-root .hub-dep.is-hot .dep-head {
+  fill: var(--ink);
+}
+
+/* Delegation dots ride an edge's own path: down on delegation, up on response. */
+.hub-root .hub-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  offset-rotate: 0deg;
+  pointer-events: none;
+  opacity: 0;
+  animation: hub-run 1.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.hub-root .tone-delegated {
+  background: var(--working);
+}
+.hub-root .tone-responded {
+  background: var(--cleared);
+}
+.hub-root .tone-failed {
+  background: var(--broken);
+}
+@keyframes hub-run {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* ---------- nodes ---------- */
+
+.hub-root .hub-node {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 11px;
+  overflow: hidden;
+  text-align: left;
+  font: 400 13px/18px var(--font-sans);
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: box-shadow 120ms var(--ease), transform 120ms var(--ease);
+}
+.hub-root .hub-node:active {
+  cursor: grabbing;
+}
+.hub-root .hub-node:hover {
+  background-image: linear-gradient(var(--wash), var(--wash));
+}
+.hub-root .hub-node[aria-pressed="true"] {
+  z-index: 2;
+  box-shadow: 6px 6px 0 var(--pop);
+  transform: translate(-1px, -1px);
+}
+.hub-root .hub-node:focus-visible {
+  outline: 2px solid var(--pop);
+  outline-offset: 3px;
+}
+
+/* Needs you: a vermilion dog-ear. */
+.hub-root .hub-node.is-you::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 16px 16px 0;
+  border-color: transparent var(--pop) transparent transparent;
+}
+
+.hub-root .hub-node.kind-ceo {
+  justify-content: center;
+  align-items: center;
+  border-color: var(--x-bg);
+}
+.hub-root .hub-node.kind-ceo .node-row {
+  gap: 10px;
+}
+.hub-root .hub-node.kind-ceo .node-name {
+  font-size: 15px;
+}
+
+.hub-root .hub-node.kind-director {
+  border-top-width: 6px;
+}
+
+.hub-root .hub-node.kind-contractor {
+  background: var(--ground);
+  border-style: dashed;
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.hub-root .hub-node.kind-inactive {
+  background: var(--sunken);
+  border-color: var(--ink-3);
+  box-shadow: 3px 3px 0 var(--ink-3);
+}
+
+.hub-root .hub-node.kind-outside {
+  background: var(--ground);
+}
+.hub-root .hub-node.kind-external {
+  background: var(--ground);
+  border-style: dashed;
+  border-color: var(--ink-3);
+  box-shadow: none;
+}
+.hub-root .hub-node.is-unregistered {
+  border-style: dashed;
+}
+.hub-root .hub-node.kind-island {
+  gap: 2px;
+  padding: 5px 8px;
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+.hub-root .hub-node.kind-island[aria-pressed="true"] {
+  box-shadow: 4px 4px 0 var(--pop);
+}
+
+.hub-root .hub-node.is-bus {
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 16px;
+  border-color: var(--x-bg);
+}
+.hub-root .hub-node.is-bus .node-pm {
+  margin: 0 0 0 auto;
+}
+
+.hub-root .node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hub-root .node-row > .hub-age {
+  margin-left: auto;
+}
+.hub-root .node-name {
+  min-width: 0;
+  overflow: hidden;
+  font: 640 14px/18px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hub-root .node-name.is-small {
+  font-size: 12px;
+  line-height: 15px;
+  font-weight: 620;
+}
+.hub-root .node-sub,
+.hub-root .node-state {
+  min-width: 0;
+  overflow: hidden;
+  font: 400 11px/14px var(--font-mono);
+  color: var(--ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hub-root .node-state {
+  color: var(--ink-2);
+}
+.hub-root .node-sub.is-small {
+  font-size: 10px;
+  line-height: 13px;
+}
+.hub-root .node-sub.is-warn {
+  color: var(--stuck);
+}
+.hub-root .node-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 6px;
+  border: 1.5px solid var(--ink);
+  background: var(--ground);
+  font: 600 11px/14px var(--font-mono);
+  white-space: nowrap;
+}
+.hub-root .node-chip.is-soft {
+  border-style: dashed;
+}
+.hub-root .node-chip.is-missing {
+  border-style: dashed;
+  border-color: var(--ink-3);
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.hub-root .node-count {
+  margin-left: auto;
+  padding: 0 5px;
+  background: var(--ink);
+  color: var(--surface);
+  font: 700 11px/16px var(--font-mono);
+}
+.hub-root .node-list {
+  display: flex;
+  flex-direction: column;
+  font: 400 11px/18px var(--font-mono);
+}
+.hub-root .node-list-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink-2);
+  border-bottom: 1px dotted var(--ink-3);
+}
+.hub-root .node-list-row.is-unlinked span:first-child {
+  color: var(--ink-3);
+}
+.hub-root .node-more {
+  margin-top: auto;
+  font: 600 10px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .node-pm {
+  margin-top: auto;
+  font: 400 11px/14px var(--font-mono);
+  color: var(--ink-2);
+}
+
+.hub-root .sig-text-you {
+  color: var(--pop);
+}
+.hub-root .sig-text-broken {
+  color: var(--broken);
+}
+.hub-root .sig-text-stuck {
+  color: var(--stuck);
+}
+.hub-root .sig-text-working {
+  color: var(--working);
+}
+.hub-root .sig-text-cleared {
+  color: var(--cleared);
+}
+.hub-root .sig-text-quiet,
+.hub-root .sig-text-unknown {
+  color: var(--ink-3);
+}
+
+/* ---------- project frames ---------- */
+
+.hub-root .hub-frame {
+  position: absolute;
+  border: 2px solid var(--ink);
+  pointer-events: none;
+}
+.hub-root .hub-frame.is-islands {
+  border-style: dashed;
+  border-color: var(--ink-3);
+}
+.hub-root .hub-frame-head {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.hub-root .hub-frame-head[aria-pressed="true"] {
+  box-shadow: 4px 4px 0 var(--x-pop);
+}
+.hub-root .hub-frame-head.is-static {
+  cursor: default;
+}
+.hub-root .frame-name {
+  font: 640 13px/18px var(--font-sans);
+}
+.hub-root .frame-sub {
+  font: 400 11px/14px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .hub-edge-label {
+  position: absolute;
+  z-index: 3;
+  padding: 1px 6px;
+  font: 600 10.5px/15px var(--font-mono);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* ---------- legend ---------- */
+
+.hub-root .hub-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 8px 12px;
+  border-top: 2px solid var(--ink);
+  background: var(--surface);
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .hub-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hub-root .key-line {
+  display: inline-block;
+  width: 22px;
+  border-top: 2px solid var(--ink-2);
+}
+.hub-root .key-line.is-inferred {
+  border-top-style: dashed;
+}
+.hub-root .key-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+.hub-root .key-arrow {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 2px;
+  margin-right: 4px;
+  background: var(--ink-2);
+}
+.hub-root .key-arrow.is-inferred {
+  background: repeating-linear-gradient(90deg, var(--ink-2) 0 5px, transparent 5px 9px);
+}
+.hub-root .key-arrow::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: -3px;
+  border-style: solid;
+  border-width: 4px 0 4px 7px;
+  border-color: transparent transparent transparent var(--ink-2);
+}
+.hub-root .hub-last {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+/* ---------- inspector ---------- */
+
+.hub-root .hub-inspector {
+  flex: 1 1 340px;
+  max-width: 420px;
+  min-width: 0;
+  max-height: calc(var(--canvas-h) + 92px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+@media (max-width: 1060px) {
+  .hub-root .hub-inspector {
+    max-width: none;
+    max-height: none;
+  }
+}
+
+.hub-root .insp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.hub-root .insp-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hub-root .insp-title h2 {
+  flex: 1;
+  min-width: 0;
+  font: 640 18px/24px var(--font-sans);
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.hub-root .insp-id {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.hub-root .insp-state {
+  font: 600 12px/16px var(--font-mono);
+}
+.hub-root .insp-meta {
+  font: 400 11px/15px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .insp-what {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ink-2);
+}
+.hub-root .insp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-root .hub-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  text-align: left;
+}
+.hub-root button.hub-row:hover {
+  border-color: var(--ink);
+  background: var(--wash);
+}
+.hub-root .hub-row.is-plain {
+  cursor: default;
+}
+.hub-root .row-name {
+  font: 620 13px/18px var(--font-sans);
+}
+.hub-root .row-meta {
+  margin-left: auto;
+  font: 400 11px/15px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .hub-row.is-dep .row-meta {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+.hub-root .row-kind {
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  font: 600 10px/14px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.hub-root .hub-link-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  box-shadow: 4px 4px 0 var(--x-pop);
+}
+.hub-root .link-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hub-root .link-source {
+  font: 400 10px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .link-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.hub-root .hub-textlink {
+  font: 640 16px/22px var(--font-sans);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.hub-root .hub-textlink:hover {
+  text-decoration-color: currentColor;
+}
+.hub-root .link-id {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .link-status {
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid var(--line-strong);
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .link-facts,
+.hub-root .insp-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+}
+.hub-root .link-facts dt,
+.hub-root .insp-facts dt {
+  font: 600 10.5px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .link-facts dd,
+.hub-root .insp-facts dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.hub-root .link-basis {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--ink-2);
+}
+
+.hub-root .hub-missing {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px dashed var(--ink-3);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+.hub-root .ticket-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+.hub-root .ticket-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.hub-root .hub-code {
+  display: block;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+  font: 400 11.5px/16px var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- atoms ---------- */
+
+.hub-root .hub-glyph {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+.hub-root .hub-glyph.sig-you {
+  color: var(--pop);
+}
+.hub-root .hub-glyph.sig-broken {
+  color: var(--broken);
+}
+.hub-root .hub-glyph.sig-stuck {
+  color: var(--stuck);
+}
+.hub-root .hub-glyph.sig-working {
+  color: var(--working);
+}
+.hub-root .hub-glyph.sig-cleared {
+  color: var(--cleared);
+}
+.hub-root .hub-glyph.sig-quiet,
+.hub-root .hub-glyph.sig-unknown {
+  color: var(--ink-3);
+}
+.hub-root .hub-orbit {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: hub-orbit 2.4s linear infinite;
+}
+@keyframes hub-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hub-root .hub-age {
+  flex: none;
+  font: 400 11px/14px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.hub-root .hub-ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--sunken);
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink);
+  text-align: left;
+}
+.hub-root .hub-ref:hover {
+  border-color: var(--ink);
+}
+.hub-root .hub-ref-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hub-root .hub-ref-mark {
+  font-size: 10px;
+  color: var(--pop);
+}
+.hub-root .hub-ref-mark:empty {
+  display: none;
+}
+
+.hub-root .hub-track {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hub-root .hub-track li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.hub-root .hub-track-bar {
+  height: 7px;
+  border: 1.5px solid var(--line-strong);
+}
+.hub-root .hub-track .is-done .hub-track-bar {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.hub-root .hub-track .is-current .hub-track-bar {
+  border-color: var(--ink);
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 2px, transparent 2px 5px);
+}
+.hub-root .hub-track-label {
+  overflow: hidden;
+  font: 400 9.5px/12px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.hub-root .hub-track .is-current .hub-track-label {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hub-root .hub-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hub-root .hub-uml {
+  flex: none;
+  margin-left: auto;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+}
+.hub-root .hub-uml .hub-uml-tab {
+  fill: var(--surface);
+}
+
+/* ---------- motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Dots still finish (so they unmount) but are never seen. */
+  .hub-root .hub-dot {
+    visibility: hidden;
+    animation-duration: 1ms;
+  }
+  .hub-root .hub-orbit {
+    animation: none;
+  }
+  .hub-root .hub-node,
+  .hub-root .hub-btn {
+    transition: none;
+  }
+}

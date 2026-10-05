@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "node --import tsx --test src/hub-model.test.ts"
   },
   "dependencies": {
     "@fastify/sse": "^0.6.0",

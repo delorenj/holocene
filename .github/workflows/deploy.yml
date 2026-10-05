@@ -1,0 +1,219 @@
+name: Deploy
+
+# Production-first: every change that lands on main goes live on
+# holocene.delo.sh. The job runs on the self-hosted delonet runner and drives
+# the same steps as the "Change workflow" in CLAUDE.md, against the live
+# checkout that the holocene-web container bind-mounts and that
+# holocene-api.service runs from.
+#
+# It never discards work in the live checkout: it merges the pushed commit
+# into whatever branch is checked out there, and git refuses (and the job
+# stops) if that would touch uncommitted changes or conflict.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      restart:
+        description: "Restart regardless of what changed"
+        type: choice
+        options: [changed, api, web, both]
+        default: changed
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to holocene.delo.sh
+    runs-on: [self-hosted, Linux, delonet]
+    timeout-minutes: 30
+    env:
+      PUBLIC_URL: https://holocene.delo.sh
+      API_URL: http://127.0.0.1:4000
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Locate the live checkout
+        id: live
+        run: |
+          set -euo pipefail
+          echo "runner: $(id -un)@$(hostname) uid=$(id -u)"
+          uid="$(id -u)"
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus" >> "$GITHUB_ENV"
+
+          live=""
+          # The container that serves the site knows where its source is.
+          if command -v docker >/dev/null 2>&1; then
+            live="$(docker inspect holocene-web --format '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)"
+            echo "holocene-web /app mount: ${live:-<none>}"
+            docker inspect holocene-web --format 'compose project={{index .Config.Labels "com.docker.compose.project"}} file={{index .Config.Labels "com.docker.compose.project.config_files"}}' 2>/dev/null || echo "holocene-web container not found"
+          else
+            echo "docker is not on PATH for $(id -un)"
+          fi
+          for candidate in "${GOD_SOURCE_ROOT:-}/holocene" "$HOME/code/33GOD/holocene" /home/delorenj/code/33GOD/holocene; do
+            [ -n "$live" ] && break
+            [ -d "$candidate/.git" ] || [ -f "$candidate/.git" ] && live="$candidate"
+          done
+          if [ -z "$live" ] || [ ! -e "$live/.git" ]; then
+            echo "::error::Could not find the live Holocene checkout on $(hostname)."
+            exit 1
+          fi
+          live="$(cd "$live" && pwd -P)"
+          compose="$(cd "$live/.." && pwd -P)/33god-platform/compose.yaml"
+          echo "live checkout: $live"
+          echo "compose file:  $compose"
+          [ -f "$compose" ] || echo "::warning::$compose not found"
+          echo "dir=$live" >> "$GITHUB_OUTPUT"
+          echo "compose=$compose" >> "$GITHUB_OUTPUT"
+
+          echo "--- holocene-api.service"
+          systemctl --user show holocene-api.service -p ActiveState,SubState,WorkingDirectory,ExecStart,FragmentPath --no-pager || echo "::warning::systemctl --user is not reachable as $(id -un)"
+
+      - name: Merge the pushed commit into the live checkout
+        id: merge
+        env:
+          LIVE: ${{ steps.live.outputs.dir }}
+        run: |
+          set -euo pipefail
+          cd "$LIVE"
+          before="$(git rev-parse HEAD)"
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          echo "live is on $branch at $before"
+          echo "--- uncommitted in the live checkout (left alone)"
+          git status --short | head -50 || true
+
+          git fetch --no-tags --quiet origin || echo "::notice::could not refresh origin from the live checkout; using the runner's copy"
+          # Take the commit straight from the runner's checkout, so the deploy
+          # does not depend on the live checkout's credentials.
+          git fetch --no-tags --quiet "$GITHUB_WORKSPACE" HEAD
+          target="$(git rev-parse FETCH_HEAD)"
+          echo "deploying $target"
+
+          if git merge-base --is-ancestor "$target" HEAD; then
+            echo "live already contains $target"
+          else
+            [ -n "$(git config user.name || true)" ] || export GIT_AUTHOR_NAME="Holocene deploy" GIT_COMMITTER_NAME="Holocene deploy"
+            [ -n "$(git config user.email || true)" ] || export GIT_AUTHOR_EMAIL="deploy@holocene.delo.sh" GIT_COMMITTER_EMAIL="deploy@holocene.delo.sh"
+            if ! git merge --no-edit "$target"; then
+              git merge --abort 2>/dev/null || true
+              echo "::error::Merging $target into $branch in $LIVE conflicts or would overwrite uncommitted changes. Nothing was changed; resolve it there and re-run."
+              exit 1
+            fi
+          fi
+          after="$(git rev-parse HEAD)"
+          echo "live now at $after"
+
+          changed="$(git diff --name-only "$before" "$after" || true)"
+          echo "--- changed files"
+          echo "${changed:-<none>}"
+          has() { printf '%s\n' "$changed" | grep -Eq "$1"; }
+          deps=false; api=false; web=false
+          has '^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|apps/[^/]+/package\.json|packages/[^/]+/package\.json)$' && deps=true
+          has '^(apps/api/|packages/)' && api=true
+          has '^(apps/web/|packages/|turbo\.json)' && web=true
+          $deps && api=true && web=true
+          case "${{ github.event.inputs.restart || 'changed' }}" in
+            api) api=true ;;
+            web) web=true ;;
+            both) api=true; web=true ;;
+          esac
+          echo "deps=$deps api=$api web=$web"
+          {
+            echo "deps=$deps"
+            echo "api=$api"
+            echo "web=$web"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.merge.outputs.deps == 'true'
+        working-directory: ${{ steps.live.outputs.dir }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        if: steps.merge.outputs.api == 'true' || steps.merge.outputs.web == 'true'
+        working-directory: ${{ steps.live.outputs.dir }}
+        run: pnpm --filter "./packages/*" build
+
+      - name: Typecheck
+        if: steps.merge.outputs.api == 'true' || steps.merge.outputs.web == 'true'
+        working-directory: ${{ steps.live.outputs.dir }}
+        run: |
+          pnpm --filter @holocene/api typecheck
+          pnpm --filter @holocene/web typecheck
+
+      - name: Build and restart the API
+        if: steps.merge.outputs.api == 'true'
+        working-directory: ${{ steps.live.outputs.dir }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @holocene/api build
+          systemctl --user restart holocene-api.service
+          for i in $(seq 1 30); do
+            curl -fsS "$API_URL/health" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          systemctl --user status --no-pager holocene-api.service | head -20
+          curl -fsS "$API_URL/health"
+          echo
+          echo "--- hub agents"
+          curl -fsS "$API_URL/api/modules/hub/agents" | head -c 1500
+          echo
+          echo "--- hub projects"
+          curl -fsS "$API_URL/api/modules/hub/projects" | head -c 600
+          echo
+
+      - name: Recreate the web container
+        if: steps.merge.outputs.web == 'true'
+        working-directory: ${{ steps.live.outputs.dir }}
+        env:
+          COMPOSE_FILE_PATH: ${{ steps.live.outputs.compose }}
+        run: |
+          set -euo pipefail
+          docker compose -f "$COMPOSE_FILE_PATH" -p 33god-platform up -d --no-deps --force-recreate holocene-web
+          docker compose -f "$COMPOSE_FILE_PATH" -p 33god-platform ps holocene-web
+
+      - name: Verify the public route serves the hub
+        if: steps.merge.outputs.web == 'true'
+        run: |
+          set -uo pipefail
+          # The container installs and runs `next build` on start; give it time.
+          for i in $(seq 1 60); do
+            body="$(curl -fsS --max-time 10 "$PUBLIC_URL/" 2>/dev/null || true)"
+            if printf '%s' "$body" | grep -q 'hub-root'; then
+              echo "hub is live on $PUBLIC_URL after ~$((i * 10))s"
+              curl -fsSI "$PUBLIC_URL" | head -5
+              curl -fsS "$PUBLIC_URL/api/modules/hub/agents" | head -c 300
+              echo
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$PUBLIC_URL did not serve the hub within 10 minutes"
+          docker logs --tail 120 holocene-web || true
+          exit 1
+
+      - name: Web container log
+        if: always() && steps.merge.outputs.web == 'true'
+        run: docker logs --tail 60 holocene-web || true

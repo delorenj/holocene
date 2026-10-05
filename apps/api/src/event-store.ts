@@ -200,6 +200,14 @@ export class EventStore {
       .map(row => { const value = JSON.parse(String(row.data)); delete value.timeline; return value; });
     return { items, total, limit, offset, next_offset: offset + items.length < total ? offset + items.length : null };
   }
+  /** Newest events of the given types, newest first. Read-only; used by the hub views. */
+  recent(types: string[], limit = 500): CollectedEvent[] {
+    if (!types.length) return [];
+    const placeholders = types.map(() => "?").join(",");
+    return this.db.prepare(`SELECT * FROM events WHERE type IN (${placeholders}) ORDER BY cursor DESC LIMIT ?`)
+      .all(...types, Math.max(1, Math.min(limit, 5000)))
+      .map(row => ({ cursor: Number(row.cursor), stream: String(row.stream), sequence: Number(row.sequence), subject: String(row.subject), collected_at: String(row.collected_at), envelope: JSON.parse(String(row.envelope)) }));
+  }
   events(filter: EventFilter = {}): CollectedEvent[] {
     const terms = ["cursor>?"]; const args: SQLInputValue[] = [filter.after ?? 0];
     for (const key of ["type", "subject", "source"] as const) if (filter[key]) { terms.push(`${key}=?`); args.push(filter[key]!); }
