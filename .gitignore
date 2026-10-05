@@ -21,3 +21,6 @@ coverage
 
 # Canonical agent config lives in .agents; generated skill projections stay local.
 /.agents/skills
+
+# Generated TypeScript incremental state
+*.tsbuildinfo
