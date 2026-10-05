@@ -124,16 +124,27 @@ jobs:
           fi
           after="$(git rev-parse HEAD)"
           echo "live now at $after"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
 
-          changed="$(git diff --name-only "$before" "$after" || true)"
-          echo "--- changed files"
-          echo "${changed:-<none>}"
-          has() { printf '%s\n' "$changed" | grep -Eq "$1"; }
+          # Compare with the last commit that deployed cleanly (a local ref in
+          # the live checkout, set by the last step), so a failed deploy is
+          # retried in full by the next one.
           deps=false; api=false; web=false
-          has '^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|apps/[^/]+/package\.json|packages/[^/]+/package\.json)$' && deps=true
-          has '^(apps/api/|packages/)' && api=true
-          has '^(apps/web/|packages/|turbo\.json)' && web=true
-          $deps && api=true && web=true
+          last="$(git rev-parse -q --verify refs/deploy/live || true)"
+          if [ -z "$last" ]; then
+            echo "no recorded deploy yet: rebuilding everything"
+            deps=true; api=true; web=true
+          else
+            echo "last clean deploy: $last"
+            changed="$(git diff --name-only "$last" "$after" || true)"
+            echo "--- changed since then"
+            echo "${changed:-<none>}"
+            has() { printf '%s\n' "$changed" | grep -Eq "$1"; }
+            has '^(pnpm-lock\.yaml|package\.json|pnpm-workspace\.yaml|apps/[^/]+/package\.json|packages/[^/]+/package\.json)$' && deps=true
+            has '^(apps/api/|packages/)' && api=true
+            has '^(apps/web/|packages/|turbo\.json)' && web=true
+            $deps && api=true && web=true
+          fi
           case "${{ github.event.inputs.restart || 'changed' }}" in
             api) api=true ;;
             web) web=true ;;
@@ -174,15 +185,23 @@ jobs:
             curl -fsS "$API_URL/health" >/dev/null 2>&1 && break
             sleep 1
           done
-          systemctl --user status --no-pager holocene-api.service | head -20
+          systemctl --user status --no-pager --lines=5 holocene-api.service || true
           curl -fsS "$API_URL/health"
           echo
-          echo "--- hub agents"
-          curl -fsS "$API_URL/api/modules/hub/agents" | head -c 1500
-          echo
-          echo "--- hub projects"
-          curl -fsS "$API_URL/api/modules/hub/projects" | head -c 600
-          echo
+          curl -fsS "$API_URL/api/modules/hub/agents" -o "$RUNNER_TEMP/hub-agents.json"
+          curl -fsS "$API_URL/api/modules/hub/projects" -o "$RUNNER_TEMP/hub-projects.json"
+          node -e '
+            const fs = require("fs");
+            const a = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const p = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            console.log("sources:", a.sources.map((s) => `${s.name}=${s.down ? "DOWN " + (s.detail ?? "") : s.value ?? ""}`).join(" | "));
+            console.log("stats:", JSON.stringify(a.stats));
+            for (const x of a.agents) console.log(["agent", x.id, x.role, x.state, x.signal, x.active ? "active" : "-", x.gateway, x.project ? `${x.project.id}(${x.project.basis}${x.project.indexed ? "" : ",unindexed"})` : "NO-PROJECT", "->" + x.reportsTo, x.ticket?.key ?? ""].join("  "));
+            console.log("contractors:", a.contractors.length, "events:", a.events.length);
+            const kinds = {};
+            for (const x of p.projects) kinds[x.kind] = (kinds[x.kind] ?? 0) + 1;
+            console.log("projects:", JSON.stringify(kinds), "edges:", p.edges.length);
+          ' "$RUNNER_TEMP/hub-agents.json" "$RUNNER_TEMP/hub-projects.json"
 
       - name: Recreate the web container
         if: steps.merge.outputs.web == 'true'
@@ -194,26 +213,47 @@ jobs:
           docker compose -f "$COMPOSE_FILE_PATH" -p 33god-platform up -d --no-deps --force-recreate holocene-web
           docker compose -f "$COMPOSE_FILE_PATH" -p 33god-platform ps holocene-web
 
-      - name: Verify the public route serves the hub
+      - name: Verify the hub is served
         if: steps.merge.outputs.web == 'true'
         run: |
           set -uo pipefail
-          # The container installs and runs `next build` on start; give it time.
+          # holocene.delo.sh sits behind OIDC, so ask the app inside its
+          # container first. It reinstalls and runs `next build` on start.
+          probe='
+            const port = process.env.HOLOCENE_WEB_PORT || 3001;
+            const base = `http://127.0.0.1:${port}`;
+            Promise.all([
+              fetch(base + "/").then((r) => r.text()),
+              fetch(base + "/api/modules/hub/agents").then((r) => (r.ok ? r.json() : {}))
+            ])
+              .then(([html, a]) => console.log(html.includes("hub-root") ? "hub" : "old", Array.isArray(a.agents) ? `${a.agents.length} agents via rewrite` : "no hub api"))
+              .catch((e) => console.log("down", e.cause?.code ?? e.message));
+          '
+          ok=false
           for i in $(seq 1 60); do
-            body="$(curl -fsS --max-time 10 "$PUBLIC_URL/" 2>/dev/null || true)"
-            if printf '%s' "$body" | grep -q 'hub-root'; then
-              echo "hub is live on $PUBLIC_URL after ~$((i * 10))s"
-              curl -fsSI "$PUBLIC_URL" | head -5
-              curl -fsS "$PUBLIC_URL/api/modules/hub/agents" | head -c 300
-              echo
-              exit 0
-            fi
+            out="$(docker exec holocene-web node -e "$probe" 2>&1 || echo "down: exec failed")"
+            echo "[$((i * 10))s] $out"
+            case "$out" in hub*) ok=true; break ;; esac
             sleep 10
           done
-          echo "::error::$PUBLIC_URL did not serve the hub within 10 minutes"
-          docker logs --tail 120 holocene-web || true
-          exit 1
+          if ! $ok; then
+            echo "::error::holocene-web did not serve the hub within 10 minutes"
+            docker logs --tail 120 holocene-web || true
+            exit 1
+          fi
+          # Through Traefik: an auth redirect is a healthy answer, a 404 or 5xx is not.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$PUBLIC_URL/" || echo 000)"
+          echo "$PUBLIC_URL -> HTTP $code"
+          case "$code" in
+            200|301|302|303|307|308|401|403) ;;
+            *) echo "::error::$PUBLIC_URL answered $code"; exit 1 ;;
+          esac
 
       - name: Web container log
         if: always() && steps.merge.outputs.web == 'true'
         run: docker logs --tail 60 holocene-web || true
+
+      - name: Record the deployed commit
+        if: success()
+        working-directory: ${{ steps.live.outputs.dir }}
+        run: git update-ref refs/deploy/live "${{ steps.merge.outputs.after }}"

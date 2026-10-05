@@ -335,7 +335,11 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       .sort((a, b) => normalizePath(b.link!.repoPath).length - normalizePath(a.link!.repoPath).length)[0];
     const reportsTo = r.reportsTo && (ids.has(r.reportsTo) || r.reportsTo === "ceo") ? r.reportsTo : directorAbove?.id ?? "ceo";
     const ticketKey = lastTicket.get(r.agentId)?.key ?? kids.find((k) => k.ticket)?.ticket;
-    const lastActiveMs = Math.max(asm?.lastMs ?? 0, Date.parse(lastSeen.get(r.agentId) ?? "") || 0);
+    // The ASM sweeper rewrites last_ms on every pass, so it says when the scope was last
+    // looked at, not when it last did anything. Outside an active state, `since` (when it
+    // went idle, or was first found) is the honest recency; inside one, it is active now.
+    const asmActiveMs = !asm ? 0 : ACTIVE_STATES.has(asm.state) ? asm.lastMs ?? nowMs : asm.sinceMs ?? 0;
+    const lastActiveMs = Math.max(asmActiveMs, Date.parse(lastSeen.get(r.agentId) ?? "") || 0);
     return {
       id: r.agentId,
       name: r.displayName || r.agentId,
