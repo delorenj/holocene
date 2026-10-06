@@ -7,6 +7,12 @@
 // repo == project_id (case-insensitive), then the Plane board id. Anything else is
 // reported as "no project record" rather than guessed.
 
+import type { AgentActivity, OpenSubagent } from "./agent-activity.js";
+import type { DeckardState } from "./deckard-state.js";
+
+// The signal vocabulary is Deckard's (docs/visual-language.md): you = amber (hitl), broken = red (error),
+// working = green pulse (active), cleared = solid green check (done), quiet = dark (idle). `stuck` is the
+// ASM sweeper's wedged verdict, which nothing produces reliably today, and `unknown` is "never observed".
 export type Signal = "you" | "broken" | "stuck" | "working" | "quiet" | "cleared" | "unknown";
 
 export type RegistryRow = {
@@ -20,12 +26,16 @@ export type RegistryRow = {
   reportsTo?: string;
   gatewayUnit?: string;
   provisionedAt?: string;
+  /** Declared by the project manifest but missing from the Hermes registry. */
+  declared?: boolean;
 };
 
 export type ProjectRecord = {
   id: string;
   name: string;
   repoPath: string;
+  /** Agents the project manifest declares, whether or not the Hermes registry has a row for them. */
+  agents?: Array<{ id: string; role?: string }>;
   status?: string;
   board?: string;
   boardId?: string;
@@ -37,6 +47,9 @@ export type AsmRow = {
   scope: string;
   state: string;
   blockKind?: string;
+  /** `blocked_until` / `gated_until`: an awaiting_human row is only true while one of these is in the future. */
+  blockedUntilMs?: number;
+  gatedUntilMs?: number;
   sinceMs?: number;
   lastMs?: number;
   subs?: number;
@@ -104,6 +117,8 @@ export type HubAgent = {
   subs?: number;
   tools?: number;
   turn?: number;
+  /** The sessions behind `state`, worst first. Empty when there is no live evidence. */
+  evidence: HubEvidence[];
 };
 
 export type HubContractor = {
@@ -115,6 +130,24 @@ export type HubContractor = {
   startedAt?: string;
   ref: string;
   description?: string;
+  /** The `agent.invocation.started` fact the hook hub published for this subagent, and its receipt. */
+  eventId?: string;
+  invocationId?: string;
+  cli?: string;
+  cwd?: string;
+  receipt?: { invocationId: string; native: string; status: string; publishStatus?: string };
+};
+
+/** One running session that explains why an agent reads the way it does. */
+export type HubEvidence = {
+  cli?: string;
+  cwd?: string;
+  basis: "profile" | "project" | "related";
+  state: DeckardState;
+  heldSeconds?: number;
+  lastAt?: string;
+  lastType?: string;
+  subagents: number;
 };
 
 export type HubEvent = {
@@ -135,6 +168,7 @@ const ASM_SIGNAL: Record<string, Signal> = {
   tool_running: "working",
   working: "working",
   starting: "working",
+  done: "cleared",
   idle: "quiet",
   unknown: "unknown"
 };
@@ -186,39 +220,29 @@ function heldFrom(sinceMs: number | undefined, nowMs: number): number | undefine
   return Math.max(0, Math.round((nowMs - sinceMs) / 1000));
 }
 
-/** Open subagents: invocation.started with a parent, closed oldest-first by the parent's completion. */
-export function openSubagents(events: InvocationEvent[], nowMs: number, maxAgeMs = 2 * 3600_000): HubContractor[] {
-  const sorted = [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const open = new Map<string, Array<{ e: InvocationEvent }>>();
-  for (const e of sorted) {
-    if (e.type === "started" && e.parentInvocationId && e.agentId) {
-      const list = open.get(e.parentInvocationId) ?? [];
-      list.push({ e });
-      open.set(e.parentInvocationId, list);
-    } else if (e.type !== "started") {
-      // completed/failed carry the parent session id; close the oldest open child under it.
-      const list = open.get(e.invocationId);
-      if (list?.length) list.shift();
-      // a child's own completion (when a runtime reports it) closes it directly
-      for (const [parent, items] of open) {
-        const idx = items.findIndex((item) => item.e.invocationId === e.invocationId);
-        if (idx >= 0) items.splice(idx, 1);
-        if (!items.length) open.delete(parent);
-      }
-    }
-  }
-  const out: HubContractor[] = [];
-  for (const items of open.values()) {
-    for (const { e } of items) {
-      if (nowMs - Date.parse(e.at) > maxAgeMs) continue;
+const titleCase = (role: string) => role.split(/[-_\s]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+
+/**
+ * Agents a project manifest declares that the Hermes registry has no row for. The profile can exist
+ * on disk while provisioning never wrote its registry row (pilot-pm), and its work still has an owner.
+ */
+export function declaredAgents(registry: RegistryRow[], projects: ProjectRecord[]): RegistryRow[] {
+  const known = new Set(registry.map((r) => r.agentId));
+  const out: RegistryRow[] = [];
+  for (const p of projects) {
+    for (const a of p.agents ?? []) {
+      if (known.has(a.id)) continue;
+      known.add(a.id);
+      const role = a.role ?? "pm";
       out.push({
-        id: `sub:${e.invocationId}`,
-        parent: e.agentId!,
-        via: "subagent",
-        state: "open",
-        ticket: e.ticketKey,
-        startedAt: e.at,
-        ref: `invocation ${e.invocationId.slice(0, 12)}`
+        agentId: a.id,
+        displayName: `${p.name} ${role === "pm" ? "PM" : titleCase(role)}`,
+        role,
+        repo: p.id,
+        projectPath: p.repoPath,
+        boardId: p.boardId,
+        boardIdentifier: p.board,
+        declared: true
       });
     }
   }
@@ -280,6 +304,12 @@ export type AgentInputs = {
   invocations: InvocationEvent[];
   scopes: WorkerScope[];
   tickets: Map<string, Ticket>;
+  /** Agents a project manifest declares that have a Hermes profile but no registry row (see declaredAgents). */
+  declared?: RegistryRow[];
+  /** What each agent is doing, read from the event collection (agent-activity.ts). */
+  activity?: Map<string, AgentActivity>;
+  /** Hook-hub receipts for subagent starts, keyed by Bloodbank event id. */
+  receipts?: Map<string, { invocationId: string; native: string; status: string; publishStatus?: string }>;
 };
 
 export type AgentsModel = {
@@ -289,8 +319,38 @@ export type AgentsModel = {
   stats: { agents: number; active: number; noProject: number; contractors: number; waiting: number };
 };
 
+function subagentContractor(c: OpenSubagent, receipts: AgentInputs["receipts"]): HubContractor {
+  return {
+    id: `sub:${c.invocationId}`,
+    parent: c.parent,
+    via: "subagent",
+    state: "open",
+    startedAt: new Date(c.startedMs).toISOString(),
+    ref: `invocation ${c.invocationId.slice(0, 12)}`,
+    eventId: c.eventId,
+    invocationId: c.invocationId,
+    cli: c.cli,
+    cwd: c.cwd,
+    receipt: receipts?.get(c.eventId)
+  };
+}
+
+/**
+ * What the ASM row can still be believed about. `awaiting_human` is true only while its bell or gate
+ * window is open, and `gone` is the sweeper's direct observation that the gateway process vanished.
+ * Every other value (working, tool_running, stale, idle) is a counter the sweeper keeps rewriting, not
+ * evidence with an age: a PM nobody had spoken to in days read as working because one `quiesce` was missed.
+ */
+function asmFacts(asm: AsmRow | undefined, nowMs: number): { hitl?: { blockKind?: string }; gone?: boolean } {
+  if (!asm) return {};
+  if (asm.state === "gone") return { gone: true };
+  const open = Math.max(asm.blockedUntilMs ?? 0, asm.gatedUntilMs ?? 0) > nowMs;
+  return asm.state === "awaiting_human" && open ? { hitl: { blockKind: asm.blockKind } } : {};
+}
+
 export function buildAgents(input: AgentInputs): AgentsModel {
-  const { nowMs, registry, projects } = input;
+  const { nowMs, projects } = input;
+  const registry = [...input.registry, ...(input.declared ?? [])];
   const links = new Map(registry.map((r) => [r.agentId, linkProject(r, projects)]));
   const directorIds = new Set(
     registry
@@ -303,9 +363,10 @@ export function buildAgents(input: AgentInputs): AgentsModel {
   );
 
   const ids = new Set(registry.map((r) => r.agentId));
-  const contractors = [...openSubagents(input.invocations, nowMs), ...workerContractors(input.scopes, ids)].filter((c) =>
-    ids.has(c.parent)
-  );
+  const contractors = [
+    ...[...(input.activity?.entries() ?? [])].flatMap(([, a]) => a.subagents.map((c) => subagentContractor(c, input.receipts))),
+    ...workerContractors(input.scopes, ids)
+  ].filter((c, i, all) => ids.has(c.parent) && all.findIndex((x) => x.id === c.id) === i);
   const contractorsByParent = new Map<string, HubContractor[]>();
   for (const c of contractors) contractorsByParent.set(c.parent, [...(contractorsByParent.get(c.parent) ?? []), c]);
 
@@ -325,8 +386,25 @@ export function buildAgents(input: AgentInputs): AgentsModel {
     const asm = input.asm.get(`hermes:a:${r.agentId}`);
     const gateway = input.gateways.get(r.gatewayUnit ?? `hermes-${r.agentId}-gateway.service`) ?? "unknown";
     const kids = contractorsByParent.get(r.agentId) ?? [];
-    let state = asm?.state ?? (gateway === "inactive" ? "gone" : "unknown");
-    if (kids.length && (state === "idle" || state === "working" || state === "unknown")) state = "delegating";
+    const act = input.activity?.get(r.agentId);
+    const facts = asmFacts(asm, nowMs);
+
+    // Deckard's reconciliation: an open human block outranks everything, then failure, then work, then a
+    // finished turn. Worker scopes are work in flight even when no event says so.
+    const seen: DeckardState = act?.reading.state ?? "idle";
+    const declared: DeckardState = facts.hitl ? "hitl" : kids.length && (seen === "idle" || seen === "done") ? "active" : seen;
+    let state: string;
+    switch (declared) {
+      case "hitl": state = "awaiting_human"; break;
+      case "error": state = "failed"; break;
+      case "active": state = kids.length ? "delegating" : "working"; break;
+      case "done": state = "done"; break;
+      default:
+        // Idle is a claim about an agent we have heard from. An agent with no events in the window and no
+        // ASM row is unknown, and one whose gateway process is gone is gone.
+        state = facts.gone || (!asm && gateway === "inactive") ? "gone" : act || (asm && asm.state !== "unknown") ? "idle" : "unknown";
+    }
+
     const link = links.get(r.agentId);
     const directorAbove = [...directorIds]
       .filter((d) => d !== r.agentId)
@@ -335,11 +413,18 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       .sort((a, b) => normalizePath(b.link!.repoPath).length - normalizePath(a.link!.repoPath).length)[0];
     const reportsTo = r.reportsTo && (ids.has(r.reportsTo) || r.reportsTo === "ceo") ? r.reportsTo : directorAbove?.id ?? "ceo";
     const ticketKey = lastTicket.get(r.agentId)?.key ?? kids.find((k) => k.ticket)?.ticket;
-    // The ASM sweeper rewrites last_ms on every pass, so it says when the scope was last
-    // looked at, not when it last did anything. Outside an active state, `since` (when it
-    // went idle, or was first found) is the honest recency; inside one, it is active now.
-    const asmActiveMs = !asm ? 0 : ACTIVE_STATES.has(asm.state) ? asm.lastMs ?? nowMs : asm.sinceMs ?? 0;
-    const lastActiveMs = Math.max(asmActiveMs, Date.parse(lastSeen.get(r.agentId) ?? "") || 0);
+
+    // Recency is the newest thing the agent did: an event, a gateway invocation, or its last ASM state change.
+    // The sweeper rewrites last_ms on every pass, so that field says when it was looked at, never what it did.
+    // `since` is when ASM last changed this agent's state, which is the last time it moved at all.
+    const lastActiveMs = Math.max(act?.reading.lastMs ?? 0, asm?.sinceMs ?? 0, Date.parse(lastSeen.get(r.agentId) ?? "") || 0);
+    const heldFrom0 = act?.reading.sinceMs && declared !== "idle" ? act.reading.sinceMs : undefined;
+    const evidence: HubEvidence[] = (act?.sessions ?? []).filter((e) => e.state !== "idle").map((e) => ({
+      cli: e.cli, cwd: e.cwd, basis: e.basis, state: e.state,
+      heldSeconds: heldFrom(e.sinceMs, nowMs),
+      lastAt: e.lastMs ? new Date(e.lastMs).toISOString() : undefined,
+      lastType: e.lastType, subagents: e.subagents
+    }));
     return {
       id: r.agentId,
       name: r.displayName || r.agentId,
@@ -347,18 +432,19 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       declaredRole: r.role || "pm",
       state,
       signal: signalOf(state),
-      blockKind: asm?.blockKind || undefined,
-      heldSeconds: heldFrom(asm?.sinceMs, nowMs),
+      blockKind: facts.hitl?.blockKind || undefined,
+      heldSeconds: heldFrom(heldFrom0 ?? (declared === "idle" ? asm?.sinceMs : undefined), nowMs),
       lastActiveAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : r.provisionedAt,
-      active: ACTIVE_STATES.has(state) || kids.length > 0,
+      active: declared !== "idle" && declared !== "done",
       gateway,
       project: link,
       reportsTo,
       reportsBasis: r.reportsTo && reportsTo === r.reportsTo ? "recorded" : "inferred",
       ticket: ticketKey ? input.tickets.get(ticketKey) ?? { key: ticketKey, title: ticketKey, labels: [], updatedAt: "" } : undefined,
-      subs: asm?.subs,
-      tools: asm?.tools,
-      turn: asm?.turn
+      subs: kids.length || undefined,
+      tools: undefined,
+      turn: undefined,
+      evidence
     };
   });
 

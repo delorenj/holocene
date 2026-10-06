@@ -6,8 +6,10 @@ import type { Signal, Source, Ticket } from "./types";
 // Small atoms from the 33GOD kit, ported for the Next app: the seven signal glyphs,
 // durations, the source strip, copyable machine words and the Plane band track.
 
+// Deckard's marks (docs/visual-language.md): amber ! needs you, red x failed, green pulsing > working,
+// solid green check finished a turn and ready for the next message, dark dot nothing known.
 const SIGNAL_WORD: Record<Signal, string> = {
-  you: "Needs you", broken: "Broken", stuck: "Stuck", working: "Working", quiet: "Quiet", cleared: "Cleared", unknown: "No signal"
+  you: "Needs you", broken: "Failed", stuck: "Stuck", working: "Working", quiet: "Quiet", cleared: "Finished a turn", unknown: "No signal"
 };
 
 export function Glyph({ signal, size = 10, title }: { signal: Signal; size?: number; title?: string }) {
@@ -16,17 +18,12 @@ export function Glyph({ signal, size = 10, title }: { signal: Signal; size?: num
     role: title ? "img" : undefined, "aria-hidden": title ? undefined : true, "aria-label": title
   } as const;
   switch (signal) {
-    case "you": return <svg {...common}><path d="M5 .55 9.45 5 5 9.45.55 5Z" fill="currentColor" /></svg>;
-    case "broken": return <svg {...common}><rect x="1" y="1" width="8" height="8" rx=".6" fill="currentColor" /></svg>;
+    case "you": return <svg {...common}><path d="M4.1 1h1.8l-.35 5.1h-1.1ZM4 7.4h2V9.2H4Z" fill="currentColor" /></svg>;
+    case "broken": return <svg {...common}><path d="M2 2 8 8M8 2 2 8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="square" /></svg>;
     case "stuck": return <svg {...common}><path d="M1.2 1h7.6L5 4.85ZM1.2 9h7.6L5 5.15Z" fill="currentColor" /></svg>;
-    case "working": return (
-      <svg {...common}>
-        <circle cx="5" cy="5" r="3.7" fill="none" stroke="currentColor" strokeWidth="1.3" opacity=".32" />
-        <g className="hub-orbit"><path d="M5 1.3a3.7 3.7 0 0 1 3.7 3.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></g>
-      </svg>
-    );
+    case "working": return <svg {...common}><path d="M2.6 1.8 7.4 5 2.6 8.2Z" fill="currentColor" className="hub-pulse-mark" /></svg>;
     case "quiet": return <svg {...common}><rect x="1.4" y="4.25" width="7.2" height="1.5" rx=".75" fill="currentColor" /></svg>;
-    case "cleared": return <svg {...common}><circle cx="5" cy="5" r="4" fill="currentColor" /></svg>;
+    case "cleared": return <svg {...common}><path d="M1.6 5.3 4 7.6 8.5 2.4" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="square" /></svg>;
     default: return <svg {...common}><circle cx="5" cy="5" r="3.6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1.45 1.35" /></svg>;
   }
 }

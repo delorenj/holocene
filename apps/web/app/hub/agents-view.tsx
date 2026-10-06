@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rectOf, stackPath, treePath, useDrag, usePositions, type Pos, type Rect } from "./canvas";
 import { Age, BandTrack, BoxIcon, CopyRef, Glyph, formatDuration, signalWord, sinceSeconds } from "./ui";
-import type { Agent, AgentsPayload, Contractor, HubEvent, Signal } from "./types";
+import type { Agent, AgentsPayload, Contractor, Evidence, HubEvent, Signal } from "./types";
 
 type NodeKind = "ceo" | "director" | "pm" | "contractor" | "inactive";
 type LaidNode = { id: string; kind: NodeKind; x: number; y: number; w: number; h: number; agent?: Agent; contractor?: Contractor };
@@ -25,7 +25,7 @@ function inactiveHeight(rows: number) {
 function layout(data: AgentsPayload, openInactive: boolean): { nodes: LaidNode[]; edges: LaidEdge[]; inactive: Agent[]; w: number; h: number } {
   const contractorsByParent = new Map<string, Contractor[]>();
   for (const c of data.contractors) contractorsByParent.set(c.parent, [...(contractorsByParent.get(c.parent) ?? []), c]);
-  const visible = data.agents.filter((a) => a.role === "director" || a.active);
+  const visible = data.agents.filter((a) => a.role === "director" || a.active || a.signal === "cleared");
   const visibleIds = new Set(visible.map((a) => a.id));
   const inactive = data.agents
     .filter((a) => !visibleIds.has(a.id))
@@ -189,7 +189,7 @@ export function AgentsView({
                 <button
                   key={n.id}
                   type="button"
-                  className={`hub-node kind-${n.kind}${n.agent?.signal === "you" ? " is-you" : ""}`}
+                  className={`hub-node kind-${n.kind}${n.agent?.signal === "you" ? " is-you" : ""}${nodeTone(n)}`}
                   aria-pressed={n.id === sel}
                   aria-label={nodeLabel(n, laid.inactive.length)}
                   style={{ left: p.x, top: p.y, width: n.w, height: n.h }}
@@ -228,10 +228,20 @@ export function AgentsView({
   );
 }
 
+/** Deckard paints the whole tile: green pulse working, solid green finished, red failed, amber needs you. */
+function nodeTone(n: LaidNode): string {
+  if (n.contractor) return " tone-sig tone-sig-working";
+  const sig = n.agent?.signal;
+  return sig === "working" || sig === "cleared" || sig === "broken" || sig === "you" ? ` tone-sig tone-sig-${sig}` : "";
+}
+
 function nodeLabel(n: LaidNode, inactiveCount: number) {
   if (n.kind === "ceo") return "You, CEO";
   if (n.kind === "inactive") return `Inactive agents, ${inactiveCount}`;
-  if (n.contractor) return `${n.contractor.ticket ?? "contractor"}, ${n.contractor.state}`;
+  if (n.contractor) {
+    const c = n.contractor;
+    return `${c.ticket ?? (c.via === "scope" ? "worker" : `subagent ${c.invocationId?.slice(0, 8) ?? ""}`.trim())}, ${c.state}`;
+  }
   const a = n.agent!;
   return `${a.name}, ${a.state}${a.project ? `, project ${a.project.id}` : ", no project record"}`;
 }
@@ -276,8 +286,10 @@ function NodeBody({ node, now, inactive, open }: { node: LaidNode; now: number; 
           <span className="node-name">{c.ticket ?? (c.via === "scope" ? "worker" : "subagent")}</span>
           <Age seconds={sinceSeconds(c.startedAt, now)} />
         </span>
-        <span className="node-state">{c.via === "scope" ? "running · worker scope" : "open · subagent"}</span>
-        <span className="node-sub">hermes · ephemeral</span>
+        <span className="node-state">{c.via === "scope" ? "running · worker scope" : `${c.cli ?? "agent"} · ${c.invocationId?.slice(0, 8) ?? "subagent"}`}</span>
+        <span className="node-sub">
+          {c.via === "scope" ? "hermes · ephemeral" : c.receipt ? `SubagentStart · ${c.receipt.publishStatus ?? c.receipt.status} · event ${c.eventId?.slice(0, 8)}` : `invocation.started · event ${c.eventId?.slice(0, 8) ?? "?"}`}
+        </span>
       </>
     );
   }
@@ -301,7 +313,7 @@ function NodeBody({ node, now, inactive, open }: { node: LaidNode; now: number; 
         )}
       </span>
       <span className={`node-state sig-text-${a.signal}`}>
-        {[a.ticket?.key, a.state, a.blockKind].filter(Boolean).join(" · ")}
+        {[a.ticket?.key, a.state, a.blockKind, a.subs ? `${a.subs} subagent${a.subs === 1 ? "" : "s"}` : undefined].filter(Boolean).join(" · ")}
       </span>
     </>
   );
@@ -380,6 +392,7 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
           <span className="row-meta">{a.reportsBasis === "recorded" ? "reports_to in the registry" : boss ? "inferred: repo sits under its project" : "no director above it"}</span>
         </button>
       </div>
+      <EvidenceBlock a={a} now={now} />
       {a.ticket ? (
         <div className="insp-section">
           <span className="hub-label">Working on</span>
@@ -420,6 +433,44 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
   );
 }
 
+const BASIS_TEXT: Record<Evidence["basis"], string> = {
+  profile: "its own Hermes profile",
+  project: "a session working in its project",
+  related: "work beneath it"
+};
+const STATE_WORD: Record<Evidence["state"], string> = { idle: "idle", done: "finished a turn", active: "working", error: "failed", hitl: "needs you" };
+
+/** Why the node reads the way it does: the sessions whose events decide it, newest evidence first. */
+function EvidenceBlock({ a, now }: { a: Agent; now: number }) {
+  if (!a.evidence.length) {
+    return (
+      <div className="insp-section">
+        <span className="hub-label">Evidence</span>
+        <p className="hub-note">
+          {a.state === "unknown" ? "No agent event has named this agent in the last two hours." : "No live session. It last moved " + (a.lastActiveAt ? `${formatDuration(sinceSeconds(a.lastActiveAt, now) ?? 0)} ago.` : "never.")}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="insp-section">
+      <span className="hub-label">Evidence · {a.evidence.length}</span>
+      {a.evidence.map((e, i) => (
+        <div key={i} className="hub-evidence">
+          <Glyph signal={e.state === "active" ? "working" : e.state === "done" ? "cleared" : e.state === "error" ? "broken" : e.state === "hitl" ? "you" : "quiet"} size={8} />
+          <span className="row-name">{e.cli ?? "agent"} · {STATE_WORD[e.state]}</span>
+          <span className="row-meta">
+            {BASIS_TEXT[e.basis]}
+            {e.cwd ? ` · ${e.cwd.replace(/^\/home\/delorenj\//, "~/")}` : ""}
+            {e.subagents ? ` · ${e.subagents} subagent${e.subagents === 1 ? "" : "s"} open` : ""}
+            {e.lastAt ? ` · last event ${formatDuration(sinceSeconds(e.lastAt, now) ?? 0)} ago` : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ContractorPanel({ c, parent, now, onFocus, onOpenProject }: { c: Contractor; parent?: Agent; now: number; onFocus: (id: string) => void; onOpenProject: (id: string) => void }) {
   return (
     <>
@@ -433,6 +484,21 @@ function ContractorPanel({ c, parent, now, onFocus, onOpenProject }: { c: Contra
         <span className="insp-id">{c.ref}</span>
         <span className="insp-state">{c.via === "scope" ? "running · systemd scope, no ASM state of its own" : "open · since agent.invocation.started"}</span>
       </header>
+      {c.via === "subagent" ? (
+        <div className="insp-section">
+          <span className="hub-label">Bloodbank event</span>
+          <div className="hub-row is-plain">
+            <Glyph signal={c.receipt ? "cleared" : "unknown"} size={8} />
+            <span className="row-name">bloodbank.agent.invocation.started</span>
+            <span className="row-meta">{c.eventId ? <CopyRef value={c.eventId} /> : "event id unknown"}</span>
+          </div>
+          <div className="hub-row is-plain">
+            <Glyph signal={c.receipt?.publishStatus === "sent" ? "cleared" : "unknown"} size={8} />
+            <span className="row-name">{c.receipt ? `Hook hub receipt · ${c.receipt.native}` : "Hook hub receipt"}</span>
+            <span className="row-meta">{c.receipt ? <><CopyRef value={c.receipt.invocationId} /> · {c.receipt.publishStatus ?? c.receipt.status}</> : "none found in the collected receipts"}</span>
+          </div>
+        </div>
+      ) : null}
       {parent ? <ProjectBlock label="Inherits project" a={parent} onOpenProject={onOpenProject} note={`From ${parent.name}. Contractors have no registry row.`} /> : null}
       {parent ? (
         <div className="insp-section">

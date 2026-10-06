@@ -5,9 +5,12 @@ import { promisify } from "node:util";
 import { load } from "js-yaml";
 import { createClient } from "redis";
 import type { EventStore, CollectedEvent } from "./event-store.js";
+import { foldActivity, ownerResolver, type ActivityEvent } from "./agent-activity.js";
+import { DONE_WINDOW_MS } from "./deckard-state.js";
 import {
   buildAgents,
   buildProjects,
+  declaredAgents,
   normalizePath,
   projectTickets,
   type AsmRow,
@@ -26,6 +29,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
+const PROFILES_DIR = process.env.HERMES_PROFILES_DIR ?? join(dirname(REGISTRY_PATH), "profiles");
 const PJ_REGISTRY_URL = (process.env.PJ_REGISTRY_URL ?? "http://127.0.0.1:8764").replace(/\/$/, "");
 const GOD_ROOT = normalizePath(process.env.GOD_SOURCE_ROOT ?? "/home/delorenj/code/33GOD");
 const PLATFORM_DIR = join(GOD_ROOT, "33god-platform");
@@ -92,8 +96,15 @@ function recordFromManifest(raw: Json, repoPath: string, indexed: boolean): Proj
     board: text(tp.identifier),
     boardId: text(tp.board_id),
     workspace: text(tp.workspace),
+    agents: manifestAgents(raw.agents),
     indexed
   };
+}
+
+function manifestAgents(raw: unknown): Array<{ id: string; role?: string }> {
+  if (Array.isArray(raw)) return raw.map((a) => text(a)).filter((a): a is string => !!a).map((id) => ({ id }));
+  if (!record(raw)) return [];
+  return Object.entries(raw).map(([id, cfg]) => ({ id, role: record(cfg) ? text(cfg.role) : undefined }));
 }
 
 function readManifest(repoPath: string): ProjectRecord | undefined {
@@ -207,6 +218,8 @@ async function readAsm(): Promise<{ rows: Map<string, AsmRow>; source: Source }>
         scope,
         state: h.state,
         blockKind: text(h.block_kind),
+        blockedUntilMs: ms(h.blocked_until),
+        gatedUntilMs: ms(h.gated_until),
         sinceMs: ms(h.since),
         lastMs: ms(h.last_ms),
         subs: num(h.subs),
@@ -271,6 +284,15 @@ async function readWorkerScopes(): Promise<WorkerScope[]> {
 // ---------------------------------------------------------------- events
 
 const INVOCATION_TYPES = ["bloodbank.agent.invocation.started", "bloodbank.agent.invocation.completed", "bloodbank.agent.invocation.failed"];
+// Everything Deckard reads to decide what an agent is doing (deckard-approve `Activity::from_type`).
+const ACTIVITY_TYPES = [
+  "bloodbank.conversation.turn.started", "bloodbank.conversation.turn.completed",
+  "bloodbank.agent.tool.requested", "bloodbank.agent.tool.invoked", "bloodbank.agent.tool.completed",
+  "bloodbank.agent.invocation.started", "bloodbank.agent.invocation.completed", "bloodbank.agent.invocation.failed",
+  "bloodbank.agent.session.started", "bloodbank.agent.session.ended"
+];
+// Longest lookback anything reads: a finished turn keeps its check for this long.
+const ACTIVITY_WINDOW_MS = DONE_WINDOW_MS;
 const TICKET_TYPES = ["bloodbank.repo.task.created", "bloodbank.repo.task.updated", "bloodbank.repo.task.completed", "bloodbank.repo.task.recorded"];
 
 function eventTime(row: CollectedEvent): string {
@@ -341,15 +363,36 @@ async function snapshot(store: EventStore): Promise<Snapshot> {
     const agentIds = new Set(registry.rows.map((r) => r.agentId));
     const invocations = store.recent(INVOCATION_TYPES, 2000).map((r) => invocationOf(r, agentIds)).filter((e): e is InvocationEvent => !!e);
     const tickets = projectTickets(store.recent(TICKET_TYPES, 3000).map(ticketOf).filter((e): e is TicketEvent => !!e));
+
+    // What each agent is doing: the collected events inside the window, folded the way Deckard folds them.
+    const nowMs = Date.now();
+    const sinceIso = new Date(nowMs - ACTIVITY_WINDOW_MS).toISOString();
+    const rows = store.activity(store.cursorAtOrAfter(sinceIso), ACTIVITY_TYPES);
+    // A manifest can declare a PM whose profile exists while provisioning never wrote its registry row.
+    const declared = declaredAgents(registry.rows, projects.projects).filter((r) => existsSync(join(PROFILES_DIR, r.agentId)));
+    const owned = [...registry.rows, ...declared];
+    const resolve = ownerResolver(owned.map((r) => ({ agentId: r.agentId, path: normalizePath(r.projectPath), role: r.role })));
+    const events: ActivityEvent[] = rows.map((r) => ({
+      id: r.id, type: r.type, atMs: Date.parse(r.time ?? "") || Date.parse(r.collectedAt), cli: r.cli, actorType: r.actorType,
+      actorAgent: r.actorAgent, producer: r.producer, correlationId: r.correlationId, cwd: r.cwd, pane: r.pane, session: r.session,
+      outcome: r.outcome, invocationId: r.invocationId, parentInvocationId: r.parentInvocationId
+    }));
+    const activity = foldActivity(events, resolve, nowMs);
+    const subagentEvents = new Set([...activity.values()].flatMap((a) => a.subagents.map((c) => c.eventId)));
+    const receipts = store.receiptsForEvents(subagentEvents, sinceIso);
+
     const agents = buildAgents({
-      nowMs: Date.now(),
+      nowMs,
       registry: registry.rows,
       projects: projects.projects,
       asm: asm.rows,
       gateways,
       invocations,
       scopes,
-      tickets
+      tickets,
+      declared,
+      activity,
+      receipts
     });
     const lastEvent = store.lastEventAt;
     const sources: Source[] = [
@@ -358,7 +401,7 @@ async function snapshot(store: EventStore): Promise<Snapshot> {
       projects.source,
       { name: "events", ...(lastEvent ? { ageSeconds: Math.max(0, Math.round((Date.now() - Date.parse(lastEvent)) / 1000)), maxSeconds: 120 } : { down: true, detail: "no events collected yet" }) }
     ];
-    const snap: Snapshot = { at: Date.now(), agents, projects: projects.projects, tickets, sources };
+    const snap: Snapshot = { at: nowMs, agents, projects: projects.projects, tickets, sources };
     cached = snap;
     return snap;
   })().finally(() => {

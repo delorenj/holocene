@@ -10,6 +10,12 @@ type Json = Record<string, unknown>;
 export type HookFilter = Partial<Record<"cli" | "native" | "role" | "handler" | "status", string>> & { limit?: number; offset?: number };
 export type EventFilter = { type?: string; subject?: string; source?: string; limit?: number; after?: number };
 export type CollectedEvent = { cursor: number; stream: string; sequence: number; subject: string; collected_at: string; envelope: BloodbankEvent };
+export type ActivityRow = {
+  cursor: number; id: string; type: string; collectedAt: string; time?: string; cli?: string; actorType?: string;
+  actorAgent?: string; producer?: string; correlationId?: string; cwd?: string; pane?: string; session?: string; outcome?: string;
+  invocationId?: string; parentInvocationId?: string;
+};
+export type HookReceiptRef = { invocationId: string; cli: string; native: string; status: string; publishStatus?: string };
 export type StoreChange = { cursor: number; kind: "event" | "receipt" | "snapshot"; invocation_id?: string };
 class InvalidProjection extends Error {}
 const record = (value: unknown): value is Json => !!value && typeof value === "object" && !Array.isArray(value);
@@ -201,6 +207,81 @@ export class EventStore {
     return { items, total, limit, offset, next_offset: offset + items.length < total ? offset + items.length : null };
   }
   /** Newest events of the given types, newest first. Read-only; used by the hub views. */
+  /**
+   * Lowest cursor whose `collected_at` is at or after `iso`. Cursors rise with collection time,
+   * so a binary search over the primary key finds the bound without scanning the table.
+   */
+  cursorAtOrAfter(iso: string): number {
+    const head = this.cursor;
+    if (head === 0) return 0;
+    const pick = this.db.prepare("SELECT collected_at FROM events WHERE cursor>=? ORDER BY cursor LIMIT 1");
+    let lo = this.oldestCursor;
+    let hi = head + 1;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const row = pick.get(mid);
+      if (row && String(row.collected_at) >= iso) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  }
+
+  /** The newest agent activity facts after `after`, oldest first, reduced to the scalar fields the hub joins on. */
+  activity(after: number, types: string[], limit = 30000): ActivityRow[] {
+    if (!types.length) return [];
+    const placeholders = types.map(() => "?").join(",");
+    return this.db.prepare(`SELECT cursor,event_id,type,collected_at,
+        json_extract(envelope,'$.time') AS at, json_extract(envelope,'$.actor.cli') AS cli,
+        json_extract(envelope,'$.actor.type') AS actor_type, json_extract(envelope,'$.actor.agent_id') AS actor_agent,
+        json_extract(envelope,'$.producer') AS producer, json_extract(envelope,'$.correlationid') AS correlation,
+        json_extract(envelope,'$.data.working_directory') AS cwd, json_extract(envelope,'$.data.zellij_pane_id') AS pane,
+        json_extract(envelope,'$.data.zellij_session_name') AS zsession, json_extract(envelope,'$.data.outcome') AS outcome,
+        json_extract(envelope,'$.data.invocation_id') AS invocation, json_extract(envelope,'$.data.parent_invocation_id') AS parent_invocation
+      FROM events WHERE cursor>? AND type IN (${placeholders}) ORDER BY cursor DESC LIMIT ?`)
+      .all(after, ...types, Math.max(1, Math.min(limit, 60000)))
+      .reverse()
+      .map(row => ({
+        cursor: Number(row.cursor), id: String(row.event_id), type: String(row.type), collectedAt: String(row.collected_at),
+        time: typeof row.at === "string" ? row.at : undefined,
+        cli: typeof row.cli === "string" ? row.cli : undefined,
+        actorType: typeof row.actor_type === "string" ? row.actor_type : undefined,
+        actorAgent: typeof row.actor_agent === "string" ? row.actor_agent : undefined,
+        producer: typeof row.producer === "string" ? row.producer : undefined,
+        correlationId: typeof row.correlation === "string" ? row.correlation : undefined,
+        cwd: typeof row.cwd === "string" ? row.cwd : undefined,
+        pane: row.pane === null || row.pane === undefined ? undefined : String(row.pane),
+        session: typeof row.zsession === "string" ? row.zsession : undefined,
+        outcome: typeof row.outcome === "string" ? row.outcome : undefined,
+        invocationId: typeof row.invocation === "string" ? row.invocation : undefined,
+        parentInvocationId: typeof row.parent_invocation === "string" ? row.parent_invocation : undefined,
+      }));
+  }
+
+  /**
+   * Hook-hub receipts that published one of `eventIds`, found by a bounded range scan on the
+   * receipt time instead of a scan of every receipt.
+   */
+  receiptsForEvents(eventIds: Set<string>, sinceIso: string): Map<string, HookReceiptRef> {
+    const out = new Map<string, HookReceiptRef>();
+    if (!eventIds.size) return out;
+    const rows = this.db.prepare("SELECT invocation_id,cli,native,status,data FROM hook_invocations WHERE received_at>=? AND role='invocation_start' ORDER BY received_at DESC LIMIT 5000").all(sinceIso);
+    for (const row of rows) {
+      let executions: unknown;
+      try { executions = (JSON.parse(String(row.data)) as Json).executions; } catch { continue; }
+      if (!Array.isArray(executions)) continue;
+      for (const execution of executions) {
+        if (!record(execution)) continue;
+        const eventId = execution.event_id;
+        if (typeof eventId !== "string" || !eventIds.has(eventId) || out.has(eventId)) continue;
+        out.set(eventId, {
+          invocationId: String(row.invocation_id), cli: String(row.cli), native: String(row.native), status: String(row.status),
+          publishStatus: typeof execution.publish_status === "string" ? execution.publish_status : undefined,
+        });
+      }
+    }
+    return out;
+  }
+
   recent(types: string[], limit = 500): CollectedEvent[] {
     if (!types.length) return [];
     const placeholders = types.map(() => "?").join(",");

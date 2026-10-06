@@ -37,6 +37,18 @@ export type Agent = {
   subs?: number;
   tools?: number;
   turn?: number;
+  evidence: Evidence[];
+};
+
+export type Evidence = {
+  cli?: string;
+  cwd?: string;
+  basis: "profile" | "project" | "related";
+  state: "idle" | "done" | "active" | "error" | "hitl";
+  heldSeconds?: number;
+  lastAt?: string;
+  lastType?: string;
+  subagents: number;
 };
 
 export type Contractor = {
@@ -48,6 +60,11 @@ export type Contractor = {
   startedAt?: string;
   ref: string;
   description?: string;
+  eventId?: string;
+  invocationId?: string;
+  cli?: string;
+  cwd?: string;
+  receipt?: { invocationId: string; native: string; status: string; publishStatus?: string };
 };
 
 export type HubEvent = { id: string; at: string; from: string; to: string; kind: "delegated" | "responded" | "failed"; text: string };

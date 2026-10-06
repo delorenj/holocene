@@ -4,7 +4,7 @@ import {
   buildAgents,
   buildProjects,
   linkProject,
-  openSubagents,
+  declaredAgents,
   projectTickets,
   workerContractors,
   type ProjectRecord,
@@ -19,6 +19,12 @@ const projects: ProjectRecord[] = [
   { id: "flume", name: "Flume", repoPath: `${ROOT}/flume`, board: "FLUME", indexed: true },
   { id: "james-brennan", name: "James Brennan", repoPath: "/home/delorenj/code/james-brennan", board: "JIMB", indexed: true }
 ];
+import type { AgentActivity } from "./agent-activity.js";
+const pulse = (_id: string, sinceMs: number): AgentActivity => ({
+  reading: { state: "active", sinceMs, lastMs: sinceMs + 30_000 },
+  sessions: [],
+  subagents: []
+});
 const row = (agentId: string, repo: string, projectPath: string, extra: Partial<RegistryRow> = {}): RegistryRow => ({
   agentId, displayName: agentId, role: "pm", repo, projectPath, ...extra
 });
@@ -46,19 +52,6 @@ test("repo name and then board id are the fallbacks; nothing matches is no proje
   assert.equal(linkProject(row("x", "Holocene", "/elsewhere"), projects)?.basis, "repo");
   assert.equal(linkProject(row("y", "nope", "", { boardId: "b-bb" }), projects)?.basis, "board");
   assert.equal(linkProject(registry[5], projects), undefined);
-});
-
-test("open subagents close oldest-first when the parent session completes", () => {
-  const at = (s: number) => new Date(Date.parse("2026-10-05T14:00:00Z") + s * 1000).toISOString();
-  const open = openSubagents(
-    [
-      { id: "1", type: "started", at: at(0), agentId: "flume-pm", invocationId: "child-a", parentInvocationId: "pm-session" },
-      { id: "2", type: "started", at: at(5), agentId: "flume-pm", invocationId: "child-b", parentInvocationId: "pm-session" },
-      { id: "3", type: "completed", at: at(9), agentId: "flume-pm", invocationId: "pm-session" }
-    ],
-    Date.parse(at(30))
-  );
-  assert.deepEqual(open.map((c) => c.id), ["sub:child-b"]);
 });
 
 test("worker scopes find their PM from --profile and a ticket from the query file", () => {
@@ -93,9 +86,9 @@ test("the PM of a parent project directs, and nested PMs report to it", () => {
     registry,
     projects,
     asm: new Map([
-      ["hermes:a:holocene-pm", { scope: "hermes:a:holocene-pm", state: "working", sinceMs: now - 60_000 }],
-      ["hermes:a:bloodbank-pm", { scope: "hermes:a:bloodbank-pm", state: "awaiting_human", blockKind: "bell" }]
+      ["hermes:a:bloodbank-pm", { scope: "hermes:a:bloodbank-pm", state: "awaiting_human", blockKind: "bell", blockedUntilMs: now + 600_000 }]
     ]),
+    activity: new Map([["holocene-pm", pulse("holocene-pm", now - 60_000)]]),
     gateways: new Map([["hermes-tonnybox-pm-gateway.service", "inactive"]]),
     invocations: [],
     scopes: [],
@@ -148,9 +141,9 @@ test("an idle agent's recency is when it went idle, not the sweeper's last pass"
     projects,
     asm: new Map([
       ["hermes:a:flume-pm", { scope: "hermes:a:flume-pm", state: "idle", sinceMs: now - 3_600_000, lastMs: sweep }],
-      ["hermes:a:bloodbank-pm", { scope: "hermes:a:bloodbank-pm", state: "unknown", sinceMs: now - 86_400_000, lastMs: sweep }],
-      ["hermes:a:holocene-pm", { scope: "hermes:a:holocene-pm", state: "working", sinceMs: now - 60_000, lastMs: sweep }]
+      ["hermes:a:bloodbank-pm", { scope: "hermes:a:bloodbank-pm", state: "unknown", sinceMs: now - 86_400_000, lastMs: sweep }]
     ]),
+    activity: new Map([["holocene-pm", { reading: { state: "active" as const, sinceMs: now - 60_000, lastMs: sweep }, sessions: [], subagents: [] }]]),
     gateways: new Map(),
     invocations: [{ id: "e1", type: "completed", at: new Date(now - 120_000).toISOString(), agentId: "bloodbank-pm", invocationId: "i1" }],
     scopes: [],

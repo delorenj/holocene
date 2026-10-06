@@ -1154,15 +1154,110 @@ html[data-hub-theme="ledger-night"] body {
 .hub-root .hub-glyph.sig-unknown {
   color: var(--ink-3);
 }
-.hub-root .hub-orbit {
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: hub-orbit 2.4s linear infinite;
+.hub-root .hub-pulse-mark {
+  animation: hub-mark 2.56s ease-in-out infinite;
 }
-@keyframes hub-orbit {
-  to {
-    transform: rotate(360deg);
+@keyframes hub-mark {
+  50% {
+    opacity: 0.45;
   }
+}
+
+/* ---------- Deckard's tile colours (docs/visual-language.md) ----------
+   Working is a slow green pulse of the tile background between #154b2c and #258346 on a 2.56 s
+   cosine ease; label and glyph never move. A finished turn is a solid #006e23 that is never one
+   of the pulse's frames. Red is #8c1414 and amber is #ff9600 with a dark foreground, the only
+   warm tile. These hold in both themes: they are signals, not decoration. */
+.hub-root .hub-node.tone-sig {
+  --tone-ink: #ebffeb;
+  --ink: var(--tone-ink);
+  --ink-2: var(--tone-ink);
+  --ink-3: rgba(235, 255, 235, 0.78);
+  --surface: #154b2c;
+  --ground: #154b2c;
+  --line: rgba(235, 255, 235, 0.45);
+  --wash: rgba(255, 255, 255, 0.08);
+  --working: #ebffeb;
+  --cleared: #ebffeb;
+  --broken: #ffe6e6;
+  --pop: #ffe9c8;
+  color: var(--tone-ink);
+  background-color: var(--surface);
+}
+.hub-root .hub-node.tone-sig .node-chip {
+  background: rgba(0, 0, 0, 0.22);
+  border-color: rgba(235, 255, 235, 0.55);
+  color: var(--tone-ink);
+}
+.hub-root .hub-node.tone-sig .node-chip.is-missing {
+  color: var(--ink-3);
+}
+.hub-root .hub-node.tone-sig .node-count {
+  background: var(--tone-ink);
+  color: #154b2c;
+}
+.hub-root .hub-node.tone-sig-working {
+  animation: hub-tile-pulse 2.56s ease-in-out infinite;
+}
+@keyframes hub-tile-pulse {
+  0%,
+  100% {
+    background-color: #154b2c;
+  }
+  50% {
+    background-color: #258346;
+  }
+}
+.hub-root .hub-node.tone-sig-cleared {
+  --surface: #006e23;
+  --ground: #006e23;
+  --cleared: #ebffeb;
+}
+.hub-root .hub-node.tone-sig-broken {
+  --tone-ink: #ffe6e6;
+  --surface: #8c1414;
+  --ground: #8c1414;
+  --ink-3: rgba(255, 230, 230, 0.8);
+  --line: rgba(255, 230, 230, 0.5);
+}
+.hub-root .hub-node.tone-sig-broken .node-count {
+  color: #8c1414;
+}
+.hub-root .hub-node.tone-sig-you {
+  --tone-ink: #1a0c00;
+  --surface: #ff9600;
+  --ground: #ff9600;
+  --ink-3: rgba(26, 12, 0, 0.78);
+  --line: rgba(26, 12, 0, 0.45);
+  --wash: rgba(0, 0, 0, 0.08);
+  --pop: #1a0c00;
+  --working: #1a0c00;
+  --cleared: #1a0c00;
+}
+.hub-root .hub-node.tone-sig-you .node-count {
+  background: #1a0c00;
+  color: #ff9600;
+}
+.hub-root .hub-node.tone-sig-you.is-you::after {
+  border-color: transparent #1a0c00 transparent transparent;
+}
+.hub-root .hub-node.tone-sig.kind-contractor {
+  border-style: dashed;
+  box-shadow: 3px 3px 0 #154b2c;
+}
+.hub-root .hub-evidence {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.hub-root .hub-evidence .row-meta {
+  grid-column: 2;
+  font: 400 11px/15px var(--font-mono);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
 }
 
 .hub-root .hub-age {
@@ -1267,8 +1362,12 @@ html[data-hub-theme="ledger-night"] body {
     visibility: hidden;
     animation-duration: 1ms;
   }
-  .hub-root .hub-orbit {
+  .hub-root .hub-pulse-mark {
     animation: none;
+  }
+  .hub-root .hub-node.tone-sig-working {
+    animation: none;
+    background-color: #1d6538;
   }
   .hub-root .hub-node,
   .hub-root .hub-btn {
