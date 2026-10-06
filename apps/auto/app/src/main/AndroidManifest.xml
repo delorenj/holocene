@@ -12,6 +12,12 @@
     </queries>
     <application android:label="Holocene Fixture" android:theme="@style/AppTheme"
         android:allowBackup="false" android:supportsRtl="true">
+        <!-- Optional car API: present on automotive builds, absent on phones.
+             Declared optional so non-automotive devices install and run; all
+             android.car.* usage is isolated in CarHost.kt and fails closed. -->
+        <uses-library
+            android:name="android.car"
+            android:required="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

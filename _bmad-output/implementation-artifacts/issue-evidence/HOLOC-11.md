@@ -1,6 +1,49 @@
 # HOLOC-11 Evidence: Physical Civic Walking Skeleton
 
-## Local release artifact
+## Current head-unit compatibility repair (2026-10-06)
+
+Status: **BUILD_VERIFIED_UPLOAD_BLOCKED**. Internal testing still serves version 7. Version 8 is signed and tested but has not been uploaded or published. Physical Civic installation and launch remain unverified.
+
+### Demonstrated installation exclusion
+
+- The enrolled tester's Play installation chooser marks Honda `IVI-SYSTEM` incompatible.
+- Play Console's Honda `msmnile_au` catalog identifies the Android 12L / API 32 variant as unsupported by the app manifest. Its API 33 and 34 variants are supported.
+- Version 7 / `0.2.5-internal` requires API 33. The physical vehicle's exact OS version has not been independently read; the registered Honda is incompatible and its API 32 catalog exclusion is demonstrated.
+- Internal tester listing: <https://play.google.com/apps/internaltest/4701731390750096325>. Ordinary store search is not an acceptance check for this internal release.
+
+### Version 8 artifact and source
+
+- Application ID: `io.automaticai.holocene`
+- Version: `0.2.6-internal`, version code `8`
+- SDK: compile/target API 35, minimum API 32
+- Signed AAB: `apps/auto/app/build/outputs/bundle/release/app-release.aab` (generated, not tracked)
+- AAB SHA256: `f04dc636f897e5b3fa5e99d4506a05c01a87ff57f7a2df5b674c8325ab664c03`
+- Upload certificate SHA256: `90d276cb82ddb16e72386c5d07c32de35396dc12723c61d9b9e5329703bfca17`
+- Signing identity: `op://DeLoSecrets/Holocene Android Auto release signing/password`; secure signing wrapper resolves and removes temporary signing material.
+- The provider query uses the compatible integer-flags overload. The API 33 speech-support preflight is guarded by SDK version; API 32 continues with normal recognition.
+- Includes the already-published v7 source prerequisites: optional `android.car` library, isolated car-host adapter, fail-closed phone UI, and in-app privacy-policy access. These prerequisites were previously uncommitted.
+
+### Validation and live propagation
+
+- Single-worker Android `testDebugUnitTest lintDebug assembleDebug`: PASS (49 tasks).
+- Python tooling: PASS (44 tests, 4 environment-dependent skips).
+- API and web typechecks: PASS; web typecheck repeated after the policy edit.
+- Secure signed release build: PASS; `jarsigner -verify`: verified.
+- Bundletool inspected the signed AAB: version code `8`, minimum API `32`.
+- Official API 32 AOSP ATD emulator: debug v8 installs and cold-launches successfully twice. Phone fallback renders with diagnostics disabled; no AndroidRuntime crash.
+- Official Honda API 33 emulator: debug v8 installs and launches for foreground user 10. Car UX reports `requiresDO=false, mask=0; unrestricted=true`; rendered Honda UI shows fixture controls. No microphone capture was started. Both task-owned emulators were stopped after inspection.
+- These emulator results cover the debug APK; they do not prove Play delivery or physical vehicle acceptance of the signed AAB.
+- Live `holocene-web` was recreated through the owning parent `33god-platform` Compose service, is healthy, and serves the updated public policy at <https://holocene.delo.sh/auto/privacy>. Browser readback confirms version 8 and continued version 7/6 coverage, effective October 6, 2026.
+
+### Remaining release and acceptance work
+
+- Existing internal track: `4701731390750096325`; app Console ID: `4974023321468395687`.
+- Version 8 draft: `releases/5/prepare`; release name and compatibility notes prepared.
+- Documented browser file-chooser upload fails with `Not allowed`. Chrome's ChatGPT extension requires the operator to enable **Allow access to file URLs**. No version 8 artifact has been consumed by Play yet.
+- After that setting is enabled: upload this exact signed bundle, verify API 32+ processing, publish only to the existing internal testing track, and read back active version 8.
+- Then verify Honda API 32 catalog support and the tester's Honda installation option. Distinguish a queued remote install from a completed physical install and launch.
+
+## Historical v6 release artifact
 
 Status: **INTERNAL_TESTING_LIVE**. v6 is rolled out on the Internal testing track (Active, available to internal testers as of 2026-10-03 11:09 AM).
 

@@ -22,10 +22,10 @@ android {
     useLibrary("android.car")
     defaultConfig {
         applicationId = "io.automaticai.holocene"
-        minSdk = 33
+        minSdk = 32
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.2.4-internal"
+        versionCode = 8
+        versionName = "0.2.6-internal"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
     signingConfigs {

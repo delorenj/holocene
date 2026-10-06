@@ -3,9 +3,6 @@ package sh.delo.holocene.auto
 import android.Manifest
 import android.app.Activity
 import android.app.role.RoleManager
-import android.car.Car
-import android.car.drivingstate.CarUxRestrictions
-import android.car.drivingstate.CarUxRestrictionsManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -15,6 +12,8 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -44,8 +43,7 @@ class MainActivity : Activity() {
     private val preview get() = session.preview
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
-    private var car: Car? = null
-    private var ux: CarUxRestrictionsManager? = null
+    private var carHost: CarHost? = null
     private var unrestricted = false
     private var recognizer: SpeechRecognizer? = null
     private var recorder: AudioRecord? = null
@@ -110,9 +108,10 @@ class MainActivity : Activity() {
         status.text = message
     }
 
+    @Suppress("DEPRECATION") // The int-flags overload also works on the Honda's Android 12L.
     private fun recognitionProvider(): String {
         val selected = Settings.Secure.getString(contentResolver, "voice_recognition_service").orEmpty()
-        val services = packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), PackageManager.ResolveInfoFlags.of(0))
+        val services = packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
             .joinToString(",") { "${it.serviceInfo.packageName}/${it.serviceInfo.name}" }
         return "selected=$selected services=$services"
     }
@@ -121,10 +120,23 @@ class MainActivity : Activity() {
         body.removeAllViews()
         label("Holocene Auto · FIXTURE", 26f)
         label("Emulator diagnostic only · no live agents · not driving approved")
-        status = label(if (unrestricted) "Host unrestricted; diagnostic controls only" else "Host restricted/unknown; no detail, capture or playback")
+        val hostConnected = carHost?.connected == true
+        status = label(
+            when {
+                unrestricted -> "Host unrestricted; diagnostic controls only"
+                hostConnected -> "Host restricted/unknown; no detail, capture or playback"
+                else -> "Not a car host; fixture availability shown read-only, diagnostics disabled"
+            },
+        )
         val roles = getSystemService(RoleManager::class.java)
         label("Assistant role available=${roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)}, held=${roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)}; no role change")
         label("Recognition provider=${SpeechRecognizer.isRecognitionAvailable(this)}; on-device=${SpeechRecognizer.isOnDeviceRecognitionAvailable(this)}")
+        val isAutomotiveDevice = packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
+        if (unrestricted || !isAutomotiveDevice) {
+            button("Open privacy policy in browser") {
+                openPrivacyPolicy()
+            }
+        }
         if (!unrestricted) return
         for (agent in Fixtures.agents) {
             label("FIXTURE · ${agent.employee} · ${agent.state}\n${agent.runtime} / ${agent.nativeSession}\nObserved ${agent.observedAt} · read-only")
@@ -140,39 +152,39 @@ class MainActivity : Activity() {
         for (event in Fixtures.normalized(Fixtures.events)) label(event)
     }
 
-    private fun connectHost() {
+    private fun openPrivacyPolicy() {
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) && !unrestricted) {
+            report("Blocked while driving")
+            return
+        }
         try {
-            car = Car.createCar(this, main, Car.CAR_WAIT_TIMEOUT_DO_NOT_WAIT) { connectedCar, ready ->
-                if (!ready) {
-                    unrestricted = false
-                    cancelDiagnostic("Car service unavailable", "car-unavailable")
-                    render()
-                    return@createCar
-                }
-                try {
-                    ux = connectedCar.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager
-                    ux!!.registerListener { restrictions -> applyRestrictions(restrictions) }
-                    applyRestrictions(ux!!.currentCarUxRestrictions)
-                } catch (error: Exception) {
-                    unrestricted = false
-                    render()
-                    report("Host UX unavailable: ${error.javaClass.simpleName}")
-                }
-            }
-        } catch (error: Exception) {
-            render()
-            report("Car connection blocked: ${error.javaClass.simpleName}")
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+        } catch (e: android.content.ActivityNotFoundException) {
+            report("No browser available to open privacy policy")
         }
     }
 
-    private fun applyRestrictions(restrictions: CarUxRestrictions) {
-        unrestricted = !restrictions.isRequiresDistractionOptimization && restrictions.activeRestrictions == CarUxRestrictions.UX_RESTRICTIONS_BASELINE
-        if (!unrestricted) {
-            session.restricted()
-            releaseAll("Host restricted; stopped")
+    private fun connectHost() {
+        if (!CarHost.isCarHostAvailable(this)) {
+            carHost = null
+            unrestricted = false
+            status.text = "Not a car host; fixture availability shown read-only, diagnostics disabled"
+            render()
+            return
         }
-        render()
-        report("Host UX requiresDO=${restrictions.isRequiresDistractionOptimization}, mask=${restrictions.activeRestrictions}; unrestricted=$unrestricted")
+        val host = CarHost(
+            onUnrestrictedChange = { free ->
+                unrestricted = free
+                if (!free) {
+                    session.restricted()
+                    releaseAll("Host restricted; stopped")
+                }
+                render()
+            },
+            onStatus = { message -> if (::status.isInitialized) report(message) },
+        )
+        carHost = host
+        host.connect(this, main)
     }
 
     private fun hasMicPermission(): Boolean {
@@ -274,7 +286,7 @@ class MainActivity : Activity() {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-            try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) try {
                 engine.checkRecognitionSupport(intent, mainExecutor, object : RecognitionSupportCallback {
                     override fun onSupportResult(support: RecognitionSupport) {
                         if (!session.isCapturing(token) || recognizer !== engine) {
@@ -292,6 +304,7 @@ class MainActivity : Activity() {
                     }
                 })
             } catch (error: Exception) { probe("asr_support_exception", "type=${error.javaClass.simpleName} message=${error.message}") }
+            else { probe("asr_support_unavailable", "sdk=${Build.VERSION.SDK_INT}; provider preflight requires API 33") }
             engine.setRecognitionListener(object : RecognitionListener {
                 private fun live() = session.isCapturing(token) && recognizer === engine
                 override fun onReadyForSpeech(params: Bundle?) {
@@ -467,13 +480,14 @@ class MainActivity : Activity() {
         session.cancel()
         releaseAll("Activity destroyed")
         main.removeCallbacksAndMessages(null)
-        ux?.unregisterListener()
-        car?.disconnect()
+        carHost?.disconnect()
+        carHost = null
         super.onDestroy()
     }
 
     private companion object {
         const val TAG = "HoloceneProbe"
+        const val PRIVACY_POLICY_URL = "https://holocene.delo.sh/auto/privacy"
         const val EXTRA_RUN_MIC = "sh.delo.holocene.extra.RUN_MIC"
         const val EXTRA_RUN_ASR = "sh.delo.holocene.extra.RUN_ASR"
         const val SAMPLE_RATE = 16000
