@@ -2,7 +2,7 @@
 
 ## Current head-unit compatibility repair (2026-10-06)
 
-Status: **INTERNAL_TESTING_LIVE_HONDA_SUPPORTED**. Version 8 is published and available to internal testers. Honda's API 32 variant is supported, and the enrolled tester's registered Honda is selectable for installation. The remote install submission reached Google's passkey verification screen; no installation-queued acknowledgement or physical Civic launch has been verified.
+Status: **INTERNAL_TESTING_LIVE_HONDA_SUPPORTED_AUTH_PENDING**. Version 8 is published and available to internal testers. Honda's API 32 variant is supported, and the enrolled tester's registered Honda is selectable for installation. The resumed remote install submission again reached Google's passkey verification screen; no installation-queued acknowledgement or physical Civic launch has been verified.
 
 ### Original installation exclusion (resolved by version 8)
 
@@ -53,8 +53,10 @@ Status: **INTERNAL_TESTING_LIVE_HONDA_SUPPORTED**. Version 8 is published and av
 ### Remaining physical acceptance
 
 - Selecting **Install** for the Honda redirected to Google's **Verifying it's you / Complete sign-in using your passkey** screen for `jaradd@gmail.com`. This is an authentication challenge, not a successful install acknowledgement.
-- The Mac's `ego-browser` task space `14` is handed to the operator for this passkey check. Resume only after the operator confirms continuation.
-- After verification, check for the remote installation acknowledgement; do not submit another install request unless the UI establishes the first did not complete.
+- On the October 7, 2026 continuation, the previous verification tab had been closed, so its outcome could not be read. The tester listing still offered **Install** and reopened its chooser with a phone selected by default.
+- The resumed chooser was explicitly changed to **Honda IVI-SYSTEM**. Before submission, readback confirmed the picker was closed (`aria-expanded=false`) and its only selected option was Honda, SDK `32`. The install action then opened the passkey challenge again for `jaradd@gmail.com`; no queued or successful installation acknowledgement appeared.
+- The Mac's `ego-browser` task space `14` was handed to the operator again; `handOffTaskSpace(14)` returned `{done:true}`. The operator must complete Google's check on the MacBook and leave the resulting page open. Resume only after the operator confirms continuation.
+- After verification, read the resulting remote installation acknowledgement before taking another install action. A remote acknowledgement would establish request acceptance only; it would not prove the car has downloaded or launched the app.
 - The vehicle must complete the download/install and launch the fixture before physical acceptance can be claimed. Parked operation, live agent integration, and driving approval are separate from Play compatibility and release publication.
 
 ## Historical v6 release artifact
