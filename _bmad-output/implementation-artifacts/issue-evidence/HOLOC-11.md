@@ -2,13 +2,13 @@
 
 ## Current head-unit compatibility repair (2026-10-06)
 
-Status: **BUILD_VERIFIED_UPLOAD_BLOCKED**. Internal testing still serves version 7. Version 8 is signed and tested but has not been uploaded or published. Physical Civic installation and launch remain unverified.
+Status: **INTERNAL_TESTING_LIVE_HONDA_SUPPORTED**. Version 8 is published and available to internal testers. Honda's API 32 variant is supported, and the enrolled tester's registered Honda is selectable for installation. The remote install submission reached Google's passkey verification screen; no installation-queued acknowledgement or physical Civic launch has been verified.
 
-### Demonstrated installation exclusion
+### Original installation exclusion (resolved by version 8)
 
-- The enrolled tester's Play installation chooser marks Honda `IVI-SYSTEM` incompatible.
-- Play Console's Honda `msmnile_au` catalog identifies the Android 12L / API 32 variant as unsupported by the app manifest. Its API 33 and 34 variants are supported.
-- Version 7 / `0.2.5-internal` requires API 33. The physical vehicle's exact OS version has not been independently read; the registered Honda is incompatible and its API 32 catalog exclusion is demonstrated.
+- Before version 8, the enrolled tester's Play installation chooser marked Honda `IVI-SYSTEM` incompatible.
+- Play Console's Honda `msmnile_au` catalog identified the Android 12L / API 32 variant as unsupported by version 7's app manifest. Its API 33 and 34 variants were supported.
+- Version 7 / `0.2.5-internal` requires API 33. After publication, the tester chooser reports the registered Honda's SDK as `32`, confirming the compatibility mismatch with version 7. This is Google's registered-device metadata, rather than an independent physical-device OS read.
 - Internal tester listing: <https://play.google.com/apps/internaltest/4701731390750096325>. Ordinary store search is not an acceptance check for this internal release.
 
 ### Version 8 artifact and source
@@ -22,6 +22,7 @@ Status: **BUILD_VERIFIED_UPLOAD_BLOCKED**. Internal testing still serves version
 - Signing identity: `op://DeLoSecrets/Holocene Android Auto release signing/password`; secure signing wrapper resolves and removes temporary signing material.
 - The provider query uses the compatible integer-flags overload. The API 33 speech-support preflight is guarded by SDK version; API 32 continues with normal recognition.
 - Includes the already-published v7 source prerequisites: optional `android.car` library, isolated car-host adapter, fail-closed phone UI, and in-app privacy-policy access. These prerequisites were previously uncommitted.
+- Source fix and prerequisites committed to `main` and pushed as `141b884` (`fix(auto): support Honda Android 12L head units`).
 
 ### Validation and live propagation
 
@@ -35,13 +36,26 @@ Status: **BUILD_VERIFIED_UPLOAD_BLOCKED**. Internal testing still serves version
 - These emulator results cover the debug APK; they do not prove Play delivery or physical vehicle acceptance of the signed AAB.
 - Live `holocene-web` was recreated through the owning parent `33god-platform` Compose service, is healthy, and serves the updated public policy at <https://holocene.delo.sh/auto/privacy>. Browser readback confirms version 8 and continued version 7/6 coverage, effective October 6, 2026.
 
-### Remaining release and acceptance work
+### Publication and Honda verification (2026-10-07 UTC)
 
 - Existing internal track: `4701731390750096325`; app Console ID: `4974023321468395687`.
-- Version 8 draft: `releases/5/prepare`; release name and compatibility notes prepared.
-- Documented browser file-chooser upload fails with `Not allowed`. Chrome's ChatGPT extension requires the operator to enable **Allow access to file URLs**. No version 8 artifact has been consumed by Play yet.
-- After that setting is enabled: upload this exact signed bundle, verify API 32+ processing, publish only to the existing internal testing track, and read back active version 8.
-- Then verify Honda API 32 catalog support and the tester's Honda installation option. Distinguish a queued remote install from a completed physical install and launch.
+- Initial Chrome extension upload failed with `Not allowed`. At the operator's request, publication continued through the `ego-browser` Mac bridge.
+- Mac bridge connectivity was restored for this task using a temporary SSH configuration with `ProxyCommand tailscale nc %h %p`; the same host name remains `carries-macbook-air.burro-salmon.ts.net`.
+- The signed AAB was copied to the Mac; remote SHA256 matched `f04dc636f897e5b3fa5e99d4506a05c01a87ff57f7a2df5b674c8325ab664c03` before upload.
+- Play processed version `8 (0.2.6-internal)`, API levels `32+`, target SDK `35`. Version 8 is now consumed and must not be uploaded again for another release.
+- Release `releases/5` was reviewed and published only on the existing internal testing track. The only validation warning concerned the optional R8 deobfuscation file; no blocking errors remained.
+- Preview showed car support increasing from 13 to 27 devices, with 14 newly supported and zero previously supported cars lost.
+- Authoritative track readback: **Active**, **Latest release: 8 (0.2.6-internal)**, **Available to internal testers**, **Released on Oct 6 8:36 PM**, **Not reviewed**. The displayed release time is October 6, 2026 in America/New_York, equivalent to October 7, 2026 at approximately 00:36 UTC.
+- Device catalog readback: Honda `msmnile_au (IVI-SYSTEM)` is supported in all tracks with active releases. Its **Android 12L (SDK 32)** variant now explicitly shows **Supported**; API 33 and 34 variants remain supported.
+- The tester listing confirms `jaradd@gmail.com` is enrolled. Its installation chooser now offers **Honda IVI-SYSTEM** without an incompatibility warning; the device option reports `data-sdk=32`.
+- Before submitting the install request, the selected option was verified as exactly **Honda IVI-SYSTEM**, SDK `32`, `aria-selected=true`; the picker was closed and no phone was selected.
+
+### Remaining physical acceptance
+
+- Selecting **Install** for the Honda redirected to Google's **Verifying it's you / Complete sign-in using your passkey** screen for `jaradd@gmail.com`. This is an authentication challenge, not a successful install acknowledgement.
+- The Mac's `ego-browser` task space `14` is handed to the operator for this passkey check. Resume only after the operator confirms continuation.
+- After verification, check for the remote installation acknowledgement; do not submit another install request unless the UI establishes the first did not complete.
+- The vehicle must complete the download/install and launch the fixture before physical acceptance can be claimed. Parked operation, live agent integration, and driving approval are separate from Play compatibility and release publication.
 
 ## Historical v6 release artifact
 
