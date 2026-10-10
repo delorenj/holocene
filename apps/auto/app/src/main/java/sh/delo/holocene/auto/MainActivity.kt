@@ -5,7 +5,7 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.content.res.ColorStateList
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
@@ -29,6 +29,9 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -41,6 +44,16 @@ class MainActivity : Activity() {
     private val timers = Handler(Looper.getMainLooper())
     private val session = DiagnosticSession()
     private val preview get() = session.preview
+    private val surface = AutoSurface(session) { reason, recordResult -> releaseAll(reason, recordResult = recordResult) }
+    private var hasRunDiagnostic = false
+    private var hostEvidence = "Car safety status unknown"
+    private val captureButtons = ArrayList<Pair<Button, () -> Boolean>>()
+    private var homeVoice: Button? = null
+    private var homeVoiceStatus: TextView? = null
+    private var homeCancel: Button? = null
+    private var runtimeStatus: TextView? = null
+    private lateinit var scroll: ScrollView
+    private var unregisterBack: () -> Unit = {}
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
     private var carHost: CarHost? = null
@@ -55,34 +68,73 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         audio = getSystemService(AudioManager::class.java)
-        val scroll = ScrollView(this)
+        scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(themeColor(android.R.attr.colorBackground))
+        }
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 24)
-            setBackgroundColor(Color.rgb(11, 16, 32))
+            setPadding(dp(32), dp(24), dp(32), dp(24))
         }
-        scroll.addView(body)
+        scroll.addView(body, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        // Keep Honda/OS chrome. Account for bars and cutouts rather than covering them.
+        scroll.setOnApplyWindowInsetsListener { view, insets ->
+            val safe = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
         setContentView(scroll)
-        status = label("Host UX unknown; capture and detail disabled", 18f)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val dispatcher = onBackInvokedDispatcher
+            val callback = android.window.OnBackInvokedCallback { handleBack() }
+            dispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+            unregisterBack = { dispatcher.unregisterOnBackInvokedCallback(callback) }
+        }
+        scroll.requestApplyInsets()
+        render()
         connectHost()
         scheduleDiagnosticIntent(intent)
     }
 
-    private fun label(text: String, size: Float = 16f): TextView = TextView(this).apply {
-        this.text = text
-        textSize = size
-        setTextColor(Color.rgb(238, 243, 255))
-        setPadding(0, 8, 0, 8)
-        body.addView(this)
+    private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun themeColor(attribute: Int): Int = obtainStyledAttributes(intArrayOf(attribute)).let {
+        val color = it.getColor(0, 0)
+        it.recycle()
+        color
     }
 
-    private fun button(text: String, action: () -> Unit) {
-        body.addView(Button(this).apply {
+    private fun label(text: String, size: Float = BODY_SP, heading: Boolean = false): TextView = TextView(this).apply {
+        this.text = text
+        textSize = size // TextView uses sp, including the operator's font scale.
+        setTextColor(themeColor(android.R.attr.textColorPrimary))
+        setPadding(0, dp(8), 0, dp(8))
+        isAccessibilityHeading = heading
+        body.addView(this, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun button(text: String, primary: Boolean = false, enabled: Boolean = true, action: () -> Unit): Button {
+        val control = if (primary) Button(this) else Button(this, null, android.R.attr.borderlessButtonStyle)
+        control.apply {
             this.text = text
+            textSize = BODY_SP
             isAllCaps = false
-            minHeight = 56
+            minHeight = dp(64)
+            minimumWidth = dp(48)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            isEnabled = enabled
+            if (primary) {
+                backgroundTintList = ColorStateList.valueOf(themeColor(android.R.attr.colorAccent))
+                setTextColor(themeColor(android.R.attr.colorBackground))
+                alpha = if (enabled) 1f else 0.5f
+            }
             setOnClickListener { action() }
+        }
+        body.addView(control, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
+            bottomMargin = dp(4)
         })
+        return control
     }
 
     private fun scheduleDiagnosticIntent(intent: Intent) {
@@ -105,7 +157,9 @@ class MainActivity : Activity() {
 
     private fun report(message: String) {
         Log.i(TAG, message)
-        status.text = message
+        surface.recordResult(message)
+        if (surface.screen == AutoScreen.DIAGNOSTICS && ::status.isInitialized) status.text = message
+        updateVoiceControls()
     }
 
     @Suppress("DEPRECATION") // The int-flags overload also works on the Honda's Android 12L.
@@ -118,43 +172,111 @@ class MainActivity : Activity() {
 
     private fun render() {
         body.removeAllViews()
-        label("Holocene Auto · FIXTURE", 26f)
-        label("Emulator diagnostic only · no live agents · not driving approved")
-        val hostConnected = carHost?.connected == true
-        status = label(
-            when {
-                unrestricted -> "Host unrestricted; diagnostic controls only"
-                hostConnected -> "Host restricted/unknown; no detail, capture or playback"
-                else -> "Not a car host; fixture availability shown read-only, diagnostics disabled"
-            },
-        )
-        val roles = getSystemService(RoleManager::class.java)
-        label("Assistant role available=${roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)}, held=${roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)}; no role change")
-        label("Recognition provider=${SpeechRecognizer.isRecognitionAvailable(this)}; on-device=${SpeechRecognizer.isOnDeviceRecognitionAvailable(this)}")
-        val isAutomotiveDevice = packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
-        if (unrestricted || !isAutomotiveDevice) {
-            button("Open privacy policy in browser") {
-                openPrivacyPolicy()
-            }
+        captureButtons.clear()
+        homeVoice = null
+        homeVoiceStatus = null
+        homeCancel = null
+        runtimeStatus = null
+        when (surface.screen) {
+            AutoScreen.HOME -> renderHome()
+            AutoScreen.DIAGNOSTICS -> renderDiagnostics()
+            AutoScreen.ABOUT -> renderAbout()
         }
-        if (!unrestricted) return
-        for (agent in Fixtures.agents) {
-            label("FIXTURE · ${agent.employee} · ${agent.state}\n${agent.runtime} / ${agent.nativeSession}\nObserved ${agent.observedAt} · read-only")
+    }
+
+    private fun renderHome() {
+        label("Holocene Auto", TITLE_SP, heading = true)
+        label("Agents disconnected", HEADING_SP, heading = true)
+        label("Diagnostics only. Agent connections and replies are not available.")
+        homeVoice = button("Local voice check", primary = true, enabled = false) { recognitionProbe() }
+        homeVoiceStatus = label("").apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        homeCancel = button("Cancel voice check", enabled = surface.busy) {
+            cancelDiagnostic("Voice check cancelled; nothing sent", "home")
         }
-        button("Preview canned input (never send)") {
+        button("Diagnostics") { navigate(AutoScreen.DIAGNOSTICS) }
+        button("About & privacy") { navigate(AutoScreen.ABOUT) }
+        updateVoiceControls()
+    }
+
+    private fun renderDiagnostics() {
+        label("Diagnostics", TITLE_SP, heading = true)
+        button("Back to home") { navigate(AutoScreen.HOME) }
+        label("Local checks only. No agent messages are sent. Not approved for driving.")
+        if (!surface.hostAllowsInteraction) {
+            label(surface.voiceAvailability(false, false).explanation)
+            status = label("Details and diagnostic controls are unavailable until the car allows interaction.")
+            return
+        }
+        label("Voice & microphone", HEADING_SP, heading = true)
+        label("Android speech service may process audio. Only its final transcript triggers the platform-local acknowledgement; it is not an agent reply.")
+        label(surface.voiceAvailability(SpeechRecognizer.isRecognitionAvailable(this), microphoneGranted()).explanation)
+        captureButtons += button("Allow microphone", enabled = !microphoneGranted()) { requestMicrophone() } to { surface.hostAllowsInteraction && !surface.busy && !microphoneGranted() }
+        captureButtons += button("Probe microphone · 6 seconds", enabled = surface.canCapture(microphoneGranted())) { microphoneProbe() } to { surface.canCapture(microphoneGranted()) }
+        captureButtons += button("Check final speech & local acknowledgement", enabled = surface.voiceAvailability(SpeechRecognizer.isRecognitionAvailable(this), microphoneGranted()).enabled) { recognitionProbe() } to { surface.voiceAvailability(SpeechRecognizer.isRecognitionAvailable(this), microphoneGranted()).enabled }
+        button("Cancel capture, playback & preview") { cancelDiagnostic("Cancelled by screen; nothing published", "screen") }
+        label("Last diagnostic result", HEADING_SP, heading = true)
+        status = label(surface.lastResult, RAW_SP).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        label("Canned preview", HEADING_SP, heading = true)
+        button("Preview canned input · never send", enabled = !surface.busy) {
+            if (!surface.hostAllowsInteraction || surface.busy) return@button
             preview.select("fixture-thread-1")
             preview.finalTranscript("Summarize recent work")
             report("${preview.preview}\n${preview.state}")
+        }.also { captureButtons += it to { surface.hostAllowsInteraction && !surface.busy } }
+        label("Runtime & provider evidence", HEADING_SP, heading = true)
+        label(hostEvidence, RAW_SP)
+        val roles = getSystemService(RoleManager::class.java)
+        label("Assistant role available=${roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)}, held=${roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)}; no role change", RAW_SP)
+        label("Recognition provider=${SpeechRecognizer.isRecognitionAvailable(this)}; on-device=${SpeechRecognizer.isOnDeviceRecognitionAvailable(this)}; microphone=${microphoneGranted()}", RAW_SP)
+        label(recognitionProvider(), RAW_SP)
+        runtimeStatus = label("Generation=${session.generation}; phase=${session.phase}; ignored late callbacks=${session.ignoredLate}", RAW_SP)
+        label("Canned fixtures · not live agents", HEADING_SP, heading = true)
+        for (agent in Fixtures.agents) {
+            label("FIXTURE · ${agent.employee} · ${agent.state}\n${agent.runtime} / ${agent.nativeSession}\nObserved ${agent.observedAt} · read-only", RAW_SP)
         }
-        button("Probe microphone for 6 seconds (no audio saved)") { microphoneProbe() }
-        button("Probe final ASR + local diagnostic acknowledgement") { recognitionProbe() }
-        button("Cancel diagnostic capture / playback / unsent preview") { cancelDiagnostic("Cancelled by screen; nothing published", "screen") }
-        for (event in Fixtures.normalized(Fixtures.events)) label(event)
+        for (event in Fixtures.normalized(Fixtures.events)) label(event, RAW_SP)
+    }
+
+    private fun renderAbout() {
+        label("About & privacy", TITLE_SP, heading = true)
+        button("Back to home") { navigate(AutoScreen.HOME) }
+        label("Holocene Auto", HEADING_SP, heading = true)
+        label("This build provides diagnostic checks and canned previews. It has no live agent connection and is not approved for driving.")
+        label("Microphone checks do not save audio in this app. Voice checks use the selected Android speech service, which may process audio under its own policy. Acknowledgements come from Android text-to-speech, not Vox or an agent.")
+        val automotive = packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
+        val allowed = surface.canOpenPrivacy(automotive)
+        button("Open privacy policy", enabled = allowed) { openPrivacyPolicy() }
+        if (!allowed) label("The privacy browser is unavailable until the car allows interaction.")
+    }
+
+    private fun navigate(destination: AutoScreen) {
+        if (surface.navigate(destination)) {
+            render()
+            scroll.scrollTo(0, 0)
+        }
+    }
+
+    private fun updateVoiceControls() {
+        val availability = surface.voiceAvailability(SpeechRecognizer.isRecognitionAvailable(this), microphoneGranted())
+        homeVoice?.apply {
+            isEnabled = availability.enabled
+            alpha = if (isEnabled) 1f else 0.5f
+        }
+        homeVoiceStatus?.text = if (availability.enabled && hasRunDiagnostic && !surface.busy) {
+            "Check ended. See Diagnostics for the result. No agent was contacted."
+        } else availability.explanation
+        runtimeStatus?.text = "Generation=${session.generation}; phase=${session.phase}; ignored late callbacks=${session.ignoredLate}"
+        homeCancel?.apply {
+            visibility = if (surface.busy) View.VISIBLE else View.GONE
+            isEnabled = surface.busy
+        }
+        // The action methods also recheck these gates before touching audio resources.
+        captureButtons.forEach { (control, available) -> control.isEnabled = available() }
     }
 
     private fun openPrivacyPolicy() {
-        if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) && !unrestricted) {
-            report("Blocked while driving")
+        if (!surface.canOpenPrivacy(packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE))) {
+            report("Privacy browser unavailable: car safety state restricted or unknown")
             return
         }
         try {
@@ -168,53 +290,66 @@ class MainActivity : Activity() {
         if (!CarHost.isCarHostAvailable(this)) {
             carHost = null
             unrestricted = false
-            status.text = "Not a car host; fixture availability shown read-only, diagnostics disabled"
+            surface.updateHost(AutoHostState.UNAVAILABLE)
             render()
             return
         }
         val host = CarHost(
             onUnrestrictedChange = { free ->
                 unrestricted = free
-                if (!free) {
-                    session.restricted()
-                    releaseAll("Host restricted; stopped")
-                }
+                surface.updateHost(when {
+                    free && carHost?.connected == true -> AutoHostState.UNRESTRICTED
+                    carHost?.connected == true -> AutoHostState.RESTRICTED
+                    else -> AutoHostState.UNAVAILABLE
+                })
                 render()
             },
-            onStatus = { message -> if (::status.isInitialized) report(message) },
+            onStatus = { message -> hostEvidence = message; probe("host_status", message) },
         )
         carHost = host
         host.connect(this, main)
     }
 
-    private fun hasMicPermission(): Boolean {
-        if (!unrestricted) return false
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) return true
+    private fun microphoneGranted() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestMicrophone() {
+        if (!surface.hostAllowsInteraction || surface.busy || microphoneGranted()) return
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         report("Microphone permission requested; explicitly retry after grant")
+    }
+
+    private fun hasMicPermission(): Boolean {
+        if (surface.hostAllowsInteraction && microphoneGranted()) return true
+        report("Capture unavailable: check car safety status and microphone permission in Diagnostics")
         return false
     }
 
     private fun requestFocus(gain: Int, usage: Int, content: Int, stopsOnLoss: Boolean): Boolean {
-        val request = AudioFocusRequest.Builder(gain)
+        val token = session.generation
+        var request: AudioFocusRequest? = null
+        val created = AudioFocusRequest.Builder(gain)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(usage).setContentType(content).build())
             .setOnAudioFocusChangeListener { change ->
                 probe("audio_focus_change", "change=$change")
-                if (change <= 0 && stopsOnLoss) cancelDiagnostic("Focus lost; diagnostic cancelled", "focus-loss")
+                if (change <= 0 && stopsOnLoss && session.isActive(token) && focus === request) {
+                    cancelDiagnostic("Focus lost; diagnostic cancelled", "focus-loss")
+                }
             }.build()
-        focus = request
-        val result = audio!!.requestAudioFocus(request)
+        request = created
+        focus = created
+        val result = audio!!.requestAudioFocus(created)
         probe("audio_focus_request", "gain=$gain result=$result")
         return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     private fun beginDiagnostic(): Int? {
-        val token = session.begin(unrestricted)
+        val token = session.begin(surface.canCapture(microphoneGranted()))
         if (token == null) {
             probe("begin_refused", "phase=${session.phase} unrestricted=$unrestricted")
             report("Diagnostic busy or host restricted; use Cancel first")
             return null
         }
+        hasRunDiagnostic = true
         if (!requestFocus(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE, AudioAttributes.USAGE_ASSISTANT, AudioAttributes.CONTENT_TYPE_SPEECH, true)) {
             cancelDiagnostic("Capture focus denied", "focus-denied")
             return null
@@ -337,7 +472,7 @@ class MainActivity : Activity() {
                     val ack = session.accept(token, text)
                     releaseAll("ASR final result accepted=${ack != null}; diagnostic only", clearPreview = ack == null)
                     if (ack != null) {
-                        status.text = "Actual provider transcript: $text\n${preview.state}"
+                        report("Actual provider transcript: $text\n${preview.state}")
                         speakAcknowledgement(token, ack)
                     }
                 }
@@ -345,6 +480,7 @@ class MainActivity : Activity() {
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
             engine.startListening(intent)
+            report("Speech check started; waiting for the Android provider")
             timers.postDelayed({
                 if (session.isCapturing(token) && recognizer === engine) {
                     probe("asr_timeout", "bound_ms=$ASR_BOUND_MS")
@@ -439,27 +575,34 @@ class MainActivity : Activity() {
         releaseAll(reason)
     }
 
-    private fun releaseAll(reason: String, clearPreview: Boolean = true) {
+    private fun releaseAll(reason: String, clearPreview: Boolean = true, recordResult: Boolean = true) {
         capturing = false
         timers.removeCallbacksAndMessages(null)
-        recorder?.let {
-            try { it.stop() } catch (error: IllegalStateException) { Log.i(TAG, "Recorder already stopped") }
-            it.release()
-        }
+        // Detach first: synchronous/late focus or engine callbacks cannot own a new run.
+        val oldRecorder = recorder
+        val oldRecognizer = recognizer
+        val oldSpeech = speech
+        val oldFocus = focus
         recorder = null
-        recognizer?.cancel()
-        recognizer?.destroy()
         recognizer = null
-        speech?.let {
-            it.stop()
-            it.shutdown()
-        }
         speech = null
-        focus?.let { audio?.abandonAudioFocusRequest(it) }
         focus = null
+        oldRecorder?.let {
+            runCatching { it.stop() }
+            runCatching { it.release() }
+        }
+        oldRecognizer?.let {
+            runCatching { it.cancel() }
+            runCatching { it.destroy() }
+        }
+        oldSpeech?.let {
+            runCatching { it.stop() }
+            runCatching { it.shutdown() }
+        }
+        oldFocus?.let { runCatching { audio?.abandonAudioFocusRequest(it) } }
         if (clearPreview) preview.cancel()
         probe("released", "reason=\"$reason\"")
-        if (::status.isInitialized) report(reason)
+        if (recordResult) report(reason) else updateVoiceControls()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -471,14 +614,38 @@ class MainActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() { handleBack() }
+
+    private fun handleBack() {
+        if (surface.back()) {
+            render()
+            scroll.scrollTo(0, 0)
+        } else {
+            cancelDiagnostic("Leaving home; diagnostic cancelled", "back")
+            finish()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        surface.resume()
+        render()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1) render() // Permission grants never auto-start recording.
+    }
+
     override fun onPause() {
-        cancelDiagnostic("Activity paused; capture cancelled", "pause")
+        surface.pause()
         super.onPause()
     }
 
     override fun onDestroy() {
-        session.cancel()
-        releaseAll("Activity destroyed")
+        unregisterBack()
+        surface.destroy()
         main.removeCallbacksAndMessages(null)
         carHost?.disconnect()
         carHost = null
@@ -486,6 +653,10 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        const val TITLE_SP = 34f
+        const val HEADING_SP = 26f
+        const val BODY_SP = 22f
+        const val RAW_SP = 18f
         const val TAG = "HoloceneProbe"
         const val PRIVACY_POLICY_URL = "https://holocene.delo.sh/auto/privacy"
         const val EXTRA_RUN_MIC = "sh.delo.holocene.extra.RUN_MIC"
