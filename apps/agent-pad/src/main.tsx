@@ -57,11 +57,32 @@ function App() {
   const [recording, setRecording] = useState(false)
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [status, setStatus] = useState('idle')
+  const [soundUnlocked, setSoundUnlocked] = useState(false)
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null)
   const mediaRecorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const pollTimer = useRef<number | null>(null)
   const lastPlayedKey = useRef<string>('')
+
+  // Unlock audio on first user gesture (browser autoplay policy)
+  const unlockAudio = useCallback(async () => {
+    if (!audioRef.current) return
+    try {
+      audioRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
+      await audioRef.current.play()
+      setSoundUnlocked(true)
+      setStatus('sound on')
+      // If a reply arrived while locked, play it now
+      if (pendingUrl) {
+        audioRef.current.src = pendingUrl
+        await audioRef.current.play()
+        setPendingUrl(null)
+      }
+    } catch {
+      setStatus('tap again to enable sound')
+    }
+  }, [pendingUrl])
 
   // Watch replies box and play newest unplayed
   useEffect(() => {
@@ -74,8 +95,14 @@ function App() {
           const blob = await getBlob(`${BUCKET_BASE}/${newest}`)
           const url = URL.createObjectURL(blob)
           if (audioRef.current) {
-            audioRef.current.src = url
-            await audioRef.current.play()
+            if (soundUnlocked) {
+              audioRef.current.src = url
+              await audioRef.current.play()
+            } else {
+              // Queue it; unlockAudio will play it after the first tap
+              setPendingUrl(url)
+              setStatus('reply waiting — tap to play')
+            }
             setLastReply(newest)
             lastPlayedKey.current = newest
           }
@@ -87,7 +114,7 @@ function App() {
     pollTimer.current = window.setInterval(tick, 15000)
     tick()
     return () => { if (pollTimer.current) window.clearInterval(pollTimer.current) }
-  }, [])
+  }, [soundUnlocked])
 
   const startRecording = useCallback(async () => {
     if (!selected) return
@@ -120,6 +147,24 @@ function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 16 }}>
       <h1 style={{ fontSize: 18, marginBottom: 12 }}>Agent Pad</h1>
+      {!soundUnlocked && (
+        <button
+          onClick={unlockAudio}
+          style={{
+            padding: '16px 24px',
+            borderRadius: 12,
+            border: '2px solid #4f8cff',
+            background: '#141a24',
+            color: '#4f8cff',
+            cursor: 'pointer',
+            marginBottom: 16,
+            fontWeight: 700,
+            fontSize: 15,
+          }}
+        >
+          🔊 Tap to enable sound
+        </button>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 12, marginBottom: 16 }}>
         {AGENTS.map((a) => (
           <button
