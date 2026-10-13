@@ -137,7 +137,7 @@ function App() {
     }
     mr.start()
     setRecording(true)
-    setStatus(`recording → ${selected.name}…`)
+    setStatus(`🔴 recording for ${selected.name}… tap Stop to send`)
   }, [selected])
 
   const stopRecording = useCallback(() => {
@@ -146,6 +146,9 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 16 }}>
+      <style>{`
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+      `}</style>
       <h1 style={{ fontSize: 18, marginBottom: 12 }}>Agent Pad</h1>
       {!soundUnlocked && (
         <button
@@ -189,7 +192,22 @@ function App() {
           </button>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' as const }}>
+        {recording && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', borderRadius: 20,
+            background: '#2a0a0a', border: '2px solid #e74c3c',
+            color: '#e74c3c', fontWeight: 700, fontSize: 14,
+          }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: '#e74c3c',
+              animation: 'pulse 1s ease-in-out infinite',
+            }} />
+            RECORDING — tap Stop to send
+          </div>
+        )}
         <button
           onClick={recording ? stopRecording : startRecording}
           disabled={!selected}
