@@ -47,7 +47,7 @@ def s3_ls(prefix: str) -> list[str]:
     keys = []
     for line in result.stdout.strip().splitlines():
         # Parse lines like: [2026-10-13 08:21:57 EDT] 244KiB STANDARD 33god-pm/2026/10/13/122200Z-test.ogg
-        match = re.search(r"\s(\S+\.ogg)$", line.strip())
+        match = re.search(r"\s(\S+\.(?:ogg|webm|m4a|mp3|wav))$", line.strip())
         if match:
             keys.append(f"{prefix}/{match.group(1)}")
     return keys

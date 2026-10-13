@@ -41,7 +41,7 @@ async function putObject(key: string, blob: Blob): Promise<void> {
   const res = await fetch(`${BUCKET_BASE}/${key}`, {
     method: 'PUT',
     body: blob,
-    headers: { 'Content-Type': 'audio/ogg' },
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
   })
   if (!res.ok) throw new Error(`PUT ${key}: ${res.status}`)
 }
@@ -89,7 +89,8 @@ function App() {
     const tick = async () => {
       try {
         const keys = await listKeys(`${REPLIES_PREFIX}/${todayPrefix()}`)
-        const ogg = keys.filter((k) => k.endsWith('.ogg') && k > lastPlayedKey.current)
+        const audioExts = ['.ogg', '.webm', '.m4a', '.mp3']
+        const ogg = keys.filter((k) => audioExts.some(ext => k.endsWith(ext)) && k > lastPlayedKey.current)
         if (ogg.length > 0) {
           const newest = ogg.sort().pop()!
           const blob = await getBlob(`${BUCKET_BASE}/${newest}`)
@@ -119,13 +120,25 @@ function App() {
   const startRecording = useCallback(async () => {
     if (!selected) return
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const mr = new MediaRecorder(stream, { mimeType: 'audio/ogg;codecs=opus' })
+    // Chrome/Android support webm; Safari supports mp4. Pick the first that works.
+    const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+    let mimeType = ''
+    for (const t of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break }
+    }
+    if (!mimeType) {
+      setStatus('no supported audio format on this browser')
+      stream.getTracks().forEach(t => t.stop())
+      return
+    }
+    const ext = mimeType.includes('mp4') ? 'm4a' : 'webm'
+    const mr = new MediaRecorder(stream, { mimeType })
     mediaRecorder.current = mr
     chunks.current = []
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data) }
     mr.onstop = async () => {
-      const blob = new Blob(chunks.current, { type: 'audio/ogg' })
-      const key = `${INBOX_PREFIX}/${selected.id}/${todayPrefix()}/${ts()}.ogg`
+      const blob = new Blob(chunks.current, { type: mimeType })
+      const key = `${INBOX_PREFIX}/${selected.id}/${todayPrefix()}/${ts()}.${ext}`
       try {
         await putObject(key, blob)
         setStatus(`sent → ${selected.name}`)
