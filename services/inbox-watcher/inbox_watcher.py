@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,10 @@ STATE_FILE = Path(__file__).parent / "inbox-watcher-state.json"
 BB_EMIT = "/home/delorenj/code/33GOD/bloodbank/bin/bb-emit"
 TRANSCRIBE = "/home/delorenj/.local/bin/transcribe"
 TRANSCRIBE_DIR = "/home/delorenj/HeyMa"
+GATEWAY_DB = "/home/delorenj/.hermes/bloodbank-hermes-gateway-state.sqlite3"
+VOX_URL = "https://vox.delo.sh/mcp/"
+VOX_VOICE = "rick"
+REPLIES_PREFIX = "replies"
 
 
 def log(msg: str) -> None:
@@ -47,7 +52,7 @@ def s3_ls(prefix: str) -> list[str]:
     keys = []
     for line in result.stdout.strip().splitlines():
         # Parse lines like: [2026-10-13 08:21:57 EDT] 244KiB STANDARD 33god-pm/2026/10/13/122200Z-test.ogg
-        match = re.search(r"\s(\S+\.(?:ogg|webm|m4a|mp3|wav))$", line.strip())
+        match = re.search(r"\s(\S+\.(?:ogg|webm|m4a|mp3|wav|txt))$", line.strip())
         if match:
             keys.append(f"{prefix}/{match.group(1)}")
     return keys
@@ -99,8 +104,8 @@ def agent_id_from_key(key: str) -> str | None:
     return None
 
 
-def dispatch(agent_id: str, prompt: str, thread_id: str) -> None:
-    """Publish bloodbank.cmd.agent.invocation.start."""
+def dispatch(agent_id: str, prompt: str, thread_id: str) -> str | None:
+    """Publish bloodbank.cmd.agent.invocation.start. Returns correlation id."""
     data = {
         "target_agent_id": agent_id,
         "prompt": prompt,
@@ -126,7 +131,104 @@ def dispatch(agent_id: str, prompt: str, thread_id: str) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"bb-emit failed: {result.stderr[:200]}")
-    log(f"dispatched → {agent_id} (corr={result.stdout.strip()[-40:]})")
+    # Extract correlation id from stdout (format varies)
+    corr_match = re.search(r'correlation[:\s]+"?([a-f0-9-]+)"?', result.stdout)
+    corr = corr_match.group(1) if corr_match else None
+    log(f"dispatched → {agent_id} corr={corr}")
+    return corr
+
+
+def wait_for_turn(agent_id: str, timeout_s: int = 120) -> str | None:
+    """Poll gateway DB for the most recent completed turn for this profile."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            db = sqlite3.connect(f"file:{GATEWAY_DB}?mode=ro", uri=True)
+            row = db.execute(
+                "SELECT state FROM executions WHERE profile=? ORDER BY created_at DESC LIMIT 1",
+                (agent_id,)
+            ).fetchone()
+            db.close()
+            if row and row[0] == "completed":
+                return "completed"
+            if row and row[0] in ("failed", "rejected"):
+                return row[0]
+        except Exception as e:
+            log(f"wait error: {e}")
+        time.sleep(5)
+    return None
+
+
+def read_latest_reply(agent_id: str) -> str | None:
+    """Read the most recent assistant message from the profile's session files."""
+    sessions_dir = Path(f"/home/delorenj/.hermes/profiles/{agent_id}/sessions")
+    if not sessions_dir.exists():
+        return None
+    # Get most recently modified session files
+    files = sorted(sessions_dir.glob("*.json*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in files[:10]:
+        try:
+            content = path.read_text()
+            # Try JSONL
+            for line in reversed(content.strip().splitlines()):
+                try:
+                    msg = json.loads(line)
+                    if msg.get("role") == "assistant":
+                        text = msg.get("content", "")
+                        if isinstance(text, list):
+                            text = " ".join(c.get("text", "") for c in text if c.get("type") == "text")
+                        if text and len(text) > 5:
+                            return text
+                except json.JSONDecodeError:
+                    continue
+        except Exception:
+            continue
+    return None
+
+
+def render_voice(text: str) -> Path | None:
+    """Call vox TTS, return path to OGG."""
+    clean = re.sub(r'```[\s\S]*?```', '', text)
+    clean = re.sub(r'`[^`]+`', '', clean)
+    clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', clean)
+    clean = re.sub(r'\*([^*]+)\*', r'\1', clean)
+    clean = re.sub(r'\n+', ' ', clean)
+    clean = clean.strip()
+    if len(clean) > 400:
+        clean = clean[:400].rsplit(' ', 1)[0] + '…'
+
+    payload = json.dumps({
+        "jsonrpc": "2.0", "id": 1,
+        "method": "tools/call",
+        "params": {"name": "text_to_speech", "arguments": {"text": clean, "voice": VOX_VOICE}}
+    })
+    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+        out = Path(f.name)
+    r = subprocess.run(
+        ["curl", "-s", "-X", "POST", VOX_URL,
+         "-H", "Content-Type: application/json",
+         "-d", payload, "-o", str(out)],
+        capture_output=True, text=True, timeout=60,
+    )
+    if r.returncode != 0 or out.stat().st_size < 100:
+        log("vox TTS failed or empty")
+        out.unlink()
+        return None
+    return out
+
+
+def upload_reply(audio: Path) -> str | None:
+    today = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    ts = datetime.now(timezone.utc).strftime("%H%M%SZ")
+    key = f"{REPLIES_PREFIX}/{today}/{ts}.ogg"
+    r = subprocess.run(
+        ["/usr/local/bin/mc", "cp", str(audio), f"{S3_BUCKET}/{key}"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if r.returncode != 0:
+        log(f"upload failed: {r.stderr[:200]}")
+        return None
+    return key
 
 
 def load_state() -> set[str]:
@@ -168,7 +270,26 @@ def process_once() -> int:
                 processed.add(key)
                 continue
             thread_id = Path(key).stem  # timestamp from filename
-            dispatch(agent_id, transcript, thread_id)
+            corr = dispatch(agent_id, transcript, thread_id)
+
+            # Wait for agent turn to complete, then render voice reply
+            log(f"waiting for {agent_id} turn...")
+            state_result = wait_for_turn(agent_id, timeout_s=120)
+            if state_result == "completed":
+                reply = read_latest_reply(agent_id)
+                if reply:
+                    log(f"reply ({len(reply)} chars): {reply[:80]}...")
+                    audio = render_voice(reply)
+                    if audio:
+                        reply_key = upload_reply(audio)
+                        audio.unlink()
+                        if reply_key:
+                            log(f"reply rendered → {reply_key}")
+                else:
+                    log("no reply text found in sessions")
+            else:
+                log(f"turn ended with state: {state_result}")
+
             processed.add(key)
             log(f"done: {key} ({len(transcript)} chars)")
         except Exception as e:
