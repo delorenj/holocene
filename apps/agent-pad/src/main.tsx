@@ -38,7 +38,8 @@ async function listKeys(prefix: string): Promise<string[]> {
 }
 
 async function putObject(key: string, blob: Blob): Promise<void> {
-  const res = await fetch(`${BUCKET_BASE}/${key}`, {
+  // Upload via the proxy (same origin) so credentials stay server-side
+  const res = await fetch(`/upload/${key}`, {
     method: 'PUT',
     body: blob,
     headers: { 'Content-Type': blob.type || 'application/octet-stream' },
