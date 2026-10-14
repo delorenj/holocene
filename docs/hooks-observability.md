@@ -33,3 +33,25 @@ not sent to the page.
 The hub owns the handler registry and durable receipt journal; the CLI
 installer owns native configuration inspection. Holocene does not infer
 successful execution from the presence of a command in a configuration file.
+
+## Event store retention
+
+The collected-event store (`~/.local/state/holocene/events.sqlite3`,
+`HOLOCENE_EVENT_DB`) is a rebuildable read model, so it keeps a window, not
+history. The API prunes it hourly (`apps/api/src/event-retention.ts`):
+
+| Rows | Kept |
+| --- | --- |
+| Telemetry: `agent.hook.updated`, `system.hook.updated`, `agent.tool.*`, `llm.allowance.observed` | 3 days |
+| `bloodbank.repo.*` (tickets, decisions; read by count, not age) | 365 days |
+| Every other event type | 30 days |
+| `hook_invocations` (hook-hub receipt history) | 7 days |
+
+Tune with `HOLOCENE_RETENTION_TELEMETRY_DAYS`, `HOLOCENE_RETENTION_DAYS`,
+`HOLOCENE_RETENTION_DURABLE_DAYS`, `HOLOCENE_RETENTION_HOOK_DAYS`,
+`HOLOCENE_RETENTION_TELEMETRY_TYPES` (extra comma-separated types), or turn it
+off with `HOLOCENE_RETENTION=off`. Freed pages are reused, so the file stays at
+its steady-state size. `pnpm --filter @holocene/api maintenance
+prune|stats|compact|vacuum-into <dest>` runs the same pass by hand; the header
+of `apps/api/src/maintenance.ts` describes the snapshot-and-swap used to shrink
+the file (26.6 GiB to 2.2 GiB on 2026-10-14).

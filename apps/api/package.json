@@ -10,7 +10,8 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "node --import tsx --test src/hub-model.test.ts src/deckard-state.test.ts src/agent-activity.test.ts"
+    "test": "node --import tsx --test src/hub-model.test.ts src/deckard-state.test.ts src/agent-activity.test.ts src/event-retention.test.ts",
+    "maintenance": "node dist/maintenance.js"
   },
   "dependencies": {
     "@fastify/sse": "^0.6.0",
