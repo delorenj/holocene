@@ -297,6 +297,9 @@ function App() {
   useEffect(() => {
     const tick = async () => {
       try {
+        // First run on this device (nothing stored): old replies are history, not missed news. Skip them
+        // silently instead of publishing a 'skipped' fact for memos that finished long ago.
+        const firstRun = !lastDone.current
         const after = lastDone.current || `${REPLIES_PREFIX}/${dayPrefix(-1)}/`
         // Only dated reply keys count: legacy flat keys (replies/2026101...) sort AFTER every dated key and would
         // otherwise pin lastDone past all future replies.
@@ -306,7 +309,7 @@ function App() {
           enqueued.current.add(key)
           const age = Date.now() - renderedAt(key)
           if (age > MAX_REPLY_AGE_MS) {
-            if (age < 6 * 3600 * 1000) {
+            if (!firstRun && age < 6 * 3600 * 1000) {
               beacon(key, 'skipped', { error: `stale: rendered ${Math.round(age / 60000)} min before the pad saw it` })
             }
             if (key > lastDone.current) { lastDone.current = key; lsSet(LS_LAST_DONE, key) }
@@ -373,7 +376,7 @@ function App() {
     }
     await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now() })
     setOutboxCount((await outboxAll()).length)
-    setStatus(`NOT sent: ${lastErr} — saved, will retry`)
+    setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
     clientEvent({ event: 'upload_failed', key, error: lastErr, attempts: delays.length, retryable: true })
   }, [])
 

@@ -1,0 +1,23 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 3f933391
+memo_id  3f933391-0433-50fb-9b20-c00893f127aa
+key      inbox/holocene-pm/2026/10/15/20261015T211427Z.ogg
+agent    holocene-pm
+command  b12379db-cf0b-4ae6-85b3-7e2bf7e39e5c
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=3f933391-0433-50fb-9b20-c00893f127aa&limit=100'
+
+  OK      s3_object                  2026-10-15T21:14:43.000Z           inbox/holocene-pm/2026/10/15/20261015T211427Z.ogg  38761 bytes
+  OK      upload_proxy_log           2026-10-15T21:14:43.598Z  +0.6s    {"ts":"2026-10-15T21:14:43.598Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T211427Z.ogg","memo_id":"3f933391-0433-50
+  OK      fact:uploaded              2026-10-15T21:14:43.598Z  +0.0s    38761 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST
+  OK      fact:received              2026-10-15T21:14:45.852Z  +2.3s    watcher saw it, lag 2261ms
+  OK      fact:transcribed           2026-10-15T21:15:37.410Z  +51.6s   65 chars in 49.97s (large-v3): 'Policy pipeline test 3, please reply with words round 3 received.'
+  OK      fact:dispatched            2026-10-15T21:15:37.665Z  +0.3s    command b12379db-cf0b-4ae6-85b3-7e2bf7e39e5c -> bloodbank.cmd.agent.invocation.start
+  OK      gateway_journal            2026-10-15T21:15:38.156Z  +0.5s    profile=holocene-pm state=completed outcome=success created=2026-10-15T21:15:38.156533Z updated=2026-10-15T21:15:48.308928Z
+  OK      agent:invocation.started   2026-10-15T21:15:38.156Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-15T21:15:48.308Z  +10.2s   invocation.completed
+  OK      hermes_session             2026-10-15T21:15:38.156Z  +0.0s    agent was given exactly what the watcher sent (138 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors] Policy pipeline t'
+  OK      fact:replied               2026-10-15T21:15:54.107Z  +16.0s   16 chars, tts 1.61s (vibevoice) -> replies/2026/10/15/211551Z-holocene-pm-3f933391-0433-50fb-9b20-c00893f127aa.ogg
+  OK      reply_object               2026-10-15T21:15:53.000Z  +0.0s    replies/2026/10/15/211551Z-holocene-pm-3f933391-0433-50fb-9b20-c00893f127aa.ogg  10838 bytes
+  OK      pad_playback_log           2026-10-15T21:20:16.172Z  +263.2s  {"ts":"2026-10-15T21:20:16.172Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/15/211551Z-holocene-pm-3f933391-0433-50fb-9b20-c00893f127aa.
+  OK      played_on_pad              2026-10-15T21:15:56.133Z  +0.0s    reply started 5133 ms after it was rendered, ended after 2.81s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+
+VERDICT  COMPLETE in 70.0s; played on the pad 5.1s after the reply was rendered

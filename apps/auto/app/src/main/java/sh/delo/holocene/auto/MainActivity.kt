@@ -80,7 +80,10 @@ class MainActivity : Activity() {
                 addView(Button(this@MainActivity).apply {
                     text = title
                     isAllCaps = false
-                    minHeight = 56
+                    // Car touch targets: at least 76 px tall with 22 sp text (was 56 px / 14 sp).
+                    minHeight = 80
+                    minimumHeight = 80
+                    textSize = 22f
                     setOnClickListener { showView(toPad) }
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             }

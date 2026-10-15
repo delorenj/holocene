@@ -36,6 +36,22 @@ turned on). `auto:sim` runs `adb -s emulator-5554 emu avd hostmicon` after boot,
 `hw.audioInput=yes`. Toggle by hand with `emu avd hostmicoff` / `hostmicon`. Verified by the diagnostic mic probe: RMS ~5
 off, RMS 25-70 with room noise on. Headless runs leave it off.
 
+## Injecting a known utterance (end-to-end proof)
+
+The emulator opens a loopback gRPC bridge (`-grpc 8554 -grpc-use-token`). The injector needs
+protobuf >= 7.35 (the generated stubs require it), which the mise pythons lack, so run it with uv:
+
+```bash
+python3 tools/make_known_utterance.py --out /tmp/utt.wav --voice kal16 --phrase "Holocene pipeline test. Please reply with words pipeline check received."
+# in the app: tap a tile, tap Record, then
+uv run --no-project --with "protobuf>=7.35" --with grpcio python tools/emulator_audio.py inject --port 8554 --wav /tmp/utt.wav --lead-ms 500 --tail-ms 1500
+# tap Stop & Send, then: mise run memo:trace latest
+```
+
+The utterance must be under 5 s (a longer one is refused). If the emulator process hangs at boot with
+`Unable to connect to adb daemon on port: 5037` in `~/.local/state/holocene-auto/emulator.log`, run
+`adb start-server`, kill the stuck `qemu-system-x86_64`, and `mise run auto:sim` again.
+
 ## What is debug-only
 
 Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a build constant:

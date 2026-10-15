@@ -42,7 +42,7 @@ select Holocene tile -> Record -> inject -> Stop & Send.
 | ![selected](pipeline-e2e/a1-1-holocene-selected.png) | ![selected](pipeline-e2e/a2-1-holocene-selected.png) |
 | ![recording](pipeline-e2e/a1-2-recording.png) | ![recording](pipeline-e2e/a2-2-recording.png) |
 | ![sent](pipeline-e2e/a1-3-sent.png) | ![sent](pipeline-e2e/a2-3-sent.png) |
-| ![reply](pipeline-e2e/a1-4-reply-played.png) | ![reply](pipeline-e2e/a2-4-reply-played.png) |
+| ![last reply line, not a played frame](pipeline-e2e/a1-4-reply-played.png) | ![reply](pipeline-e2e/a2-4-reply-played.png) |
 
 The recorded OGG (attempt 1) is 7.38 s, mean volume -30.3 dB, max -8.2 dB: not silence.
 
@@ -156,7 +156,7 @@ Holocene commits: `5531f73`, `e041234`, plus the pad fix and this report. Bloodb
 - The reply was rendered to speech, uploaded, and played inside the app on the simulator, reported by the pad itself.
 - Every hop is observable by one id: `mise run memo:trace`, the `/voice` page, Candystore by correlationid, the
   structured logs of the proxy and the watcher.
-- Two runs, 65 s and 74 s end to end, with no stale-command interference (the gateway queue was drained earlier).
+- Two runs, 65 s and 74 s end to end, with no stale-command interference (the gateway queue was drained earlier). Correction from review: attempt 1 predates the playback beacon, and its frame `a1-4` shows only the `last reply:` line (status 'sent'), not 'reply played'. Attempt 1's playback rests on logcat audio focus plus that line; attempt 2 and round 3 below have the beacon.
 
 ## What is not proven
 
@@ -173,3 +173,47 @@ Holocene commits: `5531f73`, `e041234`, plus the pad fix and this report. Bloodb
   is not instrumented.
 - `audio.memo.played` ended-phase reporting relies on the WebView firing `ended`; a car that is switched off mid-reply
   reports `started` without `ended`, which the trace shows as "end not reported".
+
+
+## Review round: findings fixed (same evening)
+
+An independent review of the pipeline found the gaps below. All are fixed, deployed and covered by tests where the
+repo has them. Round-3 evidence follows the table.
+
+| Finding | Fix |
+|---|---|
+| Truncated upload stored as a complete memo | Proxy rejects a body shorter than Content-Length (400 `short_body`) and publishes `failed(stage=upload)`; `.ogg` keys must hold an `OggS` stream. Tested over a real socket. |
+| Transcribe timeout (420 s) < audio the app allows; one memo blocks the whole loop | Timeout = `max(420, 60 + 8 x ffprobe duration)`, grows after a timeout. transcribe/dispatch/speak run on worker threads; `tick()` keeps discovering, polling and writing the heartbeat (which now lists the running step and its age). |
+| ~8 loud phone pushes per memo | ntfy-router: `audio.memo.*` progress facts muted; only `audio.memo.failed` and `audio.file.*` page the phone (bloodbank `036a019`, redeployed). |
+| Post-agent stages gave up after ~45 s, no replay | Infra stages retry on a time budget (dispatch 15 min, tts/reply upload 30 min). `mise run memo:retry <memo_id>` revives a failed memo at the stage it died in. |
+| Shared FIFO queue; a timed-out command still ran later, silently | Agent deadline extends (up to 1 h) while the command is verifiably queued/running; after a real timeout the watcher keeps watching the command for 2 h and speaks a late reply. **Not fixed:** a priority lane needs a second consumer in the Hermes gateway plugin (documented limit). |
+| Pad silently dropped replies (burst, restart, 50-key cap, midnight) | Ordered reply queue; listing uses `start-after` with paging (no 50 cap); persisted `lastDone`; yesterday and today covered; replies up to 30 min old play after a restart; stale replies get a `skipped` beacon. Legacy flat `replies/2026101...` keys are ignored so they cannot pin the cursor. |
+| Upload failure and pre-upload failures invisible | Pad keeps the recording in IndexedDB and retries (5 tries, then every 30 s and on `online`); `POST /upload/client-event` for record start/stop/failure and upload failure; `failed(stage=record\|upload)` facts keyed by the key the memo would have had; memo id shown on screen. |
+| Unroutable agent: dropped by the gateway, memo hangs 10 min with a vague failure | Agent id checked against `agents-registry.yaml` right after `received` (`dispatch/unknown_agent`, milliseconds). Fallback: no journal row + empty consumer for 15 s => `agent/gateway_terminated` carrying the gateway's own WARNING line. `memo:trace` gained `gateway_log` and `agent_route` hops; `/voice` fails the *Agent started* hop for a no-row timeout. A test asserts every pad tile is routable. |
+| Skipped memos left no fact | `failed(stage=receive, code=no_agent\|too_old)`. |
+| Noise hallucinations dispatched as prompts | ffprobe gate (undecodable, under 0.7 s) and a hallucination list; terminal, no retry. Prompt is prefixed `[Voice memo transcript - speech-to-text, may contain recognition errors]`. |
+| Reply did not say who answered; retry could speak twice | Speech starts with the agent's name; reply key fixed per memo (a retry overwrites). |
+| No single-instance lock; state.json rewritten every second; corrupt state crash-loops | flock on `<state>/lock`; save only when changed, finished memos compacted; corrupt state moved aside. |
+| `memo:trace` called an in-flight memo STOPPED | `IN PROGRESS at <stage> (Ns so far)`, exit 3. New `hermes_session` hop proves the agent got exactly what the watcher sent (`prompt_match` also on the `replied` fact). Millisecond timestamps; one reference time for the playback delta; 8-char memo prefix resolves through the bus. |
+| `/voice` did not say the watcher was down | API reads the watcher heartbeat + pid; `/voice` shows a banner and a Cause line on stuck watcher-owned hops. |
+| Small tab bar and last-reply line | Host tab bar 80 px / 22 sp; last-reply and memo lines 18-24 px, higher contrast. |
+
+### Round 3 on the simulator (new pad, new watcher, new proxy)
+
+- Memo `3f933391`: recorded in the app, known utterance injected, Stop & Send, all hops OK, **COMPLETE in 70.0 s**,
+  played on the pad 5.1 s after rendering (`trace-a3.txt`, `a3-2-recording.png`, `a3-3-sent-with-memo-id.png`). The
+  agent was given `[Voice memo transcript ...] <transcript>` and the `hermes_session` hop confirms it byte for byte.
+  The spoken reply began with the agent's name ("Holocene PM. ...").
+- Memo `360903c1`: the upload proxy was stopped during Stop & Send. The pad showed `upload failed, retrying (3/4)...`
+  (`a4-1`), then `NOT sent (HTTP 405) - saved, retrying` with `1 recording waiting to upload` (`a4-2`). After the proxy
+  came back the outbox delivered the same key within 30 s and the pad emitted `upload_recovered`; the queued
+  `record_started`, `record_stopped` and `upload_failed` events were flushed in (`client-events-outbox.txt`, `a4-3`).
+  The recording was ambient noise, so the watcher failed it terminally `transcribe/empty_transcript`, and
+  `memo:trace` says so (`trace-outbox-recovered-empty.txt`). That is the new gate working on real audio.
+
+### Simulator notes
+
+The emulator died three times when `emulator_audio.py inject` ran while the app was recording (gRPC stream closed,
+crashpad dump), and once a windowed restart hung at Qt start. It is running headless (`sim_start.sh --headless`)
+as of this run; `apps/auto/DEV.md` documents the `uv run` incantation for the injector (it needs protobuf >= 7.35)
+and the stuck-boot recovery. A second `/usr/bin/adb` on this host keeps killing the Sdk adb server; use the Sdk adb.

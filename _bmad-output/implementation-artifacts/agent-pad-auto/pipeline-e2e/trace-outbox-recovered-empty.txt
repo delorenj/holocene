@@ -1,0 +1,33 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 360903c1
+memo_id  360903c1-f924-523a-a133-53071855afc2
+key      inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg
+agent    holocene-pm
+command  -
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=360903c1-f924-523a-a133-53071855afc2&limit=100'
+
+  OK      s3_object                  2026-10-15T21:22:41.000Z           inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg  26977 bytes
+  OK      upload_proxy_log           2026-10-15T21:22:41.469Z  +0.5s    {"ts":"2026-10-15T21:22:41.468Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","memo_id":"360903c1-f924-52
+  OK      fact:uploaded              2026-10-15T21:22:41.469Z  +0.0s    26977 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST
+  OK      fact:received              2026-10-15T21:22:41.964Z  +0.5s    watcher saw it, lag 512ms
+  MISSING fact:transcribed           -                                  no bloodbank.audio.memo.transcribed with correlationid=360903c1-f924-523a-a133-53071855afc2
+  MISSING fact:dispatched            -                                  no bloodbank.audio.memo.dispatched with correlationid=360903c1-f924-523a-a133-53071855afc2
+  MISSING gateway_journal            -                                  no command id yet (not dispatched)
+  MISSING agent:invocation.started   -                                  no bloodbank.agent.invocation.started for this command in Candystore
+  MISSING agent:invocation.done      -                                  no invocation.completed/failed for this command
+  MISSING fact:replied               -                                  no bloodbank.audio.memo.replied with correlationid=360903c1-f924-523a-a133-53071855afc2
+  MISSING reply_object               -                                  no reply key recorded
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (it polls replies/ every 15s; a parked car reports nothing) (optional)
+  FAILED  fact:failed[upload]        2026-10-15T21:22:41.663Z           upload_failed: PUT inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg: 405 (retryable=True, attempt=5) (optional)
+  FAILED  fact:failed[transcribe]    2026-10-15T21:23:21.084Z           empty_transcript: transcript is empty (silence or unrecognised audio) (retryable=False, attempt=1)
+
+VERDICT  STOPPED AT transcribe: empty_transcript: transcript is empty (silence or unrecognised audio) (retryable=False, attempt=1)
+
+watcher log (7 lines, journalctl --user -u holocene-inbox-watcher.service):
+  {"ts":"2026-10-15T21:22:41.964Z","svc":"inbox-watcher","level":"info","event":"discovered","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"receive","bytes":26977,"age_s":
+  {"ts":"2026-10-15T21:22:42.071Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"received","fact":"audio.mem
+  {"ts":"2026-10-15T21:22:42.092Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"received","next":"transcribe","
+  {"ts":"2026-10-15T21:22:43.328Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"download","ms":234,"bytes":2697
+  {"ts":"2026-10-15T21:22:43.372Z","svc":"inbox-watcher","level":"info","event":"transcribe_start","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"transcribe","audio_s":5.1
+  {"ts":"2026-10-15T21:23:21.184Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"failed","fact":"audio.memo.
+  {"ts":"2026-10-15T21:23:21.184Z","svc":"inbox-watcher","level":"error","event":"memo_failed","memo_id":"360903c1-f924-523a-a133-53071855afc2","key":"inbox/holocene-pm/2026/10/15/20261015T212137Z.ogg","agent":"holocene-pm","stage":"transcribe","code":"empty_tra
+[memo:trace] ERROR task failed
