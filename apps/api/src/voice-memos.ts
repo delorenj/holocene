@@ -50,7 +50,7 @@ type Spec = { id: HopId; label: string; budgetSeconds: number; optional?: boolea
  * large-v3 on CPU int8 takes about 40 s for a short clip, and the watcher gives the agent 600 s.
  */
 export const HOPS: readonly Spec[] = [
-  { id: "uploaded", label: "S3 received", budgetSeconds: 0, optional: true },
+  { id: "uploaded", label: "Recorded and uploaded", budgetSeconds: 0, optional: true },
   { id: "received", label: "Watcher picked up", budgetSeconds: 30 },
   { id: "transcribed", label: "Transcribed", budgetSeconds: 180 },
   { id: "dispatched", label: "Dispatched to agent", budgetSeconds: 30 },
@@ -63,6 +63,9 @@ export const HOPS: readonly Spec[] = [
 
 /** Watcher StageError.stage -> the hop it was trying to reach. */
 const STAGE_HOP: Record<string, HopId> = {
+  // Device-side failures (the pad could not record, or the upload never completed) happen before S3 has the memo.
+  record: "uploaded",
+  upload: "uploaded",
   receive: "received",
   download: "received",
   transcribe: "transcribed",
@@ -281,7 +284,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const failedFacts = relevant.filter((e) => e.type === "bloodbank.audio.memo.failed").map(failureOf);
   const failuresByHop = new Map<HopId, HopFailure[]>();
   for (const f of failedFacts) {
-    const hop = (f.stage && STAGE_HOP[f.stage]) || undefined;
+    let hop = (f.stage && STAGE_HOP[f.stage]) || undefined;
+    // The watcher times out on "no completed turn"; when the agent never even started (the gateway dropped the
+    // command, or it is still queued) the hop that failed is "Agent started", not "Agent finished".
+    if (f.stage === "agent_reply" && f.code === "timeout" && proof.agent_started.length === 0) hop = "agent_started";
     if (!hop) continue;
     failuresByHop.set(hop, [...(failuresByHop.get(hop) ?? []), f]);
   }

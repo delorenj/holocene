@@ -38,6 +38,10 @@ COMMAND_STREAM = "BLOODBANK_COMMANDS"
 UPLOAD_CONTAINER = "agent-pad-upload"
 WATCHER_UNIT = "holocene-inbox-watcher.service"
 
+REGISTRY_PATH = Path(os.environ.get("MEMO_AGENT_REGISTRY", HOME / ".hermes/agents-registry.yaml"))
+GATEWAY_UNIT = os.environ.get("MEMO_GATEWAY_UNIT", "hermes-gateway.service")
+FFPROBE = os.environ.get("MEMO_FFPROBE", "ffprobe")
+
 MC_BIN = os.environ.get("MC_BIN") or shutil.which("mc") or "/usr/local/bin/mc"
 BB_EMIT = os.environ.get("BB_EMIT", "/home/delorenj/code/33GOD/bloodbank/bin/bb-emit")
 
@@ -86,6 +90,65 @@ def parse_iso(s: str | None) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+# ---------------------------------------------------------------- agent routing
+
+def registry_route(agent_id: str) -> dict:
+    """Can the Bloodbank gateway route a command to this agent? Mirrors ProfileResolver in
+    bloodbank/services/hermes-gateway (registry row with profile_name, bloodbank not disabled,
+    gateway_scope fleet, target_agent_id equal to the row id).
+
+    {ok: True|False|None, profile, display_name, reason}. ok=None means "could not tell"
+    (no PyYAML, registry unreadable): callers must not block on it.
+    """
+    try:
+        import yaml  # type: ignore
+        parsed = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
+        agents = parsed["agents"]
+    except Exception as e:  # noqa: BLE001
+        return {"ok": None, "profile": None, "display_name": None, "reason": f"registry unreadable: {type(e).__name__}: {e}"[:200]}
+    row = agents.get(agent_id) if isinstance(agents, dict) else None
+    if not isinstance(row, dict):
+        return {"ok": False, "profile": None, "display_name": None,
+                "reason": f"{agent_id!r} is not in {REGISTRY_PATH.name}: the gateway would consume the command and drop it"}
+    name = row.get("display_name") if isinstance(row.get("display_name"), str) else None
+    bb = row.get("bloodbank")
+    profile = row.get("profile_name")
+    if not (isinstance(profile, str) and profile.strip() and isinstance(bb, dict)):
+        return {"ok": False, "profile": None, "display_name": name, "reason": f"{agent_id!r} has no profile_name/bloodbank block in the registry"}
+    if bb.get("enabled", True) is not True:
+        return {"ok": False, "profile": profile, "display_name": name, "reason": f"{agent_id!r} has bloodbank.enabled={bb.get('enabled')!r} (default-deny)"}
+    if bb.get("gateway_scope") != "fleet" or bb.get("target_agent_id") != agent_id:
+        return {"ok": False, "profile": profile, "display_name": name,
+                "reason": f"{agent_id!r} bloodbank block is not fleet scope with target_agent_id={agent_id!r}"}
+    return {"ok": True, "profile": profile.strip(), "display_name": name, "reason": None}
+
+
+def spoken_name(agent_id: str, route: dict | None = None) -> str:
+    """Short name to say aloud: registry display_name ('Holocene PM'), else the id with spaces."""
+    route = route or registry_route(agent_id)
+    name = (route.get("display_name") or "").split("\u2014")[0].split(" - ")[0].strip()
+    return name or agent_id.replace("-", " ")
+
+
+# ---------------------------------------------------------------- audio probe
+
+def probe_audio(path: Path) -> dict:
+    """{ok, duration, error} from ffprobe. ok=None when ffprobe itself is unavailable (never blocks)."""
+    try:
+        r = subprocess.run([FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        return {"ok": None, "duration": None, "error": f"{FFPROBE} not installed"}
+    except subprocess.TimeoutExpired:
+        return {"ok": None, "duration": None, "error": "ffprobe timed out"}
+    if r.returncode != 0:
+        return {"ok": False, "duration": None, "error": (r.stderr.strip() or "ffprobe failed")[-300:]}
+    try:
+        return {"ok": True, "duration": float(r.stdout.strip().splitlines()[0]), "error": None}
+    except (ValueError, IndexError):
+        return {"ok": False, "duration": None, "error": f"ffprobe gave no duration: {r.stdout.strip()[:100]!r}"}
 
 
 # ---------------------------------------------------------------- S3 (mc)
@@ -224,7 +287,8 @@ def find_reply(profile: str, thread_id: str) -> dict | None:
 
     Gateway contract: source 'bloodbank', chat_id = data.thread_id of the command.
     Because the watcher picks a unique thread_id per memo, this is exact: no
-    'latest session' / mtime guessing. Returns {session_id, text, timestamp} or None.
+    'latest session' / mtime guessing. Returns {session_id, text, timestamp, prompt (the first user message: what the agent was
+    actually given)} or None.
     """
     path = profile_db(profile)
     if not path.exists():
@@ -244,6 +308,11 @@ def find_reply(profile: str, thread_id: str) -> dict | None:
             ).fetchone()
         if sess is None:
             return None
+        user = db.execute(
+            "SELECT content FROM messages WHERE session_id=? AND role='user' ORDER BY timestamp ASC, id ASC LIMIT 1",
+            (sess["id"],),
+        ).fetchone()
+        prompt = user["content"] if user else None
         msg = db.execute(
             "SELECT content, timestamp FROM messages WHERE session_id=? AND role='assistant' "
             "AND content IS NOT NULL AND TRIM(content) <> '' AND COALESCE(active,1)=1 "
@@ -253,8 +322,25 @@ def find_reply(profile: str, thread_id: str) -> dict | None:
     finally:
         db.close()
     if msg is None:
-        return {"session_id": sess["id"], "text": None, "timestamp": None}
-    return {"session_id": sess["id"], "text": msg["content"].strip(), "timestamp": msg["timestamp"]}
+        return {"session_id": sess["id"], "text": None, "timestamp": None, "prompt": prompt}
+    return {"session_id": sess["id"], "text": msg["content"].strip(), "timestamp": msg["timestamp"], "prompt": prompt}
+
+
+# ---------------------------------------------------------------- gateway log (why a command vanished)
+
+def gateway_log_lines(needles: list[str], since: str = "-3 hours", lines: int = 6) -> list[str]:
+    """Gateway journal lines that mention any needle (command id, target agent id).
+
+    The gateway's only record of a command it consumed and dropped (unroutable target) is a
+    WARNING in its own journal; no execution row and no fact exist for it."""
+    try:
+        r = subprocess.run(["journalctl", "--user", "-u", GATEWAY_UNIT, "--no-pager", "-o", "short-iso", "--since", since],
+                           capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001
+        return []
+    hits = [ln for ln in r.stdout.splitlines()
+            if any(n and n in ln for n in needles) and ("Bloodbank" in ln or "bloodbank" in ln)]
+    return hits[-lines:]
 
 
 # ---------------------------------------------------------------- NATS / gateway liveness

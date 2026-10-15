@@ -3,6 +3,7 @@
 
   memo_trace.py trace [<memo_id>|<s3 key>|<file name>|latest] [--logs]
   memo_trace.py list  [-n 15]
+  memo_trace.py retry <memo_id|key>   revive a failed memo at the stage it died in
 
 Every hop reports OK / MISSING / FAILED / UNKNOWN with a timestamp and the
 latency since the previous hop, and the run ends with ONE verdict line:
@@ -42,6 +43,12 @@ class Hop:
 
 
 # ------------------------------------------------------------------ evidence
+
+def evt_ts(ev: dict):
+    """Millisecond time of a fact: data.occurred_at when the producer set it (the envelope `time` of
+    watcher facts is truncated to whole seconds), else the envelope time."""
+    return c.parse_iso(((ev.get("data") or {}).get("occurred_at")) or ev.get("time"))
+
 
 def watcher_record(key: str) -> dict | None:
     p = c.STATE_DIR / "state.json"
@@ -148,7 +155,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
     def add_fact_hop(name, action, describe, optional=False):
         ev = fact(action)
         if ev:
-            hops.append(Hop(name, OK, c.parse_iso(ev["time"]), describe(ev.get("data") or {}), optional))
+            hops.append(Hop(name, OK, evt_ts(ev), describe(ev.get("data") or {}), optional))
         elif ctx["candystore"] != "ok":
             hops.append(Hop(name, UNKNOWN, detail=f"Candystore {ctx['candystore']}", optional=optional))
         else:
@@ -183,8 +190,17 @@ def build(key: str) -> tuple[list[Hop], dict]:
                 hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
             else:
                 live = c.gateway_liveness()
-                hops.append(Hop("gateway_journal", MISSING,
-                                detail=f"gateway never created an execution row for {command_id}; {c.gateway_liveness_text(live)}"))
+                detail = f"gateway never created an execution row for {command_id}; {c.gateway_liveness_text(live)}"
+                if live.get("ok") and not live.get("num_pending") and not live.get("num_ack_pending"):
+                    detail += ("  <- consumer is EMPTY: the gateway consumed this command and dropped it without a row "
+                               "(unroutable target or bad envelope); see gateway_log below")
+                hops.append(Hop("gateway_journal", MISSING, detail=detail))
+                glines = c.gateway_log_lines([command_id, agent])
+                if glines:
+                    hops.append(Hop("gateway_log", FAILED, detail=glines[-1][:300]))
+                route = c.registry_route(agent) if agent else None
+                if route and route["ok"] is False:
+                    hops.append(Hop("agent_route", FAILED, detail=route["reason"]))
     else:
         hops.append(Hop("gateway_journal", MISSING, detail="no command id yet (not dispatched)"))
 
@@ -196,21 +212,43 @@ def build(key: str) -> tuple[list[Hop], dict]:
     done = next((e for e in inv if e["type"].endswith(".completed")), None)
     failed = next((e for e in inv if e["type"].endswith(".failed")), None)
     if started:
-        hops.append(Hop("agent:invocation.started", OK, c.parse_iso(started["time"]), f"producer={started.get('producer')}"))
+        hops.append(Hop("agent:invocation.started", OK, evt_ts(started), f"producer={started.get('producer')}"))
     else:
         hops.append(Hop("agent:invocation.started", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
                         detail="no bloodbank.agent.invocation.started for this command in Candystore"))
     if failed:
         d = failed.get("data") or {}
-        hops.append(Hop("agent:invocation.done", FAILED, c.parse_iso(failed["time"]),
+        hops.append(Hop("agent:invocation.done", FAILED, evt_ts(failed),
                         f"invocation.failed {d.get('error_code')}: {d.get('error_message')}"))
     elif done:
-        hops.append(Hop("agent:invocation.done", OK, c.parse_iso(done["time"]), "invocation.completed"))
+        hops.append(Hop("agent:invocation.done", OK, evt_ts(done), "invocation.completed"))
     elif row and row["state"] == "completed" and row.get("outcome") == "success":
         hops.append(Hop("agent:invocation.done", OK, c.parse_iso(row["updated_at"]), "journal completed/success (fact not in Candystore)"))
     else:
         hops.append(Hop("agent:invocation.done", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
                         detail="no invocation.completed/failed for this command"))
+
+    # 5b. what the agent actually received (Hermes session, keyed by chat_id = memo_id)
+    if row and row["state"] == "completed":
+        sent_chars = ((disp or {}).get("data") or {}).get("prompt_chars")
+        sent_hash = ((disp or {}).get("data") or {}).get("prompt_sha256")
+        try:
+            found = c.find_reply(row["profile"], ctx["memo_id"])
+        except Exception as e:  # noqa: BLE001
+            hops.append(Hop("hermes_session", UNKNOWN, detail=str(e)[:140], optional=True))
+        else:
+            got = (found or {}).get("prompt")
+            if got is None:
+                hops.append(Hop("hermes_session", MISSING if found is None else UNKNOWN,
+                                detail=f"no session with source=bloodbank chat_id={ctx['memo_id']} in profile {row['profile']}", optional=True))
+            else:
+                import hashlib
+                same_len = sent_chars is None or len(got.strip()) == int(sent_chars)
+                same_hash = sent_hash is None or hashlib.sha256(got.strip().encode()).hexdigest() == sent_hash or hashlib.sha256(got.encode()).hexdigest() == sent_hash
+                ok = same_len and same_hash
+                hops.append(Hop("hermes_session", OK if ok else FAILED, c.parse_iso(row["created_at"]),
+                                (f"agent was given exactly what the watcher sent ({len(got)} chars): {got[:90]!r}" if ok else
+                                 f"PROMPT MISMATCH: watcher sent {sent_chars} chars, the agent saw {len(got)}: {got[:120]!r}"), optional=ok))
 
     # 6. reply
     add_fact_hop("fact:replied", "replied",
@@ -238,8 +276,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
     p_end = next((e for e in played if (e.get("data") or {}).get("phase") == "ended"), None)
     if p_start:
         d0 = p_start.get("data") or {}
+        ctx["pad_age_s"] = (d0.get("reply_age_ms") or 0) / 1000.0
         extra = f", ended after {(p_end.get('data') or {}).get('played_seconds')}s" if p_end else ", end not reported"
-        hops.append(Hop("played_on_pad", OK, c.parse_iso(p_start["time"]),
+        hops.append(Hop("played_on_pad", OK, evt_ts(p_start),
                         f"reply started {d0.get('reply_age_ms')} ms after it was rendered{extra} ({str(d0.get('client_user_agent'))[:40]})", optional=True))
     else:
         hops.append(Hop("played_on_pad", UNKNOWN,
@@ -248,11 +287,23 @@ def build(key: str) -> tuple[list[Hop], dict]:
     # failed facts, positioned by time
     for ev in by_type.get("bloodbank.audio.memo.failed", []):
         d = ev.get("data") or {}
-        hops.append(Hop(f"fact:failed[{d.get('stage')}]", FAILED, c.parse_iso(ev["time"]),
+        hops.append(Hop(f"fact:failed[{d.get('stage')}]", FAILED, evt_ts(ev),
                         f"{d.get('error_code')}: {str(d.get('error_message'))[:200]} (retryable={d.get('retryable')}, attempt={d.get('attempt')})",
                         optional=bool(d.get("retryable"))))
     ctx["events"] = events
     return hops, ctx
+
+
+def in_progress(rec: dict) -> str | None:
+    """'at <stage> (Ns so far)' when the watcher is actively working this memo and is alive, else None."""
+    if not rec or rec.get("status") != "active":
+        return None
+    hb = watcher_heartbeat()
+    if not hb or hb.get("age_s") is None or hb["age_s"] > 60 or watcher_unit_active() != "active":
+        return None
+    since = rec.get("step_started_ts") or rec.get("dispatched_ts") or rec.get("received_ts") or rec.get("detected_ts")
+    so_far = f" ({int(time.time() - since)}s so far)" if since else ""
+    return f"at {rec.get('stage')}{so_far}; watcher heartbeat {int(hb['age_s'])}s old"
 
 
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
@@ -273,13 +324,20 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         if h.name in ("fact:received", "fact:transcribed", "fact:dispatched", "reply_object", "fact:replied"):
             stage_hint = watcher_hint(rec)
         if h.name == "s3_object":
-            return f"STOPPED AT s3_object: {h.detail}", False
+            client = [x for x in hops if x.name.startswith("fact:failed") and any(f"[{st}]" in x.name for st in ("record", "upload"))]
+            extra = f" | device reported {client[-1].name[len('fact:'):]}: {client[-1].detail}" if client else ""
+            return f"STOPPED AT s3_object: {h.detail}{extra}", False
+        busy = in_progress(rec)
+        if busy:
+            ctx["in_progress"] = True
+            return f"IN PROGRESS {busy} (not stopped: waiting on {h.name})", False
         return f"STOPPED AT {h.name}: {h.detail}{stage_hint}", False
     s3 = next((h for h in hops if h.name == "s3_object"), None)
     end = next((h for h in hops if h.name == "reply_object" and h.ts), None)
     if s3 and s3.ts and end and end.ts:
         pad = next((h for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None)
-        tail = f"; played on the pad {(pad.ts - end.ts).total_seconds():+.1f}s after the reply was rendered" if pad else "; playback on the pad not reported"
+        tail = (f"; played on the pad {ctx.get('pad_age_s', (pad.ts - end.ts).total_seconds()):.1f}s after the reply was rendered"
+                if pad else "; playback on the pad not reported")
         return f"COMPLETE in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
     return "COMPLETE", True
 
@@ -332,10 +390,15 @@ def resolve_key(arg: str) -> str:
     if arg.startswith(f"{c.INBOX_PREFIX}/"):
         return arg
     key = c.s3_find_inbox_key(arg)
-    if not key and re.fullmatch(r"[0-9a-fA-F-]{36}", arg):
+    if not key and re.fullmatch(r"[0-9a-fA-F-]{8,36}", arg):
         # The object may be gone (deleted, or never existed: a phantom key). The bus still remembers it.
         try:
-            for ev in c.candystore_events(arg.lower()):
+            if len(arg) == 36:
+                evs = c.candystore_events(arg.lower())
+            else:  # 8+ char prefix of a memo that never reached S3 (the pad shows the first 8): scan recent memo facts
+                evs = c.http_json(f"{c.CANDYSTORE_URL}/events?type=bloodbank.audio.memo.failed&limit=200", timeout=8).get("events", [])
+                evs = [e for e in evs if str((e.get("data") or {}).get("memo_id", "")).startswith(arg.lower())]
+            for ev in evs:
                 k = (ev.get("data") or {}).get("s3_key")
                 if isinstance(k, str) and k.startswith(f"{c.INBOX_PREFIX}/"):
                     return k
@@ -352,14 +415,32 @@ def cmd_trace(args) -> int:
     render(hops, ctx)
     text, complete = verdict(hops, ctx)
     print()
-    print(paint(OK if complete else FAILED, f"VERDICT  {text}"))
+    print(paint(OK if complete else (MISSING if ctx.get("in_progress") else FAILED), f"VERDICT  {text}"))
     if args.logs or not complete:
         lines = watcher_logs(ctx["memo_id"])
         if lines:
             print(f"\nwatcher log ({len(lines)} lines, journalctl --user -u {c.WATCHER_UNIT}):")
             for ln in lines[-15 if not args.logs else -40:]:
                 print("  " + ln[:260])
-    return 0 if complete else 2
+    return 0 if complete else (3 if ctx.get("in_progress") else 2)
+
+
+def cmd_retry(args) -> int:
+    """Ask the running watcher to revive a failed/skipped memo at the stage it died in."""
+    key = resolve_key(args.target)
+    mid = c.memo_id_for(key)
+    rec = watcher_record(key)
+    if rec is None:
+        print(f"watcher has no record of {key}; nothing to retry (re-record it, or restart the watcher after fixing S3)")
+        return 1
+    if rec.get("status") not in ("failed", "skipped"):
+        print(f"memo is {rec.get('status')} at {rec.get('stage')}: only failed or skipped memos can be retried")
+        return 1
+    ctl = c.STATE_DIR / "control"
+    ctl.mkdir(parents=True, exist_ok=True)
+    (ctl / f"retry-{mid}").write_text("")
+    print(f"retry requested for {mid} (resumes at {rec.get('resume_stage') or 'receive'}); watch it with: mise run memo:trace {mid}")
+    return 0
 
 
 def furthest(events: list[dict], rec: dict | None) -> str:
@@ -398,11 +479,15 @@ def main() -> int:
     t = sub.add_parser("trace")
     t.add_argument("target", nargs="?", default="latest")
     t.add_argument("--logs", action="store_true", help="always print the watcher's log lines for this memo")
+    r = sub.add_parser("retry")
+    r.add_argument("target")
     l = sub.add_parser("list")
     l.add_argument("-n", type=int, default=15)
     args = ap.parse_args()
     if args.cmd == "list":
         return cmd_list(args)
+    if args.cmd == "retry":
+        return cmd_retry(args)
     if args.cmd is None:
         args = ap.parse_args(["trace"])
     return cmd_trace(args)

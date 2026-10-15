@@ -171,3 +171,25 @@ test("a playback failure is shown on the played hop and the memo stays complete"
   assert.equal(d.hops[7].error?.code, "autoplay_blocked");
   assert.match(d.error ?? "", /autoplay_blocked/);
 });
+
+test("a device-side upload failure with nothing in S3 is a hop-one failure, not a mystery", () => {
+  const f = fact("audio.memo.failed", 1, { stage: "upload", error_code: "upload_failed", error_message: "PUT 502", retryable: true, attempt: 3, occurred_at: iso(1) }, MEMO, "agent-pad-upload");
+  const d = buildMemoDetail(MEMO, [f], now(5))!;
+  assert.equal(d.hops[0].id, "uploaded");
+  assert.equal(d.hops[0].failures.length, 1);
+  assert.notEqual(d.status, "complete");
+  const rec = fact("audio.memo.failed", 1, { stage: "record", error_code: "mic_unavailable", error_message: "native recorder start failed", retryable: false, attempt: 1, occurred_at: iso(1) }, MEMO, "agent-pad-upload");
+  const r = buildMemoDetail(MEMO, [rec], now(5))!;
+  assert.equal(r.status, "failed");
+  assert.equal(r.hops[0].status, "failed");
+  assert.match(r.error ?? "", /mic_unavailable/);
+});
+
+test("a no-row agent timeout fails the 'Agent started' hop, because the agent never started", () => {
+  const timeout = fact("audio.memo.failed", 610, { stage: "agent_reply", error_code: "timeout", error_message: "no completed turn after 601s", retryable: false, attempt: 1, occurred_at: iso(610) });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), timeout], now(700))!;
+  assert.equal(d.status, "failed");
+  assert.equal(d.hops.find(h => h.id === "agent_started")!.status, "failed");
+  assert.notEqual(d.hops.find(h => h.id === "agent_done")!.status, "failed");
+  assert.match(d.stageLabel, /agent started/);
+});

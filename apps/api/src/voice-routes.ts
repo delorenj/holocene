@@ -9,6 +9,7 @@ import {
   toJourneyEvent,
   type JourneyEvent
 } from "./voice-memos.js";
+import { readWatcherStatus } from "./watcher-status.js";
 
 const UUID = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 const events = (rows: { cursor: number; collected_at: string; envelope: unknown }[]) =>
@@ -41,7 +42,7 @@ export function registerVoiceRoutes(app: FastifyInstance, collector: EventCollec
       ? events(store.correlated([...AGENT_TYPES], open.map(([id]) => id), Math.min(...open.map(([, list]) => Math.min(...list.map(e => e.cursor))))))
       : [];
     const memos = buildMemoSummaries([...newest.flatMap(([, list]) => list), ...agentFacts], now, limit);
-    return { generated_at: new Date(now).toISOString(), source: source(), memos };
+    return { generated_at: new Date(now).toISOString(), source: source(), watcher: await readWatcherStatus(now), memos };
   });
 
   app.get<{ Params: { memoId: string } }>("/api/modules/voice/memos/:memoId", {
@@ -53,6 +54,6 @@ export function registerVoiceRoutes(app: FastifyInstance, collector: EventCollec
     if (!facts.length) return reply.code(404).send({ error: "No voice memo facts with that correlation id are in the event collection." });
     const agentFacts = events(store.correlated([...AGENT_TYPES], [memoId], Math.min(...facts.map(e => e.cursor))));
     const memo = buildMemoDetail(memoId, [...facts, ...agentFacts], now);
-    return { generated_at: new Date(now).toISOString(), source: source(), memo };
+    return { generated_at: new Date(now).toISOString(), source: source(), watcher: await readWatcherStatus(now), memo };
   });
 }

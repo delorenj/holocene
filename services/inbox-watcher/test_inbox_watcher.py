@@ -86,6 +86,31 @@ FAKE_BB.write_text(textwrap.dedent(f"""\
     """))
 FAKE_BB.chmod(0o755)
 
+FAKE_FFPROBE = ROOT / "ffprobe"
+FAKE_FFPROBE.write_text(textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import sys
+    data = open(sys.argv[-1], "rb").read().decode("latin1")
+    if "GARBAGE" in data:
+        print("Invalid data found when processing input", file=sys.stderr); sys.exit(1)
+    print("0.2" if "TINY" in data else "9.0")
+    """))
+FAKE_FFPROBE.chmod(0o755)
+
+REGISTRY = ROOT / "agents-registry.yaml"
+REGISTRY.write_text(textwrap.dedent("""\
+    schema_version: 1
+    agents:
+      holocene-pm:
+        display_name: Holocene PM
+        profile_name: holocene-pm
+        bloodbank: {enabled: true, gateway_scope: fleet, target_agent_id: holocene-pm}
+      off-pm:
+        display_name: Off PM
+        profile_name: off-pm
+        bloodbank: {enabled: false, gateway_scope: fleet, target_agent_id: off-pm}
+    """))
+
 GATEWAY_DB = ROOT / "gateway.sqlite3"
 HERMES = ROOT / "profiles"
 (HERMES / "holocene-pm").mkdir(parents=True)
@@ -108,6 +133,7 @@ os.environ.update({
     "MEMO_STATE_DIR": str(ROOT / "state"), "MEMO_GATEWAY_DB": str(GATEWAY_DB),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
+    "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -144,14 +170,14 @@ def journal(command_id, profile, state="completed", outcome="success"):
     db.commit(); db.close()
 
 
-def hermes_session(profile, chat_id, reply):
+def hermes_session(profile, chat_id, reply, prompt=None):
     p = HERMES / profile / "state.db"
     db = sqlite3.connect(p)
     db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, chat_id TEXT, session_key TEXT)")
     db.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT,"
                " content TEXT, timestamp REAL, active INTEGER DEFAULT 1)")
     db.execute("INSERT INTO sessions VALUES (?,?,?,?,?)", (f"s-{chat_id}", "bloodbank", time.time(), chat_id, f"agent:{profile}:bloodbank:dm:{chat_id}"))
-    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "user", "prompt", 1))
+    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "user", prompt if prompt is not None else iw.VOICE_PREFIX + "Summarize recent work.", 1))
     db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "assistant", reply, 2))
     db.commit(); db.close()
 
@@ -164,7 +190,7 @@ class Pipeline(unittest.TestCase):
         cls.w = iw.Watcher(cls.state)
         cls.w.baseline_if_first_start()
 
-    def tick_until(self, pred, n=40):
+    def tick_until(self, pred, n=120):
         for _ in range(n):
             self.w.tick()
             if pred():
@@ -205,7 +231,8 @@ class Pipeline(unittest.TestCase):
             self.assertEqual(a[a.index("--correlation") + 1], mid)
         cmd = facts()[2][1]
         self.assertEqual(cmd["data"]["target_agent_id"], "holocene-pm")
-        self.assertEqual(cmd["data"]["prompt"], "Summarize recent work.")
+        self.assertEqual(cmd["data"]["prompt"], iw.VOICE_PREFIX + "Summarize recent work.")
+        self.assertTrue(iw.VOICE_PREFIX)
         self.assertEqual(cmd["data"]["context"]["memo_id"], mid)
         self.assertEqual(cmd["data"]["thread_id"], mid)
         self.assertTrue(m["reply_key"].startswith("replies/") and m["reply_key"].endswith(f"-holocene-pm-{mid}.ogg"))
@@ -213,6 +240,9 @@ class Pipeline(unittest.TestCase):
         replied = facts()[-1][1]["data"]
         self.assertEqual(replied["reply_s3_key"], m["reply_key"])
         self.assertEqual(replied["tts_engine"], "fakevox")
+        self.assertIs(replied["prompt_match"], True)
+        # the reply key is deterministic per memo: a retried upload overwrites instead of duplicating
+        self.assertEqual(m["reply_key"].split("/")[-1].split("Z-", 1)[1], f"holocene-pm-{mid}.ogg")
 
     def test_03_agent_timeout_emits_failed_not_retryable(self):
         key = "inbox/holocene-pm/2026/10/15/timeout.ogg"
@@ -243,11 +273,14 @@ class Pipeline(unittest.TestCase):
         self.w.tick()  # outbox flushes once NATS is back
         self.assertEqual(self.state.data["outbox"], [])
 
-    def test_06_agent_in_unknown_path_is_skipped(self):
+    def test_06_agent_in_unknown_path_is_skipped_with_a_failed_fact(self):
         key = "inbox/stray.ogg"
         put(key)
+        n0 = len(facts())
         self.w.tick()
         self.assertEqual(self.state.memos[key]["status"], "skipped")
+        f = [r for t, r in facts()[n0:] if t == "bloodbank.audio.memo.failed"][-1]["data"]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("receive", "no_agent", False))
 
     def test_07_helpers(self):
         self.assertEqual(iw.parse_transcript("---\na: b\n---\n# T\n\nhello there\n"), "hello there")
@@ -267,6 +300,170 @@ class Pipeline(unittest.TestCase):
         with mock.patch.object(mc_, "mc", return_value=fake):
             keys = [o["key"] for o in mc_.s3_list_inbox()]
         self.assertEqual(keys, ["inbox/33god-pm/2026/10/15/a.ogg", "inbox/holocene-pm/2026/10/15/b.ogg"])
+
+    def test_09_unroutable_agent_fails_before_whisper(self):
+        for agent, frag in (("zz-nonexistent", "not in"), ("off-pm", "default-deny")):
+            key = f"inbox/{agent}/2026/10/15/x.ogg"
+            put(key)
+            self.tick_until(lambda: self.state.memos.get(key, {}).get("status") == "failed")
+            f = [r for t, r in facts() if t == "bloodbank.audio.memo.failed" and r["data"]["s3_key"] == key][-1]["data"]
+            self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("dispatch", "unknown_agent", False))
+            self.assertIn(frag, f["error_message"])
+            self.assertNotIn("transcript", self.state.memos[key])  # failed before transcription
+
+    def test_10_undecodable_and_tiny_audio_fail_fast_and_terminally(self):
+        for name, content, code in (("garbage", b"OggS GARBAGE", "undecodable_audio"), ("tiny", b"OggS TINY", "too_short")):
+            key = f"inbox/holocene-pm/2026/10/15/{name}.ogg"
+            put(key, content)
+            self.tick_until(lambda: self.state.memos.get(key, {}).get("status") == "failed")
+            f = [r for t, r in facts() if t == "bloodbank.audio.memo.failed" and r["data"]["s3_key"] == key][-1]["data"]
+            self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("transcribe", code, False))
+            self.assertEqual(self.state.memos[key]["attempts"]["transcribe"], 1)  # not retried
+
+    def test_11_whisper_hallucination_is_not_dispatched(self):
+        self.assertEqual(iw.junk_reason("Thank you.", 2.0)[0], "garbage_transcript")
+        self.assertEqual(iw.junk_reason(" . ", 2.0)[0], "empty_transcript")
+        self.assertIsNone(iw.junk_reason("Status", 2.0))
+        self.assertIsNone(iw.junk_reason("Thank you for the summary of the board", 2.0))
+
+    def test_12_transcribe_timeout_scales_with_audio_and_grows_after_a_timeout(self):
+        self.assertEqual(iw.transcribe_timeout(None, 0), iw.TRANSCRIBE_TIMEOUT_S)
+        self.assertGreaterEqual(iw.transcribe_timeout(120, 0), 60 + 8 * 120)  # a 2 minute memo is not killed at 420 s
+        self.assertGreater(iw.transcribe_timeout(120, 1), iw.transcribe_timeout(120, 0))
+        self.assertLessEqual(iw.transcribe_timeout(100000, 3), iw.TRANSCRIBE_MAX_S)
+
+    def test_13_slow_step_does_not_block_the_tick(self):
+        """A long transcription runs on a worker: tick() keeps returning, discovering and writing the heartbeat."""
+        import inbox_watcher as m_
+        key = "inbox/holocene-pm/2026/10/15/slow.ogg"
+        put(key)
+        gate = threading.Event()
+        orig = self.w._transcribe_work
+        self.w._transcribe_work = lambda *a, **k: (gate.wait(5), orig(*a, **k))[1]
+        try:
+            self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "transcribe" and key in self.w.running)
+            t0 = time.time()
+            for _ in range(5):
+                self.w.tick()
+            self.assertLess(time.time() - t0, 2.0)
+            hb = json.loads((Path(os.environ["MEMO_STATE_DIR"]) / "heartbeat.json").read_text())
+            self.assertTrue(any(a["key"] == key and a["running"] for a in hb["active"]))
+            put("inbox/holocene-pm/2026/10/15/slow2.ogg")  # discovered while the first one is still transcribing
+            self.tick_until(lambda: "inbox/holocene-pm/2026/10/15/slow2.ogg" in self.state.memos)
+        finally:
+            gate.set()
+            self.w._transcribe_work = orig
+        self.tick_until(lambda: self.state.memos[key]["stage"] != "transcribe")
+
+    def test_14_retry_budget_outlasts_a_short_nats_outage(self):
+        """dispatch retries on a time budget, not 3 attempts: the memo survives an outage and completes."""
+        key = "inbox/holocene-pm/2026/10/15/outage.ogg"
+        iw.RETRY_BUDGET_S = {k: 30.0 for k in iw.RETRY_BUDGET_S}
+        try:
+            put(key)
+            (ROOT / "bb-fail").write_text("x")
+            self.tick_until(lambda: self.state.memos.get(key, {}).get("attempts", {}).get("dispatch", 0) >= 4)
+            self.assertEqual(self.state.memos[key]["status"], "active")
+        finally:
+            (ROOT / "bb-fail").unlink()
+        self.tick_until(lambda: self.state.memos[key]["stage"] == "await_agent")
+        self.assertEqual(self.state.memos[key]["status"], "active")
+        iw.RETRY_BUDGET_S = {k: 0.4 for k in iw.RETRY_BUDGET_S}
+
+    def test_15_failed_memo_can_be_retried_and_late_agent_is_rescued(self):
+        key = "inbox/holocene-pm/2026/10/15/late.ogg"
+        put(key)
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("status") == "failed", n=300)
+        m = self.state.memos[key]
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "timeout"))
+        # the agent finishes after the deadline: the late rescue speaks the reply
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "Late but done.")
+        self.w.last_rescue = 0
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertTrue(m["late"])
+        # memo:retry: a control file revives a failed memo at its resume stage
+        k2 = "inbox/holocene-pm/2026/10/15/retryme.ogg"
+        put(k2, b"OggS TINY")
+        self.tick_until(lambda: self.state.memos.get(k2, {}).get("status") == "failed")
+        ctl = Path(os.environ["MEMO_STATE_DIR"]) / "control"
+        ctl.mkdir(exist_ok=True)
+        (ctl / f"retry-{self.state.memos[k2]['memo_id']}").write_text("")
+        self.w.tick()
+        self.assertEqual(self.state.memos[k2]["status"], "active")
+        self.assertEqual(self.state.memos[k2]["stage"], "transcribe")
+
+    def test_16_state_is_written_only_when_it_changes_and_corrupt_state_recovers(self):
+        d0 = ROOT / "idle-state"
+        idle = iw.State(d0)
+        idle.save()
+        m1 = (d0 / "state.json").stat().st_mtime_ns
+        time.sleep(0.02)
+        idle.save()
+        self.assertEqual((d0 / "state.json").stat().st_mtime_ns, m1)
+        idle.memos["k"] = {"status": "done"}
+        idle.save()
+        self.assertNotEqual((d0 / "state.json").stat().st_mtime_ns, m1)
+        d = ROOT / "corrupt-state"
+        d.mkdir(exist_ok=True)
+        (d / "state.json").write_text("{not json")
+        st = iw.State(d)
+        self.assertTrue(st.fresh)
+        self.assertTrue(list(d.glob("state.corrupt-*.json")))
+
+    def test_18_command_consumed_and_dropped_by_the_gateway_is_detected(self):
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/dropped.ogg"
+        put(key)
+        empty = {"ok": True, "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0}
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "await_agent")
+        m = self.state.memos[key]
+        m["dispatched_ts"] -= 100
+        m["deadline_ts"] += 1000
+        with mock.patch.object(mc_, "gateway_liveness", return_value=empty), \
+                mock.patch.object(mc_, "gateway_log_lines", return_value=["WARNING Terminally rejecting Bloodbank command: has no configured profile route"]):
+            self.w.tick()
+            self.assertEqual(m["status"], "active")  # first observation only starts the clock
+            m["dropped_since"] -= 30
+            self.w.tick()
+        self.assertEqual((m["status"], m["failed_stage"], m["failed_code"]), ("failed", "agent", "gateway_terminated"))
+        f = [r for t, r in facts() if t == "bloodbank.audio.memo.failed" and r["data"]["s3_key"] == key][-1]["data"]
+        self.assertIn("Terminally rejecting", f["error_message"])
+        self.assertIs(f["retryable"], False)
+
+    def test_19_deadline_is_extended_while_the_command_is_queued(self):
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/queued.ogg"
+        put(key)
+        busy = {"ok": True, "num_waiting": 0, "num_pending": 7, "num_ack_pending": 4}
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "await_agent")
+        m = self.state.memos[key]
+        m["deadline_ts"] = time.time() - 1
+        with mock.patch.object(mc_, "gateway_liveness", return_value=busy):
+            self.w.tick()
+        self.assertEqual(m["status"], "active")
+        self.assertGreater(m["deadline_ts"], time.time())
+
+    def test_17_pad_tiles_are_all_routable(self):
+        """A tile whose agent id is not a routable registry row would silently strand every memo for it."""
+        src = (Path(__file__).resolve().parents[2] / "apps/agent-pad/src/main.tsx").read_text()
+        ids = __import__("re").findall(r"\{ id: '([a-z0-9-]+)', name:", src)
+        self.assertGreaterEqual(len(ids), 5)
+        real = Path.home() / ".hermes/agents-registry.yaml"
+        if not real.exists():
+            self.skipTest("no live agent registry on this machine")
+        saved = mc_.REGISTRY_PATH
+        mc_.REGISTRY_PATH = real
+        try:
+            # REGISTRY_PATH is read at call time; the test registry above is swapped out for the real one
+            bad = {}
+            for a in ids:
+                r = mc_.registry_route(a)
+                if r["ok"] is False:
+                    bad[a] = r["reason"]
+            self.assertEqual(bad, {})
+        finally:
+            mc_.REGISTRY_PATH = saved
 
 
 if __name__ == "__main__":

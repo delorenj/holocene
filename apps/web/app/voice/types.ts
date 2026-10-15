@@ -50,5 +50,6 @@ export type MemoSummary = {
 export type MemoDetail = MemoSummary & { commandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[] };
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };
-export type MemosPayload = { generated_at: string; source: CollectionSource; memos: MemoSummary[] };
-export type MemoPayload = { generated_at: string; source: CollectionSource; memo: MemoDetail };
+export type WatcherStatus = { state: "running" | "stopped" | "unknown"; heartbeatAt?: string; ageSeconds?: number; active?: number; outbox?: number; detail: string };
+export type MemosPayload = { generated_at: string; source: CollectionSource; watcher?: WatcherStatus; memos: MemoSummary[] };
+export type MemoPayload = { generated_at: string; source: CollectionSource; watcher?: WatcherStatus; memo: MemoDetail };

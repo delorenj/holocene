@@ -92,7 +92,8 @@ Exit code is 0 only for COMPLETE.
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
 | reply_object | the TTS audio | `mc stat delo/holocene-auto/<reply_s3_key>` |
-| played | **not observable**: the pad only polls the bucket | open the pad |
+| device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |
+| played | the pad's beacon (`started`/`ended`/`blocked`/`error`/`skipped`) | `docker logs agent-pad-upload \| grep '"event":"playback"'`, `audio.memo.played` |
 
 Holocene itself (`https://holocene.delo.sh`) collects every `bloodbank.evt.>`
 envelope; the `audio.memo.*` facts and the gateway facts are in its event
@@ -126,12 +127,52 @@ Behaviour worth knowing:
   memo's correlationid and that `command_id`). The reply is read from the
   session whose `chat_id` is the memo's unique `thread_id`. Nothing looks at
   "latest row for profile" or file mtimes.
-- **Bounded retries.** Each stage retries up to `MEMO_MAX_ATTEMPTS` (3) with
-  exponential backoff, publishing `failed(retryable=true)` per failure and
-  `failed(retryable=false)` when it gives up. Waiting for the agent has a
-  deadline (`MEMO_AGENT_TIMEOUT_S`, default 600) after which it publishes
-  `failed(stage=agent_reply, retryable=false)` with the gateway queue state in
-  the message. A command that finishes after that deadline gets no spoken reply.
+- **Bounded retries.** Deterministic stages (transcribe, reply text) retry up
+  to `MEMO_MAX_ATTEMPTS` (3). Infrastructure stages (download 10 min, dispatch
+  15 min, tts and reply upload 30 min) retry on a **time budget** with capped
+  exponential backoff (`MEMO_RETRY_BUDGET_S` overrides all), so a minute of vox
+  or NATS trouble after the agent already ran cannot strand its work. Each
+  failure publishes `failed(retryable=true)`, the last `failed(retryable=false)`.
+- **`mise run memo:retry <memo_id>`** revives a failed or skipped memo at the
+  stage it died in (the watcher owns state.json, so the command drops a file in
+  `<state>/control/`). `memo_failed` log lines print the exact command.
+- **The agent deadline stretches while the command is verifiably queued or
+  running.** `MEMO_AGENT_TIMEOUT_S` (600) is extended one period at a time, up
+  to `MEMO_QUEUE_MAX_WAIT_S` (3600), while the consumer has commands ahead of
+  ours or the journal row says running (the gateway queue is shared FIFO with
+  batch jobs). If it still hits the deadline it fails
+  `agent_reply/timeout`, but keeps watching the command for
+  `MEMO_RESCUE_WINDOW_S` (2 h): when the agent finishes late the reply is
+  spoken anyway ("<agent>, late reply. ...").
+- **A command the gateway consumed and dropped is detected.** No journal row
+  while the consumer is empty (`pending=0 ack_pending=0`) for 15 s after 20 s
+  means it was rejected before starting (unroutable target): the memo fails
+  `agent/gateway_terminated` with the gateway's own WARNING line in the
+  message. Better still, the agent id is checked against
+  `~/.hermes/agents-registry.yaml` right after `received`, so an unknown or
+  disabled agent fails `dispatch/unknown_agent` in milliseconds, not after a
+  45 s transcription and a 10 minute wait.
+- **Nothing blocks the loop.** transcribe, dispatch and speak run on worker
+  threads (one transcription at a time); `tick()` keeps discovering, polling the
+  journal, flushing the outbox and writing `heartbeat.json` (which lists which
+  memo is running and for how long). The transcribe timeout is
+  `max(MEMO_TRANSCRIBE_TIMEOUT_S, 60 + 8 x audio seconds)` from `ffprobe`, and
+  grows after a timeout instead of repeating.
+- **Bad audio fails fast.** `ffprobe` rejects undecodable uploads
+  (`undecodable_audio`), recordings under 0.7 s (`too_short`), and Whisper's
+  noise hallucinations ("Thank you.", "you", ...) never become prompts
+  (`garbage_transcript`); all terminal. Skipped memos (no agent in the key, older
+  than 24 h) publish `failed(stage=receive, code=no_agent|too_old)`.
+- **The agent is told it is a transcript.** The prompt is
+  `MEMO_VOICE_PREFIX` + transcript. After the turn the watcher compares the
+  session's first user message with what it sent (`prompt_match` on the
+  `replied` fact, `hermes_session` hop in `memo:trace`).
+- **One reply object per memo.** The reply key is fixed on the first attempt,
+  so a retry overwrites instead of leaving a second file the pad would play.
+  The spoken reply starts with the agent's name.
+- **One watcher.** `<state>/lock` (flock): a second instance (for example
+  `--once --drain` run by hand while the service is up) exits with
+  `already_running`. A corrupt state.json is moved aside, not crash-looped.
 - **Facts never block the pipeline.** If NATS refuses a fact it is kept in the
   state file's outbox and re-published in order on later ticks.
 - **Transcripts stay out of the vault.** `transcribe --ephemeral` only skips S3
@@ -170,7 +211,11 @@ echo '{"memo_id":"...","s3_key":"...","target_agent_id":"holocene-pm","transcrip
 container (compose: `~/docker/stacks/websites/agent-pad/compose.yml`). It logs
 one JSON line per PUT, accepted or rejected, and publishes the `uploaded` fact
 over raw NATS to `host.docker.internal:4222` (compose maps it with
-`extra_hosts: host-gateway`). After editing it:
+`extra_hosts: host-gateway`). A PUT whose body is shorter than its
+Content-Length (a cell drop mid-upload) is rejected 400 `short_body` and
+published as `failed(stage=upload)`; an `.ogg` key must hold an `OggS` stream.
+`POST /upload/client-event` takes the device-side events from the pad (see the
+hop table). After editing it:
 
 ```bash
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
@@ -190,7 +235,11 @@ retryable=false)` with that queue state in the message.
 
 ## Known limits
 
-- No playback hop: the pad polls the bucket and reports nothing back.
+- Voice memos still share ONE FIFO gateway consumer with batch jobs (n8n
+  grooming commands). Mitigated (deadline extension, late rescue), not fixed: a
+  priority lane needs a second consumer in the Hermes gateway plugin.
+- Playback is reported by the page's audio element, not by capturing the
+  audible output; a car switched off mid-reply never reports `ended`.
 - The gateway publishes lifecycle facts only, not the reply text, so the
   watcher reads the reply from the Hermes profile `state.db`.
 - If the gateway's bloodbank platform is down, commands queue in JetStream and

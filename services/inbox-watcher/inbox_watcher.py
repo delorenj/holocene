@@ -27,6 +27,9 @@ Run: python3 inbox_watcher.py [--once] [--drain] [--poll 5]
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import fcntl
+import hashlib
 import json
 import os
 import re
@@ -35,6 +38,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -51,8 +55,23 @@ TRANSCRIBE_DIR = os.environ.get("TRANSCRIBE_DIR", str(Path.home() / "HeyMa"))
 VOICE = os.environ.get("MEMO_VOX_VOICE", "rick")
 
 AGENT_TIMEOUT_S = int(os.environ.get("MEMO_AGENT_TIMEOUT_S", "600"))
+# The agent deadline is extended (one AGENT_TIMEOUT_S at a time) while the command is verifiably
+# still queued or running, up to this total. The gateway queue is shared FIFO with batch jobs.
+QUEUE_MAX_WAIT_S = int(os.environ.get("MEMO_QUEUE_MAX_WAIT_S", "3600"))
+# A memo that timed out may still finish later; keep watching its command this long and speak the
+# reply late rather than lose work the agent already did.
+RESCUE_WINDOW_S = int(os.environ.get("MEMO_RESCUE_WINDOW_S", "7200"))
+# Floor for the transcribe timeout; the real timeout scales with the audio (see transcribe_timeout()).
 TRANSCRIBE_TIMEOUT_S = int(os.environ.get("MEMO_TRANSCRIBE_TIMEOUT_S", "420"))
+TRANSCRIBE_RATIO = float(os.environ.get("MEMO_TRANSCRIBE_RATIO", "8"))  # CPU large-v3 measured ~5x realtime
+TRANSCRIBE_MAX_S = int(os.environ.get("MEMO_TRANSCRIBE_MAX_S", "7200"))
 MAX_ATTEMPTS = int(os.environ.get("MEMO_MAX_ATTEMPTS", "3"))
+MIN_AUDIO_S = float(os.environ.get("MEMO_MIN_AUDIO_S", "0.7"))
+# Prepended to the transcript so the agent knows it is speech-to-text, not typed text.
+VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - speech-to-text, may contain recognition errors] ")
+# Whisper's usual output on noise or an accidental tap: never a real prompt.
+HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watching", "thank you for watching", "you", "bye",
+                  "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
 MAX_AGE_S = int(float(os.environ.get("MEMO_MAX_AGE_HOURS", "24")) * 3600)
 SPEAK_CHARS = int(os.environ.get("MEMO_SPEAK_CHARS", "500"))
 WAIT_LOG_EVERY_S = 30
@@ -60,6 +79,20 @@ AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "3"))
 
 # Retry backoff base seconds per failure stage (doubles each attempt, capped).
 BACKOFF = {"download": 10, "transcribe": 20, "dispatch": 10, "agent_reply": 5, "tts": 15, "reply_upload": 10}
+
+# Stages that fail for infrastructure reasons (S3, NATS, vox) retry on a TIME budget, not a count:
+# a minute of vox trouble after the agent already ran must not strand the work. Backoff is capped at 300 s.
+_budget = os.environ.get("MEMO_RETRY_BUDGET_S")
+RETRY_BUDGET_S = {"download": 600, "dispatch": 900, "tts": 1800, "reply_upload": 1800}
+if _budget is not None:
+    RETRY_BUDGET_S = {k: float(_budget) for k in RETRY_BUDGET_S}
+
+# Where a failed memo resumes when `memo:retry` (or the late rescue) revives it.
+RESUME_STAGE = {"receive": "receive", "download": "transcribe", "transcribe": "transcribe", "dispatch": "dispatch",
+                "agent": "dispatch", "agent_reply": "reply", "tts": "speak", "reply_upload": "speak"}
+FAIL_STAGE = {"receive": "receive", "transcribe": "transcribe", "dispatch": "dispatch", "await_agent": "agent",
+              "reply": "agent_reply", "speak": "tts"}
+SLOW_STAGES = {"transcribe": "transcribe", "dispatch": "io", "speak": "io"}  # run off the tick thread
 
 STOP = False
 
@@ -108,16 +141,35 @@ class State:
         self.heartbeat_path = directory / "heartbeat.json"
         self.data: dict = {"version": 1, "memos": {}, "outbox": []}
         self.fresh = not self.path.exists()
+        self._last = ""
         if not self.fresh:
-            self.data = json.loads(self.path.read_text())
+            try:
+                self.data = json.loads(self.path.read_text())
+            except (json.JSONDecodeError, OSError) as e:
+                # A corrupt state file used to crash-loop the unit every 5 s forever. Move it aside
+                # (outside the repo) and start fresh: existing inbox objects are baselined, not replayed.
+                aside = self.path.with_name(f"state.corrupt-{int(time.time())}.json")
+                try:
+                    os.replace(self.path, aside)
+                except OSError:
+                    pass
+                log("state_corrupt", "error", error=str(e)[:200], moved_to=str(aside),
+                    note="starting from an empty state; in-flight memos are not resumed")
+                self.data = {"version": 1, "memos": {}, "outbox": []}
+                self.fresh = True
             self.data.setdefault("memos", {})
             self.data.setdefault("outbox", [])
 
     def save(self) -> None:
+        """Write state.json only when it changed (it used to be rewritten, indented, every second)."""
+        body = json.dumps(self.data, separators=(",", ":"), default=str)
+        if body == self._last:
+            return
         self.dir.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=1, default=str))
+        tmp.write_text(body)
         os.replace(tmp, self.path)
+        self._last = body
 
     @property
     def memos(self) -> dict:
@@ -131,12 +183,51 @@ class State:
         os.replace(tmp, self.heartbeat_path)
 
 
+def compact(m: dict) -> None:
+    """A finished memo keeps previews, not full transcripts: state.json must not grow without bound."""
+    for k, n in (("transcript", 300), ("reply_text", 300), ("prompt", 300)):
+        if isinstance(m.get(k), str) and len(m[k]) > n:
+            m[k] = m[k][:n]
+
+
+def transcribe_timeout(audio_s: float | None, timeouts_so_far: int) -> int:
+    """Seconds allowed for one transcribe run: scales with the audio, grows after each timeout."""
+    if not audio_s:
+        base = TRANSCRIBE_TIMEOUT_S
+    else:
+        base = max(TRANSCRIBE_TIMEOUT_S, 60 + TRANSCRIBE_RATIO * audio_s)
+    return int(min(TRANSCRIBE_MAX_S, base * (1 + timeouts_so_far)))
+
+
+def junk_reason(text: str, audio_s: float | None) -> tuple[str, str] | None:
+    """(code, message) when a transcript is not a real prompt, else None."""
+    norm = re.sub(r"[^a-z0-9' ]+", " ", text.lower()).strip()
+    norm = re.sub(r"\s+", " ", norm)
+    if not norm:
+        return "empty_transcript", "transcript is empty (silence or unrecognised audio)"
+    if norm in HALLUCINATIONS:
+        return "garbage_transcript", f"transcript {text.strip()!r} is a typical Whisper hallucination on noise, not a prompt"
+    return None
+
+
 # ------------------------------------------------------------------ the watcher
 
 class Watcher:
     def __init__(self, state: State):
         self.s = state
         self.last_list_err = None
+        # One lock guards state. The tick thread holds it while it works; slow steps (whisper, vox,
+        # bb-emit) run on worker threads and take it only to read inputs and to apply results, so a
+        # 45 s (or 20 min) transcription no longer stops discovery, polling and the heartbeat.
+        self.mu = threading.RLock()
+        self.running: set[str] = set()
+        self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
+                      "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io")}
+        self.last_rescue = 0.0
+
+    def shutdown(self, wait: bool) -> None:
+        for p in self.pools.values():
+            p.shutdown(wait=wait, cancel_futures=not wait)
 
     # ---- facts -----------------------------------------------------------
 
@@ -219,17 +310,84 @@ class Watcher:
                  "uploaded_at": iso(o["last_modified"]), "detected_ts": time.time(),
                  "attempts": {}, "next_at": 0.0, "status": "active", "stage": "receive"}
             self.s.memos[key] = m
+            skip = None
             if agent is None:
-                m.update(status="skipped", stage="skipped")
-                log("skipped", "warn", memo_id=mid, key=key, stage="receive", reason="no agent id in key path")
+                skip = ("no_agent", "no agent id in key path (expected inbox/<agent>/<yyyy>/<mm>/<dd>/<file>)")
             elif age > MAX_AGE_S:
-                m.update(status="skipped", stage="skipped")
-                log("skipped", "warn", memo_id=mid, key=key, agent=agent, stage="receive",
-                    reason=f"older than {MAX_AGE_S // 3600}h ({int(age)}s)")
+                skip = ("too_old", f"older than {MAX_AGE_S // 3600}h ({int(age)}s) when first seen; `memo:retry` re-runs it")
+            if skip:
+                m.update(status="skipped", stage="skipped", failed_stage="receive", failed_code=skip[0])
+                log("skipped", "warn", memo_id=mid, key=key, agent=agent, stage="receive", reason=skip[1])
+                # A skipped memo used to leave only a log line: /voice showed "uploaded" and the trace "STOPPED".
+                self.fact("failed", m, {"stage": "receive", "error_code": skip[0], "error_message": skip[1],
+                                        "retryable": False, "attempt": 1})
             else:
                 log("discovered", memo_id=mid, key=key, agent=agent, stage="receive", bytes=o["size"],
                     age_s=round(age, 1))
             self.s.save()
+
+    # ---- control + rescue ------------------------------------------------
+
+    def revive(self, m: dict, stage: str, why: str) -> None:
+        failed = m.get("failed_stage")
+        if stage == "dispatch" and failed == "agent":
+            m.pop("command_id", None)       # the old command was rejected or failed: send a fresh one
+            m.pop("publish_attempted", None)
+        if stage == "await_agent":
+            m["deadline_ts"] = time.time() + AGENT_TIMEOUT_S
+        if failed:
+            m["attempts"].pop(failed, None)
+            m.get("first_fail", {}).pop(failed, None)
+        for k in ("failed_stage", "failed_code", "resume_stage"):
+            m.pop(k, None)
+        m.update(status="active", stage=stage, next_at=0.0)
+        log("memo_revived", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage, why=why)
+        self.s.save()
+
+    def process_control(self) -> None:
+        """`memo:retry <memo>` drops a file here; the watcher owns state.json, so it does the reset."""
+        cdir = STATE_DIR / "control"
+        if not cdir.is_dir():
+            return
+        for f in sorted(cdir.glob("retry-*")):
+            mid = f.name[len("retry-"):]
+            m = next((x for x in self.s.memos.values() if x["memo_id"] == mid), None)
+            try:
+                f.unlink()
+            except OSError:
+                pass
+            if m is None:
+                log("retry_refused", "warn", memo_id=mid, reason="unknown memo")
+            elif m["key"] in self.running or m.get("status") == "active":
+                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo is {m.get('status')} at {m.get('stage')}, not failed")
+            elif m.get("status") not in ("failed", "skipped"):
+                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo status is {m.get('status')}")
+            elif m.get("agent") is None:
+                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="no agent in the key path")
+            else:
+                self.revive(m, m.get("resume_stage") or "receive", "memo:retry")
+
+    def rescue_late(self) -> None:
+        """A memo that hit the agent deadline may still complete (the command stayed queued). Speak it late."""
+        if time.time() - self.last_rescue < 20:
+            return
+        self.last_rescue = time.time()
+        for m in list(self.s.memos.values()):
+            if (m.get("status") != "failed" or m.get("failed_stage") != "agent_reply" or m.get("failed_code") != "timeout"
+                    or not m.get("command_id") or m.get("rescue_closed") or m["key"] in self.running):
+                continue
+            if time.time() - m.get("dispatched_ts", 0) > RESCUE_WINDOW_S:
+                m["rescue_closed"] = True
+                continue
+            st = self.agent_status(m)
+            if st["state"] == "done":
+                m["profile"] = st.get("profile") or m["agent"]
+                m["late"] = True
+                log("late_rescued", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], command_id=m["command_id"],
+                    waited_s=int(time.time() - m["dispatched_ts"]), note="agent finished after the deadline; replying late")
+                self.revive(m, "reply", "late completion")
+            elif st["state"] == "failed":
+                m["rescue_closed"] = True
 
     # ---- step machinery --------------------------------------------------
 
@@ -238,24 +396,42 @@ class Watcher:
                       key=lambda m: m["key"])
 
     def tick(self, discover: bool = True) -> None:
-        self.flush_outbox()
-        if discover:
-            self.discover()
-        for m in self.active():
-            if STOP:
-                break
-            if m.get("next_at", 0) > time.time():
-                continue
-            self.advance(m)
-        self.s.save()
-        counts: dict[str, int] = {}
-        for m in self.s.memos.values():
-            counts[m["status"]] = counts.get(m["status"], 0) + 1
-        self.s.heartbeat({"memos": counts, "outbox": len(self.s.data["outbox"]),
-                          "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"]} for m in self.active()]})
+        with self.mu:
+            self.flush_outbox()
+            self.process_control()
+            if discover:
+                self.discover()
+            self.rescue_late()
+            for m in self.active():
+                if STOP:
+                    break
+                if m.get("next_at", 0) > time.time():
+                    continue
+                self.advance(m)
+            self.s.save()
+            counts: dict[str, int] = {}
+            for m in self.s.memos.values():
+                counts[m["status"]] = counts.get(m["status"], 0) + 1
+            self.s.heartbeat({
+                "memos": counts, "outbox": len(self.s.data["outbox"]),
+                "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
+                            "running": m["key"] in self.running,
+                            "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
+                           for m in self.active()]})
 
     def advance(self, m: dict) -> None:
         stage = m["stage"]
+        pool = SLOW_STAGES.get(stage)
+        if pool:
+            if m["key"] in self.running:
+                return
+            self.running.add(m["key"])
+            m["step_started_ts"] = time.time()
+            self.pools[pool].submit(self._exec, m, stage)
+            return
+        self._exec(m, stage)
+
+    def _exec(self, m: dict, stage: str) -> None:
         step = {"receive": self.step_receive, "transcribe": self.step_transcribe,
                 "dispatch": self.step_dispatch, "await_agent": self.step_await_agent,
                 "reply": self.step_reply, "speak": self.step_speak}[stage]
@@ -263,18 +439,25 @@ class Watcher:
         try:
             step(m)
         except StageError as e:
-            self.on_error(m, e)
+            with self.mu:
+                self.on_error(m, e)
         except Exception as e:  # noqa: BLE001
-            fail_stage = {"receive": "receive", "transcribe": "transcribe", "dispatch": "dispatch",
-                          "await_agent": "agent", "reply": "agent_reply", "speak": "tts"}[stage]
-            self.on_error(m, StageError(fail_stage, "unexpected", f"{type(e).__name__}: {e}", True))
+            with self.mu:
+                self.on_error(m, StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True))
         finally:
-            m["last_step_ms"] = int((time.time() - t0) * 1000)
-            self.s.save()
+            with self.mu:
+                m["last_step_ms"] = int((time.time() - t0) * 1000)
+                m.pop("step_started_ts", None)
+                self.running.discard(m["key"])
+                self.s.save()
 
     def on_error(self, m: dict, e: StageError) -> None:
         n = m["attempts"][e.stage] = m["attempts"].get(e.stage, 0) + 1
-        retry = e.retryable and n < MAX_ATTEMPTS
+        if e.retryable and e.stage in RETRY_BUDGET_S:
+            first = m.setdefault("first_fail", {}).setdefault(e.stage, time.time())
+            retry = (time.time() - first) < RETRY_BUDGET_S[e.stage]
+        else:
+            retry = e.retryable and n < MAX_ATTEMPTS
         data = {"stage": e.stage, "error_code": e.code, "error_message": e.message[:800],
                 "retryable": retry, "attempt": n}
         if m.get("command_id"):
@@ -288,8 +471,13 @@ class Watcher:
         else:
             m["status"] = "failed"
             m["failed_stage"] = e.stage
+            m["failed_code"] = e.code
+            m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
+                                 else RESUME_STAGE.get(e.stage, "receive"))
+            compact(m)
             log("memo_failed", "error", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
-                code=e.code, error=e.message[:300], attempt=n)
+                code=e.code, error=e.message[:300], attempt=n,
+                retry_with=f"mise run memo:retry {m['memo_id']}")
 
     def done_stage(self, m: dict, stage: str, nxt: str, ms: float | None = None, **extra) -> None:
         log("stage_done", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
@@ -310,30 +498,63 @@ class Watcher:
                                   "uploaded_at": m.get("uploaded_at"), "detected_at": iso(det),
                                   "detect_lag_ms": lag})
         m["received_ts"] = time.time()
+        # Fail in 1 ms, not after 45 s of Whisper and a 10 minute wait: the gateway consumes a command
+        # for an unroutable agent and drops it without a journal row or a fact.
+        route = mc_.registry_route(m["agent"])
+        if route["ok"] is False:
+            raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
+        m["display_name"] = mc_.spoken_name(m["agent"], route)
         self.done_stage(m, "received", "transcribe", size=m.get("size"), detect_lag_ms=lag)
 
+    # -- transcribe (worker thread) --
+
     def step_transcribe(self, m: dict) -> None:
+        with self.mu:
+            key, mid, agent, timeouts = m["key"], m["memo_id"], m["agent"], m.get("timeouts", 0)
+        try:
+            work = self._transcribe_work(key, mid, agent, timeouts)
+        except StageError as e:
+            if e.code == "timeout":
+                with self.mu:
+                    m["timeouts"] = m.get("timeouts", 0) + 1
+            raise
+        with self.mu:
+            self._transcribe_apply(m, work)
+
+    def _transcribe_work(self, key: str, mid: str, agent: str, timeouts: int) -> dict:
         tmp = Path(tempfile.mkdtemp(prefix="memo-"))
         try:
-            audio = tmp / Path(m["key"]).name
+            audio = tmp / Path(key).name
             t0 = time.time()
-            r = mc_.mc("cp", "--quiet", mc_.s3_url(m["key"]), str(audio), timeout=90)
+            r = mc_.mc("cp", "--quiet", mc_.s3_url(key), str(audio), timeout=90)
             if r.returncode != 0 or not audio.exists():
                 raise StageError("download", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
-            log("stage_done", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="download",
+            log("stage_done", memo_id=mid, key=key, agent=agent, stage="download",
                 ms=int((time.time() - t0) * 1000), bytes=audio.stat().st_size)
+
+            # Fail fast on audio nothing can decode, and size the timeout from the real duration.
+            probe = mc_.probe_audio(audio)
+            if probe["ok"] is False:
+                raise StageError("transcribe", "undecodable_audio", f"ffprobe cannot read the upload: {probe['error']}", retryable=False)
+            audio_s = probe["duration"]
+            if probe["ok"] and audio_s is not None and audio_s < MIN_AUDIO_S:
+                raise StageError("transcribe", "too_short", f"recording is {audio_s:.2f}s (< {MIN_AUDIO_S}s): an accidental tap, not a prompt",
+                                 retryable=False)
+            timeout = transcribe_timeout(audio_s, timeouts)
 
             out_md = tmp / (audio.stem + ".md")
             tlog = tmp / "transcribe.log"
             env = {**os.environ, "TRANSCRIBE_DIR": TRANSCRIBE_DIR, "TRANSCRIBE_LOG_FILE": str(tlog)}
             # --output keeps the transcript out of ~/d/Transcripts (--ephemeral only skips S3 archiving)
             cmd = [TRANSCRIBE, str(audio), "--no-diarization", "--ephemeral", "--output", str(out_md)]
-            log("transcribe_start", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="transcribe")
+            log("transcribe_start", memo_id=mid, key=key, agent=agent, stage="transcribe",
+                audio_s=audio_s, timeout_s=timeout)
             t1 = time.time()
             try:
-                r = run(cmd, TRANSCRIBE_TIMEOUT_S, env=env)
+                r = run(cmd, timeout, env=env)
             except subprocess.TimeoutExpired:
-                raise StageError("transcribe", "timeout", f"transcribe exceeded {TRANSCRIBE_TIMEOUT_S}s") from None
+                raise StageError("transcribe", "timeout",
+                                 f"transcribe exceeded {timeout}s for {audio_s}s of audio") from None
             took = time.time() - t1
             if r.returncode != 0:
                 raise StageError("transcribe", f"rc_{r.returncode}", f"transcribe failed: {r.stderr.strip()[-400:]}")
@@ -350,58 +571,72 @@ class Watcher:
                         meta = json.loads(line.split(":", 1)[1].strip())
                     except json.JSONDecodeError:
                         pass
-            if not text.strip():
-                raise StageError("transcribe", "empty_transcript",
-                                 "transcript is empty (silence or unrecognised audio)", retryable=False)
-            m["transcript"] = text[:20000]
-            self.fact("transcribed", m, {
-                "transcript_text": m["transcript"], "transcript_chars": len(text),
-                "word_count": meta.get("word_count") or len(text.split()),
-                "audio_duration_seconds": meta.get("duration_seconds"),
-                "processing_seconds": round(took, 2), "model": meta.get("model"),
-                "backend": meta.get("backend"), "language": meta.get("language")})
-            self.done_stage(m, "transcribed", "dispatch", ms=took * 1000, chars=len(text),
-                            audio_s=meta.get("duration_seconds"), model=meta.get("model"),
-                            text=text[:120])
+            junk = junk_reason(text, meta.get("duration_seconds") or audio_s)
+            if junk:
+                raise StageError("transcribe", junk[0], junk[1], retryable=False)
+            return {"text": text, "meta": meta, "took": took, "audio_s": audio_s}
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def _transcribe_apply(self, m: dict, w: dict) -> None:
+        text, meta, took = w["text"], w["meta"], w["took"]
+        m["transcript"] = text[:20000]
+        m["prompt"] = build_prompt(m["transcript"])
+        self.fact("transcribed", m, {
+            "transcript_text": m["transcript"], "transcript_chars": len(text),
+            "word_count": meta.get("word_count") or len(text.split()),
+            "audio_duration_seconds": meta.get("duration_seconds") or w["audio_s"],
+            "processing_seconds": round(took, 2), "model": meta.get("model"),
+            "backend": meta.get("backend"), "language": meta.get("language")})
+        self.done_stage(m, "transcribed", "dispatch", ms=took * 1000, chars=len(text),
+                        audio_s=meta.get("duration_seconds") or w["audio_s"], model=meta.get("model"),
+                        text=text[:120])
+
+    # -- dispatch (worker thread) --
+
     def step_dispatch(self, m: dict) -> None:
         import uuid
-        m.setdefault("command_id", str(uuid.uuid4()))
-        cid = m["command_id"]
-        # A crash between publish and bookkeeping must not double-dispatch: if the
-        # gateway already journaled this command id, it is dispatched.
-        if m.get("publish_attempted"):
-            try:
-                if mc_.journal_row(cid):
-                    log("dispatch_recovered", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
-                        stage="dispatch", command_id=cid, note="journal already has this command")
-                    return self._mark_dispatched(m, cid, None, 0)
-            except Exception:  # noqa: BLE001
-                pass
-        m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
-        data = {
-            "target_agent_id": m["agent"], "prompt": m["transcript"], "thread_id": m["thread_id"],
-            "turn_id": None,
-            "context": {"memo_id": m["memo_id"], "memo_key": m["key"],
-                        "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"},
-        }
+        with self.mu:
+            m.setdefault("command_id", str(uuid.uuid4()))
+            cid = m["command_id"]
+            # A crash between publish and bookkeeping must not double-dispatch: if the
+            # gateway already journaled this command id, it is dispatched.
+            if m.get("publish_attempted"):
+                try:
+                    if mc_.journal_row(cid):
+                        log("dispatch_recovered", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
+                            stage="dispatch", command_id=cid, note="journal already has this command")
+                        return self._mark_dispatched(m, cid, None, 0)
+                except Exception:  # noqa: BLE001
+                    pass
+            route = mc_.registry_route(m["agent"])
+            if route["ok"] is False:
+                raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
+            m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
+            m.setdefault("prompt", build_prompt(m["transcript"]))
+            prompt = m["prompt"]
+            data = {
+                "target_agent_id": m["agent"], "prompt": prompt, "thread_id": m["thread_id"],
+                "turn_id": None,
+                "context": {"memo_id": m["memo_id"], "memo_key": m["key"],
+                            "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"},
+            }
+            cmd = [BB_EMIT, "--strict", "--print-ids", "--kind", "command",
+                   "--type", "bloodbank.cmd.agent.invocation.start",
+                   "--source", f"urn:33god:service:{SERVICE}", "--producer", SERVICE, "--service", SERVICE,
+                   "--actor-type", "service", "--actor-id", SERVICE,
+                   "--correlation", m["memo_id"], "--command-id", cid,
+                   "--ordering-key", f"turn:{m['thread_id']}"]
+            if m.get("last_fact_id"):
+                cmd += ["--causation", m["last_fact_id"]]
+            m["publish_attempted"] = True
+            self.s.save()
+            memo_id, key, agent = m["memo_id"], m["key"], m["agent"]
         live = mc_.gateway_liveness()
         if live.get("ok") is False:
-            log("gateway_not_pulling", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
+            log("gateway_not_pulling", "warn", memo_id=memo_id, key=key, agent=agent,
                 stage="dispatch", detail=mc_.gateway_liveness_text(live),
                 note="command will queue in JetStream until the gateway resumes")
-        cmd = [BB_EMIT, "--strict", "--print-ids", "--kind", "command",
-               "--type", "bloodbank.cmd.agent.invocation.start",
-               "--source", f"urn:33god:service:{SERVICE}", "--producer", SERVICE, "--service", SERVICE,
-               "--actor-type", "service", "--actor-id", SERVICE,
-               "--correlation", m["memo_id"], "--command-id", cid,
-               "--ordering-key", f"turn:{m['thread_id']}"]
-        if m.get("last_fact_id"):
-            cmd += ["--causation", m["last_fact_id"]]
-        m["publish_attempted"] = True
-        self.s.save()
         t0 = time.time()
         r = run(cmd, 30, stdin=json.dumps(data))
         ms = (time.time() - t0) * 1000
@@ -411,19 +646,25 @@ class Watcher:
             ids = json.loads(r.stdout.strip().splitlines()[-1])
         except (json.JSONDecodeError, IndexError):
             ids = {}
-        self._mark_dispatched(m, cid, ids, ms, prompt_chars=len(m["transcript"]))
+        with self.mu:
+            self._mark_dispatched(m, cid, ids, ms, prompt_chars=len(prompt))
 
     def _mark_dispatched(self, m: dict, cid: str, ids: dict | None, ms: float, prompt_chars: int | None = None) -> None:
         ids = ids or {}
+        prompt = m.get("prompt") or m.get("transcript", "")
         m["command_envelope_id"] = ids.get("id")
         m["dispatched_ts"] = time.time()
         m["deadline_ts"] = m["dispatched_ts"] + AGENT_TIMEOUT_S
+        m.pop("dropped_since", None)
         self.fact("dispatched", m, {
             "command_id": cid, "idempotency_key": ids.get("idempotency_key"),
             "command_subject": ids.get("subject") or "bloodbank.cmd.agent.invocation.start",
-            "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(m.get("transcript", "")),
-            "dispatch_ms": int(ms)})
+            "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(prompt),
+            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms)})
         self.done_stage(m, "dispatched", "await_agent", ms=ms, command_id=cid, target=m["agent"])
+
+    # -- waiting for the agent (tick thread: cheap reads) --
 
     def agent_status(self, m: dict) -> dict:
         """{state: pending|running|done|failed, source, detail, profile}. Correlated by command id / correlationid."""
@@ -474,16 +715,48 @@ class Watcher:
                                    source=st["source"], profile=m["profile"])
         if st["state"] == "failed":
             raise StageError("agent", st.get("code", "agent_failed"), f"{st['detail']} (via {st['source']})", retryable=False)
+
+        live = None
+        if st["state"] == "pending" and "journal_error" not in st:
+            # The gateway consumed the command but wrote no execution row and the consumer is empty:
+            # it was terminally rejected (unroutable target, bad envelope). Its only trace is a gateway
+            # WARNING, so go and fetch it instead of waiting out the deadline.
+            live = mc_.gateway_liveness()
+            empty = live.get("ok") is not None and not live.get("error") and not (live.get("num_pending") or 0) \
+                and not (live.get("num_ack_pending") or 0)
+            if empty and waited >= 20:
+                since = m.setdefault("dropped_since", time.time())
+                if time.time() - since >= 15:
+                    why = mc_.gateway_log_lines([m["command_id"], m["agent"]])
+                    raise StageError("agent", "gateway_terminated",
+                                     f"gateway consumed command {m['command_id']} without a journal row and the consumer is empty "
+                                     f"(pending=0 ack_pending=0): it was rejected before starting. "
+                                     f"gateway log: {why[-1] if why else 'no matching line in ' + mc_.GATEWAY_UNIT}",
+                                     retryable=False)
+            else:
+                m.pop("dropped_since", None)
+
         if time.time() >= m["deadline_ts"]:
-            live = mc_.gateway_liveness_text()
+            if waited < QUEUE_MAX_WAIT_S:
+                live = live or mc_.gateway_liveness()
+                ahead = (live.get("num_pending") or 0) + (live.get("num_ack_pending") or 0)
+                if st["state"] == "running" or (st["state"] == "pending" and live.get("ok") and ahead > 0):
+                    m["deadline_ts"] = min(time.time() + AGENT_TIMEOUT_S, m["dispatched_ts"] + QUEUE_MAX_WAIT_S)
+                    log("deadline_extended", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
+                        command_id=m["command_id"], waited_s=int(waited), state=st["state"], detail=st["detail"],
+                        gateway=mc_.gateway_liveness_text(live),
+                        note="command is still queued or running; extending instead of failing")
+                    m["next_at"] = time.time() + AWAIT_POLL_S
+                    return
+            live_text = mc_.gateway_liveness_text(live)
             raise StageError("agent_reply", "timeout",
                              f"no completed turn after {int(waited)}s for command {m['command_id']} "
-                             f"({st['detail']}); gateway: {live}", retryable=False)
+                             f"({st['detail']}); gateway: {live_text}", retryable=False)
         if time.time() - m.get("last_wait_log", 0) >= WAIT_LOG_EVERY_S:
             m["last_wait_log"] = time.time()
             extra = {}
             if st["state"] == "pending":
-                extra["gateway"] = mc_.gateway_liveness_text()
+                extra["gateway"] = mc_.gateway_liveness_text(live)
             log("agent_waiting", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
                 command_id=m["command_id"], waited_s=int(waited), left_s=int(m["deadline_ts"] - time.time()),
                 detail=st["detail"], **extra)
@@ -498,22 +771,38 @@ class Watcher:
                              f" ({'no session' if not found else 'session ' + found['session_id'] + ' has no assistant text'})")
         m["reply_text"] = found["text"][:20000]
         m["session_id"] = found["session_id"]
+        # Prove the agent was given exactly what we sent.
+        sent = (m.get("prompt") or m.get("transcript") or "").strip()
+        got = (found.get("prompt") or "").strip()
+        m["prompt_match"] = (got == sent) if got else None
+        if m["prompt_match"] is False:
+            log("prompt_mismatch", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
+                sent_chars=len(sent), agent_saw_chars=len(got), sent=sent[:80], agent_saw=got[:80])
         self.done_stage(m, "reply_text", "speak", ms=(time.time() - t0) * 1000, chars=len(found["text"]),
-                        session=found["session_id"], preview=found["text"][:120])
+                        session=found["session_id"], preview=found["text"][:120], prompt_match=m["prompt_match"])
+
+    # -- speak (worker thread) --
 
     def step_speak(self, m: dict) -> None:
-        spoken = clean_for_speech(m["reply_text"], SPEAK_CHARS)
-        if not spoken:
+        with self.mu:
+            reply_text, agent, mid, key = m["reply_text"], m["agent"], m["memo_id"], m["key"]
+            late = bool(m.get("late"))
+            name = m.get("display_name") or mc_.spoken_name(agent)
+            # One reply key per memo: a retry after a half-finished upload overwrites instead of
+            # leaving a second object that the pad would play as a second reply.
+            stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
+        body = clean_for_speech(reply_text, SPEAK_CHARS)
+        if not body:
             raise StageError("tts", "nothing_to_speak", "reply has no speakable text after cleaning", retryable=False)
+        spoken = f"{name}, late reply. {body}" if late else f"{name}. {body}"
         tmp = Path(tempfile.mkdtemp(prefix="memo-tts-"))
         try:
             t0 = time.time()
             audio, engine = synthesize(spoken, tmp)
             tts_s = time.time() - t0
-            log("stage_done", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="tts",
+            log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken))
-            stamp = now_utc()
-            rkey = (f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{m['agent']}-{m['memo_id']}.ogg")
+            rkey = f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}.ogg"
             t1 = time.time()
             r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
             if r.returncode != 0:
@@ -521,6 +810,9 @@ class Watcher:
             stat = mc_.s3_stat(rkey)
             if not stat:
                 raise StageError("reply_upload", "not_visible", f"uploaded {rkey} but mc stat cannot see it")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        with self.mu:
             m["reply_key"] = rkey
             journey = time.time() - m.get("received_ts", m.get("detected_ts", time.time()))
             self.fact("replied", m, {
@@ -528,15 +820,19 @@ class Watcher:
                 "spoken_chars": len(spoken), "command_id": m.get("command_id"), "profile": m.get("profile"),
                 "session_id": m.get("session_id"), "agent_seconds": m.get("agent_seconds"),
                 "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": VOICE,
-                "audio_bytes": stat["size"], "journey_seconds": round(journey, 2)})
+                "audio_bytes": stat["size"], "journey_seconds": round(journey, 2),
+                "prompt_match": m.get("prompt_match"), "late": late})
             m["status"] = "done"
+            compact(m)
             self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
                             journey_s=round(journey, 1))
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ------------------------------------------------------------------ text + tts helpers
+
+def build_prompt(transcript: str) -> str:
+    return f"{VOICE_PREFIX}{transcript}"
+
 
 def parse_transcript(md: str) -> str:
     """Strip HeyMa frontmatter/headers; keep the spoken content."""
@@ -604,6 +900,18 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
+    # One watcher per state dir: two processes would dispatch the same memo twice (different command ids).
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    lock = open(STATE_DIR / "lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log("already_running", "error", state_dir=str(STATE_DIR),
+            note="another watcher holds the lock (holocene-inbox-watcher.service?); stop it first or use `mise run memo:trace`")
+        return 3
+    lock.write(str(os.getpid()))
+    lock.flush()
+
     state = State(STATE_DIR)
     w = Watcher(state)
     log("starting", poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
@@ -633,6 +941,7 @@ def main() -> int:
         if args.once and not (args.drain and w.active() and time.time() < deadline):
             break
         time.sleep(1)
+    w.shutdown(wait=args.once)
     log("stopped")
     return 0
 

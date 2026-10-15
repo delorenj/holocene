@@ -20,6 +20,14 @@ Last hop (playback on the device): the Agent Pad POSTs a tiny beacon to
 The proxy logs it and publishes bloodbank.audio.memo.played (phase started|ended)
 or bloodbank.audio.memo.failed (stage playback, retryable). The memo id is parsed
 from the reply key replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg.
+
+First hop (on the device, before any bytes reach us): the pad POSTs /upload/client-event for the
+things only it can see: record started/stopped (bytes, duration), recording failed (mic, empty
+capture), upload failed after retries. The proxy logs each one (event "client"); the failures also
+publish bloodbank.audio.memo.failed (stage record | upload) keyed by the key the memo WOULD have had,
+so a memo that never reached S3 still has a memo_id and a place in memo:trace and /voice.
+A PUT whose body is shorter than its Content-Length (cell drop mid-upload) is rejected 400 and
+published as failed(stage upload) instead of being stored as a complete memo.
 """
 import re
 
@@ -106,7 +114,7 @@ def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: 
 
 REPLY_KEY_RE = re.compile(
     r"^replies/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})(\d{2})Z-(?P<agent>.+)-(?P<memo>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(ogg|webm|m4a|mp3)$")
-PHASES = ("started", "ended", "blocked", "error")
+PHASES = ("started", "ended", "blocked", "error", "skipped")
 
 
 def parse_reply_key(key: str):
@@ -150,11 +158,47 @@ def build_playback_envelope(beacon: dict, user_agent: str):
             "target_agent_id": agent, "reply_s3_key": key, "phase": phase,
             "played_seconds": round(float(secs), 2) if isinstance(secs, (int, float)) and secs >= 0 else None,
             "client_user_agent": user_agent[:200], "reply_age_ms": age_ms if age_ms is None or age_ms >= 0 else 0})
-    code = "autoplay_blocked" if phase == "blocked" else "playback_error"
+    code = {"blocked": "autoplay_blocked", "skipped": "not_played"}.get(phase, "playback_error")
+    default_msg = {"blocked": "sound is locked: tap the pad once",
+                   "skipped": "the pad chose not to play this reply"}.get(phase, "audio element error")
     return _envelope("failed", memo_id, {
         "target_agent_id": agent, "s3_key": key, "reply_s3_key": key, "stage": "playback", "error_code": code,
-        "error_message": str(beacon.get("error") or ("sound is locked: tap the pad once" if phase == "blocked" else "audio element error"))[:300],
+        "error_message": str(beacon.get("error") or default_msg)[:300],
         "retryable": True, "attempt": 1, "client_user_agent": user_agent[:200]})
+
+
+CLIENT_EVENTS = ("record_started", "record_stopped", "record_failed", "upload_failed", "upload_recovered")
+KEY_RE = re.compile(r"^inbox/[^/]+/\d{4}/\d{2}/\d{2}/[^/]+\.(ogg|webm|m4a|mp3|wav|opus|mp4)$")
+
+
+def build_client_envelope(ev: dict, user_agent: str):
+    """failed(stage record|upload) for a device-side failure, or None for log-only events / bad input."""
+    key = ev.get("key")
+    kind = ev.get("event")
+    if not isinstance(key, str) or not KEY_RE.match(key) or kind not in ("record_failed", "upload_failed"):
+        return None
+    stage = "record" if kind == "record_failed" else "upload"
+    attempts = ev.get("attempts")
+    return _envelope("failed", memo_id_for(key), {
+        "target_agent_id": agent_from_key(key), "s3_key": key, "stage": stage,
+        "error_code": str(ev.get("code") or kind)[:60], "error_message": str(ev.get("error") or kind)[:300],
+        "retryable": bool(ev.get("retryable", kind == "upload_failed")),
+        "attempt": attempts if isinstance(attempts, int) and attempts >= 1 else 1,
+        "client_user_agent": user_agent[:200], "source": "agent-pad"})
+
+
+def publish_async(env: dict, key: str) -> None:
+    if not EMIT_FACTS:
+        return
+
+    def work():
+        try:
+            nats_publish(env["subject"], json.dumps(env, separators=(",", ":")).encode())
+            log("fact_published", key=key, memo_id=env["correlationid"], fact=f"audio.memo.{env['type'].rsplit('.', 1)[1]}",
+                fact_id=env["id"])
+        except Exception as e:  # noqa: BLE001 - fail open
+            log("fact_failed", key=key, memo_id=env["correlationid"], error=str(e)[:200], nats=f"{NATS_HOST}:{NATS_PORT}")
+    threading.Thread(target=work, daemon=True).start()
 
 
 def nats_publish(subject: str, body: bytes, timeout: float = 3.0) -> None:
@@ -216,6 +260,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(content_length)
         content_type = self.headers.get("Content-Type", "application/octet-stream")
         ua = self.headers.get("User-Agent", "")
+        if len(body) != content_length:
+            # The client went away mid-body (a cell drop in the car). Storing the prefix would hand the
+            # watcher a cut-off recording and dispatch half a sentence to an agent as a real prompt.
+            log("upload", key=key, memo_id=memo_id_for(key), agent=agent_from_key(key), status=400, reason="short_body",
+                bytes=len(body), content_length=content_length, ms=int((time.time() - t0) * 1000),
+                remote=self.client_address[0], ua=ua)
+            if key.startswith("inbox/") and agent_from_key(key):
+                publish_async(_envelope("failed", memo_id_for(key), {
+                    "target_agent_id": agent_from_key(key), "s3_key": key, "stage": "upload", "error_code": "short_body",
+                    "error_message": f"connection ended after {len(body)} of {content_length} bytes; nothing was stored",
+                    "retryable": True, "attempt": 1, "client_user_agent": ua[:200]}), key)
+            try:
+                self.send_error(400, "short body")
+            except OSError:
+                pass
+            return
+        if key.endswith(".ogg") and not body.startswith(b"OggS"):
+            return self._reject(400, "not_ogg", key=key, bytes=len(body))
 
         # Write to temp file, then mc cp
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(key).suffix) as f:
@@ -244,8 +306,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             os.unlink(tmp_path)
 
+    def _client_event(self):
+        """Device-side event: POST /upload/client-event {event, key, error?, code?, bytes?, duration_ms?, attempts?, retryable?}."""
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            ev = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+            if not isinstance(ev, dict):
+                raise ValueError("not an object")
+        except (ValueError, json.JSONDecodeError):
+            log("client", status=400, reason="bad json", remote=self.client_address[0])
+            return self.send_error(400, "bad json")
+        ua = self.headers.get("User-Agent", "")
+        key, kind = ev.get("key"), ev.get("event")
+        ok = isinstance(key, str) and KEY_RE.match(key) and kind in CLIENT_EVENTS
+        log("client", key=key if ok else str(key)[:200], memo_id=memo_id_for(key) if ok else None, agent=agent_from_key(key) if ok else None,
+            client_event=kind, status=200 if ok else 202, error=ev.get("error"), code=ev.get("code"), bytes=ev.get("bytes"),
+            duration_ms=ev.get("duration_ms"), attempts=ev.get("attempts"), remote=self.client_address[0], ua=ua)
+        self.send_response(200 if ok else 202)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        env = build_client_envelope(ev, ua) if ok else None
+        if env:
+            publish_async(env, key)
+
     def do_POST(self):
         """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""
+        if self.path == "/upload/client-event":
+            return self._client_event()
         if self.path != "/upload/played":
             return self._reject(404, "not found")
         try:

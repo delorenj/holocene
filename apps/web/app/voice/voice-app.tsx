@@ -5,7 +5,7 @@ import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, clockTime, dayTime, formatLatency, liveTotal, statement } from "./model";
-import type { Hop, MemoDetail, MemoPayload, MemosPayload, MemoSummary } from "./types";
+import type { Hop, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -81,6 +81,13 @@ export function VoiceApp() {
           ) : null}
         </div>
 
+        {list.data?.watcher && list.data.watcher.state !== "running" ? (
+          <div className="voice-alert" role="alert">
+            <span className="hub-label">Watcher {list.data.watcher.state}</span>
+            <p>{list.data.watcher.detail}. Fix: <code>systemctl --user restart holocene-inbox-watcher</code></p>
+          </div>
+        ) : null}
+
         {list.data && !memos.length ? (
           <div className="hub-placeholder">
             <span className="hub-label">No memos</span>
@@ -151,10 +158,10 @@ function Journey({ memoId, now }: { memoId: string; now: number }) {
       </section>
     );
   }
-  return <Timeline memo={memo} now={now} error={poll.error} />;
+  return <Timeline memo={memo} now={now} error={poll.error} watcher={poll.data?.watcher} />;
 }
 
-function Timeline({ memo, now, error }: { memo: MemoDetail; now: number; error?: string }) {
+function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number; error?: string; watcher?: WatcherStatus }) {
   const total = liveTotal(memo, now);
   const lastAt = [...memo.hops].reverse().find((h) => h.at && h.events.length)?.at;
   return (
@@ -193,14 +200,17 @@ function Timeline({ memo, now, error }: { memo: MemoDetail; now: number; error?:
 
       <ol className="voice-hops">
         {memo.hops.map((hop, i) => (
-          <HopRow key={hop.id} hop={hop} last={i === memo.hops.length - 1} now={now} basis={lastAt} />
+          <HopRow key={hop.id} hop={hop} last={i === memo.hops.length - 1} now={now} basis={lastAt} watcher={watcher} />
         ))}
       </ol>
     </section>
   );
 }
 
-function HopRow({ hop, last, now, basis }: { hop: Hop; last: boolean; now: number; basis?: string }) {
+// Hops the inbox watcher is responsible for: if it is down, that is why they are stuck.
+const WATCHER_HOPS = new Set(["received", "transcribed", "dispatched", "replied"]);
+
+function HopRow({ hop, last, now, basis, watcher }: { hop: Hop; last: boolean; now: number; basis?: string; watcher?: WatcherStatus }) {
   const live = hop.status === "waiting" || hop.status === "stuck";
   const waited = live && basis ? Math.max(hop.waitedSeconds ?? 0, (now - Date.parse(basis)) / 1000) : undefined;
   return (
@@ -219,6 +229,9 @@ function HopRow({ hop, last, now, basis }: { hop: Hop; last: boolean; now: numbe
           ) : null}
         </div>
         {hop.detail ? <p className="voice-hop-detail">{hop.detail}</p> : null}
+        {live && watcher && watcher.state !== "running" && WATCHER_HOPS.has(hop.id) ? (
+          <p className="voice-hop-detail"><strong>Cause: {watcher.detail}.</strong></p>
+        ) : null}
         {hop.status === "missing" ? <p className="voice-hop-detail">No fact for this hop, though later hops happened.</p> : null}
         {hop.error ? (
           <div className="voice-error">

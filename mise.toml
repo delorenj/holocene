@@ -114,6 +114,10 @@ run = "'{{config_root}}/apps/auto/tools/pad_build.sh'"
 description = "One timeline for a voice memo, hop by hop: memo:trace [<memo_id>|<s3 key>|<file>|latest] [--logs]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' trace"
 
+[tasks."memo:retry"]
+description = "Revive a failed or skipped voice memo at the stage it died in: memo:retry <memo_id|key>"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' retry"
+
 [tasks."memo:list"]
 description = "Last N voice memos with the furthest stage each reached: memo:list [-n 15]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' list"
