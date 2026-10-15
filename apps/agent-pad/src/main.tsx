@@ -218,95 +218,80 @@ function App() {
     mediaRecorder.current?.stop()
   }, [])
 
+  const canRecord = !!selected
+  const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 16 }}>
-      <style>{`
-        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-      `}</style>
-      <h1 style={{ fontSize: 18, marginBottom: 12 }}>Agent Pad</h1>
+    <div className="pad">
+      <style>{CSS}</style>
       {!soundUnlocked && (
-        <button
-          onClick={unlockAudio}
-          style={{
-            padding: '16px 24px',
-            borderRadius: 12,
-            border: '2px solid #4f8cff',
-            background: '#141a24',
-            color: '#4f8cff',
-            cursor: 'pointer',
-            marginBottom: 16,
-            fontWeight: 700,
-            fontSize: 15,
-          }}
-        >
+        <button className="unlock" onClick={unlockAudio}>
           🔊 Tap to enable sound
         </button>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 12, marginBottom: 16 }}>
-        {AGENTS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setSelected(a)}
-            style={{
-              aspectRatio: '1',
-              borderRadius: 12,
-              border: selected?.id === a.id ? `3px solid ${a.color}` : '1px solid #333',
-              background: '#141a24',
-              color: '#e6e6e6',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-            }}
-          >
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: a.color }} />
-            <div style={{ fontSize: 12 }}>{a.name}</div>
-          </button>
-        ))}
+      <div className="tiles" role="radiogroup" aria-label="Agent">
+        {AGENTS.map((a) => {
+          const on = selected?.id === a.id
+          return (
+            <button
+              key={a.id}
+              role="radio"
+              aria-checked={on}
+              className={`tile${on ? ' on' : ''}`}
+              disabled={recording && !on}
+              onClick={() => setSelected(a)}
+              style={{ ['--c' as string]: a.color }}
+            >
+              <span className="swatch">{a.name.charAt(0)}</span>
+              <span className="name">{a.name}</span>
+              {on && <span className="check" aria-hidden="true">✓</span>}
+            </button>
+          )
+        })}
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' as const }}>
-        {recording && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 16px', borderRadius: 20,
-            background: '#2a0a0a', border: '2px solid #e74c3c',
-            color: '#e74c3c', fontWeight: 700, fontSize: 14,
-          }}>
-            <div style={{
-              width: 10, height: 10, borderRadius: '50%',
-              background: '#e74c3c',
-              animation: 'pulse 1s ease-in-out infinite',
-            }} />
-            RECORDING — tap Stop to send
-          </div>
-        )}
+      <div className="bar">
         <button
+          className={`rec${recording ? ' live' : ''}`}
           onClick={recording ? stopRecording : startRecording}
-          disabled={!selected}
-          style={{
-            padding: '12px 24px',
-            borderRadius: 24,
-            border: 'none',
-            background: recording ? '#e74c3c' : selected ? selected.color : '#444',
-            color: '#fff',
-            cursor: selected ? 'pointer' : 'not-allowed',
-            fontWeight: 600,
-          }}
+          disabled={!canRecord}
+          style={{ ['--c' as string]: selected?.color ?? '#444' }}
         >
-          {recording ? 'Stop & Send' : 'Record'}
+          {recording && <span className="dot" />}
+          {recording ? 'Stop & Send' : selected ? `Record for ${selected.name}` : 'Pick an agent'}
         </button>
-        <span style={{ fontSize: 13, opacity: 0.7 }}>{status}</span>
-      </div>
-      {lastReply && (
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.6 }}>
-          last reply: {lastReply.split('/').pop()}
+        <div className="status" aria-live="polite">
+          {statusText}
+          {lastReply && <small>last reply: {lastReply.split('/').pop()}</small>}
         </div>
-      )}
+      </div>
       <audio ref={audioRef} style={{ display: 'none' }} />
     </div>
   )
 }
+
+// Sized for the Honda head unit (1280x720 @160dpi, ~1135x590 usable): touch targets >= 76px,
+// text >= 24px. Below 900px wide (phones) tiles wrap and everything scales down via clamp().
+const CSS = `
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+.pad { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:clamp(10px,2vw,20px); gap:clamp(10px,2vw,18px); overflow:auto; }
+.unlock { min-height:64px; padding:0 24px; border-radius:16px; border:3px solid #4f8cff; background:#141a24; color:#4f8cff; font-weight:700; font-size:clamp(18px,2.2vw,26px); cursor:pointer; }
+.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:minmax(120px,1fr); gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; }
+@media (min-width:600px) { .tiles { grid-template-columns:repeat(3,1fr); } }
+@media (min-width:900px) { .tiles { grid-template-columns:repeat(5,1fr); } }
+.tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(8px,1.6vw,18px); min-height:120px; padding:8px; border-radius:20px; border:2px solid #2a3140; background:#141a24; color:#e6e6e6; cursor:pointer; transition:background .12s, border-color .12s, transform .08s; }
+.tile:active { transform:scale(.97); }
+.tile:disabled { opacity:.35; cursor:not-allowed; }
+.tile .swatch { display:flex; align-items:center; justify-content:center; width:clamp(56px,8vw,92px); height:clamp(56px,8vw,92px); border-radius:22px; background:var(--c); color:#fff; font-size:clamp(30px,4.6vw,54px); font-weight:800; text-shadow:0 2px 6px rgba(0,0,0,.35); }
+.tile .name { font-size:clamp(20px,2.4vw,30px); font-weight:700; line-height:1.15; text-align:center; overflow-wrap:anywhere; }
+.tile.on { border:5px solid var(--c); background:color-mix(in srgb, var(--c) 22%, #141a24); padding:5px; }
+.tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
+.bar { display:flex; align-items:center; gap:clamp(12px,2vw,24px); flex-wrap:wrap; flex:0 0 auto; }
+.rec { display:flex; align-items:center; justify-content:center; gap:14px; flex:1 1 320px; min-height:88px; padding:0 28px; border-radius:44px; border:none; background:var(--c); color:#fff; font-size:clamp(24px,3vw,36px); font-weight:800; cursor:pointer; }
+.rec:disabled { background:#3a3f4b; color:#9aa0ab; cursor:not-allowed; }
+.rec.live { background:#e74c3c; }
+.rec .dot { width:20px; height:20px; border-radius:50%; background:#fff; animation:pulse 1s ease-in-out infinite; }
+.status { flex:1 1 240px; font-size:clamp(20px,2.4vw,28px); font-weight:600; line-height:1.2; opacity:.85; }
+.status small { display:block; margin-top:4px; font-size:clamp(14px,1.6vw,18px); font-weight:400; opacity:.6; }
+`
 
 createRoot(document.getElementById('root')!).render(<App />)
