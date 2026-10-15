@@ -174,6 +174,18 @@ over raw NATS to `host.docker.internal:4222` (compose maps it with
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
 
+## Verified live (2026-10-15)
+
+A synthetic memo (flite "reply with the single word pong", uploaded through
+`https://agent-pad.delo.sh/upload/`) went through every hop to `COMPLETE`:
+upload log + `uploaded` fact, `received` (+0.25 s), transcribed in 40 s (CPU
+int8, GPU full), dispatched, gateway journal row, `invocation.started/completed`
+(5 s turn), TTS 1 s, reply uploaded, `replied`. The 938 s total was almost all
+the command waiting behind 20 stale n8n grooming commands in JetStream; the
+trace showed `pulling (busy: 4 in flight, N queued ahead)` the whole time. An
+earlier run with a 600 s deadline correctly ended `failed(stage=agent_reply,
+retryable=false)` with that queue state in the message.
+
 ## Known limits
 
 - No playback hop: the pad polls the bucket and reports nothing back.
