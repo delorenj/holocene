@@ -145,6 +145,8 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
                 it.loadUrl("about:blank")
                 it.onPause()
                 it.removeAllViews()
+                // destroy() on a still-attached WebView logs a warning and kills the renderer mid-frame.
+                (it.parent as? ViewGroup)?.removeView(it)
                 it.destroy()
             } catch (e: RuntimeException) { Log.i(TAG, "WebView teardown: ${e.javaClass.simpleName}") }
         }
@@ -266,6 +268,13 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
 
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (request.isForMainFrame) failed("HTTP ${response.statusCode}")
+            }
+
+            /** Without this a renderer crash or OOM-kill takes the whole app down; show Retry instead. */
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                Log.w(TAG, "Agent Pad renderer gone, crashed=${detail.didCrash()}")
+                if (view === web) container.post { if (web === view) message("Agent Pad stopped unexpectedly", retry = true) }
+                return true
             }
         }
         webChromeClient = object : WebChromeClient() {
