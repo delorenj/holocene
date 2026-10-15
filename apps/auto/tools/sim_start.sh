@@ -27,7 +27,8 @@ else
   log="$STATE_DIR/emulator.log"
   # Qt on Wayland sessions needs xcb (XWayland); the emulator window is not Wayland-native.
   QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}" setsid nohup "$EMU_BIN" -avd "$AVD_NAME" -port "$SIM_PORT" \
-    -memory 2048 -no-boot-anim -netdelay none -netspeed full "${headless[@]}" \
+    -memory 2048 -no-boot-anim -netdelay none -netspeed full \
+    -grpc "$SIM_GRPC_PORT" -grpc-use-token "${headless[@]}" \
     >>"$log" 2>&1 </dev/null &
   epid=$!
   echo "emulator launched (pid $epid), log: $log"

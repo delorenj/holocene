@@ -5,6 +5,8 @@ EMU_BIN="$ANDROID_HOME/emulator/emulator"
 AVD_NAME="${AVD_NAME:-HOLOC_9_Honda_API33}"
 SIM_PORT=5554
 SIM_SERIAL="emulator-$SIM_PORT"
+# gRPC bridge (loopback) for tools/emulator_audio.py: mic injection into the guest. Needs a restart to change.
+SIM_GRPC_PORT="${SIM_GRPC_PORT:-8554}"
 # Every adb call targets one serial: a physical phone is usually attached too.
 SERIAL="${ANDROID_SERIAL:-$SIM_SERIAL}"
 # A stale ANDROID_SERIAL pointing at the physical phone must never get a debug APK installed on it.

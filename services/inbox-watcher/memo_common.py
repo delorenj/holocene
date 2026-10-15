@@ -100,7 +100,7 @@ def s3_url(key: str) -> str:
 
 def s3_list_inbox() -> list[dict]:
     """Every audio object under inbox/: {key, size, last_modified(datetime)}."""
-    r = mc("ls", "--recursive", "--json", s3_url(INBOX_PREFIX), timeout=60)
+    r = mc("ls", "--recursive", "--json", s3_url(INBOX_PREFIX) + "/", timeout=60)
     if r.returncode != 0:
         raise RuntimeError(f"mc ls failed rc={r.returncode}: {r.stderr.strip()[:200]}")
     out = []
@@ -112,9 +112,16 @@ def s3_list_inbox() -> list[dict]:
             o = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if o.get("status") == "error":
+            raise RuntimeError(f"mc ls reported an error: {str(o)[:200]}")
         if o.get("type") != "file":
             continue
         rel = o.get("key", "")
+        # mc intermittently reports the key relative to the bucket instead of the listed prefix
+        # (about 1 listing in 15), which doubled the prefix and made the watcher chase phantom
+        # objects. An agent id is never "inbox", so strip the prefix once if it is there.
+        if rel.startswith(INBOX_PREFIX + "/"):
+            rel = rel[len(INBOX_PREFIX) + 1:]
         if not rel.lower().endswith(AUDIO_EXTS):
             continue
         out.append({

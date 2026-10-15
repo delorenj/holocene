@@ -256,6 +256,18 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(mc_.agent_from_key("inbox/33god-pm/2026/10/15/a.ogg"), "33god-pm")
         self.assertIsNone(mc_.agent_from_key("inbox/a.ogg"))
 
+    def test_08_listing_survives_mc_prefix_quirk(self):
+        """mc sometimes reports key relative to the bucket ("inbox/<agent>/...") instead of the prefix."""
+        import subprocess
+        from unittest import mock
+        line = lambda k: json.dumps({"status": "success", "type": "file", "key": k, "size": 5,
+                                     "lastModified": "2026-10-15T12:00:00Z"})
+        out = "\n".join([line("inbox/33god-pm/2026/10/15/a.ogg"), line("holocene-pm/2026/10/15/b.ogg")])
+        fake = subprocess.CompletedProcess([], 0, stdout=out, stderr="")
+        with mock.patch.object(mc_, "mc", return_value=fake):
+            keys = [o["key"] for o in mc_.s3_list_inbox()]
+        self.assertEqual(keys, ["inbox/33god-pm/2026/10/15/a.ogg", "inbox/holocene-pm/2026/10/15/b.ogg"])
+
 
 if __name__ == "__main__":
     unittest.main()
