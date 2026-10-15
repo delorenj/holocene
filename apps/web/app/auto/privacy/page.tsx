@@ -3,7 +3,7 @@ import styles from "./privacy.module.css";
 
 export const metadata: Metadata = {
   title: "Holocene Auto — Privacy policy",
-  description: "Privacy policy for the Holocene Auto Android diagnostic fixture."
+  description: "Privacy policy for the Holocene Auto Android app."
 };
 
 export default function PrivacyPage() {
@@ -14,7 +14,7 @@ export default function PrivacyPage() {
           <p className={styles.kicker}>AutomaticAI · Android app</p>
           <h1>Holocene Auto privacy policy</h1>
           <p className={styles.meta}>
-            Effective date: <time dateTime="2026-10-06">October 6, 2026</time>
+            Effective date: <time dateTime="2026-10-15">October 15, 2026</time>
           </p>
         </header>
 
@@ -23,18 +23,19 @@ export default function PrivacyPage() {
           <p>
             This policy covers only the Holocene Auto Android app, published by
             AutomaticAI, package <code>io.automaticai.holocene</code>. The current
-            internal build is version <code>0.2.6-internal</code> (version code 8).
-            Because its data handling is unchanged, this policy also covers the
-            previous internal builds, version <code>0.2.5-internal</code> (version
-            code 7) and <code>0.2.4-internal</code> (version code 6). These builds
-            may appear as “Holocene Fixture” in the listing
-            or on the device.
+            internal build is version <code>0.2.7-internal</code> (version code 9).
+            Earlier internal builds (version codes 6 to 8) may appear as
+            “Holocene Fixture”; they had no Internet permission and sent no
+            data, as described in the “Diagnostics” sections below.
           </p>
           <p>
-            The app is an emulator diagnostic fixture for microphone and speech
-            pipeline verification. It does not connect to external live agents
-            and is not approved for use while driving. This policy does not cover
-            third-party speech providers or other AutomaticAI services.
+            The app is a private, internal tool. Its main screen, Agent Pad,
+            lets the operator record a voice memo addressed to a chosen
+            AutomaticAI agent and hear that agent&apos;s spoken reply. It also
+            keeps a Diagnostics screen for microphone and speech pipeline
+            verification. Agent Pad is available only while the vehicle is
+            parked and is not approved for use while driving. This policy does
+            not cover third-party speech providers.
           </p>
         </section>
 
@@ -43,14 +44,23 @@ export default function PrivacyPage() {
           <p>
             The app has no user accounts or registration, advertisements,
             analytics SDKs, or third-party runtime SDKs. Its only declared Android
-            permission is <code>android.permission.RECORD_AUDIO</code>. It has no
-            Internet, location or account-access permission.
+            permissions are <code>android.permission.RECORD_AUDIO</code>,{" "}
+            <code>android.permission.MODIFY_AUDIO_SETTINGS</code> and{" "}
+            <code>android.permission.INTERNET</code>. It has no location or
+            account-access permission.
           </p>
           <p>
-            The app itself does not collect personal data for AutomaticAI, upload
-            user data to a developer backend, sell data, or directly share data
-            with third parties. It has no network permission with which to
-            publish data from the app.
+            Agent Pad loads its interface from <code>agent-pad.delo.sh</code>,
+            a server operated by AutomaticAI. When you deliberately press
+            Record and then Stop &amp; Send, the recorded audio is uploaded to
+            AutomaticAI&apos;s own storage, addressed to the agent you selected,
+            so that agent can transcribe and answer it. The app also downloads
+            the agents&apos; spoken replies from that storage to play them.
+            Audio is recorded only after you press Record; while recording, it
+            is held in a temporary file in the app&apos;s private cache, which
+            is deleted after the upload. AutomaticAI does not sell this data or
+            share it with third parties, and the app contains no
+            advertising or analytics.
           </p>
           <p>
             However, when you use speech recognition or text-to-speech, the app
@@ -63,7 +73,7 @@ export default function PrivacyPage() {
         </section>
 
         <section aria-labelledby="microphone">
-          <h2 id="microphone">Microphone diagnostics</h2>
+          <h2 id="microphone">Diagnostics: microphone probe</h2>
           <p>
             The “Probe microphone for 6 seconds” button explicitly starts a raw
             PCM microphone diagnostic. An explicit diagnostic launch intent can
@@ -80,15 +90,15 @@ export default function PrivacyPage() {
         </section>
 
         <section aria-labelledby="speech">
-          <h2 id="speech">System speech services</h2>
+          <h2 id="speech">Diagnostics: system speech services</h2>
           <p>
             Speech recognition uses Android&apos;s <code>SpeechRecognizer</code>
             with the default recognition service selected on the device, such as
             a Google speech service. That provider determines whether recognition
             happens on the device or on its servers. On-device-only processing
             and end-to-end encryption are not guaranteed by this app. The
-            provider may process speech under its own privacy policy, even though
-            Holocene Auto itself has no Internet permission.
+            provider may process speech under its own privacy policy. The
+            diagnostics never send their audio or transcripts to AutomaticAI.
           </p>
           <p>
             The app also uses Android&apos;s <code>TextToSpeech</code> service to
@@ -107,10 +117,12 @@ export default function PrivacyPage() {
             to Logcat on the device. These include audio statistics, returned
             speech-recognition transcript text and text-to-speech acknowledgement
             text. Spoken words and transcripts may contain personal information.
-            The app does not write log files or send logs anywhere.
+            The app does not write log files or send logs anywhere. Agent Pad
+            memos and replies are kept in AutomaticAI&apos;s storage until the
+            operator deletes them.
           </p>
           <p>
-            Raw microphone audio is transient and is not persisted by the app.
+            Diagnostic microphone audio is transient and is not persisted by the app.
             Logcat retention is controlled by the Android operating system, not
             by Holocene Auto; the app does not set a log-retention period.
           </p>
@@ -123,7 +135,7 @@ export default function PrivacyPage() {
             under this app&apos;s permissions. Without the RECORD_AUDIO grant,
             the app&apos;s microphone features cannot capture audio. You can also
             use the app&apos;s cancel control to stop diagnostic capture or
-            playback.
+            playback. Agent Pad records nothing until you press Record.
           </p>
         </section>
 

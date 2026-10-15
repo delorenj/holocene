@@ -13,7 +13,7 @@
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
-    <application android:label="Holocene Fixture" android:theme="@style/AppTheme"
+    <application android:label="Holocene Auto" android:theme="@style/AppTheme"
         android:allowBackup="false" android:supportsRtl="true">
         <!-- Optional car API: present on automotive builds, absent on phones.
              Declared optional so non-automotive devices install and run; all
