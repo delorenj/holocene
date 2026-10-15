@@ -54,3 +54,39 @@ class AgentPadPolicyTest {
         assertFalse(AgentPadPolicy.padAllowed(isCarHost = true, unrestricted = false))
     }
 }
+
+class PadStateTest {
+    @Test fun messageOverlayDoesNotBlockBuildingThePage() {
+        val s = PadState()
+        // car host not yet unrestricted: "available when parked" overlay
+        s.messageShown()
+        assertTrue("restricted->parked flip must be able to build the page", s.needsWebView())
+        s.webShown()
+        assertFalse(s.needsWebView())
+        // parked -> driving -> parked
+        s.reset(); s.messageShown()
+        assertTrue(s.needsWebView())
+    }
+
+    @Test fun staleNativePermissionResultIsDropped() {
+        val s = PadState()
+        s.webShown(); s.requestNative()
+        s.reset(); s.webShown() // page torn down and rebuilt while the prompt was open
+        assertFalse(s.takeNativePending())
+    }
+
+    @Test fun nativePermissionResultIsConsumedOnce() {
+        val s = PadState()
+        s.webShown(); s.requestNative()
+        assertTrue(s.takeNativePending())
+        assertFalse(s.takeNativePending())
+    }
+
+    @Test fun resetClearsMic() {
+        val s = PadState()
+        s.webShown(); s.micLive = true
+        s.reset()
+        assertFalse(s.micLive)
+        assertEquals(PadState.Surface.NONE, s.surface)
+    }
+}

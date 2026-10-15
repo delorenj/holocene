@@ -132,7 +132,7 @@ function App() {
     if (!selected) return
     // Inside the Holocene Auto app the WebView's own mic capture is unreliable on car audio stacks,
     // so the host injects a native recorder. Same upload path, different capture source.
-    const native = (window as any).HoloceneNative as { start(): void; stop(): void } | undefined
+    const native = (window as any).HoloceneNative as { start(): void; stop(): void; micClosed?(): void } | undefined
     if (native) {
       const agent = selected
       const w = window as any
@@ -169,6 +169,11 @@ function App() {
       setStatus(`mic unavailable: ${(e as Error).name}`)
       return
     }
+    // Tell the Android host when the stream closes so it knows no mic is open (no-op in a browser).
+    const closeStream = () => {
+      stream.getTracks().forEach((t) => t.stop())
+      try { (window as any).HoloceneNative?.micClosed?.() } catch { /* host bridge absent */ }
+    }
     // Chrome/Android support webm; Safari supports mp4. Pick the first that works.
     const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
     let mimeType = ''
@@ -177,7 +182,7 @@ function App() {
     }
     if (!mimeType) {
       setStatus('no supported audio format on this browser')
-      stream.getTracks().forEach(t => t.stop())
+      closeStream()
       return
     }
     const ext = mimeType.includes('mp4') ? 'm4a' : 'webm'
@@ -189,7 +194,7 @@ function App() {
       const blob = new Blob(chunks.current, { type: mimeType })
       if (blob.size === 0) {
         setStatus('no audio captured')
-        stream.getTracks().forEach((t) => t.stop())
+        closeStream()
         setRecording(false)
         return
       }
@@ -200,7 +205,7 @@ function App() {
       } catch (e) {
         setStatus(`upload failed: ${(e as Error).message}`)
       }
-      stream.getTracks().forEach((t) => t.stop())
+      closeStream()
       setRecording(false)
     }
     mr.start()

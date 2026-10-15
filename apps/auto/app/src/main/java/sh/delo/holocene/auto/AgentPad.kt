@@ -8,7 +8,6 @@ import android.graphics.Color
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -46,19 +45,54 @@ object AgentPadPolicy {
     fun padAllowed(isCarHost: Boolean, unrestricted: Boolean): Boolean = !isCarHost || unrestricted
 }
 
+/**
+ * Pure lifecycle state for [AgentPadHost]: what fills the container, whether a mic is open, and
+ * whether a native-mic permission prompt belongs to the page that is still on screen.
+ */
+class PadState {
+    enum class Surface { NONE, WEB, MESSAGE }
+
+    var surface = Surface.NONE
+        private set
+    var micLive = false
+    var nativePending = false
+        private set
+
+    /** A message overlay is not a page: only a live WebView means "already showing". */
+    fun needsWebView(): Boolean = surface != Surface.WEB
+    fun webShown() { surface = Surface.WEB }
+    fun messageShown() { surface = Surface.MESSAGE }
+
+    fun requestNative() { nativePending = true }
+
+    /** True only if the page that asked is still the one on screen; consumed either way. */
+    fun takeNativePending(): Boolean {
+        val was = nativePending && surface == Surface.WEB
+        nativePending = false
+        return was
+    }
+
+    fun reset() {
+        surface = Surface.NONE
+        micLive = false
+        nativePending = false
+    }
+}
+
 /** Owns one WebView showing Agent Pad inside [container]; torn down whenever the pad is not allowed or visible. */
 class AgentPadHost(private val activity: Activity, private val container: FrameLayout) {
     private var web: WebView? = null
-    private var overlay: View? = null
     private var held: PermissionRequest? = null
-    private var micLive = false
     private var visible = false
-    private val recorder = NativeRecorder(activity.applicationContext)
-
-    val showing get() = web != null || overlay != null
+    private val state = PadState()
+    private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
+        rec.onAutoStopped = { activity.runOnUiThread { finishNative() } }
+    }
 
     fun show() {
-        if (showing) return
+        if (!state.needsWebView()) return
+        // A "parked only" or "unreachable" message is not a page; drop it before building one.
+        if (state.surface == PadState.Surface.MESSAGE) teardown()
         val view = try {
             makeWebView()
         } catch (e: Exception) {
@@ -67,6 +101,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
             return
         }
         web = view
+        state.webShown()
         container.removeAllViews()
         container.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         visible = true
@@ -93,14 +128,14 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
                 setOnClickListener { teardown(); show() }
             })
         }
-        overlay = box
+        state.messageShown()
         container.removeAllViews()
         container.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     fun teardown() {
         visible = false
-        micLive = false
+        state.reset()
         recorder.cancel()
         held?.let { try { it.deny() } catch (e: RuntimeException) { Log.i(TAG, "Held request already gone") } }
         held = null
@@ -114,7 +149,6 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
             } catch (e: RuntimeException) { Log.i(TAG, "WebView teardown: ${e.javaClass.simpleName}") }
         }
         web = null
-        overlay = null
         container.removeAllViews()
     }
 
@@ -129,9 +163,10 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     fun onPause() {
         val view = web ?: return
         visible = false
-        if (micLive) { teardown(); return }
+        if (state.micLive) { teardown(); return }
+        // No pauseTimers(): it is process-global and a teardown while paused would leave a later
+        // page with frozen timers (the 15s reply poll). onPause() already stops rendering.
         view.onPause()
-        view.pauseTimers()
     }
 
     fun destroy() = teardown()
@@ -146,7 +181,10 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     fun onPermissionsResult(requestCode: Int, grants: IntArray) {
         if (requestCode == REQUEST_NATIVE_MIC) {
             val ok = grants.isNotEmpty() && grants[0] == PackageManager.PERMISSION_GRANTED
-            if (ok && web != null) startNative() else js("window.__hnStarted && window.__hnStarted(false, 'permission_denied')")
+            // Only the page that asked (still on screen) gets an answer; a stale result is dropped.
+            if (!state.takeNativePending() || web == null) return
+            if (ok) startNative()
+            else js("window.__hnStarted && window.__hnStarted(false, 'permission_denied')")
             return
         }
         if (requestCode != REQUEST_AUDIO) return
@@ -161,7 +199,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     private fun resolve(request: PermissionRequest, micGranted: Boolean, padAlive: Boolean = visible && web != null) {
         val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, padAlive)
         try {
-            if (ok) { micLive = true; request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
+            if (ok) { state.micLive = true; request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
         } catch (e: RuntimeException) { Log.i(TAG, "Permission request already resolved") }
     }
 
@@ -169,7 +207,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
 
     private fun startNative() {
         val err = recorder.start()
-        micLive = err == null
+        state.micLive = err == null
         js("window.__hnStarted && window.__hnStarted(${err == null}, '${err ?: ""}')")
     }
 
@@ -179,18 +217,28 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
             activity.runOnUiThread {
                 if (web == null) return@runOnUiThread
                 if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startNative()
-                else activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_NATIVE_MIC)
+                else {
+                    state.requestNative()
+                    activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_NATIVE_MIC)
+                }
             }
         }
 
         @JavascriptInterface fun stop() {
-            activity.runOnUiThread {
-                val bytes = recorder.stop()
-                micLive = false
-                val b64 = if (bytes == null) "" else Base64.encodeToString(bytes, Base64.NO_WRAP)
-                js("window.__hnStopped && window.__hnStopped('$b64', 'audio/ogg')")
-            }
+            activity.runOnUiThread { finishNative() }
         }
+
+        /** Fallback getUserMedia path: the page reports its stream closed so backgrounding stops reloading it. */
+        @JavascriptInterface fun micClosed() {
+            activity.runOnUiThread { state.micLive = false }
+        }
+    }
+
+    private fun finishNative() {
+        val bytes = recorder.stop()
+        state.micLive = false
+        val b64 = if (bytes == null) "" else Base64.encodeToString(bytes, Base64.NO_WRAP)
+        js("window.__hnStopped && window.__hnStopped('$b64', 'audio/ogg')")
     }
 
     private fun audioOnly(request: PermissionRequest) =

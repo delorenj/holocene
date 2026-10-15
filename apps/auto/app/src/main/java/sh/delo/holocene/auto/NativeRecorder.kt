@@ -10,12 +10,20 @@ class NativeRecorder(private val context: Context) {
     private var rec: MediaRecorder? = null
     private var file: File? = null
 
+    /** Fired when MediaRecorder ends the note by itself (max duration); the caller should [stop] and deliver it. */
+    var onAutoStopped: (() -> Unit)? = null
+
     /** Returns null on success, else a short error name. */
     fun start(): String? {
         cancel()
-        val f = File.createTempFile("pad-", ".ogg", context.cacheDir)
-        val r = MediaRecorder(context)
+        var f: File? = null
+        var r: MediaRecorder? = null
         return try {
+            f = File.createTempFile("pad-", ".ogg", context.cacheDir)
+            r = MediaRecorder(context)
+            r.setOnInfoListener { _, what, _ ->
+                if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) onAutoStopped?.invoke()
+            }
             r.setAudioSource(MediaRecorder.AudioSource.MIC)
             r.setOutputFormat(MediaRecorder.OutputFormat.OGG)
             r.setAudioEncoder(MediaRecorder.AudioEncoder.OPUS)
@@ -31,8 +39,8 @@ class NativeRecorder(private val context: Context) {
             null
         } catch (e: Exception) {
             Log.w(TAG, "start failed: ${e.javaClass.simpleName}: ${e.message}")
-            try { r.release() } catch (_: RuntimeException) {}
-            f.delete()
+            try { r?.release() } catch (_: RuntimeException) {}
+            f?.delete()
             e.javaClass.simpleName
         }
     }
