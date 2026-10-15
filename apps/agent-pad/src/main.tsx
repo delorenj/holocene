@@ -82,6 +82,7 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const pollTimer = useRef<number | null>(null)
   const lastPlayedKey = useRef<string>('')
+  const firstPoll = useRef(true)
   // Reply currently loaded in the audio element (empty while the silent unlock clip plays), and
   // the beacons already sent for it.
   const playingKey = useRef<string>('')
@@ -132,6 +133,20 @@ function App() {
         const ogg = keys.filter((k) => audioExts.some(ext => k.endsWith(ext)) && k > lastPlayedKey.current)
         if (ogg.length > 0) {
           const newest = ogg.sort().pop()!
+          // On a fresh start the bucket already holds today's old replies. Replaying one at engine
+          // start is wrong (and would report a playback that nobody asked for), so only a reply
+          // rendered in the last 5 minutes counts as waiting for this driver.
+          if (firstPoll.current) {
+            firstPoll.current = false
+            const m = newest.match(/(\d{4})\/(\d{2})\/(\d{2})\/(\d{2})(\d{2})(\d{2})Z/)
+            const rendered = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0
+            if (Date.now() - rendered > 5 * 60 * 1000) {
+              lastPlayedKey.current = newest
+              setLastReply(newest)
+              return
+            }
+          }
+          firstPoll.current = false
           const blob = await getBlob(`${BUCKET_BASE}/${newest}`)
           const url = URL.createObjectURL(blob)
           if (audioRef.current) {
