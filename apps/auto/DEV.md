@@ -49,7 +49,8 @@ Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a
 ## Pitfalls
 
 - Always `adb -s emulator-5554`. A physical phone is usually on adb too; bare `adb` commands are
-  ambiguous or hit the wrong device. The scripts honor `ANDROID_SERIAL` but default to the simulator.
+  ambiguous or hit the wrong device. `auto:dev` and `pad:dev` honor `ANDROID_SERIAL` but default to the simulator and refuse any non-`emulator-*` serial unless `ALLOW_PHYSICAL_DEVICE=1`; `auto:sim`/`auto:sim:stop` always target `emulator-5554`.
+- `pad:dev` refuses to run unless the installed app is a debuggable build (release builds ignore the dev URL); `auto:dev` installs one.
 - The app runs as Android user 10 (`am start --user 10`), not 0. The scripts read `am get-current-user`.
 - Port 5173 is often taken by other projects' Vite servers, hence 5190.
 - Honda "Connect the Device" dialog: tap Cancel (or tick "Do not show this again"). It covers the app after boot.

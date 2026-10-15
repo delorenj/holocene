@@ -7,6 +7,11 @@ SIM_PORT=5554
 SIM_SERIAL="emulator-$SIM_PORT"
 # Every adb call targets one serial: a physical phone is usually attached too.
 SERIAL="${ANDROID_SERIAL:-$SIM_SERIAL}"
+# A stale ANDROID_SERIAL pointing at the physical phone must never get a debug APK installed on it.
+if [[ "$SERIAL" != emulator-* && "${ALLOW_PHYSICAL_DEVICE:-0}" != 1 ]]; then
+  echo "refusing non-emulator serial '$SERIAL' (ANDROID_SERIAL?). Unset it, or set ALLOW_PHYSICAL_DEVICE=1." >&2
+  return 1 2>/dev/null || exit 1
+fi
 APP_ID="io.automaticai.holocene"
 APP_ACTIVITY="sh.delo.holocene.auto.MainActivity"
 PAD_URL_EXTRA="sh.delo.holocene.extra.PAD_URL"
