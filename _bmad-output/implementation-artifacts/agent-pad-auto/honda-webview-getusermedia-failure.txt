@@ -1,0 +1,15 @@
+Honda API33 emulator, WebView 130, pad served from agent-pad.delo.sh, getUserMedia path (before native recorder).
+1) First attempt, RECORD_AUDIO dialog granted by tapping "While using the app":
+   chromium: Uncaught (in promise) NotAllowedError: Permission denied   <- host bug (visible flag false during permission result); fixed in AgentPad.kt
+2) After that fix, without MODIFY_AUDIO_SETTINGS:
+   cr_media: Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO. Selected device will not be available for recording
+   chromium: Unable to select audio device!
+   chromium: Uncaught (in promise) NotReadableError: Could not start audio source      <- manifest fix added
+3) With MODIFY_AUDIO_SETTINGS: recording state shown, but every AAudio input stream is torn down immediately
+   (2394 AudioStreamBuilder opens in 15 s, loop):
+   AudioStreamLegacy: onAudioDeviceUpdate() request DISCONNECT in data callback, device 32 => 33
+   AudioRecord: processAudioBuffer: EVENT_MORE_DATA requested 2880 bytes but callback returned -1 bytes
+   cr_media: Couldn't find available device for: Speakerphone
+   Result: empty blob -> upload proxy 400 "invalid content length" (page showed "upload failed: PUT ... 400").
+4) Same device, native AudioRecord (existing Diagnostics "Probe microphone"): samples=96000 readError=0 (works).
+5) Native MediaRecorder Ogg/Opus via the new HoloceneNative bridge: 76 KiB, 14.4 s, valid Ogg/Opus, upload 200.

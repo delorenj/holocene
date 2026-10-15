@@ -1,0 +1,7 @@
+  delodocs-inbox-cleanup.service                                                                                                                                                                                   loaded    inactive   dead               DeLoDocs deterministic Inbox cleanup
+  delodocs-inbox-watchdog.service                                                                                                                                                                                  loaded    active     running            DeLoDocs Inbox frontmatter watchdog
+  honda-hunt-daily-check.service                                                                                                                                                                                   loaded    inactive   dead               Daily Civic Si negotiation inbox check
+  delodocs-inbox-cleanup.timer                                                                                                                                                                                     loaded    active     waiting            Run DeLoDocs deterministic Inbox cleanup every 10 minutes
+  honda-hunt-daily-check.timer                                                                                                                                                                                     loaded    active     waiting            Run the Civic Si negotiation inbox check daily at 09:00 ET
+agent-pad-web Up 14 minutes
+agent-pad-upload Up 14 minutes

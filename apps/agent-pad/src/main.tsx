@@ -62,6 +62,7 @@ function App() {
   const [pendingUrl, setPendingUrl] = useState<string | null>(null)
   const mediaRecorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
+  const nativeActive = useRef(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const pollTimer = useRef<number | null>(null)
   const lastPlayedKey = useRef<string>('')
@@ -129,7 +130,45 @@ function App() {
 
   const startRecording = useCallback(async () => {
     if (!selected) return
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // Inside the Holocene Auto app the WebView's own mic capture is unreliable on car audio stacks,
+    // so the host injects a native recorder. Same upload path, different capture source.
+    const native = (window as any).HoloceneNative as { start(): void; stop(): void } | undefined
+    if (native) {
+      const agent = selected
+      const w = window as any
+      const started = await new Promise<{ ok: boolean; err: string }>((resolve) => {
+        w.__hnStarted = (ok: boolean, err: string) => resolve({ ok, err })
+        native.start()
+      })
+      if (!started.ok) { setStatus(`mic unavailable: ${started.err || 'unknown'}`); return }
+      nativeActive.current = true
+      w.__hnStopped = async (b64: string, mime: string) => {
+        nativeActive.current = false
+        setRecording(false)
+        if (!b64) { setStatus('no audio captured'); return }
+        const bin = atob(b64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const blob = new Blob([bytes], { type: mime })
+        const key = `${INBOX_PREFIX}/${agent.id}/${todayPrefix()}/${ts()}.ogg`
+        try {
+          await putObject(key, blob)
+          setStatus(`sent → ${agent.name}`)
+        } catch (e) {
+          setStatus(`upload failed: ${(e as Error).message}`)
+        }
+      }
+      setRecording(true)
+      setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
+      return
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e) {
+      setStatus(`mic unavailable: ${(e as Error).name}`)
+      return
+    }
     // Chrome/Android support webm; Safari supports mp4. Pick the first that works.
     const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
     let mimeType = ''
@@ -148,6 +187,12 @@ function App() {
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data) }
     mr.onstop = async () => {
       const blob = new Blob(chunks.current, { type: mimeType })
+      if (blob.size === 0) {
+        setStatus('no audio captured')
+        stream.getTracks().forEach((t) => t.stop())
+        setRecording(false)
+        return
+      }
       const key = `${INBOX_PREFIX}/${selected.id}/${todayPrefix()}/${ts()}.${ext}`
       try {
         await putObject(key, blob)
@@ -164,6 +209,7 @@ function App() {
   }, [selected])
 
   const stopRecording = useCallback(() => {
+    if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
     mediaRecorder.current?.stop()
   }, [])
 

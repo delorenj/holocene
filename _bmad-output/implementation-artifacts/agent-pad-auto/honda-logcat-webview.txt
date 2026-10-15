@@ -1,0 +1,30 @@
+10-15 12:15:44.991  7737  7737 I WebViewFactory: Loading com.google.android.webview version 130.0.6723.86 (code 672308637)
+10-15 12:15:44.996  7737  7737 D nativeloader: classloader namespace configured for unbundled product apk. library_path=/product/app/WebViewGoogle/lib/x86_64:/product/app/WebViewGoogle/WebViewGoogle.apk!/lib/x86_64:/product/app/TrichromeLibrary/TrichromeLibrary.apk!/lib/x86_64:/product/lib64:/system/product/lib64
+10-15 12:15:45.007  7737  7737 D nativeloader: classloader namespace configured for unbundled product apk. library_path=/product/app/WebViewGoogle/lib/x86_64:/product/app/WebViewGoogle/WebViewGoogle.apk!/lib/x86_64:/product/app/TrichromeLibrary/TrichromeLibrary.apk!/lib/x86_64:/product/lib64:/system/product/lib64
+10-15 12:15:45.023  7737  7737 I cr_WVCFactoryProvider: version=130.0.6723.86 (672308637) minSdkVersion=29 isBundle=true multiprocess=true packageId=2
+10-15 12:15:45.029  7737  7793 I chromium: [1015/121545.028390:INFO:variations_seed_loader.cc(68)] Failed to open file for reading.: No such file or directory (2)
+10-15 12:15:45.030  7737  7793 I chromium: [1015/121545.030020:INFO:variations_seed_loader.cc(68)] Failed to open file for reading.: No such file or directory (2)
+10-15 12:15:45.036  7737  7737 I cr_LibraryLoader: Successfully loaded native library
+10-15 12:15:45.036  7737  7737 I cr_CachingUmaRecorder: Flushed 6 samples from 6 histograms, 0 samples were dropped.
+10-15 12:15:45.040  7737  7737 I cr_CombinedPProvider: #registerProvider() provider:WV.z8@3921567 isPolicyCacheEnabled:false policyProvidersSize:0
+10-15 12:15:45.045  7737  7737 I cr_PolicyProvider: #setManagerAndSource() 0
+10-15 12:15:45.056   631   659 I ActivityManager: Start proc 7801:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u10i1 for  {io.automaticai.holocene/org.chromium.content.app.SandboxedProcessService0:0}
+10-15 12:15:45.062  7737  7737 I cr_CombinedPProvider: #linkNativeInternal() 1
+10-15 12:15:45.062  7737  7737 I cr_AppResProvider: #getApplicationRestrictionsFromUserManager() Bundle[EMPTY_PARCEL]
+10-15 12:15:45.062  7737  7737 I cr_PolicyProvider: #notifySettingsAvailable() 0
+10-15 12:15:45.062  7737  7737 I cr_CombinedPProvider: #onSettingsAvailable() 0
+10-15 12:15:45.062  7737  7737 I cr_CombinedPProvider: #flushPolicies()
+10-15 12:15:45.096  7801  7801 I cr_WebViewApkApp: version=130.0.6723.86 (672308637) minSdkVersion=29 isBundle=true processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0
+10-15 12:15:45.097  7801  7801 I cr_ChildProcessService: Creating new ChildProcessService pid=7801
+10-15 12:15:45.138  7737  7820 W chromium: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+10-15 12:15:45.234  7737  7824 W cr_media: BLUETOOTH_CONNECT permission is missing.
+10-15 12:15:45.235  7737  7824 W cr_media: getBluetoothAdapter() requires BLUETOOTH permission
+10-15 12:15:45.235  7737  7824 W cr_media: registerBluetoothIntentsIfNeeded: Requires BLUETOOTH permission
+10-15 12:15:45.236  7801  7822 I cr_LibraryLoader: Successfully loaded native library
+10-15 12:15:45.236  7801  7822 I cr_CachingUmaRecorder: Flushed 2 samples from 2 histograms, 0 samples were dropped.
+10-15 12:15:45.249  7801  7822 W chromium: [WARNING:runtime_features.cc(610)] Fenced frames cannot be enabled in this configuration. Use --enable-features=FencedFrames instead.
+10-15 12:15:45.249  7801  7822 W chromium: [WARNING:runtime_features.cc(655)] SharedStorage cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI in addition.
+10-15 12:15:45.249  7801  7822 W chromium: [WARNING:runtime_features.cc(665)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM118 in addition.
+10-15 12:15:45.254  7737  7838 W chromium: [WARNING:viz_main_impl.cc(85)] VizNullHypothesis is disabled (not a warning)
+10-15 12:15:45.332  2000  3735 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@6874c72
+10-15 12:15:45.373  1837  3747 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@7a6648d

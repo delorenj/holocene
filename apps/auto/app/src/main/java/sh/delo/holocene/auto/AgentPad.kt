@@ -5,10 +5,12 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -51,6 +53,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     private var held: PermissionRequest? = null
     private var micLive = false
     private var visible = false
+    private val recorder = NativeRecorder(activity.applicationContext)
 
     val showing get() = web != null || overlay != null
 
@@ -98,6 +101,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     fun teardown() {
         visible = false
         micLive = false
+        recorder.cancel()
         held?.let { try { it.deny() } catch (e: RuntimeException) { Log.i(TAG, "Held request already gone") } }
         held = null
         web?.let {
@@ -140,18 +144,53 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     }
 
     fun onPermissionsResult(requestCode: Int, grants: IntArray) {
+        if (requestCode == REQUEST_NATIVE_MIC) {
+            val ok = grants.isNotEmpty() && grants[0] == PackageManager.PERMISSION_GRANTED
+            if (ok && web != null) startNative() else js("window.__hnStarted && window.__hnStarted(false, 'permission_denied')")
+            return
+        }
         if (requestCode != REQUEST_AUDIO) return
         val request = held ?: return
         held = null
         val granted = grants.isNotEmpty() && grants[0] == PackageManager.PERMISSION_GRANTED
-        resolve(request, granted)
+        // The system dialog paused the activity (visible=false) and the result is delivered before
+        // onResume, so judge by "page still alive", not by the momentary visible flag.
+        resolve(request, granted, web != null)
     }
 
-    private fun resolve(request: PermissionRequest, micGranted: Boolean) {
-        val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, visible && web != null)
+    private fun resolve(request: PermissionRequest, micGranted: Boolean, padAlive: Boolean = visible && web != null) {
+        val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, padAlive)
         try {
             if (ok) { micLive = true; request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
         } catch (e: RuntimeException) { Log.i(TAG, "Permission request already resolved") }
+    }
+
+    private fun js(script: String) { web?.evaluateJavascript(script, null) }
+
+    private fun startNative() {
+        val err = recorder.start()
+        micLive = err == null
+        js("window.__hnStarted && window.__hnStarted(${err == null}, '${err ?: ""}')")
+    }
+
+    /** Native capture for the pad: WebView getUserMedia loops on AAudio disconnects on the Honda audio stack. */
+    private inner class NativeBridge {
+        @JavascriptInterface fun start() {
+            activity.runOnUiThread {
+                if (web == null) return@runOnUiThread
+                if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startNative()
+                else activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_NATIVE_MIC)
+            }
+        }
+
+        @JavascriptInterface fun stop() {
+            activity.runOnUiThread {
+                val bytes = recorder.stop()
+                micLive = false
+                val b64 = if (bytes == null) "" else Base64.encodeToString(bytes, Base64.NO_WRAP)
+                js("window.__hnStopped && window.__hnStopped('$b64', 'audio/ogg')")
+            }
+        }
     }
 
     private fun audioOnly(request: PermissionRequest) =
@@ -168,6 +207,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
+        addJavascriptInterface(NativeBridge(), "HoloceneNative")
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 !AgentPadPolicy.isPadUrl(request.url.toString())
@@ -208,6 +248,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
 
     companion object {
         const val REQUEST_AUDIO = 2
+        const val REQUEST_NATIVE_MIC = 3
         private const val TAG = "HoloceneAgentPad"
     }
 }
