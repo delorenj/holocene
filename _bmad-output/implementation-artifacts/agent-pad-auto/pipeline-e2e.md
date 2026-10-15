@@ -217,3 +217,127 @@ The emulator died three times when `emulator_audio.py inject` ran while the app 
 crashpad dump), and once a windowed restart hung at Qt start. It is running headless (`sim_start.sh --headless`)
 as of this run; `apps/auto/DEV.md` documents the `uv run` incantation for the injector (it needs protobuf >= 7.35)
 and the stuck-boot recovery. A second `/usr/bin/adb` on this host keeps killing the Sdk adb server; use the Sdk adb.
+
+## Round 2: independent re-run on the finished pipeline (memo `8bc470b3`)
+
+Date: 2026-10-15, 17:25-17:27 EDT (21:25-21:27 UTC). Purpose: with every fix from the review round deployed and the
+gateway restored, record once more on the simulator and follow ONE memo through every hop, using only the new
+observability. Nothing failed, so no code was changed in this run. Evidence files are `pipeline-e2e/r2-*`.
+
+Preconditions, checked first: `emulator-5554` booted and windowed (`qemu-system-x86_64 ... -grpc 8554 -grpc-use-token`,
+no `-no-window`), debug app in the foreground as user 10, `holocene-inbox-watcher.service` active with a fresh
+heartbeat, `gateway_state.json` platform `bloodbank` = `connected`, NATS consumer `bloodbank-hermes-gateway` at
+0 pending / 0 ack-pending (no queue ahead of the memo), `emulator_audio.py status` answered
+`unauthenticated=UNAUTHENTICATED, authenticated=OK, microphone_real_audio=false` (host mic mix-in off, so nothing
+reaches Jarad's speakers and nothing from the room reaches the recording).
+
+| | |
+|---|---|
+| memo_id | `8bc470b3-129a-5959-b311-c50757154773` |
+| audio object | `inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg`, 47,463 B, 10.6 s Ogg/Opus |
+| command_id | `7091af96-e797-4d5f-85c1-f3e1a29588ef` |
+| reply object | `replies/2026/10/15/212659Z-holocene-pm-8bc470b3-129a-5959-b311-c50757154773.ogg`, 12,929 B |
+| verdict | **COMPLETE in 59.0 s; played on the pad 7.8 s after the reply was rendered** |
+
+### Steps (adb taps, each screenshot viewed)
+
+Known utterance: `make_known_utterance.py --voice kal16`, "Holocene pipeline test. Please reply with the words
+pipeline check received." (4.905 s). Select the Holocene tile (tap 490,350), tap Record (21:25:46.0), inject with
+`emulator_audio.py inject --port 8554 --wav utt.wav --lead-ms 500 --tail-ms 1500` (21:25:51.4 to 21:25:57.5, 346 packets,
+not cancelled, emulator survived), tap Stop & Send (21:26:01.3).
+
+| selected | recording | sent (memo id on screen) | reply played |
+|---|---|---|---|
+| ![selected](pipeline-e2e/r2-1-holocene-selected.png) | ![recording](pipeline-e2e/r2-2-recording.png) | ![sent](pipeline-e2e/r2-3-sent-with-memo-id.png) | ![played](pipeline-e2e/r2-4-reply-played.png) |
+
+The pad shows `sent -> Holocene`, `memo 8bc470b3 . mise run memo:trace 8bc470b3`, and later `reply played` with
+`last reply: 212659Z-holocene-pm-8bc470b3-...ogg`: the on-screen id is the id the trace takes.
+
+### Per-hop evidence (UTC)
+
+Full output with watcher logs: `pipeline-e2e/r2-trace.txt`. Raw evidence (S3 listing, proxy log lines, the gateway
+journal row, the Hermes session, all Candystore events for the correlation id): `pipeline-e2e/r2-evidence.txt`.
+
+| # | Hop | Evidence | Time | Since previous |
+|---|---|---|---|---|
+| 0 | Stop & Send tapped | adb tap | 21:26:01.261 | |
+| 1 | `record_started`/`record_stopped` client events | proxy log: `record_stopped bytes=47463 duration_ms=16957` (device-side) | 21:26:03.795 | +2.5 s (recorder finalize) |
+| 2 | upload proxy | `{"event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","status":200,"bytes":47463,"s3_ms":22}` | 21:26:03.960 | +0.2 s |
+| 3 | S3 object | `mc ls`: 20261015T212544Z.ogg, 46 KiB | 21:26:03 | |
+| 4 | fact `audio.memo.uploaded` | fact `fbbaec13-...` published by the proxy | 21:26:03.961 | |
+| 5 | fact `audio.memo.received` | watcher lag 1,098 ms | 21:26:05.053 | +1.1 s |
+| 6 | fact `audio.memo.transcribed` | large-v3 on CPU (GPU nearly full), 42.32 s | 21:26:48.831 | +43.8 s |
+| 7 | fact `audio.memo.dispatched` | command `7091af96-...` -> `bloodbank.cmd.agent.invocation.start` | 21:26:49.272 | +0.4 s |
+| 8 | gateway journal | `executions` row for that command_id: `holocene-pm`, created 21:26:49.295, `completed/success` 21:26:55.989 | 21:26:49.295 | +0.02 s (idle consumer) |
+| 9 | `agent.invocation.started` / `conversation.turn.started` | producer `hermes-agent:holocene-pm`, `target_agent_id=holocene-pm`, same correlationid and command_id, `context.memo_id` echoed | 21:26:49.295 | |
+| 10 | `agent.invocation.completed` / `turn.completed` | same ids | 21:26:55.988 | +6.7 s (agent turn) |
+| 11 | Hermes session | holocene-pm `state.db`, session `chat_id=<memo_id>`: user message = the transcript with the voice prefix, assistant reply `pipeline received` | 21:26:49 | |
+| 12 | fact `audio.memo.replied` | tts 1.93 s (vibevoice), reply key above | 21:27:02.585 | +13.3 s (reply text read + TTS + upload) |
+| 13 | S3 reply object | 12,929 B | 21:27:02 | |
+| 14 | proxy `playback` log + fact `audio.memo.played` | `phase: started` then `phase: ended`, played 3.34 s | 21:27:06.772 / 21:27:10.207 | +4.2 s after the fact |
+
+Latency summary: stop to upload 2.7 s, watcher pickup 1.1 s, transcription 43.8 s (the only slow hop; CPU
+int8 because the 3090 is full of other work), dispatch 0.4 s, agent 6.7 s, reply text + TTS + upload 13.3 s, to playback
+start 4.2 s. End to end from upload: 59.0 s.
+
+### Correlation, no guessing
+
+Everything joins on `correlationid = memo_id`, and the command carries `command_id` and `thread_id = memo_id`. The
+gateway journal row was fetched by `command_id`, not "latest"; the Hermes session by `chat_id`, not mtime. Candystore
+`GET /events?correlationid=<memo_id>` returned 11 events in order: uploaded, received, transcribed,
+turn.started, invocation.started, dispatched, invocation.completed, turn.completed, replied, played, played.
+Note the gateway publishes `started` 23 ms before the watcher's own `dispatched` fact (the consumer is idle, so the
+watcher's fact is published after the PUB returns); `memo:trace` orders by hop, not by timestamp, so this is harmless.
+
+### Transcript versus the known phrase
+
+| | |
+|---|---|
+| said (flite kal16) | Holocene pipeline test. Please reply with **the** words pipeline **check** received. (10 words) |
+| transcribed from the 10.6 s recording on the sim | Holocene pipeline test, please reply with words pipeline received. (8 words) |
+| prompt the agent got (Hermes session) | `[Voice memo transcript - speech-to-text, may contain recognition errors] Holocene pipeline test, please reply with words pipeline received.` |
+| agent reply | `pipeline received` |
+| same WAV, transcribed directly, no emulator | Holocene pipeline test. Please reply with words pipeline check received. |
+
+Word by word: 8 of 10 matched in order. Missing: "the" (also missing when the clean WAV is transcribed, so that
+one is Whisper on the synthetic voice) and "check" (present in the clean WAV, absent from the sim recording, so it was
+lost between the injected PCM and the Opus file or by recognizer variance on the lossy audio; I did not isolate which).
+The pipeline did its job exactly: the agent received what was transcribed, byte for byte, and answered the request
+literally ("pipeline received"). This is a property of the synthetic voice plus the emulator audio path, not of the
+transport.
+
+### Holocene `/voice`
+
+`GET /api/modules/voice/memos/<memo_id>` (`pipeline-e2e/r2-voice-api.json`) returns `status: complete`, `reached: played`,
+`totalSeconds: 58.624`, the transcript, the reply text and eight hops, all `ok`. Rendered through the web container
+(`pipeline-e2e/r2-voice-view.png`, headless Chrome at the container's internal address; the public route sits behind
+Google OIDC): the memo is at the top of the list with "Complete", HEARD and AGENT SAID panels, and every hop DONE with
+its latency, ending in "Played on car, played to the end, 11207 ms after rendering, 3.34 s of audio". The same page
+also shows a real **STUCK** badge on an earlier review-test memo (`zz-review-watcherdown`, "Stuck before watcher picked
+up"), so the amber state has now been seen on screen, not only in unit tests, plus several FAILED memos in red
+with the failing hop named.
+
+### What round 2 proves
+
+- A recording made in Holocene Auto on the Honda simulator, from PCM injected into the emulator microphone and captured
+  by the app's native recorder, reached the intended agent (`holocene-pm`, chosen by tapping the Holocene tile) as the
+  prompt of a `bloodbank.cmd.agent.invocation.start` command, and the agent's reply came back to the car and played.
+- Every hop above has an id-keyed record: proxy log, S3 object, six memo facts, command id, gateway journal row,
+  gateway lifecycle events, the Hermes session, reply object, playback beacon, and the pad's own status line.
+- No failure occurred this run, so no instrumentation gap was exposed by one. Gaps that remain visible in the data:
+  the gateway journal still has `prompt_text: null` and does not store the reply (the Hermes `state.db` is the only
+  source for both, which `memo:trace` reads), and the `/voice` list still carries four phantom `inbox` failures from an
+  earlier bug.
+
+### What round 2 does not prove
+
+- A real microphone and the Honda unit's audio stack: the audio is synthetic and injected, and sound output was proven
+  by the page's audio element events and the playback beacon, not by capturing audible output.
+- Recognition quality on human speech in a moving car.
+- Behaviour when the gateway has a backlog of other work (voice memos still share one FIFO consumer); the consumer was
+  idle here, which is why the agent started 23 ms after dispatch.
+- The public `https://holocene.delo.sh/voice` route behind OIDC was not viewed in a logged-in browser.
+
+State left behind: emulator running windowed with the app open and Holocene selected; host mic passthrough off
+(`emulator_audio.py status --disable-host-mic`); the memo and reply objects are left in the bucket as evidence; the
+direct-transcription scratch files are in `/tmp/e2e2` only.

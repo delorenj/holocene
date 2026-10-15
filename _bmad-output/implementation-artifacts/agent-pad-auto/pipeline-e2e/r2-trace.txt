@@ -1,0 +1,40 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 8bc470b3 --logs
+memo_id  8bc470b3-129a-5959-b311-c50757154773
+key      inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg
+agent    holocene-pm
+command  7091af96-e797-4d5f-85c1-f3e1a29588ef
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=8bc470b3-129a-5959-b311-c50757154773&limit=100'
+
+  OK      s3_object                  2026-10-15T21:26:03.000Z           inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg  47463 bytes
+  OK      upload_proxy_log           2026-10-15T21:26:03.961Z  +1.0s    {"ts":"2026-10-15T21:26:03.960Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","memo_id":"8bc470b3-129a-59
+  OK      fact:uploaded              2026-10-15T21:26:03.961Z  +0.0s    47463 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST
+  OK      fact:received              2026-10-15T21:26:05.053Z  +1.1s    watcher saw it, lag 1098ms
+  OK      fact:transcribed           2026-10-15T21:26:48.831Z  +43.8s   66 chars in 42.32s (large-v3): 'Holocene pipeline test, please reply with words pipeline received.'
+  OK      fact:dispatched            2026-10-15T21:26:49.272Z  +0.4s    command 7091af96-e797-4d5f-85c1-f3e1a29588ef -> bloodbank.cmd.agent.invocation.start
+  OK      gateway_journal            2026-10-15T21:26:49.295Z  +0.0s    profile=holocene-pm state=completed outcome=success created=2026-10-15T21:26:49.295222Z updated=2026-10-15T21:26:55.988830Z
+  OK      agent:invocation.started   2026-10-15T21:26:49.295Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-15T21:26:55.988Z  +6.7s    invocation.completed
+  OK      hermes_session             2026-10-15T21:26:49.295Z  +0.0s    agent was given exactly what the watcher sent (139 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors] Holocene pipeline'
+  OK      fact:replied               2026-10-15T21:27:02.585Z  +13.3s   17 chars, tts 1.93s (vibevoice) -> replies/2026/10/15/212659Z-holocene-pm-8bc470b3-129a-5959-b311-c50757154773.ogg
+  OK      reply_object               2026-10-15T21:27:02.000Z  +0.0s    replies/2026/10/15/212659Z-holocene-pm-8bc470b3-129a-5959-b311-c50757154773.ogg  12929 bytes
+  OK      pad_playback_log           2026-10-15T21:27:06.772Z  +4.8s    {"ts":"2026-10-15T21:27:06.772Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/15/212659Z-holocene-pm-8bc470b3-129a-5959-b311-c50757154773.
+  OK      played_on_pad              2026-10-15T21:27:06.772Z  +0.0s    reply started 7772 ms after it was rendered, ended after 3.34s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+
+VERDICT  COMPLETE in 59.0s; played on the pad 7.8s after the reply was rendered
+
+watcher log (15 lines, journalctl --user -u holocene-inbox-watcher.service):
+  {"ts":"2026-10-15T21:26:05.052Z","svc":"inbox-watcher","level":"info","event":"discovered","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"receive","bytes":47463,"age_s":
+  {"ts":"2026-10-15T21:26:05.152Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"received","fact":"audio.mem
+  {"ts":"2026-10-15T21:26:05.176Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"received","next":"transcribe","
+  {"ts":"2026-10-15T21:26:06.467Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"download","ms":288,"bytes":4746
+  {"ts":"2026-10-15T21:26:06.509Z","svc":"inbox-watcher","level":"info","event":"transcribe_start","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"transcribe","audio_s":10.
+  {"ts":"2026-10-15T21:26:48.929Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"transcribed","fact":"audio.
+  {"ts":"2026-10-15T21:26:48.929Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"transcribed","next":"dispatch",
+  {"ts":"2026-10-15T21:26:49.375Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"dispatched","fact":"audio.m
+  {"ts":"2026-10-15T21:26:49.375Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"dispatched","next":"await_agent
+  {"ts":"2026-10-15T21:26:50.742Z","svc":"inbox-watcher","level":"info","event":"agent_waiting","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"agent","command_id":"7091af9
+  {"ts":"2026-10-15T21:26:57.655Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"agent","next":"reply","ms":8383
+  {"ts":"2026-10-15T21:26:58.847Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"reply_text","next":"speak","ms"
+  {"ts":"2026-10-15T21:27:01.808Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"tts","ms":1929,"engine":"vibevo
+  {"ts":"2026-10-15T21:27:02.676Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"replied","fact":"audio.memo
+  {"ts":"2026-10-15T21:27:02.676Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8bc470b3-129a-5959-b311-c50757154773","key":"inbox/holocene-pm/2026/10/15/20261015T212544Z.ogg","agent":"holocene-pm","stage":"replied","next":"done","ms":868
