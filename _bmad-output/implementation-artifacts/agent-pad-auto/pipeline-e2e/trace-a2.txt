@@ -1,0 +1,21 @@
+memo_id  1e452985-ca20-5bcc-a7e0-247c1addab9a
+key      inbox/holocene-pm/2026/10/15/20261015T202453Z.ogg
+agent    holocene-pm
+command  bfebbec1-ef47-4f17-8e03-34522121eeff
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=1e452985-ca20-5bcc-a7e0-247c1addab9a&limit=100'
+
+  OK      s3_object                  2026-10-15T20:24:54.000Z           inbox/holocene-pm/2026/10/15/20261015T202453Z.ogg  41263 bytes
+  OK      upload_proxy_log           2026-10-15T20:24:54.780Z  +0.8s    {"ts":"2026-10-15T20:24:54.780Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T202453Z.ogg","memo_id":"1e452985-ca20-5b
+  OK      fact:uploaded              2026-10-15T20:24:54.780Z  +0.0s    41263 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST
+  OK      fact:received              2026-10-15T20:24:58.000Z  +3.2s    watcher saw it, lag 4040ms
+  OK      fact:transcribed           2026-10-15T20:25:46.000Z  +48.0s   72 chars in 45.57s (large-v3): 'Holocene pipeline test. Please reply with words pipeline check received.'
+  OK      fact:dispatched            2026-10-15T20:25:48.000Z  +2.0s    command bfebbec1-ef47-4f17-8e03-34522121eeff -> bloodbank.cmd.agent.invocation.start
+  OK      gateway_journal            2026-10-15T20:25:48.745Z  +0.7s    profile=holocene-pm state=completed outcome=success created=2026-10-15T20:25:48.745685Z updated=2026-10-15T20:25:59.221746Z
+  OK      agent:invocation.started   2026-10-15T20:25:48.745Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-15T20:25:59.221Z  +10.5s   invocation.completed
+  OK      fact:replied               2026-10-15T20:26:10.000Z  +10.8s   23 chars, tts 2.09s (vibevoice) -> replies/2026/10/15/202606Z-holocene-pm-1e452985-ca20-5bcc-a7e0-247c1addab9a.ogg
+  OK      reply_object               2026-10-15T20:26:08.000Z  +0.0s    replies/2026/10/15/202606Z-holocene-pm-1e452985-ca20-5bcc-a7e0-247c1addab9a.ogg  5954 bytes
+  OK      pad_playback_log           2026-10-15T20:26:11.460Z  +3.5s    {"ts":"2026-10-15T20:26:11.459Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/15/202606Z-holocene-pm-1e452985-ca20-5bcc-a7e0-247c1addab9a.
+  OK      played_on_pad              2026-10-15T20:26:11.459Z  +0.0s    reply started 5459 ms after it was rendered, ended after 1.47s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+
+VERDICT  COMPLETE in 74.0s; played on the pad +3.5s after the reply was rendered

@@ -1,0 +1,21 @@
+memo_id  bf892df0-eec9-5f12-971c-f947fee14d2a
+key      inbox/holocene-pm/2026/10/15/20261015T201741Z.ogg
+agent    holocene-pm
+command  9e17a185-6fc2-43c0-98bc-ad7eaba5bfcb
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=bf892df0-eec9-5f12-971c-f947fee14d2a&limit=100'
+
+  OK      s3_object                  2026-10-15T20:17:43.000Z           inbox/holocene-pm/2026/10/15/20261015T201741Z.ogg  35036 bytes
+  OK      upload_proxy_log           2026-10-15T20:17:43.151Z  +0.2s    {"ts":"2026-10-15T20:17:43.151Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/15/20261015T201741Z.ogg","memo_id":"bf892df0-eec9-5f
+  OK      fact:uploaded              2026-10-15T20:17:43.152Z  +0.0s    35036 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST
+  OK      fact:received              2026-10-15T20:17:43.000Z  +0.0s    watcher saw it, lag 556ms
+  OK      fact:transcribed           2026-10-15T20:18:27.000Z  +44.0s   72 chars in 41.0s (large-v3): 'Holocene pipeline test. Please reply with words pipeline check received.'
+  OK      fact:dispatched            2026-10-15T20:18:28.000Z  +1.0s    command 9e17a185-6fc2-43c0-98bc-ad7eaba5bfcb -> bloodbank.cmd.agent.invocation.start
+  OK      gateway_journal            2026-10-15T20:18:28.929Z  +0.9s    profile=holocene-pm state=completed outcome=success created=2026-10-15T20:18:28.929704Z updated=2026-10-15T20:18:37.963051Z
+  OK      agent:invocation.started   2026-10-15T20:18:28.929Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-15T20:18:37.962Z  +9.0s    invocation.completed
+  OK      fact:replied               2026-10-15T20:18:49.000Z  +11.0s   23 chars, tts 2.38s (vibevoice) -> replies/2026/10/15/201846Z-holocene-pm-bf892df0.ogg
+  OK      reply_object               2026-10-15T20:18:48.000Z  +0.0s    replies/2026/10/15/201846Z-holocene-pm-bf892df0.ogg  7188 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (it polls replies/ every 15s; a parked car reports nothing) (optional)
+
+VERDICT  COMPLETE in 65.0s; playback on the pad not reported

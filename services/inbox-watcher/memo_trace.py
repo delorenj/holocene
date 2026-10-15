@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -65,16 +66,25 @@ def watcher_unit_active() -> str:
     return r.stdout.strip() or "unknown"
 
 
-def upload_log_line(key: str, memo_id: str) -> tuple[str | None, str | None]:
-    """(timestamp, line) of the upload-proxy log line for this memo, if docker logs still has it."""
+def upload_log_line(key: str, memo_id: str, event: str = "upload", needle: str | None = None) -> tuple[str | None, str | None]:
+    """(timestamp, line) of the upload-proxy log line of this `event` for this memo, if docker logs still has it.
+
+    event="upload" is the PUT of the memo; event="playback" is the pad's playback beacon for the reply
+    (those lines carry the reply key, which contains the memo id)."""
     r = subprocess.run(["docker", "logs", "--timestamps", c.UPLOAD_CONTAINER], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         return None, f"docker logs failed: {(r.stderr or r.stdout).strip()[:120]}"
     hit = None
     for line in (r.stdout + r.stderr).splitlines():
-        if key in line or memo_id in line:
-            if '"status":200' in line or "uploaded " in line or hit is None:
-                hit = line
+        if f'"event":"{event}"' not in line:
+            continue
+        # a beacon line only counts when its own memo_id field matches (a legacy reply key has no memo id)
+        if not (memo_id in line if event == "playback" else (key in line or memo_id in line)):
+            continue
+        if needle and needle not in line:
+            continue
+        if hit is None or '"status":200' in line:
+            hit = line
     if not hit:
         return None, None
     ts, _, rest = hit.partition(" ")
@@ -214,6 +224,15 @@ def build(key: str) -> tuple[list[Hop], dict]:
                         f"{reply_key}  {rs['size']} bytes" if rs else f"{reply_key} not in bucket"))
     else:
         hops.append(Hop("reply_object", MISSING, detail="no reply key recorded"))
+    if reply_key:
+        try:
+            pts, pline = upload_log_line(reply_key, memo_id, event="playback", needle='"phase":"started"')
+            if pts:
+                hops.append(Hop("pad_playback_log", OK, c.parse_iso(pts), pline[:160], optional=True))
+            else:
+                hops.append(Hop("pad_playback_log", UNKNOWN, detail=pline or f"no playback beacon line in `docker logs {c.UPLOAD_CONTAINER}`", optional=True))
+        except Exception as e:  # noqa: BLE001
+            hops.append(Hop("pad_playback_log", UNKNOWN, detail=str(e)[:120], optional=True))
     played = sorted(by_type.get("bloodbank.audio.memo.played", []), key=lambda e: e["time"])
     p_start = next((e for e in played if (e.get("data") or {}).get("phase") == "started"), None)
     p_end = next((e for e in played if (e.get("data") or {}).get("phase") == "ended"), None)
@@ -313,6 +332,15 @@ def resolve_key(arg: str) -> str:
     if arg.startswith(f"{c.INBOX_PREFIX}/"):
         return arg
     key = c.s3_find_inbox_key(arg)
+    if not key and re.fullmatch(r"[0-9a-fA-F-]{36}", arg):
+        # The object may be gone (deleted, or never existed: a phantom key). The bus still remembers it.
+        try:
+            for ev in c.candystore_events(arg.lower()):
+                k = (ev.get("data") or {}).get("s3_key")
+                if isinstance(k, str) and k.startswith(f"{c.INBOX_PREFIX}/"):
+                    return k
+        except Exception:  # noqa: BLE001
+            pass
     if not key:
         raise SystemExit(f"no inbox object matches {arg!r}")
     return key

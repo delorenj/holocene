@@ -36,10 +36,12 @@ tools to see every hop of it.
    inbox_watcher.py   (correlates by command_id, never "latest row")
         |-- reads that session's last assistant message   HOP 8  reply text
         |-- vox /synthesize-url (voice rick) -> OGG        HOP 9  TTS
-        |-- mc cp -> replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo8>.ogg    HOP 10 reply object
+        |-- mc cp -> replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg    HOP 10 reply object
         |-- replied     fact: audio.memo.replied
         v
-   Agent Pad polls replies/<today>/ every 15s and plays the newest new key   HOP 11 playback (not observable)
+   Agent Pad polls replies/<today>/ every 15s and plays the newest new key   HOP 11 playback
+        |-- POST /upload/played {reply_key, phase}  -> upload proxy log line "playback"
+        |-- played      fact: audio.memo.played (phase started|ended)  or  failed(stage=playback, retryable)
 
    Any stage can instead publish   audio.memo.failed {stage, error_code, error_message, retryable, attempt}
 ```
