@@ -30,6 +30,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -43,6 +44,10 @@ class MainActivity : Activity() {
     private val preview get() = session.preview
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
+    private lateinit var content: FrameLayout
+    private lateinit var scroll: ScrollView
+    private lateinit var pad: AgentPadHost
+    private var showingPad = true
     private var carHost: CarHost? = null
     private var unrestricted = false
     private var recognizer: SpeechRecognizer? = null
@@ -55,17 +60,57 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         audio = getSystemService(AudioManager::class.java)
-        val scroll = ScrollView(this)
+        scroll = ScrollView(this)
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 16, 24, 24)
             setBackgroundColor(Color.rgb(11, 16, 32))
         }
         scroll.addView(body)
-        setContentView(scroll)
+        content = FrameLayout(this)
+        pad = AgentPadHost(this, content)
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(11, 16, 32))
+            for ((title, toPad) in listOf("Agent Pad" to true, "Diagnostics" to false)) {
+                addView(Button(this@MainActivity).apply {
+                    text = title
+                    isAllCaps = false
+                    minHeight = 56
+                    setOnClickListener { showView(toPad) }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }
+        }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(11, 16, 32))
+            addView(tabs, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            addView(content, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        })
         status = label("Host UX unknown; capture and detail disabled", 18f)
         connectHost()
         scheduleDiagnosticIntent(intent)
+        showView(true)
+    }
+
+    private fun showView(toPad: Boolean) {
+        showingPad = toPad
+        if (toPad) {
+            refreshPad()
+        } else {
+            pad.teardown()
+            content.removeAllViews()
+            content.addView(scroll)
+        }
+    }
+
+    private fun refreshPad() {
+        if (!showingPad) return
+        if (AgentPadPolicy.padAllowed(carHost != null, unrestricted)) {
+            pad.show()
+        } else {
+            pad.message("Agent Pad is available when parked", retry = false)
+        }
     }
 
     private fun label(text: String, size: Float = 16f): TextView = TextView(this).apply {
@@ -180,6 +225,7 @@ class MainActivity : Activity() {
                     releaseAll("Host restricted; stopped")
                 }
                 render()
+                refreshPad()
             },
             onStatus = { message -> if (::status.isInitialized) report(message) },
         )
@@ -471,12 +517,31 @@ class MainActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onResume() {
+        super.onResume()
+        pad.onResume()
+        refreshPad()
+    }
+
     override fun onPause() {
         cancelDiagnostic("Activity paused; capture cancelled", "pause")
+        pad.onPause()
         super.onPause()
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        pad.onPermissionsResult(requestCode, grantResults)
+    }
+
+    @Suppress("DEPRECATION") // Plain Activity back handling; no AndroidX OnBackPressedDispatcher.
+    override fun onBackPressed() {
+        if (showingPad && pad.goBack()) return
+        super.onBackPressed()
+    }
+
     override fun onDestroy() {
+        pad.destroy()
         session.cancel()
         releaseAll("Activity destroyed")
         main.removeCallbacksAndMessages(null)

@@ -85,6 +85,15 @@ function App() {
     }
   }, [pendingUrl])
 
+  // Silent unlock on mount: succeeds inside the Holocene Auto WebView (no gesture required),
+  // fails quietly in normal browsers where the "Tap to enable sound" button stays.
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el) return
+    el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
+    el.play().then(() => { setSoundUnlocked(true); setStatus('sound on') }, () => {})
+  }, [])
+
   // Watch replies box and play newest unplayed
   useEffect(() => {
     const tick = async () => {
