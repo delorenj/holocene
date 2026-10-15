@@ -108,3 +108,25 @@ run = "'{{config_root}}/apps/auto/tools/pad_dev.sh'"
 [tasks."pad:build"]
 description = "Build Agent Pad; nginx serves apps/agent-pad/dist so this deploys production"
 run = "'{{config_root}}/apps/auto/tools/pad_build.sh'"
+
+# --- Voice memo pipeline (services/inbox-watcher) ---------------------------
+[tasks."memo:trace"]
+description = "One timeline for a voice memo, hop by hop: memo:trace [<memo_id>|<s3 key>|<file>|latest] [--logs]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' trace"
+
+[tasks."memo:list"]
+description = "Last N voice memos with the furthest stage each reached: memo:list [-n 15]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' list"
+
+[tasks."memo:watcher:install"]
+description = "Install, enable and start holocene-inbox-watcher.service (systemd user unit)"
+run = "'{{config_root}}/services/inbox-watcher/install.sh' --restart"
+
+[tasks."memo:watcher:logs"]
+description = "Follow the voice memo watcher's structured JSON log"
+run = "journalctl --user -u holocene-inbox-watcher.service -f -o cat"
+
+[tasks."memo:test"]
+description = "Run the voice memo pipeline tests (state machine with all external hops faked, upload fact contract)"
+dir = "{{config_root}}/services"
+run = "/usr/bin/python3 -B -m unittest discover -s inbox-watcher -p 'test_*.py' && /usr/bin/python3 -B -m unittest discover -s upload-proxy -p 'test_*.py'"

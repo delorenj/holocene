@@ -1,0 +1,24 @@
+[Unit]
+Description=Holocene Auto voice memo pipeline (S3 inbox -> transcribe -> Bloodbank command -> spoken reply)
+Documentation=file://%h/code/33GOD/holocene/services/inbox-watcher/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/33GOD/holocene/services/inbox-watcher
+ExecStart=/usr/bin/python3 -u %h/code/33GOD/holocene/services/inbox-watcher/inbox_watcher.py
+Restart=always
+RestartSec=5
+# S3 access comes from the `delo` mc alias in ~/.mc/config.json; no secrets live in this unit.
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+Environment=TRANSCRIBE_DIR=%h/HeyMa
+Environment=MEMO_AGENT_TIMEOUT_S=600
+Environment=MEMO_TRANSCRIBE_TIMEOUT_S=420
+# All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
