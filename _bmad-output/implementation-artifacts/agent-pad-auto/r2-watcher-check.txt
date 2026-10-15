@@ -1,0 +1,7 @@
+# watcher check 2026-10-15T12:31:27-04:00
+no inbox-watcher/reply-renderer process
+
+(systemd units matching watcher|renderer|agent-pad|reply listed above; empty = none)
+
+agent-pad-web Up 25 minutes
+agent-pad-upload Up 25 minutes

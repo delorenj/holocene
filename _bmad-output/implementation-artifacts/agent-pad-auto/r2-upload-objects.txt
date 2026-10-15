@@ -1,0 +1,4 @@
+Round 2 test uploads (both deleted with `mc rm delo/holocene-auto/<key>`; inbox listing diffed equal to its pre-test state each time)
+inbox/33god-pm/2026/10/15/20261015T163111Z.ogg   63268 bytes  ogg/opus 48 kHz mono 11.76 s  (build ed5741..., first run)
+inbox/holocene-pm/2026/10/15/20261015T163251Z.ogg 50358 bytes  ogg/opus 48 kHz mono  9.40 s  (build a82574..., final APK)
+Both were visible in the public listing https://s3.delo.sh/holocene-auto?list-type=2&prefix=inbox/ before deletion. Content is emulator mic noise.

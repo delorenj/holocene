@@ -1,0 +1,17 @@
+10-15 12:32:21.871 12654 12654 I WebViewFactory: Loading com.google.android.webview version 130.0.6723.86 (code 672308637)
+10-15 12:32:21.941   631   659 I ActivityManager: Start proc 12728:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u10i8 for  {io.automaticai.holocene
+10-15 12:32:21.944 12654 12723 W chromium: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+10-15 12:32:21.977 12728 12728 I cr_WebViewApkApp: version=130.0.6723.86 (672308637) minSdkVersion=29 isBundle=true processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.S
+10-15 12:32:22.016 12728 12757 W chromium: [WARNING:runtime_features.cc(610)] Fenced frames cannot be enabled in this configuration. Use --enable-features=FencedFrames instead.
+10-15 12:32:22.016 12728 12757 W chromium: [WARNING:runtime_features.cc(655)] SharedStorage cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI in addition.
+10-15 12:32:22.016 12728 12757 W chromium: [WARNING:runtime_features.cc(665)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM1
+10-15 12:32:22.020 12654 12758 W chromium: [WARNING:viz_main_impl.cc(85)] VizNullHypothesis is disabled (not a warning)
+10-15 12:32:22.809 12728 12757 I chromium: [INFO:viewport_data.cc(133)] E2E_Used ViewportFitCover
+10-15 12:32:31.762 12654 12654 E chromium: [ERROR:aw_browser_terminator.cc(165)] Renderer process (12728) crash detected (code -1).
+10-15 12:32:31.763   631   935 I ActivityManager: Killing 12728:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u10a177i8 (adj 0): isolated not needed
+10-15 12:32:34.703   631   659 I ActivityManager: Start proc 12816:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:1/u10i9 for  {io.automaticai.holocene
+10-15 12:32:34.745 12816 12816 I cr_WebViewApkApp: version=130.0.6723.86 (672308637) minSdkVersion=29 isBundle=true processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.S
+10-15 12:32:34.759 12816 12830 W chromium: [WARNING:runtime_features.cc(610)] Fenced frames cannot be enabled in this configuration. Use --enable-features=FencedFrames instead.
+10-15 12:32:34.759 12816 12830 W chromium: [WARNING:runtime_features.cc(655)] SharedStorage cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI in addition.
+10-15 12:32:34.759 12816 12830 W chromium: [WARNING:runtime_features.cc(665)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM1
+10-15 12:32:34.776 12816 12830 I chromium: [INFO:viewport_data.cc(133)] E2E_Used ViewportFitCover

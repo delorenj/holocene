@@ -47,7 +47,55 @@ API32 compatibility emulator (AOSP ATD, WebView 95):
 - NOT visually confirmed: ATD has no display output, `screencap` returns a black frame (`40-api32-launch.png`).
   Evidence is the accessibility tree only. Mic flow not exercised on API32.
 
-## Defects found and fixed (all in this round)
+## Verification round 2 (2026-10-15 12:30-12:35 EDT): the post-review build, real 1280x720 landscape
+
+Fresh run of the build that contains the review fixes (`PadState`, no `pauseTimers`, native-mic guards). Honda display override
+removed first (`wm size reset`, `Physical size: 1280x720`), app uninstalled and reinstalled (`adb install -r`), nothing granted
+in advance (`RECORD_AUDIO: granted=false` confirmed by `dumpsys package`). Every `r2-*.png` below was viewed.
+First build: sha256 `ed574123...770f`. While here one wart showed up in logcat (below); fixed, rebuilt (final sha256 `a8257435...22b4`,
+commit `07008e5`), and the tab round trip + record/send were repeated on that final APK on the Honda.
+
+Honda API33, `emulator-5580`, user 10, native 1280x720 (this closes the "landscape not seen" gap for the final build):
+- `r2-01-honda-launch.png`: resumed activity is `io.automaticai.holocene/sh.delo.holocene.auto.MainActivity` (`dumpsys activity`).
+  The screen shows the Honda rail on the left and, inside our app, the "Agent Pad" / "Diagnostics" tab bar, title "Agent Pad",
+  five tiles (Grolf, Holocene, Client Portal, HeyMa, Bloodbank), a grey Record button and the text "sound on". No "Tap to enable
+  sound" button; logcat has none of that text. The Honda "Connect the Device" dialog did not appear this time.
+- `r2-01-honda-uidump.xml`: the title, five tiles, Record and "sound on" are nodes of package `io.automaticai.holocene` under `android.webkit.WebView`.
+- `r2-honda-logcat-webview.txt`: WebView 130 loads; zero `FATAL EXCEPTION`. (The `AndroidRuntime` lines in a full logcat belong to the uiautomator process, uid 2000, not to the app.)
+- Mic: `r2-03` Grolf tile selected (blue ring, Record turns blue). Tapping Record produced the system dialog "Allow Holocene Fixture to record
+  audio?" with "While using the app" / "Don't allow" (`r2-04`); tapped "While using the app" with `input tap`, not `pm grant`.
+  `r2-05` + `r2-05-honda-recording-uidump.xml`: red "RECORDING - tap Stop to send" pill, "Stop & Send" button, "recording for Grolf... tap Stop to send",
+  and the system mic indicator in the status bar. Logcat shows the OS recording `io.automaticai.holocene` as active, then inactive at Stop.
+  `r2-06`: "sent -> Grolf".
+- Upload landed and was visible in the public listing: `inbox/33god-pm/2026/10/15/20261015T163111Z.ogg`, 63268 bytes, ffprobe opus 48 kHz mono 11.76 s.
+  Deleted with `mc rm delo/holocene-auto/<key>`; listing diffed equal to its pre-test state (`r2-upload-objects.txt`).
+- Inbox watcher: none running. `r2-watcher-check.txt`: no `inbox-watcher`/`reply-renderer` process, no matching systemd user unit, docker has only
+  `agent-pad-web` and `agent-pad-upload`. Nothing could have dispatched the object. (Only the local host was checked; another machine was not.)
+- Diagnostics: tapping "Diagnostics" shows the original fixture screen (`r2-07`, `r2-07-honda-diagnostics-uidump.xml`): "Holocene Auto - FIXTURE", "Emulator
+  diagnostic only - no live agents - not driving approved", fixture agents, "Preview canned input", "Probe microphone for 6 seconds", "Probe final ASR". Its status line
+  "Activity paused; capture cancelled" is the pre-existing initial text. Switching back (`r2-08`) shows the pad again, reloaded, "sound on".
+- Final APK (`a8257435...`), same checks: `r2-09` pad after Diagnostics -> Agent Pad round trip; `r2-10` recording for Holocene (permission already
+  held so no dialog); `r2-11` "sent -> Holocene". Second upload `inbox/holocene-pm/2026/10/15/20261015T163251Z.ogg` (50358 bytes, opus 9.40 s) landed and was deleted;
+  listing restored. The `WebView.destroy() called while WebView is still attached` warning is gone on this build.
+
+Wart found and fixed (commit `07008e5`): on every Diagnostics tab switch the first build logged `WebView.destroy() called while WebView is still attached to window`
+followed by `aw_browser_terminator: Renderer process crash detected (code -1)`. The app stayed alive (it is the renderer being killed by our own destroy), but the WebView
+is now removed from its parent before `destroy()`. `onRenderProcessGone` was also missing, so a genuine renderer crash/OOM kill would have taken down the whole app;
+it now returns true and shows "Agent Pad stopped unexpectedly" with Retry. The `aw_browser_terminator` line is STILL logged on destroy in the final build (benign teardown noise);
+the new `onRenderProcessGone` path itself was NOT exercised (no way was found to kill the renderer on purpose), and no unit test covers it.
+
+Phone, `Medium_Phone_API_36.0` (no car host), final APK, emulator-5582 (stopped afterwards):
+- `r2-20-phone-launch.png`: portrait 1080x2400; resumed activity is ours; tab bar under the status bar (insets fix holds), title "Agent Pad", the five tiles in a 3+2 grid,
+  Record, "sound on". `r2-21-phone-after-tab-roundtrip.png`: same after Diagnostics -> Agent Pad. Zero `FATAL EXCEPTION`.
+  The uiautomator dump on the phone only listed the two tab buttons (WebView accessibility nodes are built lazily), so the evidence for pad rendering on the phone is the screenshot.
+  Mic flow was not re-run on the phone this round (round 1 covered it on an earlier build).
+
+API32 compatibility, `Holocene_API32_Compatibility` (AOSP ATD, WebView 95, emulator-5584, stopped afterwards):
+- Resumed activity ours; zero `FATAL EXCEPTION`; WebView 95 loaded the page (cloudflare beacon console line). `r2-30-api32-uidump.xml` (second dump; the first only
+  listed the tabs) shows title "Agent Pad", five tiles, Record, "sound on" in the WebView. `r2-30-api32-screencap.png` is a black frame: ATD has no display
+  output, so there is NO visual confirmation on API32; accessibility tree only. Mic flow not run there.
+
+## Defects found and fixed (round 1)
 
 1. Permission result was denied: `AgentPadHost.onPermissionsResult` judged the pad "not visible" because the system dialog
    had paused the activity, so the first mic request ended `NotAllowedError`. Now judged by "page still alive".
@@ -79,13 +127,14 @@ API32 compatibility emulator (AOSP ATD, WebView 95):
 ## Not proven
 
 - Physical Civic head unit: not tested. Emulator results do not prove the real car audio stack behaves the same.
-- Driving restriction teardown (pad hidden when not parked): cannot be exercised on the Honda user build, which always
+- Driving restriction teardown (pad hidden when not parked), and the restricted->parked flip: cannot be exercised on the Honda user build, which always
   reports unrestricted. Covered only by the pure policy unit tests.
+- `onRenderProcessGone` recovery path: not exercised on any device.
 - Mic capture of real speech: the emulator mic yields noise/silence; transcription downstream not exercised.
 - Reply playback inside the app (poll + auto-play of a `replies/` object): not exercised; only the "sound on" unlock state seen.
 - Play Store / internal testing: nothing uploaded; versionCode 8 / 0.2.6-internal is unchanged and already consumed there,
   so shipping these fixes needs a version bump through mobile-deploy-hub.
-- Honda landscape 1280x720 layout: not seen (see size-override note above).
+- Honda landscape 1280x720 layout: seen in verification round 2 (`r2-*.png`); only the round 1 PNGs are the 800x1280 portrait override.
 - Custom Tabs / link viewer path is irrelevant now (in-app WebView) and was not tested.
 - Honda "Connect the Device" system dialog on first launch is Honda image behaviour, not ours.
 

@@ -1,0 +1,11 @@
+10-15 12:33:39.307 I/ActivityManager(  679): Start proc 2509:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0ai9000 for  {io.aut
+10-15 12:33:42.072 W/chromium( 1687): [1015/123342.069498:WARNING:url_request_context_config.cc(715)] Unrecognized Cronet experimental option "enable_telemetry" with params "true
+10-15 12:33:42.072 W/chromium( 1687): 
+10-15 12:33:44.088 I/cn_CronetUrlRequestContext( 1221): destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@b19c760
+10-15 12:33:44.922 I/WebViewFactory( 3464): Loading com.google.android.webview version 154.0.8037.106 (code 803710608)
+10-15 12:33:44.968 D/nativeloader( 3464): Load /data/app/~~58ZMb6L8Npb_a23p734H-g==/com.google.android.webview-p4lsXdwSk1Hf9MWmZDtIcg==/base.apk!/lib/x86_64/libwebviewchromium.so u
+10-15 12:33:44.971 D/nativeloader( 3464): Load /system/lib64/libwebviewchromium_plat_support.so using class loader ns clns-11 (caller=/data/app/~~58ZMb6L8Npb_a23p734H-g==/com.googl
+10-15 12:33:44.978 I/chromium( 3464): [1015/123344.975384:INFO:android_webview/browser/variations/variations_seed_loader.cc:63] Failed to open file for reading.: No such file or di
+10-15 12:33:44.978 I/chromium( 3464): [1015/123344.978317:INFO:android_webview/browser/variations/variations_seed_loader.cc:63] Failed to open file for reading.: No such file or di
+10-15 12:33:50.257 D/nativeloader( 3672): InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL
+10-15 12:34:09.052 D/nativeloader( 3804): InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL
