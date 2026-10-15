@@ -11,7 +11,7 @@ native recorder bridge was added. Three real defects were found and fixed along 
 
 ## Proven
 
-Honda IVI API33 emulator (`emulator-5580`, user 10, WebView 130, user build, parked/unrestricted). NOTE: these runs used a display override `wm size 800x1280` (portrait; physical size is 1280x720), so every Honda PNG is portrait and the WebView sat in a ~656x1143 column beside the rail. The real 1280x720 landscape layout was NOT seen:
+Honda IVI API33 emulator (`emulator-5580`, user 10, WebView 130, user build, parked/unrestricted). NOTE: these runs used a display override `wm size 800x1280` (portrait; physical size is 1280x720), so every Honda PNG is portrait and the WebView sat in a ~656x1143 column beside the rail. The real 1280x720 landscape layout was not seen in round 1 (it is in verification round 2 below):
 - Install + launch by `am start --user 10`. `dumpsys activity` resumed activity = `io.automaticai.holocene/sh.delo.holocene.auto.MainActivity`.
 - `01-honda-launch.png`: a Honda system "Connect the Device" dialog (Bluetooth) covers the app on first launch; unrelated to us, dismissed with Cancel.
 - `02-honda-after-dialog.png` + `02-honda-uidump.xml`: "Agent Pad" and "Diagnostics" tabs, title "Agent Pad", five tiles
