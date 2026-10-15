@@ -31,7 +31,7 @@ function writeUrl(view: View, focus: string | undefined, push: boolean) {
   else window.history.replaceState(null, "", url);
 }
 
-function usePoll<T>(url: string) {
+export function usePoll<T>(url: string, intervalMs = POLL_MS) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -46,7 +46,7 @@ function usePoll<T>(url: string) {
       } catch (err) {
         if (live) setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (live) timer = setTimeout(tick, document.hidden ? POLL_MS * 4 : POLL_MS);
+        if (live) timer = setTimeout(tick, document.hidden ? intervalMs * 4 : intervalMs);
       }
     };
     void tick();
@@ -54,11 +54,11 @@ function usePoll<T>(url: string) {
       live = false;
       clearTimeout(timer);
     };
-  }, [url]);
+  }, [url, intervalMs]);
   return { data, error };
 }
 
-function useTheme(): [Theme, () => void] {
+export function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>("ledger");
   useEffect(() => {
     try {
@@ -118,7 +118,7 @@ function projectsStatement(d: ProjectsPayload): string {
   return parts.join(" ") || "No projects found in pjangler.";
 }
 
-function Brand() {
+export function Brand() {
   return (
     <a className="hub-brand" href="/" aria-label="33GOD Holocene">
       <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -131,7 +131,7 @@ function Brand() {
   );
 }
 
-function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
+export function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
   const night = theme === "ledger-night";
   return (
     <button type="button" className="hub-theme" aria-pressed={night} onClick={onToggle} title={night ? "Switch to Ledger (day)" : "Switch to Ledger night (provisional)"}>
@@ -197,6 +197,7 @@ export function HubApp() {
         <nav className="hub-tabs" aria-label="Views">
           <button type="button" className="hub-tab" aria-current={view === "agents" ? "page" : undefined} onClick={() => go("agents")}>Agents</button>
           <button type="button" className="hub-tab" aria-current={view === "projects" ? "page" : undefined} onClick={() => go("projects")}>Projects</button>
+          <a className="hub-tab" href="/voice">Voice</a>
         </nav>
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
@@ -231,6 +232,7 @@ export function HubApp() {
           <span>Holocene reads Bloodbank; it never publishes.</span>
           <a href="/legacy">Legacy dashboard</a>
           <a href="/hooks">Hooks</a>
+          <a href="/voice">Voice memos</a>
         </footer>
       </div>
     </div>

@@ -1,0 +1,55 @@
+import type { Signal } from "../hub/types";
+import type { HopStatus, MemoStatus, MemoSummary } from "./types";
+
+export const HOP_SIGNAL: Record<HopStatus, Signal> = {
+  ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown"
+};
+export const MEMO_SIGNAL: Record<MemoStatus, Signal> = { complete: "cleared", failed: "broken", running: "working", stuck: "stuck" };
+export const HOP_WORD: Record<HopStatus, string> = {
+  ok: "Done", failed: "Failed", waiting: "Waiting", stuck: "Stuck", pending: "Not reached", missing: "Not recorded"
+};
+
+/** 240 ms · 2.1 s · 46 s · 12m · 1h 06m */
+export function formatLatency(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}m ${String(s % 60).padStart(2, "0")}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${h}h`;
+}
+
+export function clockTime(iso: string | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "–";
+  return new Date(t).toLocaleTimeString([], { hour12: false });
+}
+
+export function dayTime(iso: string | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "–";
+  const d = new Date(t);
+  const today = new Date();
+  const same = d.toDateString() === today.toDateString();
+  return same ? d.toLocaleTimeString([], { hour12: false }) : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${d.toLocaleTimeString([], { hour12: false })}`;
+}
+
+/** Running memos keep counting in the browser between polls. */
+export function liveTotal(memo: Pick<MemoSummary, "status" | "startedAt" | "totalSeconds">, now: number): number {
+  if (memo.status !== "running" && memo.status !== "stuck") return memo.totalSeconds;
+  const start = Date.parse(memo.startedAt);
+  return Number.isFinite(start) ? Math.max(memo.totalSeconds, (now - start) / 1000) : memo.totalSeconds;
+}
+
+export function statement(memos: MemoSummary[]): string {
+  if (!memos.length) return "No voice memos in the event collection yet.";
+  const count = (s: MemoStatus) => memos.filter((m) => m.status === s).length;
+  const parts: string[] = [`${memos.length} recent ${memos.length === 1 ? "memo" : "memos"}.`];
+  if (count("stuck")) parts.push(`${count("stuck")} stuck.`);
+  if (count("failed")) parts.push(`${count("failed")} failed.`);
+  if (count("running")) parts.push(`${count("running")} in flight.`);
+  if (count("complete")) parts.push(`${count("complete")} complete.`);
+  return parts.join(" ");
+}

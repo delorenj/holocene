@@ -282,6 +282,17 @@ export class EventStore {
     return out;
   }
 
+  /**
+   * Events of `types` whose correlationid is one of `ids`, oldest first. Walks the (type,cursor) index
+   * from `after`, so callers bound the scan with the cursor of the oldest journey they care about.
+   */
+  correlated(types: string[], ids: string[], after = 0, limit = 5000): CollectedEvent[] {
+    if (!types.length || !ids.length) return [];
+    const typeMarks = types.map(() => "?").join(","), idMarks = ids.map(() => "?").join(",");
+    return this.db.prepare(`SELECT * FROM events WHERE type IN (${typeMarks}) AND cursor>=? AND json_extract(envelope,'$.correlationid') IN (${idMarks}) ORDER BY cursor LIMIT ?`)
+      .all(...types, Math.max(0, after), ...ids, Math.max(1, Math.min(limit, 20000)))
+      .map(row => ({ cursor: Number(row.cursor), stream: String(row.stream), sequence: Number(row.sequence), subject: String(row.subject), collected_at: String(row.collected_at), envelope: JSON.parse(String(row.envelope)) }));
+  }
   recent(types: string[], limit = 500): CollectedEvent[] {
     if (!types.length) return [];
     const placeholders = types.map(() => "?").join(",");

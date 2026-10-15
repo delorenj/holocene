@@ -1374,3 +1374,9 @@ html[data-hub-theme="ledger-night"] body {
     transition: none;
   }
 }
+
+/* The Voice tab is a link to its own page, not a button in this SPA. */
+.hub-root a.hub-tab {
+  display: inline-block;
+  text-decoration: none;
+}
