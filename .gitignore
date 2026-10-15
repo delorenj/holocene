@@ -24,3 +24,13 @@ coverage
 
 # Generated TypeScript incremental state
 *.tsbuildinfo
+
+# Agent Pad / reply-player / inbox-watcher: build output and runtime state
+apps/agent-pad/dist/
+apps/agent-pad/node_modules/
+apps/reply-player/.gradle/
+apps/reply-player/**/build/
+apps/reply-player/.kotlin/
+apps/reply-player/local.properties
+apps/reply-player/**/*.apk
+services/inbox-watcher/inbox-watcher-state.json

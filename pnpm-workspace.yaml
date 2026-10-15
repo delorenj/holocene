@@ -1,3 +1,5 @@
 packages:
   - apps/*
+  # agent-pad is a standalone npm project (package-lock.json), not a pnpm workspace member
+  - "!apps/agent-pad"
   - packages/*
