@@ -89,4 +89,46 @@ class PadStateTest {
         assertFalse(s.micLive)
         assertEquals(PadState.Surface.NONE, s.surface)
     }
+
+    @Test fun devUrlAcceptedOnlyWhenDebuggableAndLocal() {
+        assertEquals("http://localhost:5173/", AgentPadPolicy.devPadUrlOrNull("http://localhost:5173/", true))
+        assertEquals("http://localhost:5173/", AgentPadPolicy.devPadUrlOrNull("http://localhost:5173", true))
+        assertEquals("http://127.0.0.1:8080/", AgentPadPolicy.devPadUrlOrNull("http://127.0.0.1:8080/", true))
+        assertNull(AgentPadPolicy.devPadUrlOrNull("http://localhost:5173/", false))
+        assertNull(AgentPadPolicy.devPadUrlOrNull(null, true))
+    }
+
+    @Test fun hostileDevUrlsAreRejected() {
+        for (raw in listOf(
+            "", "http://localhost/", "http://localhost:0/", "http://localhost:65536/", "http://localhost:99999999999/",
+            "https://localhost:5173/", "http://localhost:5173/x", "http://localhost:5173/?a=1",
+            "http://localhost:5173/#f", "http://user@localhost:5173/", "http://localhost:5173@evil.com/",
+            "http://evil.com:5173/", "http://localhost.evil.com:5173/", "http://evillocalhost:5173/",
+            "http://127.0.0.1.evil.com:5173/", "http://127.0.0.2:5173/", "http://0.0.0.0:5173/",
+            "http://[::1]:5173/", "http://10.0.2.2:5173/", "http://localhost:5173\\@evil.com/",
+            "http://localhost:5173/\n", " http://localhost:5173/", "javascript:alert(1)", "file:///etc/passwd", "https://agent-pad.delo.sh/",
+        )) assertNull(raw, AgentPadPolicy.devPadUrlOrNull(raw, true))
+    }
+
+    @Test fun devOriginIsAcceptedOnlyWhenThreadedThrough() {
+        val dev = "http://localhost:5173/"
+        assertTrue(AgentPadPolicy.isPadUrl("http://localhost:5173/", dev))
+        assertTrue(AgentPadPolicy.isPadUrl("http://localhost:5173/src/main.tsx?t=1", dev))
+        assertTrue(AgentPadPolicy.isPadUrl(AgentPadPolicy.URL, dev))
+        assertFalse(AgentPadPolicy.isPadUrl("http://localhost:5173/"))
+        assertFalse(AgentPadPolicy.isPadUrl("http://localhost:5173/", null))
+        assertFalse(AgentPadPolicy.isPadUrl("http://localhost:5174/", dev))
+        assertFalse(AgentPadPolicy.isPadUrl("http://127.0.0.1:5173/", dev))
+        assertFalse(AgentPadPolicy.isPadUrl("https://localhost:5173/", dev))
+        assertFalse(AgentPadPolicy.isPadUrl("http://user@localhost:5173/", dev))
+        assertFalse(AgentPadPolicy.isPadUrl("http://evil.com:5173/", dev))
+    }
+
+    @Test fun audioGrantHonorsDevOriginOnlyWhenGiven() {
+        val dev = "http://localhost:5173/"
+        assertTrue(AgentPadPolicy.mayGrantAudio(dev, true, true, true, dev))
+        assertFalse(AgentPadPolicy.mayGrantAudio(dev, true, true, true))
+        assertFalse(AgentPadPolicy.mayGrantAudio("http://localhost:5174/", true, true, true, dev))
+        assertFalse(AgentPadPolicy.mayGrantAudio(dev, false, true, true, dev))
+    }
 }

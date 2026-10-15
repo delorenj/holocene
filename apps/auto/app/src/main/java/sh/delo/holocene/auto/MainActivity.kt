@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.AudioAttributes
@@ -68,7 +69,10 @@ class MainActivity : Activity() {
         }
         scroll.addView(body)
         content = FrameLayout(this)
-        pad = AgentPadHost(this, content)
+        // Debug builds only: a validated localhost dev-server origin from the launch intent, never persisted.
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val devUrl = AgentPadPolicy.devPadUrlOrNull(intent.getStringExtra(EXTRA_PAD_URL), debuggable)
+        pad = AgentPadHost(this, content, devUrl)
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(11, 16, 32))
@@ -80,6 +84,14 @@ class MainActivity : Activity() {
                     setOnClickListener { showView(toPad) }
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             }
+            if (devUrl != null) addView(TextView(this@MainActivity).apply {
+                text = "DEV $devUrl"
+                textSize = 14f
+                gravity = android.view.Gravity.CENTER
+                setPadding(16, 0, 16, 0)
+                setTextColor(Color.BLACK)
+                setBackgroundColor(Color.rgb(255, 193, 7))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT))
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -559,6 +571,7 @@ class MainActivity : Activity() {
     private companion object {
         const val TAG = "HoloceneProbe"
         const val PRIVACY_POLICY_URL = "https://holocene.delo.sh/auto/privacy"
+        const val EXTRA_PAD_URL = "sh.delo.holocene.extra.PAD_URL"
         const val EXTRA_RUN_MIC = "sh.delo.holocene.extra.RUN_MIC"
         const val EXTRA_RUN_ASR = "sh.delo.holocene.extra.RUN_ASR"
         const val SAMPLE_RATE = 16000

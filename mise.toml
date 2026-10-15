@@ -88,3 +88,23 @@ run = "/usr/bin/python3 '{{config_root}}/apps/auto/tools/install_honda_image.py'
 [tasks."auto:probe"]
 description = "Run emulator-only parked UI/microphone probes into an existing ignored evidence directory"
 run = "/usr/bin/python3 '{{config_root}}/apps/auto/tools/emulator_probe.py' ${@}"
+
+[tasks."auto:sim"]
+description = "Start the Honda head-unit simulator (emulator-5554) as a desktop window; --headless for unattended"
+run = "'{{config_root}}/apps/auto/tools/sim_start.sh' ${@}"
+
+[tasks."auto:sim:stop"]
+description = "Stop the simulator (saves the quick-boot snapshot)"
+run = "'{{config_root}}/apps/auto/tools/sim_stop.sh'"
+
+[tasks."auto:dev"]
+description = "Build the debug APK, install on the simulator, restart the app (--logs, --grant-mic)"
+run = "'{{config_root}}/apps/auto/tools/app_dev.sh' ${@}"
+
+[tasks."pad:dev"]
+description = "Agent Pad hot reload on the simulator: Vite HMR + adb reverse + debug app pointed at localhost"
+run = "'{{config_root}}/apps/auto/tools/pad_dev.sh'"
+
+[tasks."pad:build"]
+description = "Build Agent Pad; nginx serves apps/agent-pad/dist so this deploys production"
+run = "'{{config_root}}/apps/auto/tools/pad_build.sh'"

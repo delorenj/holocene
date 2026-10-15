@@ -3,6 +3,7 @@ package sh.delo.holocene.auto
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.util.Base64
@@ -29,17 +30,51 @@ object AgentPadPolicy {
     const val URL = "https://agent-pad.delo.sh/"
     private const val HOST = "agent-pad.delo.sh"
 
-    fun isPadUrl(url: String?): Boolean {
+    private val DEV_URL = Regex("""^http://(localhost|127\.0\.0\.1):([0-9]{1,5})/?$""")
+
+    /**
+     * [devUrl] is the one extra origin a debuggable build may load (see [devPadUrlOrNull]); the
+     * production check is never loosened, a null [devUrl] is exactly the release policy.
+     */
+    fun isPadUrl(url: String?, devUrl: String? = null): Boolean {
         if (url.isNullOrBlank()) return false
         val uri = try { URI(url.trim()) } catch (e: Exception) { return false }
-        return uri.scheme.equals("https", ignoreCase = true) &&
-            uri.rawUserInfo == null &&
+        if (uri.rawUserInfo != null) return false
+        if (uri.scheme.equals("https", ignoreCase = true) &&
             uri.host.equals(HOST, ignoreCase = true) &&
             (uri.port == -1 || uri.port == 443)
+        ) return true
+        return devUrl != null && isDevOrigin(uri, devUrl)
     }
 
-    fun mayGrantAudio(origin: String?, requestsAudioOnly: Boolean, micPermissionGranted: Boolean, padVisible: Boolean): Boolean =
-        isPadUrl(origin) && requestsAudioOnly && micPermissionGranted && padVisible
+    private fun isDevOrigin(uri: URI, devUrl: String): Boolean {
+        val dev = try { URI(devUrl) } catch (e: Exception) { return false }
+        return uri.scheme.equals("http", ignoreCase = true) &&
+            dev.scheme == "http" &&
+            uri.host != null && uri.host.equals(dev.host, ignoreCase = true) &&
+            uri.port == dev.port
+    }
+
+    /**
+     * Debug-only Agent Pad dev-server override (intent extra). Returns the normalized
+     * `http://localhost:<port>/` or `http://127.0.0.1:<port>/`, or null when the build is not
+     * debuggable or the value is anything else. Nothing is persisted by callers.
+     */
+    fun devPadUrlOrNull(raw: String?, debuggable: Boolean): String? {
+        if (!debuggable || raw == null) return null
+        val m = DEV_URL.matchEntire(raw) ?: return null
+        val port = m.groupValues[2].toIntOrNull() ?: return null
+        if (port !in 1..65535) return null
+        return "http://${m.groupValues[1]}:$port/"
+    }
+
+    fun mayGrantAudio(
+        origin: String?,
+        requestsAudioOnly: Boolean,
+        micPermissionGranted: Boolean,
+        padVisible: Boolean,
+        devUrl: String? = null,
+    ): Boolean = isPadUrl(origin, devUrl) && requestsAudioOnly && micPermissionGranted && padVisible
 
     /** Phones always; a car host only while parked/unrestricted. */
     fun padAllowed(isCarHost: Boolean, unrestricted: Boolean): Boolean = !isCarHost || unrestricted
@@ -80,7 +115,12 @@ class PadState {
 }
 
 /** Owns one WebView showing Agent Pad inside [container]; torn down whenever the pad is not allowed or visible. */
-class AgentPadHost(private val activity: Activity, private val container: FrameLayout) {
+class AgentPadHost(
+    private val activity: Activity,
+    private val container: FrameLayout,
+    /** Debug-only validated dev-server origin from [AgentPadPolicy.devPadUrlOrNull]; null in release. */
+    private val devUrl: String? = null,
+) {
     private var web: WebView? = null
     private var held: PermissionRequest? = null
     private var visible = false
@@ -105,7 +145,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
         container.removeAllViews()
         container.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         visible = true
-        view.loadUrl(AgentPadPolicy.URL)
+        view.loadUrl(devUrl ?: AgentPadPolicy.URL)
     }
 
     fun message(text: String, retry: Boolean) {
@@ -199,7 +239,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
     }
 
     private fun resolve(request: PermissionRequest, micGranted: Boolean, padAlive: Boolean = visible && web != null) {
-        val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, padAlive)
+        val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, padAlive, devUrl)
         try {
             if (ok) { state.micLive = true; request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
         } catch (e: RuntimeException) { Log.i(TAG, "Permission request already resolved") }
@@ -248,6 +288,10 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun makeWebView(): WebView = WebView(activity).apply {
+        // Debuggable builds only: lets chrome://inspect on the host attach to this WebView.
+        if (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         setBackgroundColor(Color.rgb(11, 16, 32))
         settings.apply {
             javaScriptEnabled = true
@@ -260,7 +304,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
         addJavascriptInterface(NativeBridge(), "HoloceneNative")
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                !AgentPadPolicy.isPadUrl(request.url.toString())
+                !AgentPadPolicy.isPadUrl(request.url.toString(), devUrl)
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) failed("error ${error.errorCode}")
@@ -280,7 +324,7 @@ class AgentPadHost(private val activity: Activity, private val container: FrameL
         webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
                 activity.runOnUiThread {
-                    val ok = AgentPadPolicy.isPadUrl(request.origin.toString()) && audioOnly(request) && visible && web != null
+                    val ok = AgentPadPolicy.isPadUrl(request.origin.toString(), devUrl) && audioOnly(request) && visible && web != null
                     if (!ok) { request.deny(); return@runOnUiThread }
                     held?.deny()
                     if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
