@@ -237,9 +237,10 @@ class Watcher:
         return sorted((m for m in self.s.memos.values() if m.get("status") == "active"),
                       key=lambda m: m["key"])
 
-    def tick(self) -> None:
+    def tick(self, discover: bool = True) -> None:
         self.flush_outbox()
-        self.discover()
+        if discover:
+            self.discover()
         for m in self.active():
             if STOP:
                 break
@@ -618,14 +619,20 @@ def main() -> int:
             time.sleep(10)
 
     deadline = time.time() + args.drain_timeout
+    last_discover = 0.0
     while not STOP:
+        # S3 is listed every --poll seconds; pending steps run every second so a stage
+        # never waits a whole poll interval for the next one.
+        do_discover = time.time() - last_discover >= args.poll
+        if do_discover:
+            last_discover = time.time()
         try:
-            w.tick()
+            w.tick(discover=do_discover)
         except Exception as e:  # noqa: BLE001
             log("tick_error", "error", error=f"{type(e).__name__}: {e}")
         if args.once and not (args.drain and w.active() and time.time() < deadline):
             break
-        time.sleep(args.poll)
+        time.sleep(1)
     log("stopped")
     return 0
 

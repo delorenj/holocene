@@ -282,7 +282,7 @@ def render(hops: list[Hop], ctx: dict) -> None:
         ts = c.iso(h.ts) if h.ts else "-"
         lat = ""
         if h.ts and prev and h.status == OK:
-            lat = f"+{(h.ts - prev).total_seconds():.1f}s"
+            lat = f"{max(0.0, (h.ts - prev).total_seconds()):+.1f}s"
         if h.ts and h.status == OK:
             prev = h.ts
         tag = paint(h.status, f"{h.status:<7}")

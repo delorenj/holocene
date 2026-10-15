@@ -264,8 +264,10 @@ def gateway_liveness() -> dict:
                 continue
             for c in st.get("consumer_detail", []):
                 if c.get("name") == GATEWAY_CONSUMER:
+                    # idle puller = parked pull request (num_waiting); busy puller = messages in flight
+                    # (max_ack_pending saturated parks nothing, so waiting=0 with ack_pending>0 is healthy)
                     return {
-                        "ok": (c.get("num_waiting", 0) or 0) >= 1,
+                        "ok": (c.get("num_waiting", 0) or 0) >= 1 or (c.get("num_ack_pending", 0) or 0) >= 1,
                         "num_waiting": c.get("num_waiting", 0),
                         "num_pending": c.get("num_pending", 0),
                         "num_ack_pending": c.get("num_ack_pending", 0),
@@ -279,6 +281,10 @@ def gateway_liveness_text(info: dict | None = None) -> str:
     info = info or gateway_liveness()
     if info.get("error"):
         return info["error"]
-    verdict = "pulling" if info["ok"] else "NOBODY PULLING (gateway bloodbank platform down?)"
+    if info["ok"]:
+        verdict = (f"pulling (busy: {info['num_ack_pending']} in flight, {info['num_pending']} queued ahead)"
+                   if info["num_ack_pending"] else "pulling (idle)")
+    else:
+        verdict = "NOBODY PULLING (gateway bloodbank platform down?)"
     return (f"{verdict}; consumer {GATEWAY_CONSUMER}: waiting={info['num_waiting']} "
             f"pending={info['num_pending']} ack_pending={info['num_ack_pending']}")
