@@ -14,7 +14,14 @@ Observability (first hop of the voice memo journey):
   watcher derives from the key, so a log line joins to the rest of the journey.
 - For inbox uploads, a bloodbank.audio.memo.uploaded fact is published over raw
   NATS (stdlib only, fail-open). correlationid = memo_id.
+
+Last hop (playback on the device): the Agent Pad POSTs a tiny beacon to
+/upload/played when it starts / finishes playing a spoken reply (or cannot).
+The proxy logs it and publishes bloodbank.audio.memo.played (phase started|ended)
+or bloodbank.audio.memo.failed (stage playback, retryable). The memo id is parsed
+from the reply key replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg.
 """
+import re
 
 import json
 import os
@@ -93,6 +100,61 @@ def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: 
             "client_user_agent": user_agent, "upload_ms": round(upload_ms, 1),
         },
     }
+
+
+# ---------------------------------------------------------------- playback beacon
+
+REPLY_KEY_RE = re.compile(
+    r"^replies/(\d{4})/(\d{2})/(\d{2})/(\d{2})(\d{2})(\d{2})Z-(?P<agent>.+)-(?P<memo>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(ogg|webm|m4a|mp3)$")
+PHASES = ("started", "ended", "blocked", "error")
+
+
+def parse_reply_key(key: str):
+    """(memo_id, agent, rendered_at) from a reply key, or None for keys without a full memo id."""
+    m = REPLY_KEY_RE.match(key or "")
+    if not m:
+        return None
+    y, mo, d, h, mi, sec = (int(m.group(i)) for i in range(1, 7))
+    try:
+        rendered = datetime(y, mo, d, h, mi, sec, tzinfo=timezone.utc)
+    except ValueError:
+        rendered = None
+    return m.group("memo"), m.group("agent"), rendered
+
+
+def _envelope(action: str, memo_id: str, data: dict) -> dict:
+    ce_type = f"bloodbank.audio.memo.{action}"
+    return {
+        "specversion": "1.0", "id": str(uuid.uuid4()), "source": f"urn:33god:service:{SERVICE}",
+        "type": ce_type, "subject": f"bloodbank.evt.audio.memo.{action}", "time": now_iso(),
+        "datacontenttype": "application/json", "correlationid": memo_id, "causationid": None,
+        "producer": SERVICE, "service": SERVICE, "domain": "audio",
+        "schemaref": f"{ce_type}.v1", "dataschema": f"apicurio://holyfields/{ce_type}/versions/1", "kind": "event",
+        "actor": {"type": "service", "agent_id": f"bloodbank.service.{SERVICE}", "cli": None, "provider": None, "model": None},
+        "ordering_key": f"memo:{memo_id}", "data": {"memo_id": memo_id, "occurred_at": now_iso(), **data},
+    }
+
+
+def build_playback_envelope(beacon: dict, user_agent: str):
+    """Bloodbank envelope for a pad playback beacon, or None when the beacon cannot be tied to a memo."""
+    key = beacon.get("reply_key")
+    parsed = parse_reply_key(key)
+    phase = beacon.get("phase")
+    if not parsed or phase not in PHASES:
+        return None
+    memo_id, agent, rendered = parsed
+    age_ms = int((datetime.now(timezone.utc) - rendered).total_seconds() * 1000) if rendered else None
+    if phase in ("started", "ended"):
+        secs = beacon.get("seconds")
+        return _envelope("played", memo_id, {
+            "target_agent_id": agent, "reply_s3_key": key, "phase": phase,
+            "played_seconds": round(float(secs), 2) if isinstance(secs, (int, float)) and secs >= 0 else None,
+            "client_user_agent": user_agent[:200], "reply_age_ms": age_ms if age_ms is None or age_ms >= 0 else 0})
+    code = "autoplay_blocked" if phase == "blocked" else "playback_error"
+    return _envelope("failed", memo_id, {
+        "target_agent_id": agent, "s3_key": key, "reply_s3_key": key, "stage": "playback", "error_code": code,
+        "error_message": str(beacon.get("error") or ("sound is locked: tap the pad once" if phase == "blocked" else "audio element error"))[:300],
+        "retryable": True, "attempt": 1, "client_user_agent": user_agent[:200]})
 
 
 def nats_publish(subject: str, body: bytes, timeout: float = 3.0) -> None:
@@ -181,6 +243,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             emit_uploaded_async(key, len(body), content_type, ua, s3_ms)
         finally:
             os.unlink(tmp_path)
+
+    def do_POST(self):
+        """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""
+        if self.path != "/upload/played":
+            return self._reject(404, "not found")
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            beacon = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            log("playback", status=400, reason="bad json", remote=self.client_address[0])
+            return self.send_error(400, "bad json")
+        ua = self.headers.get("User-Agent", "")
+        env = build_playback_envelope(beacon if isinstance(beacon, dict) else {}, ua)
+        if env is None:
+            log("playback", status=202, reason="ignored: reply key has no memo id or phase unknown",
+                reply_key=str(beacon.get("reply_key"))[:200] if isinstance(beacon, dict) else None,
+                phase=beacon.get("phase") if isinstance(beacon, dict) else None, remote=self.client_address[0])
+            self.send_response(202)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        log("playback", key=beacon["reply_key"], memo_id=env["correlationid"], phase=beacon["phase"], status=200,
+            error=beacon.get("error"), remote=self.client_address[0], ua=ua)
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        if EMIT_FACTS:
+            def work():
+                try:
+                    nats_publish(env["subject"], json.dumps(env, separators=(",", ":")).encode())
+                    log("fact_published", key=beacon["reply_key"], memo_id=env["correlationid"],
+                        fact=f"audio.memo.{env['type'].rsplit('.', 1)[1]}", fact_id=env["id"])
+                except Exception as e:  # noqa: BLE001 — fail open
+                    log("fact_failed", key=beacon["reply_key"], memo_id=env["correlationid"], error=str(e)[:200],
+                        nats=f"{NATS_HOST}:{NATS_PORT}")
+            threading.Thread(target=work, daemon=True).start()
 
     def do_GET(self):
         if self.path == "/health":

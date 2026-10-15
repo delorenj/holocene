@@ -208,7 +208,7 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(cmd["data"]["prompt"], "Summarize recent work.")
         self.assertEqual(cmd["data"]["context"]["memo_id"], mid)
         self.assertEqual(cmd["data"]["thread_id"], mid)
-        self.assertTrue(m["reply_key"].startswith("replies/") and m["reply_key"].endswith(f"-holocene-pm-{mid[:8]}.ogg"))
+        self.assertTrue(m["reply_key"].startswith("replies/") and m["reply_key"].endswith(f"-holocene-pm-{mid}.ogg"))
         self.assertTrue((BUCKET_DIR / m["reply_key"]).exists())
         replied = facts()[-1][1]["data"]
         self.assertEqual(replied["reply_s3_key"], m["reply_key"])

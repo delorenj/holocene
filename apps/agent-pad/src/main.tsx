@@ -53,6 +53,22 @@ async function getBlob(url: string): Promise<Blob> {
   return res.blob()
 }
 
+// Playback beacon: the pad is the only place that knows whether the driver was actually spoken to.
+// The upload proxy logs it and publishes bloodbank.audio.memo.played / failed(stage=playback).
+// Fire and forget: a failed beacon must never affect playback.
+function beacon(replyKey: string, phase: 'started' | 'ended' | 'blocked' | 'error', extra: { seconds?: number; error?: string } = {}) {
+  try {
+    fetch('/upload/played', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply_key: replyKey, phase, ...extra }),
+    }).catch(() => {})
+  } catch {
+    // ignore
+  }
+}
+
 function App() {
   const [selected, setSelected] = useState<Agent | null>(null)
   const [recording, setRecording] = useState(false)
@@ -66,6 +82,17 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const pollTimer = useRef<number | null>(null)
   const lastPlayedKey = useRef<string>('')
+  // Reply currently loaded in the audio element (empty while the silent unlock clip plays), and
+  // the beacons already sent for it.
+  const playingKey = useRef<string>('')
+  const pendingKey = useRef<string>('')
+  const beaconsSent = useRef<Set<string>>(new Set())
+  const report = useCallback((phase: 'started' | 'ended' | 'blocked' | 'error', extra: { seconds?: number; error?: string } = {}) => {
+    const key = playingKey.current
+    if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
+    beaconsSent.current.add(`${key}:${phase}`)
+    beacon(key, phase, extra)
+  }, [])
 
   // Unlock audio on first user gesture (browser autoplay policy)
   const unlockAudio = useCallback(async () => {
@@ -77,6 +104,7 @@ function App() {
       setStatus('sound on')
       // If a reply arrived while locked, play it now
       if (pendingUrl) {
+        playingKey.current = pendingKey.current
         audioRef.current.src = pendingUrl
         await audioRef.current.play()
         setPendingUrl(null)
@@ -108,10 +136,20 @@ function App() {
           const url = URL.createObjectURL(blob)
           if (audioRef.current) {
             if (soundUnlocked) {
+              playingKey.current = newest
               audioRef.current.src = url
-              await audioRef.current.play()
+              try {
+                await audioRef.current.play()
+              } catch (e) {
+                report('error', { error: `play() rejected: ${String((e as Error)?.message || e)}`.slice(0, 200) })
+                setStatus('reply could not play')
+              }
             } else {
               // Queue it; unlockAudio will play it after the first tap
+              pendingKey.current = newest
+              playingKey.current = newest
+              report('blocked')
+              playingKey.current = ''
               setPendingUrl(url)
               setStatus('reply waiting — tap to play')
             }
@@ -126,7 +164,7 @@ function App() {
     pollTimer.current = window.setInterval(tick, 15000)
     tick()
     return () => { if (pollTimer.current) window.clearInterval(pollTimer.current) }
-  }, [soundUnlocked])
+  }, [soundUnlocked, report])
 
   const startRecording = useCallback(async () => {
     if (!selected) return
@@ -264,7 +302,22 @@ function App() {
           {lastReply && <small>last reply: {lastReply.split('/').pop()}</small>}
         </div>
       </div>
-      <audio ref={audioRef} style={{ display: 'none' }} />
+      <audio
+        ref={audioRef}
+        style={{ display: 'none' }}
+        onPlaying={() => { if (playingKey.current) { report('started'); setStatus('playing reply') } }}
+        onEnded={(e) => {
+          if (!playingKey.current) return
+          report('ended', { seconds: (e.currentTarget as HTMLAudioElement).duration })
+          playingKey.current = ''
+          setStatus('reply played')
+        }}
+        onError={(e) => {
+          if (!playingKey.current) return
+          const err = (e.currentTarget as HTMLAudioElement).error
+          report('error', { error: `media error ${err?.code ?? '?'} ${err?.message ?? ''}`.trim().slice(0, 200) })
+        }}
+      />
     </div>
   )
 }

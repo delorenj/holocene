@@ -513,7 +513,7 @@ class Watcher:
             log("stage_done", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken))
             stamp = now_utc()
-            rkey = (f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{m['agent']}-{m['memo_id'][:8]}.ogg")
+            rkey = (f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{m['agent']}-{m['memo_id']}.ogg")
             t1 = time.time()
             r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
             if r.returncode != 0:

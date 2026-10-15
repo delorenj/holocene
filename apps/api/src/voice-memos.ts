@@ -11,6 +11,7 @@ export const MEMO_TYPES = [
   "bloodbank.audio.memo.transcribed",
   "bloodbank.audio.memo.dispatched",
   "bloodbank.audio.memo.replied",
+  "bloodbank.audio.memo.played",
   "bloodbank.audio.memo.failed"
 ] as const;
 
@@ -24,7 +25,7 @@ export const AGENT_TYPES = [
   "bloodbank.conversation.turn.failed"
 ] as const;
 
-export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied";
+export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied" | "played";
 export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing";
 export type MemoStatus = "complete" | "failed" | "running" | "stuck";
 
@@ -55,7 +56,9 @@ export const HOPS: readonly Spec[] = [
   { id: "dispatched", label: "Dispatched to agent", budgetSeconds: 30 },
   { id: "agent_started", label: "Agent started", budgetSeconds: 120 },
   { id: "agent_done", label: "Agent finished", budgetSeconds: 600 },
-  { id: "replied", label: "Reply rendered", budgetSeconds: 60 }
+  { id: "replied", label: "Reply rendered", budgetSeconds: 60 },
+  // Reported by the pad itself. Optional: a parked car reports nothing, and that is not a failed memo.
+  { id: "played", label: "Played on car", budgetSeconds: 60, optional: true }
 ];
 
 /** Watcher StageError.stage -> the hop it was trying to reach. */
@@ -67,7 +70,8 @@ const STAGE_HOP: Record<string, HopId> = {
   agent: "agent_started",
   agent_reply: "agent_done",
   tts: "replied",
-  reply_upload: "replied"
+  reply_upload: "replied",
+  playback: "played"
 };
 
 export type HopFailure = {
@@ -210,6 +214,14 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
       return str(e.producer) ?? "";
     case "agent_done":
       return e.type.endsWith(".completed") ? "invocation completed" : (agentFailure(e).message ?? e.type);
+    case "played": {
+      const bits = [
+        str(d.phase) === "ended" ? "played to the end" : "started playing",
+        num(d.reply_age_ms) !== undefined ? `${num(d.reply_age_ms)} ms after rendering` : undefined,
+        num(d.played_seconds) !== undefined ? `${num(d.played_seconds)} s of audio` : undefined
+      ].filter(Boolean);
+      return bits.join(" · ");
+    }
     case "replied": {
       const bits = [
         num(d.tts_seconds) !== undefined ? `tts ${num(d.tts_seconds)} s` : undefined,
@@ -237,7 +249,8 @@ function hopEvents(events: JourneyEvent[]): Record<HopId, JourneyEvent[]> {
       "bloodbank.conversation.turn.completed",
       "bloodbank.conversation.turn.failed"
     ),
-    replied: byType("bloodbank.audio.memo.replied")
+    replied: byType("bloodbank.audio.memo.replied"),
+    played: byType("bloodbank.audio.memo.played")
   };
 }
 
@@ -282,7 +295,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     const happened = spec.id === "agent_done" ? evs.find((e) => e.type === "bloodbank.agent.invocation.completed") ?? agentBad ?? evs[0] : evs[0];
     const out: Hop = {
       id: spec.id, label: spec.label, status: "pending", budgetSeconds: spec.budgetSeconds,
-      at: happened?.at, detail: hopDetail(spec.id, happened), failures, events: evs
+      at: happened?.at,
+      detail: hopDetail(spec.id, spec.id === "played" ? evs.find((e) => str(e.data.phase) === "ended") ?? happened : happened),
+      failures, events: evs
     };
     if (agentBad && !happened?.type.endsWith(".completed")) {
       out.status = "failed";
@@ -293,6 +308,11 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       if (happened) out.detail = `${out.detail}${out.detail ? " · " : ""}happened at ${happened.at}, after the watcher gave up`;
     } else if (happened) {
       out.status = "ok";
+    } else if (spec.id === "played" && failures.length) {
+      // Playback problems are retryable annotations on the pad's side: the hop shows them, the memo stays complete.
+      out.status = "failed";
+      out.error = failures.at(-1);
+      out.detail = "the pad reported it could not play the reply";
     }
     return out;
   });
@@ -319,7 +339,8 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   }
 
   const replied = hops.find((h) => h.id === "replied")!;
-  const failedHop = hops.find((h) => h.status === "failed");
+  const playedHop = hops.find((h) => h.id === "played")!;
+  const failedHop = hops.find((h) => h.status === "failed" && h.id !== "played");
   const reachedIdx = hops.reduce((acc, h, i) => (h.at && h.events.length ? i : acc), -1);
   let status: MemoStatus;
   let stuckAt: HopId | undefined;
@@ -349,6 +370,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
         stuckAt = waiting.id;
       }
     }
+  }
+  if (status === "complete" && playedHop.status === "pending") {
+    playedHop.detail = "no playback report from the pad yet (it polls every 15 s; a parked car reports nothing)";
   }
   // Hops behind the frontier that never happened (not the optional first one) are holes in the record.
   for (const [i, hop] of hops.entries()) {
@@ -394,7 +418,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     stuckAt,
     transcriptPreview: preview(transcript, 140),
     replyPreview: preview(replyText, 140),
-    error: failedHop?.error ? `${failedHop.error.code ?? "failed"}: ${failedHop.error.message ?? ""}`.trim() : undefined
+    error: (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
+      ? `${(failedHop ?? playedHop).error!.code ?? "failed"}: ${(failedHop ?? playedHop).error!.message ?? ""}`.trim()
+      : undefined
   };
   return { ...summary, commandId, transcript, replyText, hops, events: relevant };
 }

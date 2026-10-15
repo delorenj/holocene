@@ -1,5 +1,5 @@
 // Mirrors apps/api/src/voice-memos.ts. The API owns the grouping; this view only draws it.
-export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied";
+export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied" | "played";
 export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing";
 export type MemoStatus = "complete" | "failed" | "running" | "stuck";
 

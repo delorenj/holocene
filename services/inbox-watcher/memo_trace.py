@@ -214,7 +214,17 @@ def build(key: str) -> tuple[list[Hop], dict]:
                         f"{reply_key}  {rs['size']} bytes" if rs else f"{reply_key} not in bucket"))
     else:
         hops.append(Hop("reply_object", MISSING, detail="no reply key recorded"))
-    hops.append(Hop("played_on_pad", UNKNOWN, detail="the pad does not report playback; it polls replies/<date>/ every 15s", optional=True))
+    played = sorted(by_type.get("bloodbank.audio.memo.played", []), key=lambda e: e["time"])
+    p_start = next((e for e in played if (e.get("data") or {}).get("phase") == "started"), None)
+    p_end = next((e for e in played if (e.get("data") or {}).get("phase") == "ended"), None)
+    if p_start:
+        d0 = p_start.get("data") or {}
+        extra = f", ended after {(p_end.get('data') or {}).get('played_seconds')}s" if p_end else ", end not reported"
+        hops.append(Hop("played_on_pad", OK, c.parse_iso(p_start["time"]),
+                        f"reply started {d0.get('reply_age_ms')} ms after it was rendered{extra} ({str(d0.get('client_user_agent'))[:40]})", optional=True))
+    else:
+        hops.append(Hop("played_on_pad", UNKNOWN,
+                        detail="no playback report from the pad yet (it polls replies/ every 15s; a parked car reports nothing)", optional=True))
 
     # failed facts, positioned by time
     for ev in by_type.get("bloodbank.audio.memo.failed", []):
@@ -234,6 +244,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         h = terminal[-1]
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
+        if h.name.startswith("fact:failed"):
+            continue  # a retryable failure is annotation; the stage hop it belongs to decides the verdict
         if h.optional and h.status != FAILED:
             continue
         if h.status == OK:
@@ -247,7 +259,9 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     s3 = next((h for h in hops if h.name == "s3_object"), None)
     end = next((h for h in hops if h.name == "reply_object" and h.ts), None)
     if s3 and s3.ts and end and end.ts:
-        return f"COMPLETE in {(end.ts - s3.ts).total_seconds():.1f}s", True
+        pad = next((h for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None)
+        tail = f"; played on the pad {(pad.ts - end.ts).total_seconds():+.1f}s after the reply was rendered" if pad else "; playback on the pad not reported"
+        return f"COMPLETE in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
     return "COMPLETE", True
 
 
@@ -325,7 +339,7 @@ def furthest(events: list[dict], rec: dict | None) -> str:
     failed = [e for e in events if e["type"].endswith("memo.failed") and not (e.get("data") or {}).get("retryable")]
     if failed:
         return f"FAILED@{(failed[-1].get('data') or {}).get('stage')}"
-    for t, label in (("audio.memo.replied", "replied"), ("agent.invocation.completed", "agent done"),
+    for t, label in (("audio.memo.played", "played on pad"), ("audio.memo.replied", "replied"), ("agent.invocation.completed", "agent done"),
                      ("agent.invocation.started", "agent running"), ("audio.memo.dispatched", "dispatched"),
                      ("audio.memo.transcribed", "transcribed"), ("audio.memo.received", "received"),
                      ("audio.memo.uploaded", "uploaded")):

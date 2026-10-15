@@ -23,13 +23,16 @@ const dispatched = (s = 43) => fact("audio.memo.dispatched", s, { occurred_at: i
 const started = (s = 50) => fact("agent.invocation.started", s, { command_id: CMD }, MEMO, "hermes-agent:holocene-pm");
 const completed = (s = 55) => fact("agent.invocation.completed", s, { command_id: CMD }, MEMO, "hermes-agent:holocene-pm");
 const replied = (s = 60) => fact("audio.memo.replied", s, { occurred_at: iso(s), command_id: CMD, reply_text: "PONG", tts_seconds: 0.9, tts_engine: "vibevoice", reply_s3_key: "replies/x.ogg" });
+const played = (phase: "started" | "ended", s: number) => fact("audio.memo.played", s, { occurred_at: iso(s), phase, reply_age_ms: 4100, played_seconds: phase === "ended" ? 2.4 : null }, MEMO, "agent-pad-upload");
+const playFailed = (s: number) => fact("audio.memo.failed", s, { stage: "playback", error_code: "autoplay_blocked", error_message: "sound is locked", retryable: true, attempt: 1 }, MEMO, "agent-pad-upload");
 const hopHasType = (d: { hops: { id: string; events: { type: string }[] }[] }, id: string, type: string) => d.hops.find(h => h.id === id)!.events.some(e => e.type === type);
 const now = (secs: number) => T0 + secs * 1000;
 
 test("a complete journey has every hop ok with latencies between hops", () => {
   const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied()], now(120))!;
   assert.equal(d.status, "complete");
-  assert.deepEqual(d.hops.map(h => h.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(d.hops.map(h => h.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "pending"]);
+  assert.match(d.hops[7].detail, /no playback report/);
   assert.equal(d.hops[2].sinceMs, 40700);
   assert.equal(d.hops[0].sinceMs, undefined);
   assert.equal(d.totalSeconds, 60);
@@ -149,4 +152,22 @@ test("EventStore.correlated finds events by correlation id within a cursor bound
   assert.deepEqual(store.correlated(types, [MEMO], 2).map(e => e.sequence), [3]);
   assert.deepEqual(store.correlated(types, []), []);
   store.close();
+});
+
+test("playback reported by the pad completes the last hop without changing the journey time", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied(), played("started", 64), played("ended", 66.4)], now(120))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.hops[7].id, "played");
+  assert.equal(d.hops[7].status, "ok");
+  assert.equal(d.hops[7].sinceMs, 4000);
+  assert.match(d.hops[7].detail, /played to the end/);
+  assert.equal(d.totalSeconds, 60);
+});
+
+test("a playback failure is shown on the played hop and the memo stays complete", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied(), playFailed(62)], now(120))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.hops[7].status, "failed");
+  assert.equal(d.hops[7].error?.code, "autoplay_blocked");
+  assert.match(d.error ?? "", /autoplay_blocked/);
 });
