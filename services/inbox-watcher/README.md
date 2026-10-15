@@ -194,3 +194,12 @@ retryable=false)` with that queue state in the message.
 - If the gateway's bloodbank platform is down, commands queue in JetStream and
   the trace verdict says `NOBODY PULLING`. Commands run when it comes back.
 - `reply_renderer.py` was folded into this service and deleted.
+
+## Voice memos view
+
+https://holocene.delo.sh/voice draws the same hop-by-hop journey as `memo:trace`, live (4 s refresh), from the
+Bloodbank collection Holocene already keeps: `GET /api/modules/voice/memos` (list) and
+`/api/modules/voice/memos/<memo_id>` (timeline). Each hop shows its time, latency since the previous hop and raw
+event JSON; failed hops carry the error; a hop that is older than its expected latency with nothing after it gets a
+STUCK badge (budgets: pickup 30 s, transcribe 180 s, dispatch 30 s, agent start 120 s, agent finish 600 s, reply 60 s,
+in `apps/api/src/voice-memos.ts`). Holocene only reads; nothing there publishes.
