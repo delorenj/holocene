@@ -48,7 +48,7 @@ const CATALOG = {
         name: "doc-standard", trigger: "documents", enabled: false, failure_policy: "independent",
         definition_id: "abc123def456", executed_by: "wax pipeline run/scan",
         source: "n8n", source_ref: "Wax Documents Standard",
-        drift: { state: "in_sync", detail: "authored in n8n" },
+        drift: { state: "exported_snapshot", detail: "" },
         nodes: [
           {
             slug: "title-slug", name: "Title", availability: { state: "available", reason: "compiled definition" },

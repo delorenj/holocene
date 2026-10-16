@@ -29,7 +29,7 @@ function statement(d: WaxPayload): string {
   parts.push(`${c.registered ?? passes.length} passes registered, ${c.enabled ?? 0} enabled, ${c.automatic ?? 0} automatic.`);
   if (c.failing) parts.push(`${c.failing} pass${c.failing === 1 ? "" : "es"} with failed outcomes.`);
   if (c.quarantined) parts.push(`${c.quarantined} quarantined.`);
-  const drifted = pipelines.filter((p) => p.drift?.state && p.drift.state !== "in-sync");
+  const drifted = pipelines.filter((p) => ["drifted", "uncompiled"].includes(p.drift?.state ?? ""));
   if (!pipelines.length) parts.push("No pipelines are authored yet.");
   else parts.push(`${pipelines.length} pipeline${pipelines.length === 1 ? "" : "s"}, ${drifted.length} with drift.`);
   return parts.join(" ");
@@ -159,7 +159,10 @@ function RecentRuns({ pipeline }: { pipeline: WaxPipeline }) {
 
 function PipelineCard({ pipeline }: { pipeline: WaxPipeline }) {
   const drift = pipeline.drift?.state ?? "unknown";
-  const drifted = drift !== "in-sync";
+  // Actionable authored-vs-compiled drift only: "drifted" (authored changed)
+  // and "uncompiled". "exported_snapshot" (authored in n8n, unreadable by
+  // Wax) and "in_sync" are not drift.
+  const drifted = drift === "drifted" || drift === "uncompiled";
   return (
     <article className="wax-card wax-pipeline">
       <header className="wax-card-head">
