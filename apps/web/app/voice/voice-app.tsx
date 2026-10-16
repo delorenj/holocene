@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, clockTime, dayTime, formatLatency, liveTotal, statement } from "./model";
-import type { Hop, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
+import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
+import type { Hop, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -88,6 +88,17 @@ export function VoiceApp() {
           </div>
         ) : null}
 
+        {list.data?.watcher?.state === "running" && list.data.watcher.lane === "interactive"
+          && list.data.watcher.lanes?.interactive?.pulling === false ? (
+          <div className="voice-alert" role="alert">
+            <span className="hub-label">Interactive lane not pulling</span>
+            <p>
+              Nobody is pulling the interactive gateway consumer, so memos are being sent on the batch lane and may wait behind ticket grooming.
+              {" "}{laneQueueText("batch", list.data.watcher.lanes?.batch)}. Check <code>hermes-gateway.service</code> and <code>gateway.platforms.bloodbank.extra.interactive</code>.
+            </p>
+          </div>
+        ) : null}
+
         {list.data && !memos.length ? (
           <div className="hub-placeholder">
             <span className="hub-label">No memos</span>
@@ -133,6 +144,7 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
               <span className="voice-preview">{m.transcriptPreview ?? <em>no transcript yet</em>}</span>
               <span className="voice-row-foot">
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
+                {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
                 {m.status === "stuck" ? <span className="voice-badge is-stuck">stuck</span> : null}
                 {m.status === "failed" ? <span className="voice-badge is-failed">failed</span> : null}
               </span>
@@ -141,6 +153,14 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
         ))}
       </ul>
     </section>
+  );
+}
+
+function LaneChip({ lane, reason }: { lane: Lane; reason?: string }) {
+  return (
+    <span className={`voice-lane is-${lane}${reason ? " is-fallback" : ""}`} title={reason ? `fell back to batch: ${reason}` : `${lane} lane`}>
+      {lane}{reason ? " (fallback)" : ""}
+    </span>
   );
 }
 
@@ -173,7 +193,10 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
             <p className="voice-summary-title">
               {memo.agent ?? "Unknown agent"} <span className="voice-summary-state">{memo.stageLabel}</span>
             </p>
-            <p className="hub-note">{dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}</p>
+            <p className="hub-note">
+              {dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}
+              {memo.lane ? <> · <LaneChip lane={memo.lane} reason={memo.laneReason} /></> : null}
+            </p>
           </div>
         </div>
         <dl className="voice-ids">
@@ -200,7 +223,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
 
       <ol className="voice-hops">
         {memo.hops.map((hop, i) => (
-          <HopRow key={hop.id} hop={hop} last={i === memo.hops.length - 1} now={now} basis={lastAt} watcher={watcher} />
+          <HopRow key={hop.id} hop={hop} last={i === memo.hops.length - 1} now={now} basis={lastAt} watcher={watcher} lane={memo.lane} />
         ))}
       </ol>
     </section>
@@ -210,7 +233,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
 // Hops the inbox watcher is responsible for: if it is down, that is why they are stuck.
 const WATCHER_HOPS = new Set(["received", "transcribed", "dispatched", "replied"]);
 
-function HopRow({ hop, last, now, basis, watcher }: { hop: Hop; last: boolean; now: number; basis?: string; watcher?: WatcherStatus }) {
+function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: boolean; now: number; basis?: string; watcher?: WatcherStatus; lane?: Lane }) {
   const live = hop.status === "waiting" || hop.status === "stuck";
   const waited = live && basis ? Math.max(hop.waitedSeconds ?? 0, (now - Date.parse(basis)) / 1000) : undefined;
   return (
@@ -229,6 +252,9 @@ function HopRow({ hop, last, now, basis, watcher }: { hop: Hop; last: boolean; n
           ) : null}
         </div>
         {hop.detail ? <p className="voice-hop-detail">{hop.detail}</p> : null}
+        {live && hop.id === "agent_started" && lane && laneQueueText(lane, watcher?.lanes?.[lane]) ? (
+          <p className="voice-hop-detail">Gateway: {laneQueueText(lane, watcher?.lanes?.[lane])}</p>
+        ) : null}
         {live && watcher && watcher.state !== "running" && WATCHER_HOPS.has(hop.id) ? (
           <p className="voice-hop-detail"><strong>Cause: {watcher.detail}.</strong></p>
         ) : null}

@@ -54,9 +54,20 @@ TRANSCRIBE = os.environ.get("MEMO_TRANSCRIBE", str(Path.home() / ".local/bin/tra
 TRANSCRIBE_DIR = os.environ.get("TRANSCRIBE_DIR", str(Path.home() / "HeyMa"))
 VOICE = os.environ.get("MEMO_VOX_VOICE", "rick")
 
+# Which gateway lane a memo's command rides: "interactive" (bloodbank.agent.invocation.invoke, own
+# durable consumer + reserved slots, starts within seconds even while grooming saturates the batch
+# lane) or "batch" (invocation.start, FIFO behind grooming; the pre-lane behavior and the rollback lever).
+# An interactive memo falls back to batch, loudly, when nothing is pulling the interactive consumer.
+LANE = os.environ.get("MEMO_LANE", "interactive").strip().lower()
+if LANE not in mc_.GATEWAY_CONSUMERS:
+    LANE = "interactive"
+LANE_PROBE_GAP_S = float(os.environ.get("MEMO_LANE_PROBE_GAP_S", "1.5"))
+LANE_HEARTBEAT_PROBE_S = float(os.environ.get("MEMO_LANE_HEARTBEAT_PROBE_S", "5"))
+
 AGENT_TIMEOUT_S = int(os.environ.get("MEMO_AGENT_TIMEOUT_S", "600"))
 # The agent deadline is extended (one AGENT_TIMEOUT_S at a time) while the command is verifiably
-# still queued or running, up to this total. The gateway queue is shared FIFO with batch jobs.
+# still queued or running, up to this total. The deadline is judged against the memo's OWN lane:
+# an interactive memo is extended only while the interactive lane is busy, not while grooming is.
 QUEUE_MAX_WAIT_S = int(os.environ.get("MEMO_QUEUE_MAX_WAIT_S", "3600"))
 # A memo that timed out may still finish later; keep watching its command this long and speak the
 # reply late rather than lose work the agent already did.
@@ -212,6 +223,50 @@ def junk_reason(text: str, audio_s: float | None) -> tuple[str, str] | None:
 
 # ------------------------------------------------------------------ the watcher
 
+class LaneProbe:
+    """Background snapshot of both gateway lanes for the heartbeat (the API's /voice banner reads it).
+
+    A daemon thread, so a hung NATS monitor can never stall the tick loop."""
+
+    def __init__(self, every_s: float = LANE_HEARTBEAT_PROBE_S):
+        self.every_s = every_s
+        self._snap: dict = {}
+        self._lock = threading.Lock()
+
+    def probe_once(self) -> None:
+        lanes = mc_.gateway_lanes()
+        snap = {}
+        for lane, info in lanes.items():
+            snap[lane] = {
+                "consumer": info.get("consumer"), "ok": info.get("ok"),
+                "waiting": info.get("num_waiting"), "ack_pending": info.get("num_ack_pending"),
+                "pending": info.get("num_pending"), "max_ack_pending": info.get("max_ack_pending"),
+                "error": info.get("error"), "checked_at": iso(now_utc()),
+            }
+        with self._lock:
+            self._snap = snap
+
+    def start(self) -> None:
+        def loop():
+            while not STOP:
+                try:
+                    self.probe_once()
+                except Exception as e:  # noqa: BLE001
+                    log("lane_probe_failed", "warn", error=str(e)[:200])
+                time.sleep(self.every_s)
+        threading.Thread(target=loop, name="lane-probe", daemon=True).start()
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return dict(self._snap)
+
+
+def memo_lane(m: dict) -> str:
+    """The lane a memo's command rides. A memo dispatched before lanes existed has none: batch."""
+    lane = m.get("lane")
+    return lane if lane in mc_.GATEWAY_CONSUMERS else "batch"
+
+
 class Watcher:
     def __init__(self, state: State):
         self.s = state
@@ -224,6 +279,23 @@ class Watcher:
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
                       "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io")}
         self.last_rescue = 0.0
+        self.lane_probe: LaneProbe | None = None  # started by main(); tests leave it off
+
+    def choose_lane(self) -> tuple[str, str | None]:
+        """(lane, reason). The configured lane, unless it is interactive and nobody pulls its consumer.
+
+        Two failed probes 1.5 s apart are required: a parked pull request can be momentarily absent between
+        fetch cycles. A monitor that cannot be read (ok is None) keeps the configured lane: it is diagnostic,
+        the publish is core NATS either way."""
+        if LANE != "interactive":
+            return LANE, None
+        for attempt in range(2):
+            info = mc_.gateway_liveness("interactive")
+            if info.get("ok") is not False:
+                return "interactive", None
+            if attempt == 0:
+                time.sleep(LANE_PROBE_GAP_S)
+        return "batch", "interactive_consumer_not_pulling"
 
     def shutdown(self, wait: bool) -> None:
         for p in self.pools.values():
@@ -333,6 +405,8 @@ class Watcher:
         if stage == "dispatch" and failed == "agent":
             m.pop("command_id", None)       # the old command was rejected or failed: send a fresh one
             m.pop("publish_attempted", None)
+            m.pop("lane", None)             # a fresh command id may pick a fresh lane
+            m.pop("lane_reason", None)
         if stage == "await_agent":
             m["deadline_ts"] = time.time() + AGENT_TIMEOUT_S
         if failed:
@@ -413,6 +487,7 @@ class Watcher:
             for m in self.s.memos.values():
                 counts[m["status"]] = counts.get(m["status"], 0) + 1
             self.s.heartbeat({
+                "lane": LANE, "lanes": self.lane_probe.snapshot() if self.lane_probe else {},
                 "memos": counts, "outbox": len(self.s.data["outbox"]),
                 "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
                             "running": m["key"] in self.running,
@@ -596,6 +671,20 @@ class Watcher:
 
     def step_dispatch(self, m: dict) -> None:
         import uuid
+        # Pick the lane once per command id and keep it: the idempotency key, the envelope digest and the
+        # journal row all differ by command type, so re-sending one command id on the other subject would be
+        # a terminal digest collision. Probed outside the lock (it sleeps between probes).
+        if not m.get("lane"):
+            if m.get("publish_attempted"):
+                m["lane"], m["lane_reason"] = "batch", None  # dispatched before lanes existed
+            else:
+                m["lane"], m["lane_reason"] = self.choose_lane()
+                if m["lane_reason"]:
+                    log("lane_fallback", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch",
+                        lane=m["lane"], configured=LANE, reason=m["lane_reason"],
+                        gateway=mc_.gateway_liveness_text(lane="interactive"),
+                        note="no puller on the interactive consumer; sending on the batch lane (answer may be late)")
+        lane = m["lane"]
         with self.mu:
             m.setdefault("command_id", str(uuid.uuid4()))
             cid = m["command_id"]
@@ -622,7 +711,7 @@ class Watcher:
                             "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"},
             }
             cmd = [BB_EMIT, "--strict", "--print-ids", "--kind", "command",
-                   "--type", "bloodbank.cmd.agent.invocation.start",
+                   "--type", mc_.LANE_COMMAND_TYPES[lane],
                    "--source", f"urn:33god:service:{SERVICE}", "--producer", SERVICE, "--service", SERVICE,
                    "--actor-type", "service", "--actor-id", SERVICE,
                    "--correlation", m["memo_id"], "--command-id", cid,
@@ -632,10 +721,10 @@ class Watcher:
             m["publish_attempted"] = True
             self.s.save()
             memo_id, key, agent = m["memo_id"], m["key"], m["agent"]
-        live = mc_.gateway_liveness()
+        live = mc_.gateway_liveness(lane)
         if live.get("ok") is False:
             log("gateway_not_pulling", "warn", memo_id=memo_id, key=key, agent=agent,
-                stage="dispatch", detail=mc_.gateway_liveness_text(live),
+                stage="dispatch", lane=lane, detail=mc_.gateway_liveness_text(live, lane),
                 note="command will queue in JetStream until the gateway resumes")
         t0 = time.time()
         r = run(cmd, 30, stdin=json.dumps(data))
@@ -658,11 +747,13 @@ class Watcher:
         m.pop("dropped_since", None)
         self.fact("dispatched", m, {
             "command_id": cid, "idempotency_key": ids.get("idempotency_key"),
-            "command_subject": ids.get("subject") or "bloodbank.cmd.agent.invocation.start",
+            "command_subject": ids.get("subject") or mc_.LANE_COMMAND_TYPES[memo_lane(m)],
+            "lane": memo_lane(m), "lane_reason": m.get("lane_reason"),
             "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(prompt),
             "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
             "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms)})
-        self.done_stage(m, "dispatched", "await_agent", ms=ms, command_id=cid, target=m["agent"])
+        self.done_stage(m, "dispatched", "await_agent", ms=ms, command_id=cid, target=m["agent"],
+                        lane=memo_lane(m))
 
     # -- waiting for the agent (tick thread: cheap reads) --
 
@@ -716,12 +807,13 @@ class Watcher:
         if st["state"] == "failed":
             raise StageError("agent", st.get("code", "agent_failed"), f"{st['detail']} (via {st['source']})", retryable=False)
 
+        lane = memo_lane(m)
         live = None
         if st["state"] == "pending" and "journal_error" not in st:
             # The gateway consumed the command but wrote no execution row and the consumer is empty:
             # it was terminally rejected (unroutable target, bad envelope). Its only trace is a gateway
             # WARNING, so go and fetch it instead of waiting out the deadline.
-            live = mc_.gateway_liveness()
+            live = mc_.gateway_liveness(lane)
             empty = live.get("ok") is not None and not live.get("error") and not (live.get("num_pending") or 0) \
                 and not (live.get("num_ack_pending") or 0)
             if empty and waited >= 20:
@@ -730,7 +822,7 @@ class Watcher:
                     why = mc_.gateway_log_lines([m["command_id"], m["agent"]])
                     raise StageError("agent", "gateway_terminated",
                                      f"gateway consumed command {m['command_id']} without a journal row and the consumer is empty "
-                                     f"(pending=0 ack_pending=0): it was rejected before starting. "
+                                     f"({lane} consumer pending=0 ack_pending=0): it was rejected before starting. "
                                      f"gateway log: {why[-1] if why else 'no matching line in ' + mc_.GATEWAY_UNIT}",
                                      retryable=False)
             else:
@@ -738,17 +830,17 @@ class Watcher:
 
         if time.time() >= m["deadline_ts"]:
             if waited < QUEUE_MAX_WAIT_S:
-                live = live or mc_.gateway_liveness()
+                live = live or mc_.gateway_liveness(lane)
                 ahead = (live.get("num_pending") or 0) + (live.get("num_ack_pending") or 0)
                 if st["state"] == "running" or (st["state"] == "pending" and live.get("ok") and ahead > 0):
                     m["deadline_ts"] = min(time.time() + AGENT_TIMEOUT_S, m["dispatched_ts"] + QUEUE_MAX_WAIT_S)
                     log("deadline_extended", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
                         command_id=m["command_id"], waited_s=int(waited), state=st["state"], detail=st["detail"],
-                        gateway=mc_.gateway_liveness_text(live),
+                        lane=lane, gateway=mc_.gateway_liveness_text(live, lane),
                         note="command is still queued or running; extending instead of failing")
                     m["next_at"] = time.time() + AWAIT_POLL_S
                     return
-            live_text = mc_.gateway_liveness_text(live)
+            live_text = mc_.gateway_liveness_text(live, lane) if live else mc_.gateway_liveness_text(lane=lane)
             raise StageError("agent_reply", "timeout",
                              f"no completed turn after {int(waited)}s for command {m['command_id']} "
                              f"({st['detail']}); gateway: {live_text}", retryable=False)
@@ -756,7 +848,8 @@ class Watcher:
             m["last_wait_log"] = time.time()
             extra = {}
             if st["state"] == "pending":
-                extra["gateway"] = mc_.gateway_liveness_text(live)
+                extra["gateway"] = mc_.gateway_liveness_text(live, lane) if live else mc_.gateway_liveness_text(lane=lane)
+                extra["lane"] = lane
             log("agent_waiting", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
                 command_id=m["command_id"], waited_s=int(waited), left_s=int(m["deadline_ts"] - time.time()),
                 detail=st["detail"], **extra)
@@ -914,7 +1007,9 @@ def main() -> int:
 
     state = State(STATE_DIR)
     w = Watcher(state)
-    log("starting", poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
+    w.lane_probe = LaneProbe()
+    w.lane_probe.start()
+    log("starting", lane=LANE, poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
         first_start=state.fresh)
     while True:
         try:

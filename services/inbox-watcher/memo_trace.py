@@ -68,6 +68,16 @@ def watcher_heartbeat() -> dict | None:
         return None
 
 
+def lane_of(dispatched: dict | None, rec: dict | None = None, row: dict | None = None) -> str:
+    """The gateway lane a memo's command rode: the dispatched fact's `lane`, else its command_subject,
+    else the watcher record, else the journal row. A memo with none of those predates lanes: batch."""
+    d = (dispatched or {}).get("data") or {}
+    for cand in (d.get("lane"), c.lane_from_subject(d.get("command_subject")), (rec or {}).get("lane"), (row or {}).get("lane")):
+        if cand in c.GATEWAY_CONSUMERS:
+            return cand
+    return "batch"
+
+
 def watcher_unit_active() -> str:
     r = subprocess.run(["systemctl", "--user", "is-active", c.WATCHER_UNIT], capture_output=True, text=True)
     return r.stdout.strip() or "unknown"
@@ -167,11 +177,15 @@ def build(key: str) -> tuple[list[Hop], dict]:
                  lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({d.get('model')}): "
                            f"{str(d.get('transcript_text'))[:80]!r}")
     add_fact_hop("fact:dispatched", "dispatched",
-                 lambda d: f"command {d.get('command_id')} -> {d.get('command_subject')}")
+                 lambda d: f"command {d.get('command_id')} -> {d.get('command_subject')} "
+                           f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}"
+                           + (f" (fallback: {d.get('lane_reason')})" if d.get("lane_reason") else ""))
 
     disp = fact("dispatched")
     command_id = (disp or {}).get("data", {}).get("command_id") or (rec or {}).get("command_id")
     ctx["command_id"] = command_id
+    lane = lane_of(disp, rec)
+    ctx["lane"] = lane
 
     # 4. gateway journal (by command id, never 'latest')
     row = None
@@ -184,15 +198,19 @@ def build(key: str) -> tuple[list[Hop], dict]:
             if row:
                 ok = row["state"] in ("completed",) and row.get("outcome") in ("success", None)
                 bad = row["state"].startswith("rejected") or (row["state"] == "completed" and row.get("outcome") not in ("success", None))
-                detail = f"profile={row['profile']} state={row['state']} outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}"
+                lane = lane_of(disp, rec, row)
+                ctx["lane"] = lane
+                detail = (f"lane={row.get('lane') or lane} profile={row['profile']} state={row['state']} "
+                          f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}")
                 if bad:
                     detail += f" reason={c.terminal_error(row)}"
                 hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
             else:
-                live = c.gateway_liveness()
-                detail = f"gateway never created an execution row for {command_id}; {c.gateway_liveness_text(live)}"
+                live = c.gateway_liveness(lane)
+                detail = (f"gateway never created an execution row for {command_id} (lane={lane}); "
+                          f"{c.gateway_liveness_text(live, lane)}")
                 if live.get("ok") and not live.get("num_pending") and not live.get("num_ack_pending"):
-                    detail += ("  <- consumer is EMPTY: the gateway consumed this command and dropped it without a row "
+                    detail += (f"  <- {lane} consumer is EMPTY: the gateway consumed this command and dropped it without a row "
                                "(unroutable target or bad envelope); see gateway_log below")
                 hops.append(Hop("gateway_journal", MISSING, detail=detail))
                 glines = c.gateway_log_lines([command_id, agent])
@@ -366,6 +384,7 @@ def render(hops: list[Hop], ctx: dict) -> None:
     print(f"key      {ctx['key']}")
     print(f"agent    {ctx['agent']}")
     print(f"command  {ctx.get('command_id') or '-'}")
+    print(f"lane     {ctx.get('lane') or '-'}   queues: {c.gateway_lanes_text()}")
     print(f"query    curl -s '{c.CANDYSTORE_URL}/events?correlationid={ctx['memo_id']}&limit=100'")
     print()
     prev = None
@@ -461,15 +480,18 @@ def furthest(events: list[dict], rec: dict | None) -> str:
 
 def cmd_list(args) -> int:
     objs = sorted(c.s3_list_inbox(), key=lambda o: o["last_modified"], reverse=True)[: args.n]
-    print(f"{'time (UTC)':<21} {'agent':<16} {'memo_id':<10} {'furthest stage':<26} key")
+    print(f"{'time (UTC)':<21} {'agent':<16} {'memo_id':<10} {'lane':<12} {'furthest stage':<26} key")
     for o in objs:
         mid = c.memo_id_for(o["key"])
         try:
             events = c.candystore_events(mid)
         except Exception:  # noqa: BLE001
             events = []
-        print(f"{c.iso(o['last_modified'])[:19]:<21} {str(c.agent_from_key(o['key'])):<16} {mid[:8]:<10} "
-              f"{furthest(events, watcher_record(o['key'])):<26} {o['key']}")
+        rec = watcher_record(o["key"])
+        disp = next((e for e in reversed(events) if e["type"].endswith("audio.memo.dispatched")), None)
+        lane = lane_of(disp, rec) if (disp or (rec or {}).get("lane")) else "-"
+        print(f"{c.iso(o['last_modified'])[:19]:<21} {str(c.agent_from_key(o['key'])):<16} {mid[:8]:<10} {lane:<12} "
+              f"{furthest(events, rec):<26} {o['key']}")
     return 0
 
 

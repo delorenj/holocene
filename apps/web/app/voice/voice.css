@@ -131,6 +131,20 @@
 .hub-root .voice-badge.is-failed { color: #fff; background: var(--fail); border-color: var(--fail); }
 .hub-root .voice-badge.is-missing { border-style: dashed; }
 
+/* Gateway lane a memo's command rode: interactive = reserved slots, batch = shared FIFO with grooming. */
+.hub-root .voice-lane {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1.5px solid currentColor;
+  font: 700 9.5px/14px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.hub-root .voice-lane.is-interactive { color: var(--cleared); }
+.hub-root .voice-lane.is-fallback { color: var(--stuck); border-style: dashed; }
+
 /* ---------- detail ---------- */
 
 .hub-root .voice-detail {

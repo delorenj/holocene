@@ -21,12 +21,13 @@ tools to see every hop of it.
         |-- download + `transcribe` (faster-whisper)      HOP 4  speech to text
         |-- transcribed fact: audio.memo.transcribed      (text, seconds, model, audio duration)
         |-- bb-emit --kind command                        HOP 5  dispatch
-        |     bloodbank.cmd.agent.invocation.start        correlationid = memo_id, thread_id = memo_id,
+        |     bloodbank.cmd.agent.invocation.invoke       (interactive lane; .start = batch lane, the fallback)
+        |                                                 correlationid = memo_id, thread_id = memo_id,
         |     target_agent_id = <agent from the S3 key>   context.memo_id / memo_key
-        |-- dispatched  fact: audio.memo.dispatched       (command_id)
+        |-- dispatched  fact: audio.memo.dispatched       (command_id, lane, lane_reason)
         v
    NATS JetStream BLOODBANK_COMMANDS                     HOP 6  queued
-        | durable pull consumer "bloodbank-hermes-gateway"
+        | durable pull consumer "bloodbank-hermes-gateway-interactive" (2 reserved slots; "bloodbank-hermes-gateway" = batch, 4)
         v
    Hermes gateway (hermes-gateway.service, bloodbank plugin)   HOP 7  agent turn
         |-- executions row (command_id)  ~/.hermes/bloodbank-hermes-gateway-state.sqlite3
@@ -70,7 +71,7 @@ Each hop prints OK / MISSING / FAILED / UNKNOWN with its timestamp and the
 latency since the previous hop, and the run ends with one verdict line:
 
 ```
-VERDICT  STOPPED AT gateway_journal: gateway never created an execution row for <command_id>; pulling (busy: 4 in flight, 22 queued ahead) ...
+VERDICT  STOPPED AT gateway_journal: gateway never created an execution row for <command_id> (lane=batch); batch: pulling (busy: 4/4 in flight, 22 queued ahead) ...
 VERDICT  COMPLETE in 71.4s
 ```
 
@@ -87,7 +88,7 @@ Exit code is 0 only for COMPLETE.
 | watcher log | one JSON line per stage (`memo_id`, `key`, `agent`, `stage`, `ms`) | `journalctl --user -u holocene-inbox-watcher.service -o cat \| grep <memo_id>` |
 | watcher state | per-memo stage, attempts, command id | `jq '.memos["<key>"]' ~/.local/state/holocene-auto/inbox-watcher/state.json` |
 | watcher alive | heartbeat written every tick | `cat ~/.local/state/holocene-auto/inbox-watcher/heartbeat.json`, `systemctl --user status holocene-inbox-watcher` |
-| command queued | JetStream consumer state | `curl -s 'http://127.0.0.1:8222/jsz?consumers=true&streams=true'` -> BLOODBANK_COMMANDS / consumer `bloodbank-hermes-gateway`: `num_waiting` or `num_ack_pending` >= 1 means somebody is pulling; `num_pending` is the queue |
+| command queued | JetStream consumer state (one consumer per lane) | `curl -s 'http://127.0.0.1:8222/jsz?consumers=true&streams=true&config=true'` -> BLOODBANK_COMMANDS / consumer `bloodbank-hermes-gateway-interactive` (memos) or `bloodbank-hermes-gateway` (batch): `num_waiting` or `num_ack_pending` >= 1 means somebody is pulling; `num_pending` is the queue |
 | gateway_journal | execution row, keyed by command id | `sqlite3 -readonly ~/.hermes/bloodbank-hermes-gateway-state.sqlite3 "select state,outcome,profile,created_at,updated_at from executions where command_id='<command_id>'"` |
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
@@ -136,16 +137,33 @@ Behaviour worth knowing:
 - **`mise run memo:retry <memo_id>`** revives a failed or skipped memo at the
   stage it died in (the watcher owns state.json, so the command drops a file in
   `<state>/control/`). `memo_failed` log lines print the exact command.
+- **Memos ride the interactive lane.** The watcher publishes
+  `bloodbank.cmd.agent.invocation.invoke`, delivered through its own durable
+  consumer (`bloodbank-hermes-gateway-interactive`, 2 reserved slots), so a
+  memo starts within seconds even when a grooming burst holds all 4 batch slots
+  (design: `bloodbank/docs/interactive-command-lane.md`). `MEMO_LANE=batch`
+  puts memos back on `invocation.start` (the rollback lever; restart the
+  watcher, no gateway restart). Before the first publish of a command id the
+  watcher probes the interactive consumer (NATS monitor, two failed probes
+  1.5 s apart, `MEMO_LANE_PROBE_GAP_S`); if nobody is pulling it, it sends on
+  the batch lane instead, logs `lane_fallback` and stamps `lane=batch`,
+  `lane_reason=interactive_consumer_not_pulling` on the `dispatched` fact. An
+  unreadable monitor keeps the interactive lane. **The lane is pinned to the
+  command id** (the idempotency key, digest and journal row differ by type), so
+  a dispatch retry never hops lanes; `memo:retry` of a failed agent stage gets
+  a fresh command id and may pick a fresh lane. A memo dispatched before lanes
+  existed (no `lane` in state.json) is treated as batch.
 - **The agent deadline stretches while the command is verifiably queued or
   running.** `MEMO_AGENT_TIMEOUT_S` (600) is extended one period at a time, up
-  to `MEMO_QUEUE_MAX_WAIT_S` (3600), while the consumer has commands ahead of
-  ours or the journal row says running (the gateway queue is shared FIFO with
-  batch jobs). If it still hits the deadline it fails
+  to `MEMO_QUEUE_MAX_WAIT_S` (3600), while the memo's OWN lane's consumer has
+  commands ahead of ours or the journal row says running (an interactive memo
+  is not extended on account of grooming; one that blows its deadline is a real
+  alarm, not queue noise). If it still hits the deadline it fails
   `agent_reply/timeout`, but keeps watching the command for
   `MEMO_RESCUE_WINDOW_S` (2 h): when the agent finishes late the reply is
   spoken anyway ("<agent>, late reply. ...").
 - **A command the gateway consumed and dropped is detected.** No journal row
-  while the consumer is empty (`pending=0 ack_pending=0`) for 15 s after 20 s
+  while the memo's lane consumer is empty (`pending=0 ack_pending=0`) for 15 s after 20 s
   means it was rejected before starting (unroutable target): the memo fails
   `agent/gateway_terminated` with the gateway's own WARNING line in the
   message. Better still, the agent id is checked against
@@ -188,7 +206,11 @@ Behaviour worth knowing:
 
 Configuration is env only (see the unit file): `MEMO_AGENT_TIMEOUT_S`,
 `MEMO_TRANSCRIBE_TIMEOUT_S`, `MEMO_MAX_ATTEMPTS`, `MEMO_POLL_S`,
-`MEMO_MAX_AGE_HOURS`, `MEMO_SPEAK_CHARS`, `MEMO_VOX_VOICE`, `TRANSCRIBE_DIR`.
+`MEMO_MAX_AGE_HOURS`, `MEMO_SPEAK_CHARS`, `MEMO_VOX_VOICE`, `TRANSCRIBE_DIR`,
+`MEMO_LANE` (`interactive` default | `batch`), `MEMO_LANE_PROBE_GAP_S`.
+The heartbeat (`heartbeat.json`) carries `lane` and `lanes.{interactive,batch}`
+(`ok`, `waiting`, `ack_pending`, `pending`, `max_ack_pending`, probed every 5 s
+off the tick thread); `/voice` reads it.
 S3 access is the `delo` alias in `~/.mc/config.json`; the unit holds no secrets.
 
 ## Bloodbank facts
@@ -235,15 +257,17 @@ retryable=false)` with that queue state in the message.
 
 ## Known limits
 
-- Voice memos still share ONE FIFO gateway consumer with batch jobs (n8n
-  grooming commands). Mitigated (deadline extension, late rescue), not fixed: a
-  priority lane needs a second consumer in the Hermes gateway plugin.
+- The interactive lane has 2 slots (`gateway.platforms.bloodbank.extra.interactive.max_inflight`):
+  a third concurrent memo waits for a slot behind two running ones. If the
+  interactive consumer is down the memo is answered late on the batch lane, not
+  failed. Memos are the only producer on `invoke`; n8n, PMs and `hookd_bridge`
+  stay on `start`.
 - Playback is reported by the page's audio element, not by capturing the
   audible output; a car switched off mid-reply never reports `ended`.
 - The gateway publishes lifecycle facts only, not the reply text, so the
   watcher reads the reply from the Hermes profile `state.db`.
 - If the gateway's bloodbank platform is down, commands queue in JetStream and
-  the trace verdict says `NOBODY PULLING`. Commands run when it comes back.
+  the trace verdict says `NOBODY PULLING <lane>`. Commands run when it comes back.
 - `reply_renderer.py` was folded into this service and deleted.
 
 ## Voice memos view
@@ -254,3 +278,10 @@ Bloodbank collection Holocene already keeps: `GET /api/modules/voice/memos` (lis
 event JSON; failed hops carry the error; a hop that is older than its expected latency with nothing after it gets a
 STUCK badge (budgets: pickup 30 s, transcribe 180 s, dispatch 30 s, agent start 120 s, agent finish 600 s, reply 60 s,
 in `apps/api/src/voice-memos.ts`). Holocene only reads; nothing there publishes.
+
+The list shows a lane chip per memo (`interactive`, or `batch (fallback)` with the reason on hover), taken from the
+`dispatched` fact's `lane` (older facts: parsed from `command_subject`, else batch). While a memo waits at "Agent started" the
+hop shows its lane's queue (`interactive lane: 1/2 in flight, 0 queued`, from the watcher heartbeat). A banner appears when the
+watcher is configured for the interactive lane but nobody is pulling that consumer. `mise run memo:trace` prints
+`lane <lane>   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 4/4 in flight, 17 queued`,
+and `mise run memo:list` has a LANE column.

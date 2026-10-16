@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMemoDetail, buildMemoSummaries, toJourneyEvent, type JourneyEvent } from "./voice-memos.js";
+import { buildMemoDetail, buildMemoSummaries, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
 import { EventStore } from "./event-store.js";
 
 const MEMO = "d84f8cb5-ad88-5bc9-a573-cf2e297e1b4d";
@@ -192,4 +192,29 @@ test("a no-row agent timeout fails the 'Agent started' hop, because the agent ne
   assert.equal(d.hops.find(h => h.id === "agent_started")!.status, "failed");
   assert.notEqual(d.hops.find(h => h.id === "agent_done")!.status, "failed");
   assert.match(d.stageLabel, /agent started/);
+});
+
+test("the dispatched fact names the lane; a fact from before lanes reads as batch", () => {
+  const on = (data: Record<string, unknown>) =>
+    buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), fact("audio.memo.dispatched", 43, { occurred_at: iso(43), command_id: CMD, ...data })], now(50))!;
+  const interactive = on({ lane: "interactive", command_subject: "bloodbank.cmd.agent.invocation.invoke" });
+  assert.equal(interactive.lane, "interactive");
+  assert.equal(toSummary(interactive).lane, "interactive");
+  assert.match(interactive.hops[3].detail, /interactive lane/);
+  assert.equal(interactive.laneReason, undefined);
+
+  const fellBack = on({ lane: "batch", lane_reason: "interactive_consumer_not_pulling", command_subject: "bloodbank.cmd.agent.invocation.start" });
+  assert.equal(fellBack.lane, "batch");
+  assert.equal(fellBack.laneReason, "interactive_consumer_not_pulling");
+  assert.match(fellBack.hops[3].detail, /batch lane · fell back: interactive_consumer_not_pulling/);
+
+  assert.equal(on({ command_subject: "bloodbank.cmd.agent.invocation.invoke" }).lane, "interactive");
+  assert.equal(on({}).lane, "batch");
+  // no dispatch yet: no lane to show
+  assert.equal(buildMemoDetail(MEMO, [uploaded(), received()], now(5))!.lane, undefined);
+});
+
+test("the lane rides on the summaries the list view draws", () => {
+  const list = buildMemoSummaries([received(), transcribed(), fact("audio.memo.dispatched", 43, { command_id: CMD, lane: "interactive" })], now(60));
+  assert.equal(list[0].lane, "interactive");
 });

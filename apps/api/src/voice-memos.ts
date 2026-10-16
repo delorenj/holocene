@@ -28,6 +28,8 @@ export const AGENT_TYPES = [
 export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied" | "played";
 export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing";
 export type MemoStatus = "complete" | "failed" | "running" | "stuck";
+/** Which gateway lane carried the memo's command: invocation.invoke (interactive) or invocation.start (batch). */
+export type Lane = "interactive" | "batch";
 
 /** A collected envelope reduced to what grouping needs, plus the raw envelope for the UI. */
 export type JourneyEvent = {
@@ -115,6 +117,10 @@ export type MemoSummary = {
   reached?: HopId;
   stageLabel: string;
   stuckAt?: HopId;
+  /** Lane of the memo's command, from the dispatched fact (absent until dispatch; pre-lane facts read as batch). */
+  lane?: Lane;
+  /** Why the memo is not on the lane the watcher is configured for, e.g. interactive_consumer_not_pulling. */
+  laneReason?: string;
   transcriptPreview?: string;
   replyPreview?: string;
   error?: string;
@@ -195,6 +201,14 @@ function agentFailure(e: JourneyEvent): HopFailure {
 
 const first = (events: JourneyEvent[], ...types: string[]) => events.find((e) => types.includes(e.type));
 
+/** The lane a dispatched fact names: `lane`, else derived from command_subject, else batch (a fact from before lanes). */
+export function laneOfDispatch(d: Record<string, unknown>): Lane {
+  const lane = str(d.lane);
+  if (lane === "interactive" || lane === "batch") return lane;
+  const subject = str(d.command_subject);
+  return subject?.endsWith(".invocation.invoke") ? "interactive" : "batch";
+}
+
 function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
   if (!e) return "";
   const d = e.data;
@@ -211,8 +225,14 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
       ].filter(Boolean);
       return bits.join(" · ");
     }
-    case "dispatched":
-      return str(d.command_id) ? `command ${str(d.command_id)}` : "";
+    case "dispatched": {
+      const reason = str(d.lane_reason);
+      return [
+        str(d.command_id) ? `command ${str(d.command_id)}` : undefined,
+        `${laneOfDispatch(d)} lane`,
+        reason ? `fell back: ${reason}` : undefined
+      ].filter(Boolean).join(" · ");
+    }
     case "agent_started":
       return str(e.producer) ?? "";
     case "agent_done":
@@ -391,6 +411,8 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const startMs = ms(startedAt) ?? now;
   const updatedAt = events.reduce((acc, e) => ((ms(e.at) ?? 0) > (ms(acc) ?? 0) ? e.at : acc), startedAt);
 
+  const lane = dispatched ? laneOfDispatch(dispatched.data) : undefined;
+  const laneReason = str(dispatched?.data.lane_reason);
   const transcribed = first(relevant, "bloodbank.audio.memo.transcribed");
   const repliedEvent = first(relevant, "bloodbank.audio.memo.replied");
   const transcript = str(transcribed?.data.transcript_text);
@@ -422,6 +444,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     reached: reachedIdx >= 0 ? hops[reachedIdx].id : undefined,
     stageLabel,
     stuckAt,
+    lane, laneReason,
     transcriptPreview: preview(transcript, 140),
     replyPreview: preview(replyText, 140),
     error: (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
@@ -435,7 +458,7 @@ export function toSummary(detail: MemoDetail): MemoSummary {
   return {
     memoId: detail.memoId, agent: detail.agent, s3Key: detail.s3Key, startedAt: detail.startedAt, updatedAt: detail.updatedAt,
     totalSeconds: detail.totalSeconds, status: detail.status, reached: detail.reached, stageLabel: detail.stageLabel,
-    stuckAt: detail.stuckAt, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
+    stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
   };
 }
 

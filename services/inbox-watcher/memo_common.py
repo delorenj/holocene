@@ -33,7 +33,26 @@ HERMES_PROFILES = Path(os.environ.get("MEMO_HERMES_PROFILES", HOME / ".hermes/pr
 CANDYSTORE_URL = os.environ.get("MEMO_CANDYSTORE_URL", "http://127.0.0.1:8683")
 NATS_MONITOR_URL = os.environ.get("MEMO_NATS_MONITOR_URL", "http://127.0.0.1:8222")
 VOX_URL = os.environ.get("MEMO_VOX_URL", "https://vox.delo.sh")
-GATEWAY_CONSUMER = "bloodbank-hermes-gateway"
+# Two gateway lanes, one durable consumer each (bloodbank/docs/interactive-command-lane.md).
+# interactive = a human is waiting (voice memos), reserved slots; batch = grooming and PM fan-out.
+GATEWAY_CONSUMERS = {
+    "interactive": "bloodbank-hermes-gateway-interactive",
+    "batch": "bloodbank-hermes-gateway",
+}
+LANE_COMMAND_TYPES = {
+    "interactive": "bloodbank.cmd.agent.invocation.invoke",
+    "batch": "bloodbank.cmd.agent.invocation.start",
+}
+LANES = tuple(GATEWAY_CONSUMERS)
+GATEWAY_CONSUMER = GATEWAY_CONSUMERS["batch"]  # the original single lane; kept for old imports
+
+
+def lane_from_subject(subject: str | None) -> str | None:
+    """interactive | batch from a command subject; None when it names neither."""
+    for lane, t in LANE_COMMAND_TYPES.items():
+        if subject and subject.endswith(t.split("bloodbank.cmd.", 1)[1]):
+            return lane
+    return None
 COMMAND_STREAM = "BLOODBANK_COMMANDS"
 UPLOAD_CONTAINER = "agent-pad-upload"
 WATCHER_UNIT = "holocene-inbox-watcher.service"
@@ -239,6 +258,10 @@ def candystore_events(correlation_id: str, limit: int = 200) -> list[dict]:
 
 # ---------------------------------------------------------------- gateway journal
 
+def _has_column(db: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(r[1] == column for r in db.execute(f"PRAGMA table_info({table})"))
+
+
 def journal_row(command_id: str) -> dict | None:
     """The gateway's execution row for this exact command id (never 'latest for profile')."""
     if not GATEWAY_DB.exists():
@@ -248,7 +271,9 @@ def journal_row(command_id: str) -> dict | None:
         db.row_factory = sqlite3.Row
         row = db.execute(
             "SELECT command_id, profile, state, outcome, rejection_reason, rejected_at, "
-            "created_at, updated_at, terminal_events FROM executions WHERE command_id=?",
+            "created_at, updated_at, terminal_events"
+            + (", lane" if _has_column(db, "executions", "lane") else "")
+            + " FROM executions WHERE command_id=?",
             (command_id,),
         ).fetchone()
     finally:
@@ -345,39 +370,83 @@ def gateway_log_lines(needles: list[str], since: str = "-3 hours", lines: int = 
 
 # ---------------------------------------------------------------- NATS / gateway liveness
 
-def gateway_liveness() -> dict:
-    """Is anything pulling bloodbank.cmd.agent.invocation.start? num_waiting >= 1 means yes."""
+def _consumer_info(c: dict) -> dict:
+    # idle puller = parked pull request (num_waiting); busy puller = messages in flight
+    # (max_ack_pending saturated parks nothing, so waiting=0 with ack_pending>0 is healthy)
+    return {
+        "ok": (c.get("num_waiting", 0) or 0) >= 1 or (c.get("num_ack_pending", 0) or 0) >= 1,
+        "num_waiting": c.get("num_waiting", 0),
+        "num_pending": c.get("num_pending", 0),
+        "num_ack_pending": c.get("num_ack_pending", 0),
+        "max_ack_pending": (c.get("config") or {}).get("max_ack_pending"),
+        "delivered": (c.get("delivered") or {}).get("stream_seq"),
+    }
+
+
+def gateway_lanes() -> dict[str, dict]:
+    """{lane: liveness} for every gateway lane from ONE monitor read.
+
+    Each value is {"ok": bool|None, "lane", "consumer", "num_waiting", "num_pending", "num_ack_pending",
+    "max_ack_pending", "delivered"} or {"ok": False|None, "error": ...}. ok is True when that lane's
+    consumer has a puller, False when it is registered-but-unpulled or missing, None when the monitor
+    could not be read (diagnostic only: callers must not treat None as down)."""
+    out: dict[str, dict] = {}
     try:
-        body = http_json(f"{NATS_MONITOR_URL}/jsz?consumers=true&streams=true", timeout=4)
+        body = http_json(f"{NATS_MONITOR_URL}/jsz?consumers=true&streams=true&config=true", timeout=4)
     except Exception as e:  # noqa: BLE001
-        return {"ok": None, "error": f"nats monitor unreachable: {e}"}
+        return {lane: {"ok": None, "lane": lane, "consumer": name, "error": f"nats monitor unreachable: {e}"}
+                for lane, name in GATEWAY_CONSUMERS.items()}
+    consumers: dict[str, dict] | None = None
     for acct in body.get("account_details", []):
         for st in acct.get("stream_detail", []):
-            if st.get("name") != COMMAND_STREAM:
-                continue
-            for c in st.get("consumer_detail", []):
-                if c.get("name") == GATEWAY_CONSUMER:
-                    # idle puller = parked pull request (num_waiting); busy puller = messages in flight
-                    # (max_ack_pending saturated parks nothing, so waiting=0 with ack_pending>0 is healthy)
-                    return {
-                        "ok": (c.get("num_waiting", 0) or 0) >= 1 or (c.get("num_ack_pending", 0) or 0) >= 1,
-                        "num_waiting": c.get("num_waiting", 0),
-                        "num_pending": c.get("num_pending", 0),
-                        "num_ack_pending": c.get("num_ack_pending", 0),
-                        "delivered": (c.get("delivered") or {}).get("stream_seq"),
-                    }
-            return {"ok": False, "error": f"consumer {GATEWAY_CONSUMER} not registered on {COMMAND_STREAM}"}
-    return {"ok": None, "error": f"stream {COMMAND_STREAM} not found"}
+            if st.get("name") == COMMAND_STREAM:
+                consumers = {c.get("name"): c for c in st.get("consumer_detail", [])}
+    for lane, name in GATEWAY_CONSUMERS.items():
+        if consumers is None:
+            out[lane] = {"ok": None, "lane": lane, "consumer": name, "error": f"stream {COMMAND_STREAM} not found"}
+        elif name in consumers:
+            out[lane] = {"lane": lane, "consumer": name, **_consumer_info(consumers[name])}
+        else:
+            out[lane] = {"ok": False, "lane": lane, "consumer": name,
+                         "error": f"consumer {name} not registered on {COMMAND_STREAM}"}
+    return out
 
 
-def gateway_liveness_text(info: dict | None = None) -> str:
-    info = info or gateway_liveness()
+def gateway_liveness(lane: str = "batch") -> dict:
+    """Is anything pulling this lane's consumer? num_waiting >= 1 (or work in flight) means yes.
+
+    The lane defaults to batch so old callers keep their meaning; every memo path passes its own lane."""
+    if lane not in GATEWAY_CONSUMERS:
+        raise ValueError(f"unknown gateway lane {lane!r}")
+    return gateway_lanes()[lane]
+
+
+def gateway_liveness_text(info: dict | None = None, lane: str = "batch") -> str:
+    info = info or gateway_liveness(lane)
+    lane = info.get("lane") or lane
+    consumer = info.get("consumer") or GATEWAY_CONSUMERS.get(lane, lane)
     if info.get("error"):
-        return info["error"]
-    if info["ok"]:
-        verdict = (f"pulling (busy: {info['num_ack_pending']} in flight, {info['num_pending']} queued ahead)"
-                   if info["num_ack_pending"] else "pulling (idle)")
+        return f"{'NOBODY PULLING ' + lane + ': ' if info.get('ok') is False else ''}{info['error']}"
+    slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
+    waiting, pending, ack = (info.get(k) or 0 for k in ("num_waiting", "num_pending", "num_ack_pending"))
+    if info.get("ok"):
+        verdict = f"pulling (busy: {ack}{slots} in flight, {pending} queued ahead)" if ack else "pulling (idle)"
     else:
-        verdict = "NOBODY PULLING (gateway bloodbank platform down?)"
-    return (f"{verdict}; consumer {GATEWAY_CONSUMER}: waiting={info['num_waiting']} "
-            f"pending={info['num_pending']} ack_pending={info['num_ack_pending']}")
+        verdict = f"NOBODY PULLING {lane} (gateway bloodbank platform down or {lane} lane disabled?)"
+    return f"{lane}: {verdict}; consumer {consumer}: waiting={waiting} pending={pending} ack_pending={ack}"
+
+
+def gateway_lanes_text(lanes: dict[str, dict] | None = None) -> str:
+    """One line for both lanes: 'interactive: pulling, 1/2 in flight, 0 queued | batch: pulling, 4/4 in flight, 17 queued'."""
+    lanes = lanes or gateway_lanes()
+    parts = []
+    for lane in LANES:
+        info = lanes.get(lane) or {}
+        if info.get("ok") is None:
+            parts.append(f"{lane}: unknown ({info.get('error', 'no data')})")
+        elif not info["ok"]:
+            parts.append(f"{lane}: NOBODY PULLING")
+        else:
+            slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
+            parts.append(f"{lane}: pulling, {info['num_ack_pending']}{slots} in flight, {info['num_pending']} queued")
+    return " | ".join(parts)

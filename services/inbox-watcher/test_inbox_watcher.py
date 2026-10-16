@@ -164,8 +164,9 @@ def journal(command_id, profile, state="completed", outcome="success"):
     db = sqlite3.connect(GATEWAY_DB)
     db.execute("CREATE TABLE IF NOT EXISTS executions (command_id TEXT PRIMARY KEY, envelope_digest TEXT, profile TEXT,"
                " state TEXT, outcome TEXT, started_events TEXT, terminal_events TEXT, rejection_reason TEXT,"
-               " rejected_at TEXT, created_at TEXT, updated_at TEXT)")
-    db.execute("INSERT OR REPLACE INTO executions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+               " rejected_at TEXT, created_at TEXT, updated_at TEXT, lane TEXT)")
+    db.execute("INSERT OR REPLACE INTO executions (command_id, envelope_digest, profile, state, outcome, started_events,"
+               " terminal_events, rejection_reason, rejected_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                (command_id, "d", profile, state, outcome, "[]", "[]", None, None, "2026-10-15T00:00:00Z", "2026-10-15T00:00:05Z"))
     db.commit(); db.close()
 
@@ -224,8 +225,12 @@ class Pipeline(unittest.TestCase):
         hermes_session("holocene-pm", mid, "Here is the summary of recent work. It went well.")
         self.tick_until(lambda: m["status"] == "done")
         types = [t.replace("bloodbank.", "") for t, _ in facts()]
-        self.assertEqual(types, ["audio.memo.received", "audio.memo.transcribed", "cmd.agent.invocation.start",
+        # a human is waiting: the memo rides the interactive lane (invoke), not the batch lane (start)
+        self.assertEqual(types, ["audio.memo.received", "audio.memo.transcribed", "cmd.agent.invocation.invoke",
                                  "audio.memo.dispatched", "audio.memo.replied"])
+        dispatched = facts()[3][1]["data"]
+        self.assertEqual((dispatched["lane"], dispatched["lane_reason"]), ("interactive", None))
+        self.assertEqual(m["lane"], "interactive")
         for t, r in facts():
             a = r["argv"]
             self.assertEqual(a[a.index("--correlation") + 1], mid)
@@ -464,6 +469,201 @@ class Pipeline(unittest.TestCase):
             self.assertEqual(bad, {})
         finally:
             mc_.REGISTRY_PATH = saved
+
+    # ---- gateway lanes (interactive = invoke, batch = start) ----------------------------------
+
+    def _await(self, name):
+        key = f"inbox/holocene-pm/2026/10/15/{name}.ogg"
+        put(key)
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "await_agent")
+        return key, self.state.memos[key]
+
+    @staticmethod
+    def _cmd(key):
+        return [(t, r) for t, r in facts() if t.startswith("bloodbank.cmd.") and r["data"]["context"]["memo_key"] == key][-1]
+
+    @staticmethod
+    def _dispatched(key):
+        return [r for t, r in facts() if t == "bloodbank.audio.memo.dispatched" and r["data"]["s3_key"] == key][-1]["data"]
+
+    def test_20_interactive_consumer_down_falls_back_to_batch_loudly(self):
+        from unittest import mock
+        probes = []
+
+        def liveness(lane="batch"):
+            probes.append(lane)
+            return {"ok": lane != "interactive", "lane": lane, "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0,
+                    **({"error": "consumer bloodbank-hermes-gateway-interactive not registered on BLOODBANK_COMMANDS"}
+                       if lane == "interactive" else {})}
+        old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
+        try:
+            with mock.patch.object(mc_, "gateway_liveness", side_effect=liveness):
+                key, m = self._await("fallback")
+        finally:
+            iw.LANE_PROBE_GAP_S = old_gap
+        self.assertEqual(probes[:2], ["interactive", "interactive"])  # two failed probes before giving up
+        t, _ = self._cmd(key)
+        self.assertEqual(t, "bloodbank.cmd.agent.invocation.start")
+        d = self._dispatched(key)
+        self.assertEqual((d["lane"], d["lane_reason"]), ("batch", "interactive_consumer_not_pulling"))
+        self.assertEqual((m["lane"], m["lane_reason"]), ("batch", "interactive_consumer_not_pulling"))
+
+    def test_21_one_failed_probe_is_not_enough_to_leave_the_interactive_lane(self):
+        from unittest import mock
+        answers = iter([{"ok": False, "lane": "interactive"}, {"ok": True, "lane": "interactive"}])
+        old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
+        try:
+            with mock.patch.object(mc_, "gateway_liveness", side_effect=lambda lane="batch": next(answers, {"ok": True})):
+                key, m = self._await("blip")
+        finally:
+            iw.LANE_PROBE_GAP_S = old_gap
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
+        self.assertEqual(self._dispatched(key)["lane"], "interactive")
+
+    def test_22_lane_is_pinned_to_the_command_id_across_dispatch_retries(self):
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/pinned.ogg"
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "stage": "dispatch",
+             "transcript": "Pin the lane.", "attempts": {}}
+        (ROOT / "bb-fail").write_text("")  # bb-emit fails: the dispatch is retried with the same command id
+        try:
+            with self.assertRaises(iw.StageError):
+                self.w.step_dispatch(m)
+        finally:
+            (ROOT / "bb-fail").unlink()
+        self.assertEqual(m["lane"], "interactive")
+        cid = m["command_id"]
+        # the interactive consumer now disappears; the retry must NOT hop to the start subject
+        old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
+        try:
+            with mock.patch.object(mc_, "gateway_liveness", return_value={"ok": False, "lane": "interactive"}):
+                self.w.step_dispatch(m)
+        finally:
+            iw.LANE_PROBE_GAP_S = old_gap
+        self.assertEqual(m["command_id"], cid)
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
+        self.assertEqual(self._dispatched(key)["lane"], "interactive")
+        self.assertIsNone(self._dispatched(key)["lane_reason"])
+
+    def test_23_configured_batch_lane_and_pre_lane_memos_use_start(self):
+        old, iw.LANE = iw.LANE, "batch"
+        try:
+            key, m = self._await("batchcfg")
+        finally:
+            iw.LANE = old
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.start")
+        d = self._dispatched(key)
+        self.assertEqual((d["lane"], d["lane_reason"]), ("batch", None))
+        # a memo dispatched before lanes existed has no lane in the state file: it is a batch memo
+        self.assertEqual(iw.memo_lane({"command_id": "c", "publish_attempted": True}), "batch")
+        self.assertEqual(iw.memo_lane({"lane": "interactive"}), "interactive")
+
+    def test_24_the_wait_is_judged_against_the_memos_own_lane(self):
+        from unittest import mock
+        key, m = self._await("ownlane")
+        self.assertEqual(m["lane"], "interactive")
+        m["deadline_ts"] = time.time() - 1
+        seen = []
+        # grooming has saturated the BATCH lane; the interactive lane is idle and empty
+        lanes = {"interactive": {"ok": True, "lane": "interactive", "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0},
+                 "batch": {"ok": True, "lane": "batch", "num_waiting": 0, "num_pending": 17, "num_ack_pending": 4}}
+
+        def liveness(lane="batch"):
+            seen.append(lane)
+            return lanes[lane]
+        with mock.patch.object(mc_, "gateway_liveness", side_effect=liveness):
+            with self.assertRaises(iw.StageError) as cm:
+                self.w.step_await_agent(m)
+        self.assertEqual(set(seen), {"interactive"})
+        # not extended on account of batch queue depth: an interactive memo that exceeds its deadline is a real alarm
+        self.assertEqual(cm.exception.code, "timeout")
+
+    def test_25_heartbeat_reports_both_lanes(self):
+        from unittest import mock
+        info = {lane: {"ok": True, "lane": lane, "consumer": mc_.GATEWAY_CONSUMERS[lane], "num_waiting": 1,
+                       "num_pending": 0, "num_ack_pending": 0, "max_ack_pending": 2 if lane == "interactive" else 4}
+                for lane in mc_.LANES}
+        probe = iw.LaneProbe(every_s=999)
+        with mock.patch.object(mc_, "gateway_lanes", return_value=info):
+            probe.probe_once()
+        self.w.lane_probe = probe
+        try:
+            self.w.tick()
+        finally:
+            self.w.lane_probe = None
+        hb = json.loads((Path(os.environ["MEMO_STATE_DIR"]) / "heartbeat.json").read_text())
+        self.assertEqual(hb["lane"], "interactive")
+        self.assertEqual(hb["lanes"]["interactive"]["max_ack_pending"], 2)
+        self.assertEqual(hb["lanes"]["batch"]["max_ack_pending"], 4)
+        self.assertIs(hb["lanes"]["interactive"]["ok"], True)
+
+
+class LaneProbes(unittest.TestCase):
+    """memo_common's two-lane view of the NATS monitor and memo_trace's lane resolution."""
+
+    JSZ = {"account_details": [{"stream_detail": [{"name": "BLOODBANK_COMMANDS", "consumer_detail": [
+        {"name": "bloodbank-hermes-gateway", "num_waiting": 0, "num_pending": 17, "num_ack_pending": 4,
+         "config": {"max_ack_pending": 4}},
+        {"name": "bloodbank-hermes-gateway-interactive", "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0,
+         "config": {"max_ack_pending": 2}}]}]}]}
+
+    def _patched(self, body):
+        from unittest import mock
+        return mock.patch.object(mc_, "http_json", return_value=body)
+
+    def test_both_lanes_come_from_one_monitor_read(self):
+        with self._patched(self.JSZ) as hj:
+            lanes = mc_.gateway_lanes()
+        self.assertEqual(hj.call_count, 1)
+        self.assertIn("config=true", hj.call_args[0][0])
+        self.assertTrue(lanes["interactive"]["ok"] and lanes["batch"]["ok"])
+        self.assertEqual(lanes["interactive"]["max_ack_pending"], 2)
+        self.assertEqual(lanes["batch"]["num_pending"], 17)
+        self.assertEqual(mc_.gateway_lanes_text(lanes),
+                         "interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 4/4 in flight, 17 queued")
+
+    def test_a_missing_interactive_consumer_is_nobody_pulling_interactive(self):
+        body = json.loads(json.dumps(self.JSZ))
+        body["account_details"][0]["stream_detail"][0]["consumer_detail"].pop()
+        with self._patched(body):
+            info = mc_.gateway_liveness("interactive")
+            batch = mc_.gateway_liveness("batch")
+        self.assertIs(info["ok"], False)
+        self.assertTrue(batch["ok"])
+        self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
+        self.assertIn("batch: pulling", mc_.gateway_liveness_text(batch, "batch"))
+
+    def test_an_unreadable_monitor_is_unknown_not_down(self):
+        from unittest import mock
+        with mock.patch.object(mc_, "http_json", side_effect=OSError("refused")):
+            lanes = mc_.gateway_lanes()
+        self.assertTrue(all(v["ok"] is None for v in lanes.values()))
+        self.assertIn("unknown", mc_.gateway_lanes_text(lanes))
+
+    def test_unpulled_registered_consumer(self):
+        body = json.loads(json.dumps(self.JSZ))
+        body["account_details"][0]["stream_detail"][0]["consumer_detail"][1]["num_waiting"] = 0
+        with self._patched(body):
+            info = mc_.gateway_liveness("interactive")
+        self.assertIs(info["ok"], False)
+        self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
+
+    def test_trace_resolves_the_lane_from_the_fact_then_the_subject_then_legacy(self):
+        import memo_trace as mt
+        self.assertEqual(mt.lane_of({"data": {"lane": "interactive"}}), "interactive")
+        self.assertEqual(mt.lane_of({"data": {"command_subject": "bloodbank.cmd.agent.invocation.invoke"}}), "interactive")
+        self.assertEqual(mt.lane_of({"data": {"command_subject": "bloodbank.cmd.agent.invocation.start"}}), "batch")
+        self.assertEqual(mt.lane_of({"data": {"command_id": "x"}}), "batch")  # a pre-lane fact
+        self.assertEqual(mt.lane_of(None, {"lane": "interactive"}), "interactive")
+        self.assertEqual(mt.lane_of(None, None, {"lane": "interactive"}), "interactive")
+
+    def test_journal_row_carries_the_lane_when_the_column_exists(self):
+        cid = str(uuid.uuid4())
+        journal(cid, "holocene-pm")  # creates the table if this test runs first
+        db = sqlite3.connect(GATEWAY_DB)
+        db.execute("UPDATE executions SET lane='interactive' WHERE command_id=?", (cid,))
+        db.commit(); db.close()
+        self.assertEqual(mc_.journal_row(cid)["lane"], "interactive")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bi
 Environment=TRANSCRIBE_DIR=%h/HeyMa
 Environment=MEMO_AGENT_TIMEOUT_S=600
 Environment=MEMO_TRANSCRIBE_TIMEOUT_S=420
+# interactive = invoke lane (reserved gateway slots); batch = start lane (rollback lever, no gateway restart)
+Environment=MEMO_LANE=interactive
 # All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)
 TimeoutStopSec=30
 

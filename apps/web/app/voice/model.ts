@@ -1,5 +1,5 @@
 import type { Signal } from "../hub/types";
-import type { HopStatus, MemoStatus, MemoSummary } from "./types";
+import type { Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary } from "./types";
 
 export const HOP_SIGNAL: Record<HopStatus, Signal> = {
   ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown"
@@ -52,4 +52,12 @@ export function statement(memos: MemoSummary[]): string {
   if (count("running")) parts.push(`${count("running")} in flight.`);
   if (count("complete")) parts.push(`${count("complete")} complete.`);
   return parts.join(" ");
+}
+
+/** "interactive lane: 1/2 in flight, 0 queued" · "batch lane: 4/4 in flight, 17 queued" · undefined when never probed. */
+export function laneQueueText(lane: Lane, status: LaneStatus | undefined): string | undefined {
+  if (!status || status.pulling === undefined) return undefined;
+  if (!status.pulling) return `${lane} lane: nobody is pulling its consumer`;
+  const slots = status.slots !== undefined ? `/${status.slots}` : "";
+  return `${lane} lane: ${status.inFlight ?? 0}${slots} in flight, ${status.queued ?? 0} queued`;
 }
