@@ -596,6 +596,7 @@ class MainActivity : Activity() {
         } else {
             wheelSession?.release()
         }
+        inspectorInfo?.text = inspectorInfoText()
     }
 
     private fun wheelRecent() = SystemClock.elapsedRealtime() - lastWheelAt < WHEEL_RECENT_MS
@@ -727,7 +728,11 @@ class MainActivity : Activity() {
         inspector.scheduleAutoUpload()
     }
 
+    private fun inspectorInfoText() =
+        "Install source: ${installSource()} (distraction-optimized only honoured from ${PLAY_STORE}) · session held: ${wheelSession?.held == true}"
+
     private fun refreshInspector() {
+        inspectorInfo?.text = inspectorInfoText()
         inspectorLog?.text = inspector.buffer.recent(LOG_LINES).asReversed().joinToString("\n") { it.substringAfter('T').take(200) }
     }
 
@@ -756,7 +761,7 @@ class MainActivity : Activity() {
             settings.spokenFeedback = !settings.spokenFeedback
             render()
         })
-        inspectorInfo = text("Install source: ${installSource()} (distraction-optimized only honoured from ${PLAY_STORE}) · session held: ${wheelSession?.held == true}")
+        inspectorInfo = text(inspectorInfoText())
         addView(inspectorInfo)
         addView(text("Key inspector: press every wheel button once. Lines are logged (tag HoloceneKeys) and uploaded after 6 s of quiet."))
         addView(text(if (learning != null) "Press the wheel button for ${learning?.name} now…" else "Learn a button:"))

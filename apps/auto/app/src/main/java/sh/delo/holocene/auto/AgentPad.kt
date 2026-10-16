@@ -92,6 +92,18 @@ object AgentPadPolicy {
 class PadState {
     enum class Surface { NONE, WEB, MESSAGE }
 
+    /**
+     * What backgrounding does to the page. A note in progress is never thrown away: it is stopped and handed to
+     * the page, which keeps running (not paused) until the upload is safe in its outbox or on the server.
+     */
+    enum class PauseAction { SUSPEND, STOP_NATIVE_NOTE, STOP_PAGE_NOTE }
+
+    fun pauseAction(nativeRecording: Boolean): PauseAction = when {
+        !micLive && !nativeRecording -> PauseAction.SUSPEND
+        nativeRecording -> PauseAction.STOP_NATIVE_NOTE
+        else -> PauseAction.STOP_PAGE_NOTE
+    }
+
     var surface = Surface.NONE
         private set
     var micLive = false
@@ -132,6 +144,7 @@ class AgentPadHost(
     private var hostJson = AgentPadPolicy.hostJson(PadMode.PARKED, HostUx.PARKED)
     private var startToken = 0
     private var announcing = false
+    private var driving = false
 
     /** Selection / recording / send events from the page, for spoken and audible feedback. */
     var onPadEvent: ((PadEvent) -> Unit)? = null
@@ -142,6 +155,9 @@ class AgentPadHost(
      */
     var beforeRecord: ((name: String, go: () -> Unit) -> Boolean)? = null
     private val state = PadState()
+    private val player = ReplyPlayer(activity.applicationContext).also { p ->
+        p.onPhase = { id, phase, detail -> js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'$phase',${org.json.JSONObject.quote(detail)})") }
+    }
     private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
         rec.onAutoStopped = { activity.runOnUiThread { finishNative() } }
         // Live input level for the page's meter: 0..1 about every 100 ms while a note is being recorded.
@@ -198,6 +214,7 @@ class AgentPadHost(
         announcing = false
         state.reset()
         recorder.cancel()
+        player.stop()
         held?.let { try { it.deny() } catch (e: RuntimeException) { Log.i(TAG, "Held request already gone") } }
         held = null
         web?.let {
@@ -222,11 +239,19 @@ class AgentPadHost(
         visible = true
     }
 
-    /** Backgrounding must not leave the mic open: drop the page if it was capturing, else just pause it. */
+    /**
+     * Backgrounding must not leave the mic open, and must not lose the note either (a Maps prompt, a call or the
+     * Honda Source key can pause us mid-dictation): the note is stopped and handed to the page, which is left
+     * running so its upload (or its IndexedDB outbox write) completes in the background. Otherwise just pause it.
+     */
     fun onPause() {
         val view = web ?: return
         visible = false
-        if (state.micLive) { teardown(); return }
+        when (state.pauseAction(recorder.active)) {
+            PadState.PauseAction.STOP_NATIVE_NOTE -> { Log.i(TAG, "paused mid-note: stopping and handing the note to the page"); finishNative(); return }
+            PadState.PauseAction.STOP_PAGE_NOTE -> { Log.i(TAG, "paused mid-note (page mic): asking the page to stop and send"); js("window.__hnControl&&window.__hnControl({action:'stop',via:'pause'})"); return }
+            PadState.PauseAction.SUSPEND -> {}
+        }
         // No pauseTimers(): it is process-global and a teardown while paused would leave a later
         // page with frozen timers (the 15s reply poll). onPause() already stops rendering.
         view.onPause()
@@ -271,6 +296,7 @@ class AgentPadHost(
     /** Tell the page which layout to use and which UX restrictions apply (also re-sent when a page finishes loading). */
     fun setHost(mode: PadMode, ux: HostUx) {
         hostJson = AgentPadPolicy.hostJson(mode, ux)
+        driving = mode == PadMode.DRIVING
         pushHost()
     }
 
@@ -312,6 +338,10 @@ class AgentPadHost(
                     // The announcement is spoken first so it is never recorded into the memo.
                     announcing = true
                     if (beforeRecord?.invoke(name, go) != true) go()
+                } else if (driving) {
+                    // A permission dialog is a setup flow: never while the car moves. It is asked once while parked.
+                    announcing = false
+                    js("window.__hnStarted && window.__hnStarted(false, 'permission_needed')")
                 } else {
                     state.requestNative()
                     activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_NATIVE_MIC)
@@ -321,6 +351,23 @@ class AgentPadHost(
 
         @JavascriptInterface fun stop() {
             activity.runOnUiThread { finishNative() }
+        }
+
+        /**
+         * Play a reply natively (assistant speech, transient may-duck focus) instead of in the WebView `<audio>`
+         * element, which would take permanent music focus away from the radio. [id] comes back in __hnPlayback.
+         */
+        @JavascriptInterface fun playReply(id: String, b64: String, ext: String) {
+            val bytes = try { Base64.decode(b64, Base64.DEFAULT) } catch (e: IllegalArgumentException) { null }
+            activity.runOnUiThread {
+                if (web == null) return@runOnUiThread
+                if (bytes == null || bytes.isEmpty()) js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'error','bad_audio')")
+                else player.play(id, bytes, ext)
+            }
+        }
+
+        @JavascriptInterface fun stopReply() {
+            activity.runOnUiThread { player.stop() }
         }
 
         /** The layout and UX flags for this moment, as JSON; the page also receives later changes through __hnHost. */
@@ -399,6 +446,8 @@ class AgentPadHost(
                     held?.deny()
                     if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         resolve(request, true)
+                    } else if (driving) {
+                        request.deny() // no permission dialog while the car moves
                     } else {
                         held = request
                         activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
+import { InFlight, replyExt, stripDataUrl } from './flight'
 
 type Agent = { id: string; name: string; color: string }
 
@@ -256,6 +257,21 @@ type PadEventMsg = { t: string; id?: string; name?: string; reason?: string }
 function emitHost(e: PadEventMsg) {
   try { (window as any).HoloceneNative?.padEvent?.(JSON.stringify(e)) } catch { /* host bridge absent */ }
 }
+// Replies play through the host's native player (assistant speech, transient may-duck focus) when it has one: the
+// WebView <audio> element takes permanent music focus, which stops the car radio and may never give it back.
+type NativeReply = { playReply(id: string, b64: string, ext: string): void; stopReply?(): void }
+function nativeReply(): NativeReply | null {
+  const n = (window as any).HoloceneNative
+  return n && typeof n.playReply === 'function' ? (n as NativeReply) : null
+}
+function blobToBase64(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(stripDataUrl(String(r.result)))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(b)
+  })
+}
 type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'silent' | 'cancelled' | 'error'
 const PHASE_LABEL: Record<PadPhase, string> = {
   idle: 'READY', arming: 'STARTING', recording: 'RECORDING', sending: 'SENDING', sent: 'SENT',
@@ -292,6 +308,8 @@ function App() {
   const recStart = useRef(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const unlockedRef = useRef(false)
+  const stopEmitted = useRef(false) // the host heard 'stopped' for the current note
+  const flight = useRef(new InFlight()).current
 
   // ---- playback: an ordered queue of every unseen reply, played one after the other ----
   // lastDone is the newest reply key whose playback finished, failed or was skipped. It is persisted, so a
@@ -324,6 +342,8 @@ function App() {
   pump.current = async () => {
     const el = audioRef.current
     if (!el || playingKey.current || queue.current.length === 0) return
+    // A reply must never play into the microphone: wait until the note is done.
+    if (recordingRef.current || arming.current) return
     const key = queue.current[0]
     if (!unlockedRef.current) {
       if (!beaconsSent.current.has(`${key}:blocked`)) {
@@ -336,27 +356,58 @@ function App() {
     playingKey.current = key // claim before any await so a second pump cannot start another reply
     try {
       const blob = await getBlob(`${BUCKET_BASE}/${key}`)
-      el.src = URL.createObjectURL(blob)
+      if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began while it downloaded
       setLastReply(key)
+      const np = nativeReply()
+      if (np) {
+        np.playReply(key, await blobToBase64(blob), replyExt(key)) // the host answers through __hnPlayback
+        return
+      }
+      el.src = URL.createObjectURL(blob)
       await el.play()
     } catch (e) {
-      const n = (loadFails.current[key] = (loadFails.current[key] || 0) + 1)
-      const msg = `play failed (try ${n}): ${String((e as Error)?.message || e)}`.slice(0, 200)
-      if (n >= 3) {
-        report('error', { error: msg })
-        setStatus('reply could not play')
-        finish(key)
-      } else {
-        playingKey.current = ''
-        setStatus(msg)
-        window.setTimeout(() => pump.current(), 5000)
-      }
+      playFailed(key, `play failed: ${String((e as Error)?.message || e)}`)
     }
+  }
+
+  // A reply that could not be played: retry a couple of times, then give it up so it never blocks the queue.
+  const playFailed = (key: string, text: string) => {
+    const n = (loadFails.current[key] = (loadFails.current[key] || 0) + 1)
+    const msg = text.replace('play failed:', `play failed (try ${n}):`).slice(0, 200)
+    if (n >= 3) {
+      report('error', { error: msg })
+      setStatus('reply could not play')
+      finish(key)
+    } else {
+      playingKey.current = ''
+      setStatus(msg)
+      window.setTimeout(() => pump.current(), 5000)
+    }
+  }
+
+  // The host's native player reports back here (started / ended / error), keyed by the reply it was given.
+  useEffect(() => {
+    ;(window as any).__hnPlayback = (key: string, phase: string, detail: string) => {
+      if (key !== playingKey.current) return // a reply we already moved on from
+      if (phase === 'started') { report('started'); setStatus('playing reply') }
+      else if (phase === 'ended') { report('ended', { seconds: Number(detail) || undefined }); setStatus('reply played'); finish(key) }
+      else playFailed(key, `play failed: ${detail || 'host player'}`)
+    }
+    return () => { delete (window as any).__hnPlayback }
+  })
+
+  // Stop whatever reply is playing (a note is about to be recorded): it stays at the head of the queue and plays
+  // again when the note is done.
+  const interruptReply = () => {
+    if (!playingKey.current) return
+    try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
+    try { audioRef.current?.pause() } catch { /* nothing playing */ }
+    playingKey.current = ''
   }
 
   // Unlock audio on first user gesture (browser autoplay policy)
   const unlockAudio = useCallback(async () => {
-    if (!audioRef.current) return
+    if (!audioRef.current || nativeReply()) return
     try {
       audioRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
       await audioRef.current.play()
@@ -374,6 +425,8 @@ function App() {
   useEffect(() => {
     const el = audioRef.current
     if (!el) return
+    // The native player needs no autoplay unlock, and the silent clip would take (and keep) audio focus from the radio.
+    if (nativeReply()) { unlockedRef.current = true; setSoundUnlocked(true); return }
     el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
     el.play().then(() => { unlockedRef.current = true; setSoundUnlocked(true); setStatus('sound on') }, () => {})
   }, [])
@@ -432,9 +485,10 @@ function App() {
 
   // ---- upload outbox: retry everything that could not be sent, on a timer and when the network returns ----
   const flushOutbox = useCallback(async () => {
-    const all = await outboxAll()
+    const all = flight.idle(await outboxAll()) // a recording a live send still owns is not "waiting"
     setOutboxCount(all.length)
     for (const p of all) {
+      if (!flight.begin(p.key)) continue
       try {
         await putObject(p.key, p.blob, p.capture)
         await outboxDel(p.key)
@@ -444,11 +498,13 @@ function App() {
       } catch (e) {
         await outboxPut({ ...p, attempts: p.attempts + 1 })
         void e
+      } finally {
+        flight.end(p.key)
       }
     }
-    if (all.length) setOutboxCount((await outboxAll()).length)
+    if (all.length) setOutboxCount(flight.idle(await outboxAll()).length)
     await flushEvents()
-  }, [])
+  }, [flight])
   useEffect(() => {
     void flushOutbox()
     const t = window.setInterval(() => void flushOutbox(), 30000)
@@ -460,34 +516,43 @@ function App() {
   // Send a finished recording: a few quick retries holding the blob; if the network is really gone, keep it
   // in the outbox (IndexedDB) and say so, so nothing recorded in the car is ever thrown away silently.
   const sendRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture?: Capture) => {
+    if (!flight.begin(key)) return
     setPhase('sending')
-    const memo = await memoIdFor(key)
-    setMemoShort(memo ? memo.slice(0, 8) : null)
-    const delays = [0, 1500, 4000, 10000, 20000]
-    let lastErr = ''
-    for (let i = 0; i < delays.length; i++) {
-      if (delays[i]) {
-        setStatus(`upload failed, retrying (${i}/${delays.length - 1})…`)
-        await new Promise((r) => setTimeout(r, delays[i]))
+    // The outbox is written BEFORE the first attempt and cleared on success: if the app is backgrounded, killed or
+    // loses the network mid-send, the recording is still on disk and the retry timer finishes the job.
+    await outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture })
+    try {
+      const memo = await memoIdFor(key)
+      setMemoShort(memo ? memo.slice(0, 8) : null)
+      const delays = [0, 1500, 4000, 10000, 20000]
+      let lastErr = ''
+      for (let i = 0; i < delays.length; i++) {
+        if (delays[i]) {
+          setStatus(`upload failed, retrying (${i}/${delays.length - 1})…`)
+          await new Promise((r) => setTimeout(r, delays[i]))
+        }
+        try {
+          await putObject(key, blob, capture)
+          await outboxDel(key)
+          setStatus(`sent → ${agent.name}`)
+          setPhase('sent')
+          emitHost({ t: 'sent', id: agent.id, name: agent.name })
+          if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
+          return
+        } catch (e) {
+          lastErr = (e as Error).message || String(e)
+        }
       }
-      try {
-        await putObject(key, blob, capture)
-        setStatus(`sent → ${agent.name}`)
-        setPhase('sent')
-        emitHost({ t: 'sent', id: agent.id, name: agent.name })
-        if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
-        return
-      } catch (e) {
-        lastErr = (e as Error).message || String(e)
-      }
+      await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now(), capture })
+      setOutboxCount((await outboxAll()).length)
+      setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
+      setPhase('queued')
+      emitHost({ t: 'queued', id: agent.id, name: agent.name })
+      clientEvent({ event: 'upload_failed', key, error: lastErr, attempts: delays.length, retryable: true })
+    } finally {
+      flight.end(key)
     }
-    await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now(), capture })
-    setOutboxCount((await outboxAll()).length)
-    setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
-    setPhase('queued')
-    emitHost({ t: 'queued', id: agent.id, name: agent.name })
-    clientEvent({ event: 'upload_failed', key, error: lastErr, attempts: delays.length, retryable: true })
-  }, [])
+  }, [flight])
 
   // A finished recording: hold it back if no sound ever reached the mic, else send it with its capture levels.
   const finishRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture: Capture | undefined, ms: number) => {
@@ -522,6 +587,8 @@ function App() {
   const startRecording = useCallback(async () => {
     if (!selected) return
     const agent = selected
+    interruptReply()
+    stopEmitted.current = false
     setMemoShort(null)
     setSilentHold(null)
     setLevel(0)
@@ -558,6 +625,7 @@ function App() {
       w.__hnStopped = async (b64: string, mime: string, cap?: unknown) => {
         nativeActive.current = false
         setRecording(false)
+        noteEnded(agent)
         const ms = Date.now() - recStart.current
         if (discardRef.current) {
           discardRef.current = false
@@ -624,6 +692,7 @@ function App() {
       analyser.current = null
       closeStream()
       setRecording(false)
+      noteEnded(agent)
       if (discardRef.current) {
         discardRef.current = false
         setPhase('cancelled')
@@ -645,7 +714,16 @@ function App() {
     setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
   }, [selected, finishRecording, onLevel])
 
+  // The note ended without the driver asking (max length, or the app was backgrounded mid-note): the host never
+  // heard 'stopped', so its recording lock would stay on. Tell it once.
+  const noteEnded = (agent: Agent) => {
+    if (stopEmitted.current) return
+    stopEmitted.current = true
+    emitHost({ t: 'stopped', id: agent.id, name: agent.name, reason: 'auto' })
+  }
+
   const stopRecording = useCallback(() => {
+    stopEmitted.current = true
     emitHost({ t: 'stopped', name: selectedRef.current?.name })
     if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
     mediaRecorder.current?.stop()
@@ -654,6 +732,7 @@ function App() {
   // Throw the note away (wheel: hold play/pause, or the stop key). Goes through the normal stop path, which drops it.
   const cancelRecording = useCallback(() => {
     discardRef.current = true
+    stopEmitted.current = true
     emitHost({ t: 'cancelled', name: selectedRef.current?.name })
     if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
     mediaRecorder.current?.stop()
@@ -661,6 +740,9 @@ function App() {
 
   // The one place a choice of agent is made (tile tap or wheel); the host hears it and says the name.
   const chooseAgent = useCallback((a: Agent) => {
+    // The memo goes to the agent snapshotted at record start: a tap while the mic is opening or open must not
+    // change what the screen and the host say.
+    if (recordingRef.current || arming.current) return
     setSelected(a)
     lsSet(LS_AGENT, a.id)
     if (phase !== 'idle') setPhase('idle')
@@ -684,6 +766,9 @@ function App() {
       else void startRecording()
     } else if (a === 'cancel') {
       if (recordingRef.current) cancelRecording()
+    } else if (a === 'stop') {
+      // The app was backgrounded mid-note: finish and send it (never start one).
+      if (recordingRef.current) stopRecording()
     }
   }
   useEffect(() => {
@@ -695,6 +780,10 @@ function App() {
 
   selectedRef.current = selected
   recordingRef.current = recording
+  // A reply that waited for the note to finish (or a retry that was gated) plays once the mic is closed.
+  useEffect(() => {
+    if (!recording && phase !== 'arming') pump.current()
+  }, [recording, phase])
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
@@ -723,7 +812,7 @@ function App() {
               role="radio"
               aria-checked={on}
               className={`tile${on ? ' on' : ''}`}
-              disabled={recording && !on}
+              disabled={(recording || phase === 'arming') && !on}
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
             >
@@ -841,10 +930,10 @@ const CSS = `
 .hero[data-phase="queued"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
 .drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; max-height:none; flex:1 1 0; min-height:0; }
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
-.drive .tile:not(.on) { opacity:.5; }
+.drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
 .drive .tile .swatch { width:clamp(44px,9vh,84px); height:clamp(44px,9vh,84px); font-size:clamp(26px,5vh,48px); }
-.drive .tile .name { font-size:clamp(20px,3.6vh,32px); }
+.drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
 .drive .bar { flex:1.25 1 0; min-height:0; }
 .drive .rec { flex:1 1 100%; height:100%; min-height:0; border-radius:36px; font-size:clamp(36px,9vh,84px); }
 .drive .rec.live { background:#d93a2b; }

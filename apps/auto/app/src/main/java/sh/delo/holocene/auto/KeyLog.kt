@@ -49,3 +49,24 @@ class KeyLogBuffer(private val max: Int = 200) {
 
     @Synchronized fun hasPending(): Boolean = total > uploaded
 }
+
+/**
+ * The same physical key can reach us twice, once as a window key event and once through the media session. The
+ * inspector logs it once: the second arrival of the same (code, action) from the other route within [windowMs]
+ * is a duplicate. Keys released and pressed again (a real second press) are far outside that window.
+ */
+class KeyRouteDedupe(private val windowMs: Long = 120L) {
+    private var code = -1
+    private var action = -1
+    private var route = ""
+    private var at = Long.MIN_VALUE / 2
+
+    /** True if this event repeats one just seen on another route (and so should not be logged again). */
+    fun duplicate(route: String, code: Int, action: Int, nowMs: Long): Boolean {
+        val dup = code == this.code && action == this.action && route != this.route && nowMs - at <= windowMs
+        if (!dup) {
+            this.code = code; this.action = action; this.route = route; this.at = nowMs
+        }
+        return dup
+    }
+}

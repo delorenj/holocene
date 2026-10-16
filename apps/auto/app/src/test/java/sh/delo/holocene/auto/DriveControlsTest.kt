@@ -71,9 +71,17 @@ class DriveControlsTest {
         // short tap: action arrives on release
         assertTrue(c.onKeyDown(Keys.MEDIA_NEXT, 0, 1000).consumed)
         assertEquals(DriveAction.SELECT_NEXT, c.onKeyUp(Keys.MEDIA_NEXT, 1200).action)
-        // hold: action arrives on release after LONG_MS
+        // hold with no repeat events: action arrives on release after LONG_UP_ONLY_MS
         assertNull(c.onKeyDown(Keys.MEDIA_NEXT, 0, 5000).action)
-        assertEquals(DriveAction.TOGGLE_RECORD, c.onKeyUp(Keys.MEDIA_NEXT, 5000 + DriveControls.LONG_MS).action)
+        assertEquals(DriveAction.TOGGLE_RECORD, c.onKeyUp(Keys.MEDIA_NEXT, 5000 + DriveControls.LONG_UP_ONLY_MS).action)
+    }
+
+    @Test fun aTapWhoseReleaseArrivesLateIsStillATap() {
+        // Head-unit lag once delivered a tap's UP 700 ms after its DOWN and it toggled the mic: no repeat event
+        // means the key was not held, so lag alone must not read as a hold.
+        c.onKeyDown(Keys.MEDIA_NEXT, 0, 1000)
+        val up = c.onKeyUp(Keys.MEDIA_NEXT, 1000 + 700)
+        assertEquals(DriveAction.SELECT_NEXT, up.action)
     }
 
     @Test fun holdFiresOnceWhileRepeatsArrive() {
@@ -89,12 +97,12 @@ class DriveControlsTest {
     @Test fun longPlayPauseCancelsOnlyWhileRecording() {
         // not recording: a hold is swallowed quietly
         c.onKeyDown(Keys.MEDIA_PLAY_PAUSE, 0, 1000)
-        val idle = c.onKeyUp(Keys.MEDIA_PLAY_PAUSE, 2000)
+        val idle = c.onKeyUp(Keys.MEDIA_PLAY_PAUSE, 3000)
         assertEquals(Refusal.NOT_RECORDING, idle.refusal)
         // recording: the same hold cancels
         c.onPadEvent("recording")
         c.onKeyDown(Keys.MEDIA_PLAY_PAUSE, 0, 5000)
-        assertEquals(DriveAction.CANCEL, c.onKeyUp(Keys.MEDIA_PLAY_PAUSE, 6000).action)
+        assertEquals(DriveAction.CANCEL, c.onKeyUp(Keys.MEDIA_PLAY_PAUSE, 7000).action)
     }
 
     @Test fun stopKeyBelongsToTheRadioUnlessRecording() {
@@ -343,5 +351,102 @@ class EarconsTest {
             assertTrue("$t", Earcons.durationMs(pcm) in 100..700)
             assertEquals(0, pcm.first().toInt()) // faded in: no click
         }
+    }
+}
+
+class DriveSpeechPauseTest {
+    @Test fun autoStopIsAnnouncedAndPlainStopIsNot() {
+        assertEquals("Recording stopped. Sending.", DriveSpeech.forEvent(PadEvent("stopped", reason = "auto")))
+        assertNull(DriveSpeech.forEvent(PadEvent("stopped", name = "Holocene")))
+        assertEquals(DriveSpeech.Tone.STOP, DriveSpeech.toneFor(PadEvent("stopped", reason = "auto")))
+    }
+
+    @Test fun missingPermissionWhileDrivingIsSpokenNotPrompted() {
+        assertEquals("Microphone permission needed. Open Holocene Auto when parked.", DriveSpeech.forEvent(PadEvent("failed", reason = "permission_needed")))
+        assertEquals("Microphone unavailable.", DriveSpeech.forEvent(PadEvent("failed", reason = "IOException")))
+    }
+
+    @Test fun anAutoStoppedNoteReleasesTheRecordingLock() {
+        val c = DriveControls().also { it.active = true }
+        c.onPadEvent("recording")
+        assertTrue(c.locked(1000))
+        c.onPadEvent("stopped")
+        assertFalse(c.locked(1000))
+    }
+}
+
+class PauseHandOffTest {
+    @Test fun aLiveNativeNoteIsHandedOffNeverDropped() {
+        val s = PadState().also { it.webShown(); it.micLive = true }
+        assertEquals(PadState.PauseAction.STOP_NATIVE_NOTE, s.pauseAction(nativeRecording = true))
+    }
+
+    @Test fun aPageMicNoteIsStoppedByThePage() {
+        val s = PadState().also { it.webShown(); it.micLive = true }
+        assertEquals(PadState.PauseAction.STOP_PAGE_NOTE, s.pauseAction(nativeRecording = false))
+    }
+
+    @Test fun anIdlePagePauses() {
+        val s = PadState().also { it.webShown() }
+        assertEquals(PadState.PauseAction.SUSPEND, s.pauseAction(nativeRecording = false))
+    }
+
+    @Test fun recorderLiveBeforeTheFlagIsStillHandedOff() {
+        // MediaRecorder started but micLive not yet mirrored: the note must still not be lost.
+        val s = PadState().also { it.webShown() }
+        assertEquals(PadState.PauseAction.STOP_NATIVE_NOTE, s.pauseAction(nativeRecording = true))
+    }
+}
+
+class ReplyPlaybackTest {
+    @Test fun aNavigationPromptDucksButDoesNotInterruptAReply() {
+        assertEquals(ReplyFocus.Act.NONE, ReplyFocus.onChange(android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, false))
+    }
+
+    @Test fun aCallPausesAndTheEndOfItResumes() {
+        assertEquals(ReplyFocus.Act.PAUSE, ReplyFocus.onChange(android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, false))
+        assertEquals(ReplyFocus.Act.RESUME, ReplyFocus.onChange(android.media.AudioManager.AUDIOFOCUS_GAIN, true))
+        assertEquals(ReplyFocus.Act.NONE, ReplyFocus.onChange(android.media.AudioManager.AUDIOFOCUS_GAIN, false))
+    }
+
+    @Test fun anotherAppTakingFocusForGoodEndsTheReply() {
+        assertEquals(ReplyFocus.Act.STOP, ReplyFocus.onChange(android.media.AudioManager.AUDIOFOCUS_LOSS, false))
+    }
+
+    @Test fun extensionIsSanitised() {
+        assertEquals("ogg", ReplyFocus.ext("ogg"))
+        assertEquals("etc", ReplyFocus.ext("../../etc")) // no path characters survive
+        assertEquals("webm", ReplyFocus.ext("WEBM"))
+        assertEquals("bin", ReplyFocus.ext(""))
+    }
+
+    @Test fun aStoppedOrReplacedReplyNeverReportsBack() {
+        val t = ReplyTracker()
+        t.begin("a")
+        assertTrue(t.owns("a"))
+        t.clear()
+        assertFalse("a reply ended by stop() must stay silent", t.end("a"))
+        t.begin("b"); t.begin("c")
+        assertFalse(t.end("b"))
+        assertTrue(t.end("c"))
+        assertFalse("an end is delivered once", t.end("c"))
+    }
+}
+
+class KeyRouteDedupeTest {
+    @Test fun theSameKeyFromTheOtherRouteIsLoggedOnce() {
+        val d = KeyRouteDedupe()
+        assertFalse(d.duplicate("activity", 87, 0, 1000))
+        assertTrue(d.duplicate("session", 87, 0, 1010))
+        assertFalse(d.duplicate("activity", 87, 1, 1050)) // the UP is its own event
+        assertTrue(d.duplicate("session", 87, 1, 1060))
+    }
+
+    @Test fun aRealSecondPressOrAnotherKeyIsKept() {
+        val d = KeyRouteDedupe()
+        assertFalse(d.duplicate("activity", 87, 0, 1000))
+        assertFalse(d.duplicate("session", 88, 0, 1010))
+        assertFalse(d.duplicate("activity", 88, 0, 5000))
+        assertFalse(d.duplicate("session", 88, 0, 5000 + 500))
     }
 }

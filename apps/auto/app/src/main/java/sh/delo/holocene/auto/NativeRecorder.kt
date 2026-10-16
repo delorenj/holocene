@@ -36,6 +36,9 @@ class NativeRecorder(private val context: Context) {
         onLevel?.invoke(CaptureLevel.meter01(amplitude))
     }
 
+    /** True from a successful [start] until [stop] or [cancel]. */
+    val active: Boolean get() = rec != null
+
     /** Fired when MediaRecorder ends the note by itself (max duration); the caller should [stop] and deliver it. */
     var onAutoStopped: (() -> Unit)? = null
 

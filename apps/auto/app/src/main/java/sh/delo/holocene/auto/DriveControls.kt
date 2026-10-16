@@ -252,7 +252,10 @@ class DriveControls(var mapping: KeyMapping = KeyMapping.DEFAULT) {
         val p = pressed.remove(code) ?: return DriveResult.PASS
         if (p.done) return DriveResult.SWALLOW
         val long = mapping.long(code)
-        val action = if (long != null && now - p.downAt >= LONG_MS) long else mapping.short(code)
+        // No repeat ever arrived, so only arrival time says "held". That clock includes head-unit lag (a tap whose UP
+        // showed up 700 ms late was read as a hold and toggled the mic), so a release-only hold needs a long margin;
+        // a real hold produces repeat events and fires from onKeyDown at LONG_MS.
+        val action = if (long != null && now - p.downAt >= LONG_UP_ONLY_MS) long else mapping.short(code)
         return if (action == null) DriveResult.SWALLOW else fire(action, now)
     }
 
@@ -299,6 +302,7 @@ class DriveControls(var mapping: KeyMapping = KeyMapping.DEFAULT) {
 
     companion object {
         const val LONG_MS = 600L
+        const val LONG_UP_ONLY_MS = 1100L
         const val SELECT_DEBOUNCE_MS = 150L
         const val TOGGLE_DEBOUNCE_MS = 400L
         const val SCROLL_DEBOUNCE_MS = 120L
@@ -322,7 +326,8 @@ object DriveSpeech {
         "queued" -> "Not sent. Saved, will retry."
         "silent" -> "Nothing heard, not sent."
         "cancelled" -> "Cancelled."
-        "failed" -> "Microphone unavailable."
+        "stopped" -> if (e.reason == "auto") "Recording stopped. Sending." else null
+        "failed" -> if (e.reason.startsWith("permission")) "Microphone permission needed. Open Holocene Auto when parked." else "Microphone unavailable."
         "refused" -> when (e.reason) {
             "recording" -> "Recording. Stop first."
             "no_agent" -> "Pick an agent first."

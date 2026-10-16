@@ -55,7 +55,11 @@ class KeyInspector(context: Context) {
 
     private val autoUpload = Runnable { upload(null) }
 
+    private val dedupe = KeyRouteDedupe()
+
     fun key(e: KeyEvent, route: String, mapped: String?) {
+        val lane = if (route.startsWith("session")) "session" else route // session and session-learn are one route
+        if (dedupe.duplicate(lane, e.keyCode, e.action, android.os.SystemClock.uptimeMillis())) return
         add(
             KeyLog.key(
                 System.currentTimeMillis(), route, if (e.action == KeyEvent.ACTION_DOWN) "DOWN" else if (e.action == KeyEvent.ACTION_UP) "UP" else "ACT${e.action}",
