@@ -5,7 +5,7 @@ import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
-import type { Hop, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
+import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -243,6 +243,13 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
 // Hops the inbox watcher is responsible for: if it is down, that is why they are stuck.
 const WATCHER_HOPS = new Set(["received", "transcribed", "dispatched", "replied"]);
 
+/** "turn stopped · lane limit 300s": what the gateway did when the agent's turn outlived its wall clock. */
+function timeoutMeta(t: NonNullable<HopFailure["timeout"]>): string {
+  const parts = [t.stopped === false ? "stop not confirmed, the turn may still be unwinding" : "turn stopped"];
+  if (t.limitSeconds !== undefined) parts.push(`${t.source === "envelope" ? "command deadline" : `${t.lane ?? "lane"} limit`} ${t.limitSeconds}s`);
+  return parts.join(" · ");
+}
+
 function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: boolean; now: number; basis?: string; watcher?: WatcherStatus; lane?: Lane }) {
   const live = hop.status === "waiting" || hop.status === "stuck";
   const waited = live && basis ? Math.max(hop.waitedSeconds ?? 0, (now - Date.parse(basis)) / 1000) : undefined;
@@ -274,6 +281,7 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
             <span className="voice-error-code">{hop.error.code ?? "error"}</span>
             <span className="voice-error-msg">{hop.error.message ?? "No message."}</span>
             {hop.error.retryable ? <span className="voice-error-meta">retryable · attempt {hop.error.attempt ?? "?"}</span> : null}
+            {hop.error.timeout ? <span className="voice-error-meta">{timeoutMeta(hop.error.timeout)}</span> : null}
           </div>
         ) : null}
         {hop.failures.length > (hop.error ? 1 : 0) || (hop.status === "ok" && hop.failures.length) ? (

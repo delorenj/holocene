@@ -94,6 +94,42 @@ test("an invocation.failed fact fails the agent hop before the watcher reports",
   assert.equal(d.hops[5].error?.message, "provider 500");
 });
 
+test("a gateway turn timeout fails the agent hop distinctly, with its numbers, before the watcher reports", () => {
+  const timeoutData = { command_id: CMD, error_code: "turn_timeout", error_message: "agent turn timed out after 20s on interactive lane (limit 20s)",
+    lane: "interactive", elapsed_seconds: 20.3, timeout_seconds: 20, timeout_source: "envelope", turn_stopped: true };
+  const gateway = fact("agent.invocation.failed", 71, timeoutData, MEMO, "hermes-agent:holocene-pm");
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), gateway], now(100))!;
+  assert.equal(d.status, "failed");
+  const hop = d.hops.find(h => h.id === "agent_done")!;
+  assert.equal(hop.status, "failed");
+  assert.equal(hop.error?.code, "turn_timeout");
+  assert.equal(hop.error?.message, "agent turn timed out after 20s on interactive lane (limit 20s)");
+  assert.deepEqual(hop.error?.timeout, { elapsedSeconds: 20.3, limitSeconds: 20, lane: "interactive", source: "envelope", stopped: true });
+  assert.equal(d.stageLabel, "Agent turn timed out after 20s");
+  assert.equal(d.error, "turn_timeout: agent turn timed out after 20s on interactive lane (limit 20s)");
+  assert.equal(d.reached, "agent_done");
+
+  // The watcher's own failed fact (stage agent_reply) says the same thing and does not change the verdict.
+  const watcher = fact("audio.memo.failed", 72, { stage: "agent_reply", error_code: "turn_timeout", error_message: timeoutData.error_message,
+    retryable: false, attempt: 1, command_id: CMD, lane: "interactive", elapsed_seconds: 20.3, timeout_seconds: 20, timeout_source: "envelope", turn_stopped: true });
+  const both = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), gateway, watcher], now(100))!;
+  assert.equal(both.status, "failed");
+  assert.equal(both.stageLabel, "Agent turn timed out after 20s");
+  assert.equal(both.hops.find(h => h.id === "agent_done")!.failures[0].timeout?.stopped, true);
+  assert.equal(both.hops.find(h => h.id === "replied")!.status, "pending");
+
+  // Only the watcher's fact so far (the gateway fact not collected yet): still the distinct outcome.
+  const only = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), watcher], now(100))!;
+  assert.equal(only.stageLabel, "Agent turn timed out after 20s");
+
+  // A stop Hermes could not confirm is reported as such, and a missing message is rebuilt from the numbers.
+  const unconfirmed = fact("agent.invocation.failed", 71, { command_id: CMD, error_code: "turn_timeout", lane: "interactive",
+    elapsed_seconds: 300.1, timeout_seconds: 300, timeout_source: "lane", turn_stopped: false }, MEMO, "hermes-agent:holocene-pm");
+  const u = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), unconfirmed], now(400))!;
+  assert.equal(u.hops.find(h => h.id === "agent_done")!.error?.timeout?.stopped, false);
+  assert.match(u.error ?? "", /agent turn timed out after 300.1s on interactive lane \(limit 300s\)/);
+});
+
 test("a retryable failure does not end the journey; it annotates the waiting hop", () => {
   const retry = fact("audio.memo.failed", 30, { stage: "transcribe", error_code: "oom", error_message: "cuda oom", retryable: true, attempt: 1 });
   const d = buildMemoDetail(MEMO, [uploaded(), received(), retry], now(40))!;

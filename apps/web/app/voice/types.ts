@@ -16,7 +16,8 @@ export type JourneyEvent = {
   envelope: unknown;
 };
 
-export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number };
+export type TurnTimeout = { elapsedSeconds?: number; limitSeconds?: number; lane?: string; source?: string; stopped?: boolean };
+export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout };
 
 export type Hop = {
   id: HopId;

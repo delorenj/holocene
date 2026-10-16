@@ -169,6 +169,18 @@ Behaviour worth knowing:
   `agent_reply/timeout`, but keeps watching the command for
   `MEMO_RESCUE_WINDOW_S` (2 h): when the agent finishes late the reply is
   spoken anyway ("<agent>, late reply. ...").
+- **A turn the gateway timed out is its own final outcome.** The interactive lane
+  stops any Hermes turn that outlives its wall clock
+  (`extra.interactive.turn_timeout_seconds`, default 300 s; bloodbank
+  `services/hermes-gateway/README.md`, "Per-turn wall clock"). The gateway closes the journal row
+  `completed / failure / failure_code=turn_timeout` and publishes
+  `agent.invocation.failed` with `error_code=turn_timeout`. The watcher reads either, and fails the memo
+  `failed(stage=agent_reply, error_code=turn_timeout, retryable=false)` with the gateway's own text
+  (`agent turn timed out after 300s on interactive lane (limit 300s)`) plus `lane`, `elapsed_seconds`,
+  `timeout_seconds`, `timeout_source` (`lane` | `envelope`) and `turn_stopped` (false = Hermes did not confirm the
+  stop). It is not `agent/agent_failure`, it is not retried and nothing waits out the 600 s deadline. `memo:retry`
+  sends a FRESH command (a new command id, possibly a new lane); the old one is dead and its slot is already free.
+  `bloodbank-ntfy-router` pushes the `failed` fact like any terminal memo failure.
 - **A command the gateway consumed and dropped is detected.** No journal row
   while the memo's lane consumer is empty (`pending=0 ack_pending=0`) for 15 s after 20 s
   means it was rejected before starting (unroutable target): the memo fails
@@ -268,9 +280,9 @@ retryable=false)` with that queue state in the message.
   a third concurrent memo waits for a slot behind two running ones. If the
   interactive consumer is down but batch is up the memo is answered late on
   the batch lane, not failed; if the whole gateway is down it waits on the
-  interactive lane. A turn that never completes holds its slot, and there is no
-  per-turn wall clock on the lane. Memos are the only producer on `invoke`; n8n, PMs and `hookd_bridge`
-  stay on `start`.
+  interactive lane. A turn that never completes no longer holds its slot forever: the gateway stops it
+  after `turn_timeout_seconds` (300 s) and the memo fails `agent_reply/turn_timeout`. Memos are the only
+  producer on `invoke`; n8n, PMs and `hookd_bridge` stay on `start`.
 - Playback is reported by the page's audio element, not by capturing the
   audible output; a car switched off mid-reply never reports `ended`.
 - The gateway publishes lifecycle facts only, not the reply text, so the
@@ -294,3 +306,8 @@ hop shows its lane's queue (`interactive lane: 1/2 in flight, 0 queued`, from th
 watcher is configured for the interactive lane but nobody is pulling that consumer. `mise run memo:trace` prints
 `lane <lane>   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 4/4 in flight, 17 queued`,
 and `mise run memo:list` has a LANE column.
+
+A turn timeout reads as its own outcome everywhere: the list stage label is `Agent turn timed out after 300s`,
+the **Agent finished** hop is failed with `turn_timeout` / `agent turn timed out after 300s on interactive lane (limit 300s)`
+and a meta line (`turn stopped · interactive limit 300s`, or `stop not confirmed, the turn may still be unwinding`), and
+`memo:trace` ends `STOPPED AT agent finished: turn timeout - agent turn timed out after 300s on interactive lane (limit 300s)`.

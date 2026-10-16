@@ -201,7 +201,8 @@ def build(key: str) -> tuple[list[Hop], dict]:
                 lane = lane_of(disp, rec, row)
                 ctx["lane"] = lane
                 detail = (f"lane={row.get('lane') or lane} profile={row['profile']} state={row['state']} "
-                          f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}")
+                          f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}"
+                          + (f" failure_code={row['failure_code']}" if row.get("failure_code") else ""))
                 if bad:
                     detail += f" reason={c.terminal_error(row)}"
                 hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
@@ -324,12 +325,27 @@ def in_progress(rec: dict) -> str | None:
     return f"at {rec.get('stage')}{so_far}; watcher heartbeat {int(hb['age_s'])}s old"
 
 
+def timeout_verdict(h: Hop) -> str | None:
+    """The gateway stopped the agent's turn at its per-turn wall clock: say so, not just "failed"."""
+    if c.TURN_TIMEOUT not in h.detail:
+        return None
+    msg = re.sub(r"\s*\(retryable=.*\)$", "", h.detail.split(f"{c.TURN_TIMEOUT}:", 1)[-1].strip())
+    return f"STOPPED AT agent finished: turn timeout - {msg}"
+
+
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     rec = ctx.get("watcher_record") or {}
     # a terminal failed fact (retryable=false) always wins
     terminal = [h for h in hops if h.name.startswith("fact:failed") and not h.optional]
+    if not terminal:
+        # the gateway's own invocation.failed can land before the watcher's memo.failed fact does
+        timed = next((h for h in hops if h.name == "agent:invocation.done" and h.status == FAILED and timeout_verdict(h)), None)
+        if timed:
+            return timeout_verdict(timed), False
     if terminal:
         h = terminal[-1]
+        if timeout_verdict(h):
+            return timeout_verdict(h), False
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
         if h.name.startswith("fact:failed"):

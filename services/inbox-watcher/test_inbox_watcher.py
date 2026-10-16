@@ -627,6 +627,71 @@ class Pipeline(unittest.TestCase):
         self.assertIs(hb["lanes"]["interactive"]["ok"], True)
 
 
+    def test_26_a_gateway_turn_timeout_is_its_own_final_outcome(self):
+        """The gateway stopped the agent's turn at its per-turn wall clock: failed fact stage agent_reply /
+        turn_timeout (not 'agent'), non-retryable, no reply, trace verdict names it, memo:retry sends a fresh command."""
+        key = "inbox/holocene-pm/2026/10/16/slowturn.ogg"
+        put(key)
+        m = None
+
+        def at_await():
+            nonlocal m
+            m = self.state.memos.get(key)
+            return m and m["stage"] == "await_agent"
+        self.tick_until(at_await)
+        cid = m["command_id"]
+        message = "agent turn timed out after 300s on interactive lane (limit 300s)"
+        terminal = [{"type": "bloodbank.agent.invocation.failed", "data": {
+            "error_code": "turn_timeout", "error_message": message, "lane": "interactive", "elapsed_seconds": 300.2,
+            "timeout_seconds": 300.0, "timeout_source": "lane", "turn_stopped": True}}]
+        journal(cid, "holocene-pm", outcome="failure")
+        db = sqlite3.connect(GATEWAY_DB)
+        try:
+            db.execute("ALTER TABLE executions ADD COLUMN failure_code TEXT")
+        except sqlite3.OperationalError:
+            pass
+        db.execute("UPDATE executions SET failure_code='turn_timeout', lane='interactive', terminal_events=? WHERE command_id=?",
+                   (json.dumps(terminal), cid))
+        db.commit(); db.close()
+        n0 = len(facts())
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "turn_timeout"))
+        failed = [r for t, r in facts()[n0:] if t == "bloodbank.audio.memo.failed"][-1]["data"]
+        self.assertEqual((failed["stage"], failed["error_code"], failed["retryable"]), ("agent_reply", "turn_timeout", False))
+        self.assertEqual(failed["error_message"], message)
+        self.assertEqual((failed["lane"], failed["elapsed_seconds"], failed["timeout_seconds"], failed["turn_stopped"]),
+                         ("interactive", 300.2, 300.0, True))
+        self.assertEqual(failed["command_id"], cid)
+        self.assertEqual(m["resume_stage"], "dispatch")  # not await_agent: waiting longer would never produce a reply
+
+        import memo_trace as mt
+        row = mc_.journal_row(cid)
+        self.assertEqual(row["failure_code"], "turn_timeout")
+        hop = mt.Hop("fact:failed[agent_reply]", mt.FAILED, None,
+                     f"turn_timeout: {message} (retryable=False, attempt=1)")
+        text, complete = mt.verdict([hop], {})
+        self.assertFalse(complete)
+        self.assertEqual(text, f"STOPPED AT agent finished: turn timeout - {message}")
+        # the gateway's own failed fact alone (the watcher's has not landed yet) reads the same
+        inv = mt.Hop("agent:invocation.done", mt.FAILED, None, f"invocation.failed turn_timeout: {message}")
+        self.assertTrue(mt.verdict([inv], {})[0].startswith("STOPPED AT agent finished: turn timeout"))
+
+        # memo:retry: the old command is dead; a fresh one is sent
+        ctl = Path(os.environ["MEMO_STATE_DIR"]) / "control"
+        ctl.mkdir(exist_ok=True)
+        (ctl / f"retry-{m['memo_id']}").write_text("")
+        self.w.tick()
+        self.assertEqual(m["status"], "active")
+        self.assertEqual(m["stage"], "dispatch")
+        self.assertNotIn("command_id", m)
+
+    def test_26b_timeout_message_is_rebuilt_when_the_fact_has_no_text(self):
+        self.assertEqual(mc_.turn_timeout_message({"lane": "interactive", "elapsed_seconds": 20.1, "timeout_seconds": 20.0}),
+                         "agent turn timed out after 20.1s on interactive lane (limit 20.0s)")
+        self.assertIsNone(mc_.turn_timeout_data({"failure_code": None, "terminal": []}))
+        self.assertEqual(mc_.turn_timeout_data({"failure_code": "turn_timeout", "terminal": []}), {"error_code": "turn_timeout"})
+
+
 class LaneProbes(unittest.TestCase):
     """memo_common's two-lane view of the NATS monitor and memo_trace's lane resolution."""
 

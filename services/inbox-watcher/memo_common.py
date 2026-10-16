@@ -273,6 +273,7 @@ def journal_row(command_id: str) -> dict | None:
             "SELECT command_id, profile, state, outcome, rejection_reason, rejected_at, "
             "created_at, updated_at, terminal_events"
             + (", lane" if _has_column(db, "executions", "lane") else "")
+            + (", failure_code" if _has_column(db, "executions", "failure_code") else "")
             + " FROM executions WHERE command_id=?",
             (command_id,),
         ).fetchone()
@@ -290,6 +291,32 @@ def journal_row(command_id: str) -> dict | None:
     d["terminal"] = terminal
     d.pop("terminal_events", None)
     return d
+
+
+TURN_TIMEOUT = "turn_timeout"
+
+
+def turn_timeout_data(row: dict) -> dict | None:
+    """The gateway's failed-fact payload when it closed this execution because the lane's
+    per-turn wall clock expired (journal failure_code = turn_timeout), else None."""
+    if row.get("failure_code") != TURN_TIMEOUT:
+        return None
+    for env in row.get("terminal", []):
+        data = (env or {}).get("data") or {}
+        if data.get("error_code") == TURN_TIMEOUT:
+            return data
+    return {"error_code": TURN_TIMEOUT}
+
+
+def turn_timeout_message(data: dict, lane: str | None = None) -> str:
+    """One human line for a turn timeout: the gateway's own message, else rebuilt from its fields."""
+    msg = data.get("error_message")
+    if msg:
+        return str(msg)
+    lane = data.get("lane") or lane or "interactive"
+    elapsed, limit = data.get("elapsed_seconds"), data.get("timeout_seconds")
+    return (f"agent turn timed out after {elapsed if elapsed is not None else '?'}s on {lane} lane"
+            + (f" (limit {limit}s)" if limit is not None else ""))
 
 
 def terminal_error(row: dict) -> str | None:

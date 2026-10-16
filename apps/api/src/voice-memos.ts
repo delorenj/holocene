@@ -87,7 +87,38 @@ export type HopFailure = {
   message?: string;
   retryable: boolean;
   attempt?: number;
+  /** Set when the gateway stopped the agent's turn at its per-turn wall clock (error code turn_timeout). */
+  timeout?: TurnTimeout;
 };
+
+/** Numbers from a turn_timeout fact (the gateway's invocation.failed, or the watcher's memo.failed copy of it). */
+export type TurnTimeout = {
+  elapsedSeconds?: number;
+  limitSeconds?: number;
+  lane?: string;
+  /** "lane" = the lane's configured limit; "envelope" = a shorter deadline the command asked for. */
+  source?: string;
+  /** false: Hermes did not confirm the turn stopped, so it may still be unwinding. */
+  stopped?: boolean;
+};
+
+export const TURN_TIMEOUT = "turn_timeout";
+
+export function turnTimeoutOf(d: Record<string, unknown>): TurnTimeout {
+  return {
+    elapsedSeconds: num(d.elapsed_seconds), limitSeconds: num(d.timeout_seconds), lane: str(d.lane),
+    source: str(d.timeout_source), stopped: typeof d.turn_stopped === "boolean" ? d.turn_stopped : undefined
+  };
+}
+
+/** "agent turn timed out after 20s on interactive lane (limit 20s)": the gateway's own text, else rebuilt from its numbers. */
+export function turnTimeoutMessage(d: Record<string, unknown>): string {
+  const given = str(d.error_message);
+  if (given) return given;
+  const t = turnTimeoutOf(d);
+  return `agent turn timed out after ${t.elapsedSeconds ?? "?"}s on ${t.lane ?? "interactive"} lane`
+    + (t.limitSeconds !== undefined ? ` (limit ${t.limitSeconds}s)` : "");
+}
 
 export type Hop = {
   id: HopId;
@@ -183,12 +214,16 @@ function failureOf(e: JourneyEvent): HopFailure {
     code: str(d.error_code),
     message: str(d.error_message),
     retryable: d.retryable === true,
-    attempt: num(d.attempt)
+    attempt: num(d.attempt),
+    ...(str(d.error_code) === TURN_TIMEOUT ? { timeout: turnTimeoutOf(d) } : {})
   };
 }
 
 function agentFailure(e: JourneyEvent): HopFailure {
   const d = e.data;
+  if (str(d.error_code) === TURN_TIMEOUT) {
+    return { eventId: e.id, at: e.at, stage: "agent", code: TURN_TIMEOUT, message: turnTimeoutMessage(d), retryable: false, timeout: turnTimeoutOf(d) };
+  }
   return {
     eventId: e.id,
     at: e.at,
@@ -428,7 +463,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
 
   let stageLabel: string;
   if (status === "complete") stageLabel = "Complete";
-  else if (status === "failed") stageLabel = `Failed at ${(failedHop?.label ?? "unknown").toLowerCase()}`;
+  else if (status === "failed" && failedHop?.error?.timeout) {
+    const secs = failedHop.error.timeout.elapsedSeconds;
+    stageLabel = `Agent turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
+  } else if (status === "failed") stageLabel = `Failed at ${(failedHop?.label ?? "unknown").toLowerCase()}`;
   else if (status === "stuck") stageLabel = `Stuck before ${(hops.find((h) => h.id === stuckAt)?.label ?? "").toLowerCase()}`;
   else stageLabel = hops[nextIdx] ? `Waiting for ${hops[nextIdx].label.toLowerCase()}` : "Running";
   if (status !== "complete" && reachedIdx < 0) stageLabel = "Unknown";

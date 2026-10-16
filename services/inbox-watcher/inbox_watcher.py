@@ -124,9 +124,10 @@ def log(event: str, level: str = "info", **fields) -> None:
 class StageError(Exception):
     """A failure attributed to a pipeline stage (the `stage` of the failed fact)."""
 
-    def __init__(self, stage: str, code: str, message: str, retryable: bool = True):
+    def __init__(self, stage: str, code: str, message: str, retryable: bool = True, extra: dict | None = None):
         super().__init__(message)
         self.stage, self.code, self.message, self.retryable = stage, code, message, retryable
+        self.extra = extra or {}  # additive fields for the failed fact (e.g. the turn-timeout numbers)
 
 
 # ------------------------------------------------------------------ subprocess
@@ -417,7 +418,7 @@ class Watcher:
 
     def revive(self, m: dict, stage: str, why: str) -> None:
         failed = m.get("failed_stage")
-        if stage == "dispatch" and failed == "agent":
+        if stage == "dispatch" and (failed == "agent" or (failed == "agent_reply" and m.get("failed_code") == mc_.TURN_TIMEOUT)):
             m.pop("command_id", None)       # the old command was rejected or failed: send a fresh one
             m.pop("publish_attempted", None)
             m.pop("lane", None)             # a fresh command id may pick a fresh lane
@@ -552,6 +553,7 @@ class Watcher:
                 "retryable": retry, "attempt": n}
         if m.get("command_id"):
             data["command_id"] = m["command_id"]
+        data.update(e.extra)
         self.fact("failed", m, data)
         if retry:
             delay = min(300, BACKOFF.get(e.stage, 10) * (2 ** (n - 1)))
@@ -563,6 +565,7 @@ class Watcher:
             m["failed_stage"] = e.stage
             m["failed_code"] = e.code
             m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
+                                 else "dispatch" if e.stage == "agent_reply" and e.code == mc_.TURN_TIMEOUT  # fresh command
                                  else RESUME_STAGE.get(e.stage, "receive"))
             compact(m)
             log("memo_failed", "error", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
@@ -792,6 +795,11 @@ class Watcher:
             st, oc = row["state"], row.get("outcome")
             if st == "completed" and oc == "success":
                 return {**out, "state": "done", "source": "journal", "detail": f"journal completed/success ({row['updated_at']})"}
+            timeout = mc_.turn_timeout_data(row) if st == "completed" else None
+            if timeout is not None:
+                # The gateway stopped the Hermes turn at its wall clock: a distinct, final outcome.
+                return {**out, "state": "failed", "source": "journal", "code": mc_.TURN_TIMEOUT,
+                        "detail": mc_.turn_timeout_message(timeout, row.get("lane")), "timeout": timeout}
             if st == "completed":
                 return {**out, "state": "failed", "source": "journal", "code": f"agent_{oc}",
                         "detail": mc_.terminal_error(row) or f"journal completed/{oc}"}
@@ -808,9 +816,11 @@ class Watcher:
                     continue
                 prof = d.get("profile_name") or out.get("profile")
                 if ev["type"].endswith(".failed"):
-                    return {**out, "state": "failed", "source": "candystore", "profile": prof,
-                            "code": d.get("error_code") or "invocation_failed",
-                            "detail": d.get("error_message") or "invocation.failed"}
+                    code = d.get("error_code") or "invocation_failed"
+                    return {**out, "state": "failed", "source": "candystore", "profile": prof, "code": code,
+                            "detail": (mc_.turn_timeout_message(d) if code == mc_.TURN_TIMEOUT
+                                       else d.get("error_message") or "invocation.failed"),
+                            **({"timeout": d} if code == mc_.TURN_TIMEOUT else {})}
                 return {**out, "state": "done", "source": "candystore", "profile": prof,
                         "detail": "invocation.completed fact in Candystore"}
         except Exception as e:  # noqa: BLE001
@@ -826,6 +836,13 @@ class Watcher:
             return self.done_stage(m, "agent", "reply", ms=waited * 1000, command_id=m["command_id"],
                                    source=st["source"], profile=m["profile"])
         if st["state"] == "failed":
+            if st.get("code") == mc_.TURN_TIMEOUT:
+                # Not "agent failed": the agent was still working when the gateway ran out its per-turn
+                # wall clock and stopped it. Reported on the agent_reply stage (no reply will ever arrive).
+                t = st.get("timeout") or {}
+                extra = {k: t[k] for k in ("lane", "elapsed_seconds", "timeout_seconds", "timeout_source", "turn_stopped")
+                         if t.get(k) is not None}
+                raise StageError("agent_reply", mc_.TURN_TIMEOUT, st["detail"], retryable=False, extra=extra)
             raise StageError("agent", st.get("code", "agent_failed"), f"{st['detail']} (via {st['source']})", retryable=False)
 
         lane = memo_lane(m)
