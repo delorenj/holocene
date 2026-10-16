@@ -24,8 +24,8 @@ android {
         applicationId = "io.automaticai.holocene"
         minSdk = 32
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.2.8-internal"
+        versionCode = 11
+        versionName = "0.2.9-internal"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
     signingConfigs {

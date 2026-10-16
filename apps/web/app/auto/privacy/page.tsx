@@ -23,9 +23,9 @@ export default function PrivacyPage() {
           <p>
             This policy covers only the Holocene Auto Android app, published by
             AutomaticAI, package <code>io.automaticai.holocene</code>. The current
-            internal build is version <code>0.2.8-internal</code> (version code 10);
-            version <code>0.2.7-internal</code> (version code 9) handles data the
-            same way.
+            internal build is version <code>0.2.9-internal</code> (version code 11);
+            versions <code>0.2.7-internal</code> and <code>0.2.8-internal</code>
+            (version codes 9 and 10) handle data the same way.
             Earlier internal builds (version codes 6 to 8) may appear as
             “Holocene Fixture”; they had no Internet permission and sent no
             data, as described in the “Diagnostics” sections below.
@@ -35,8 +35,9 @@ export default function PrivacyPage() {
             lets the operator record a voice memo addressed to a chosen
             AutomaticAI agent and hear that agent&apos;s spoken reply. It also
             keeps a Diagnostics screen for microphone and speech pipeline
-            verification. Agent Pad is available only while the vehicle is
-            parked and is not approved for use while driving. This policy does
+            verification. While the vehicle is moving, Agent Pad switches to an
+            eyes-free driving mode controlled by steering-wheel buttons and spoken
+            feedback; Diagnostics is available only while parked. This policy does
             not cover third-party speech providers.
           </p>
         </section>
