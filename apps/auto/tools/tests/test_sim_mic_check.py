@@ -65,6 +65,22 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("passthrough is off", text)
 
+    def test_emulator_without_host_audio_is_not_blamed_on_passthrough(self):
+        log = ("INFO | Android emulator version 36.5.10.0\npulseaudio: pa_simple_read failed\n"
+               "INFO | Android emulator version 36.5.10.0\npulseaudio: Failed to initialize PA contextCould not init `pa' audio driver\n")
+        self.assertIn("could not reach PulseAudio", M.audio_problem(log, []))
+        # only the newest start counts: an old failure followed by a healthy boot is fine
+        self.assertIsNone(M.audio_problem(log + "INFO | Android emulator version 36.5.10.0\nINFO | Started GRPC server\n", []))
+        hl = "/x/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -avd HOLOC -port 5554"
+        self.assertIn("headless", M.audio_problem("", [hl]))
+        self.assertIsNone(M.audio_problem("", ["/x/qemu-system-x86_64 -avd HOLOC -port 5554 -grpc 8554"]))
+        code, text = M.verdict((0.0, 0, 0, 96000), [], problem=M.audio_problem(log, []))
+        self.assertEqual(code, 1)
+        self.assertIn("hostmicon cannot fix that", text)
+        self.assertNotIn("passthrough is off", text)
+        # without a known problem the old diagnosis stands
+        self.assertIn("passthrough is off", M.verdict((0.0, 0, 0, 96000), [])[1])
+
     def test_muted_host_mic(self):
         code, text = M.verdict((0.0, 0, 0, 1), self.streams((1, "no")), host_muted=True)
         self.assertEqual(code, 1)

@@ -838,6 +838,26 @@ class LaneProbes(unittest.TestCase):
         empty = mt.Hop("fact:failed[transcribe]", mt.FAILED, None, "empty_transcript: audible (max -20 dBFS) but no words recognised (retryable=False, attempt=1)")
         self.assertTrue(mt.verdict([empty], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript: audible (max -20 dBFS)"))
 
+    def test_trace_pad_held_silent_recording_and_send_anyway(self):
+        import memo_trace as mt
+        from datetime import datetime, timezone
+        t = lambda sec: datetime(2026, 10, 16, 20, 29, sec, tzinfo=timezone.utc)  # noqa: E731
+        held = mt.Hop("fact:failed[record]", mt.FAILED, t(18),
+                      "silent_capture: no sound reached the microphone (peak -72.2 dBFS, threshold -60) (retryable=False, attempt=1)")
+        text, complete = mt.verdict([held], {"watcher_record": {}})
+        self.assertFalse(complete)
+        self.assertTrue(text.startswith("STOPPED AT record: SILENT MICROPHONE - no sound reached the microphone (peak -72.2 dBFS"), text)
+        self.assertIn("nothing was uploaded", text)
+        self.assertNotIn("retryable", text)
+        # "send anyway": an upload after the held-back failure supersedes it, the stage hops decide
+        up = mt.Hop("fact:uploaded", mt.OK, t(25), "37082 bytes", optional=True)
+        rcv = mt.Hop("fact:received", mt.MISSING, None, "no received fact")
+        text, complete = mt.verdict([held, up, rcv], {"watcher_record": {}})
+        self.assertTrue(text.startswith("STOPPED AT fact:received"), text)
+        # while any other terminal failure still wins over a later upload
+        other = mt.Hop("fact:failed[transcribe]", mt.FAILED, t(18), "empty_transcript: x (retryable=False, attempt=1)")
+        self.assertTrue(mt.verdict([other, up], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript"))
+
 
 if __name__ == "__main__":
     unittest.main()

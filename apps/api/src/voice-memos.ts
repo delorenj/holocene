@@ -107,6 +107,8 @@ export type TurnTimeout = {
 export const TURN_TIMEOUT = "turn_timeout";
 /** Watcher error code for a recording with no sound in it (the microphone delivered nothing). */
 export const SILENT_AUDIO = "silent_audio";
+/** Agent Pad's own version, published when the device held a silent recording back (stage record): the file never reached S3. */
+export const SILENT_CAPTURE = "silent_capture";
 /** Same line as the watcher (MEMO_SILENT_MAX_DBFS): a loudest sample below this is silence. Used only to label a level the watcher did not already judge. */
 export const SILENT_MAX_DBFS = -60;
 
@@ -408,7 +410,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const hops: Hop[] = HOPS.map((spec) => {
     const evs = proof[spec.id];
     const failures = failuresByHop.get(spec.id) ?? [];
-    const terminal = failures.filter((f) => !f.retryable).at(-1);
+    // A device-side silent_capture is superseded by any upload after it ("send anyway"): the pad let it go, the watcher judges it from here.
+    const supersededByUpload = (f: HopFailure) =>
+      f.code === SILENT_CAPTURE && f.stage === "record" && proof.uploaded.some((e) => (ms(e.at) ?? 0) >= (ms(f.at) ?? 0));
+    const terminal = failures.filter((f) => !f.retryable && !supersededByUpload(f)).at(-1);
     const agentBad = spec.id === "agent_done" ? evs.find((e) => AGENT_FAILED.includes(e.type)) : undefined;
     const happened = spec.id === "agent_done" ? evs.find((e) => e.type === "bloodbank.agent.invocation.completed") ?? agentBad ?? evs[0] : evs[0];
     const out: Hop = {
@@ -523,14 +528,15 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   else if (status === "failed" && failedHop?.error?.timeout) {
     const secs = failedHop.error.timeout.elapsedSeconds;
     stageLabel = `Agent turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
-  } else if (status === "failed" && failedHop?.error?.code === SILENT_AUDIO) {
+  } else if (status === "failed" && (failedHop?.error?.code === SILENT_AUDIO || failedHop?.error?.code === SILENT_CAPTURE)) {
     stageLabel = "Silent microphone";
   } else if (status === "failed" && failedHop?.id === "transcribed" && failedHop.error?.code === "empty_transcript" && failedHop.error.audio) {
     stageLabel = "No words recognised";
   } else if (status === "failed") stageLabel = `Failed at ${(failedHop?.label ?? "unknown").toLowerCase()}`;
   else if (status === "stuck") stageLabel = `Stuck before ${(hops.find((h) => h.id === stuckAt)?.label ?? "").toLowerCase()}`;
   else stageLabel = hops[nextIdx] ? `Waiting for ${hops[nextIdx].label.toLowerCase()}` : "Running";
-  if (status !== "complete" && reachedIdx < 0) stageLabel = "Unknown";
+  // Nothing happened yet, so no hop to name; a failure that carries its own label (the pad's silent_capture) keeps it.
+  if (status !== "complete" && reachedIdx < 0 && stageLabel !== "Silent microphone") stageLabel = "Unknown";
 
   // The raw failure facts belong to the hop they failed, so the UI can show their envelopes too.
   // This runs after every state decision above, which read `events` as proof that a hop happened.

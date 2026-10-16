@@ -312,3 +312,28 @@ test("audible audio with no words recognised says so, and the transcribed hop sh
   const oldEmpty = fact("audio.memo.failed", 47, { stage: "transcribe", error_code: "empty_transcript", retryable: false, error_message: "transcript is empty" });
   assert.equal(buildMemoDetail(MEMO, [uploaded(), received(), oldEmpty], now(60))!.stageLabel, "Failed at transcribed");
 });
+
+test("a recording the pad held back as silent names the microphone, not Unknown", () => {
+  const held = fact("audio.memo.failed", 0, {
+    occurred_at: iso(0), stage: "record", error_code: "silent_capture", retryable: false, attempt: 1,
+    error_message: "no sound reached the microphone (peak -72.2 dBFS, threshold -60)", capture: { peak_dbfs: -72.2, rms_dbfs: -72.3 }
+  }, MEMO, "agent-pad-upload");
+  const d = buildMemoDetail(MEMO, [held], now(10))!;
+  assert.equal(d.status, "failed");
+  assert.equal(d.stageLabel, "Silent microphone");
+  assert.deepEqual(d.capture, { peakDbfs: -72.2, rmsDbfs: -72.3, silent: true });
+  assert.match(d.error!, /^silent_capture: no sound reached the microphone/);
+  assert.equal(toSummary(d).stageLabel, "Silent microphone");
+});
+
+test("'send anyway' after a held-back recording: the later upload supersedes the pad's silent_capture, the memo can complete", () => {
+  const held = fact("audio.memo.failed", 0, {
+    occurred_at: iso(0), stage: "record", error_code: "silent_capture", retryable: false, attempt: 1,
+    error_message: "no sound reached the microphone (peak -72.2 dBFS, threshold -60)", capture: { peak_dbfs: -72.2, rms_dbfs: -72.3 }
+  }, MEMO, "agent-pad-upload");
+  const d = buildMemoDetail(MEMO, [held, uploaded(5), received(5.3), transcribed(40), dispatched(41), started(45), completed(50), replied(55)], now(120))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Complete");
+  assert.equal(d.hops[0].status, "ok");
+  assert.equal(d.hops[0].failures.length, 1); // the held-back attempt stays visible
+});

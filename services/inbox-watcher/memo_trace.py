@@ -372,7 +372,11 @@ def silent_verdict(h: Hop, hops: list[Hop]) -> str | None:
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     rec = ctx.get("watcher_record") or {}
     # a terminal failed fact (retryable=false) always wins
-    terminal = [h for h in hops if h.name.startswith("fact:failed") and not h.optional]
+    up = next((h for h in hops if h.name == "fact:uploaded" and h.status == OK and h.ts), None)
+    # The pad's own silent_capture ("held back, nothing to send") is superseded when the recording was uploaded after
+    # all ("send anyway"): from there the watcher's facts decide. Any other terminal failure still always wins.
+    superseded = lambda h: "silent_capture" in h.detail and up is not None and h.ts is not None and up.ts >= h.ts  # noqa: E731
+    terminal = [h for h in hops if h.name.startswith("fact:failed") and not h.optional and not superseded(h)]
     if not terminal:
         # the gateway's own invocation.failed can land before the watcher's memo.failed fact does
         timed = next((h for h in hops if h.name == "agent:invocation.done" and h.status == FAILED and timeout_verdict(h)), None)
@@ -384,6 +388,9 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
             return timeout_verdict(h), False
         if silent_verdict(h, hops):
             return silent_verdict(h, hops), False
+        if "silent_capture" in h.detail:
+            msg = re.sub(r"\s*\(retryable=.*\)$", "", h.detail.split("silent_capture:", 1)[-1].strip())
+            return f"STOPPED AT record: SILENT MICROPHONE - {msg} (the pad held the recording back; nothing was uploaded)", False
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
         if h.name.startswith("fact:failed"):

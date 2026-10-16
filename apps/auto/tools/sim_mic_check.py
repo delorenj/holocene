@@ -74,8 +74,28 @@ def parse_mic_result(logcat):
     return found
 
 
-def verdict(result, streams, host_muted=None):
-    """(exit_code, text). result is parse_mic_result(); streams is the qemu list sampled during the probe or None if unknown."""
+LOG = os.path.expanduser("~/.local/state/holocene-auto/emulator.log")
+
+
+def audio_problem(log_text, cmdlines):
+    """Why the running emulator can never capture host audio, or None.
+
+    Seen 2026-10-16: an emulator started from a shell without the desktop's X/Pulse environment prints
+    "Could not init `pa' audio driver" (guest mic = exact zeros, no qemu stream, and `hostmicon` changes nothing),
+    or falls back to the -headless binary ("Authorization required, but no authorization protocol specified").
+    log_text is the whole emulator.log (only the newest start counts); cmdlines are the process command lines."""
+    for line in cmdlines:
+        if "qemu-system-x86_64-headless" in line or " -no-audio" in line or " -no-window" in line:
+            return "the emulator runs headless / without audio (started from a shell with no desktop display)"
+    start = log_text.rfind("Android emulator version")
+    if "Could not init `pa' audio driver" in log_text[max(start, 0):]:
+        return "the emulator could not reach PulseAudio when it started (no XDG_RUNTIME_DIR / PULSE_SERVER in its shell)"
+    return None
+
+
+def verdict(result, streams, host_muted=None, problem=None):
+    """(exit_code, text). result is parse_mic_result(); streams is the qemu list sampled during the probe or None if unknown.
+    problem is audio_problem(): an emulator that has no host audio at all, which no passthrough toggle fixes."""
     if result is None:
         return 2, "INCONCLUSIVE: the app's mic probe did not report a result (app not installed, mic permission, or host restricted); run: mise run auto:dev --grant-mic"
     rms, peak, read_error, _samples = result
@@ -91,6 +111,8 @@ def verdict(result, streams, host_muted=None):
     if corked and not live:
         return 1, (f"SILENT ({detail}): emulator audio stream stuck ({len(corked)} corked qemu stream{'s' if len(corked) != 1 else ''})"
                    f" -> run {RESTART}")
+    if problem and not live:
+        return 1, f"SILENT ({detail}): {problem}; hostmicon cannot fix that -> start it from a desktop terminal: {RESTART}"
     if not streams:
         return 1, (f"SILENT ({detail}): host mic passthrough is off (no qemu capture stream while the guest records)"
                    " -> run: adb -s emulator-5554 emu avd hostmicon (headless/-no-audio runs never capture)")
@@ -109,6 +131,19 @@ def run(cmd, timeout=15):
 
 def adb(*args, timeout=15):
     return run([ADB, "-s", SERIAL, *args], timeout)
+
+
+def emulator_audio_problem():
+    try:
+        with open(LOG, errors="replace") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 2_000_000))  # the newest start is near the end; the log is appended forever
+            text = fh.read()
+    except OSError:
+        text = ""
+    cmdlines = [ln for ln in run(["ps", "-eo", "args"]).splitlines() if "qemu-system-x86_64" in ln and "-avd" in ln]
+    return audio_problem(text, cmdlines)
 
 
 def sample_streams():
@@ -202,8 +237,9 @@ def main(argv=None):
             print("guest denied audio focus (still booting?); retrying in 4 s...")
             time.sleep(4)
         result, streams, blocked = probe_once()
-    code, text = verdict(result, streams, host_source_muted())
-    if code == 1 and streams == [] and not args.no_fix:
+    problem = emulator_audio_problem()
+    code, text = verdict(result, streams, host_source_muted(), problem)
+    if code == 1 and streams == [] and not args.no_fix and not problem:
         # No qemu capture stream at all: passthrough is off. Turn it on and look once more.
         adb("emu", "avd", "hostmicon")
         time.sleep(1)

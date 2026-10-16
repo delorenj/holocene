@@ -47,8 +47,19 @@ mise run auto:sim:mic-check   # runs the in-app mic probe + inspects the host's 
 `auto:sim` runs it after a cold boot and warns (`SIM_MIC_CHECK=0` skips, headless skips). It takes about 10 s.
 Verdicts: `OK`; `SILENT ... stream stuck` (restart the sim); `SILENT ... passthrough is off` (the check
 turns `hostmicon` on and retries once by itself); `SILENT ... host default microphone is muted`;
-`SILENT ... live but delivers silence` (wrong default source / unplugged mic). Silent means the probe's
-peak stayed under -60 dBFS, the same line Agent Pad and the inbox watcher use.
+`SILENT ... live but delivers silence` (wrong default source / unplugged mic).
+Silent means the probe's peak stayed under -60 dBFS, the same line Agent Pad and the inbox watcher use.
+`SILENT ... emulator could not reach PulseAudio` / `... runs headless` means the emulator was started from a shell without the
+desktop's environment (an agent shell: no `XDG_RUNTIME_DIR`, no X cookie, so it falls back to `qemu-system-x86_64-headless`):
+the guest mic is exact zeros, there is no qemu stream and `hostmicon` changes nothing. Start it with `mise run auto:sim`
+(it finds the Mutter X cookie itself) from a normal shell.
+
+**Never kill the capture stream from under the emulator.** Re-routing the qemu source-output to a virtual source with
+`pactl move-source-output` and then `pactl unload-module` the virtual sink (and gRPC `injectAudio`, which has crashed the
+emulator twice) leave every later capture stream CORKED. Plain use (record, probe, `mic-check` over and over) stays healthy.
+A repeatable way to feed speech without gRPC: `pactl load-module module-null-sink sink_name=holo_testmic`, start the
+recording, `pactl move-source-output <qemu id> holo_testmic.monitor`, `paplay --device=holo_testmic utt.wav`, stop; then
+restart the sim (`auto:sim:stop && auto:sim`) before trusting the mic again.
 
 ## Injecting a known utterance (end-to-end proof)
 
