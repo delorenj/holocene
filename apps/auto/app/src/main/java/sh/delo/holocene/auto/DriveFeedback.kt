@@ -54,6 +54,10 @@ class DriveFeedback(context: Context) {
                 t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) { main.post { finished(utteranceId) } }
+                    // QUEUE_FLUSH drops the phrase being spoken: without this its continuation (the "Recording for X" ->
+                    // beep -> open the mic chain) waited for the 4 s SPEECH_MAX_MS fallback, so a second wheel press while
+                    // arming delayed the mic by ~3 s and clipped the first words of the note.
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) { main.post { finished(utteranceId) } }
                     @Deprecated("Required by UtteranceProgressListener")
                     override fun onError(utteranceId: String?) { main.post { finished(utteranceId) } }
                 })
@@ -65,6 +69,7 @@ class DriveFeedback(context: Context) {
 
     /** Speak [text] now (drops what is being said); [then] runs when it finished or could not be spoken. */
     fun say(text: String, then: () -> Unit = {}) {
+        Log.i(TAG, "say \"$text\"") // the only record of what the car was told; no TTS engine logs the words
         prepare()
         if (failed) { then(); return }
         if (!ready) { queued += text to then; guard(then); return }
@@ -107,6 +112,7 @@ class DriveFeedback(context: Context) {
 
     /** Play an earcon; [then] runs after it ends. */
     fun tone(tone: DriveSpeech.Tone, then: () -> Unit = {}) {
+        Log.i(TAG, "tone ${tone.name}")
         val pcm = Earcons.pcm(tone)
         try {
             track?.release()

@@ -831,7 +831,10 @@ class MainActivity : Activity() {
         syncWheel() // hands the media keys back to the radio
         feedback.stop()
         pad.interruptStart()
+        // Leaving the screen (a wheel "Source" key opening the car's own UI, say) must not strand the lines just
+        // pressed: send them now instead of waiting for a timer that onPause would cancel.
         inspector.cancelAutoUpload()
+        if (inspector.buffer.hasPending()) inspector.upload(null)
         cancelDiagnostic("Activity paused; capture cancelled", "pause")
         pad.onPause()
         super.onPause()
