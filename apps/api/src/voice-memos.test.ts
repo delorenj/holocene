@@ -218,3 +218,17 @@ test("the lane rides on the summaries the list view draws", () => {
   const list = buildMemoSummaries([received(), transcribed(), fact("audio.memo.dispatched", 43, { command_id: CMD, lane: "interactive" })], now(60));
   assert.equal(list[0].lane, "interactive");
 });
+
+test("a memo re-dispatched after a failed agent shows the NEWEST command's lane and only that command's facts", () => {
+  const CMD2 = "cmd-retry-2";
+  const first = fact("audio.memo.dispatched", 43, { occurred_at: iso(43), command_id: CMD, lane: "interactive" });
+  const failed1 = fact("agent.invocation.failed", 50, { command_id: CMD }, MEMO, "hermes-agent:holocene-pm");
+  const second = fact("audio.memo.dispatched", 70, { occurred_at: iso(70), command_id: CMD2, lane: "batch", lane_reason: "interactive_consumer_not_pulling" });
+  const started2 = fact("agent.invocation.started", 75, { command_id: CMD2 }, MEMO, "hermes-agent:holocene-pm");
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), first, failed1, second, started2], now(80))!;
+  assert.equal(d.lane, "batch");
+  assert.equal(d.laneReason, "interactive_consumer_not_pulling");
+  // the first command's failure is not paired with the second command's timing
+  assert.equal(hopHasType(d, "agent_done", "bloodbank.agent.invocation.failed"), false);
+  assert.equal(hopHasType(d, "agent_started", "bloodbank.agent.invocation.started"), true);
+});

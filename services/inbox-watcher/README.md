@@ -145,10 +145,17 @@ Behaviour worth knowing:
   puts memos back on `invocation.start` (the rollback lever; restart the
   watcher, no gateway restart). Before the first publish of a command id the
   watcher probes the interactive consumer (NATS monitor, two failed probes
-  1.5 s apart, `MEMO_LANE_PROBE_GAP_S`); if nobody is pulling it, it sends on
-  the batch lane instead, logs `lane_fallback` and stamps `lane=batch`,
-  `lane_reason=interactive_consumer_not_pulling` on the `dispatched` fact. An
-  unreadable monitor keeps the interactive lane. **The lane is pinned to the
+  1.5 s apart, `MEMO_LANE_PROBE_GAP_S`, both lanes from ONE monitor read); if
+  nobody is pulling interactive but batch IS pulling (lane disabled, durable
+  missing), it sends on the batch lane instead, logs `lane_fallback` and stamps
+  `lane=batch`, `lane_reason=interactive_consumer_not_pulling` on the
+  `dispatched` fact. If neither lane has a puller the gateway itself is down or
+  restarting (about 2 min), and batch would only park the memo behind the
+  grooming backlog, so the memo stays on `invoke` (logs `lane_kept`,
+  `lane_reason=gateway_not_pulling_queued_on_interactive`); the interactive
+  durable drains first on reconnect. An unreadable monitor keeps the
+  interactive lane. An unrecognised `MEMO_LANE` makes the watcher refuse to
+  start (exit 2, `bad_memo_lane` on stderr) rather than guess. **The lane is pinned to the
   command id** (the idempotency key, digest and journal row differ by type), so
   a dispatch retry never hops lanes; `memo:retry` of a failed agent stage gets
   a fresh command id and may pick a fresh lane. A memo dispatched before lanes
@@ -259,8 +266,10 @@ retryable=false)` with that queue state in the message.
 
 - The interactive lane has 2 slots (`gateway.platforms.bloodbank.extra.interactive.max_inflight`):
   a third concurrent memo waits for a slot behind two running ones. If the
-  interactive consumer is down the memo is answered late on the batch lane, not
-  failed. Memos are the only producer on `invoke`; n8n, PMs and `hookd_bridge`
+  interactive consumer is down but batch is up the memo is answered late on
+  the batch lane, not failed; if the whole gateway is down it waits on the
+  interactive lane. A turn that never completes holds its slot, and there is no
+  per-turn wall clock on the lane. Memos are the only producer on `invoke`; n8n, PMs and `hookd_bridge`
   stay on `start`.
 - Playback is reported by the page's audio element, not by capturing the
   audible output; a car switched off mid-reply never reports `ended`.

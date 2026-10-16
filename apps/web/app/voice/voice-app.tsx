@@ -90,13 +90,23 @@ export function VoiceApp() {
 
         {list.data?.watcher?.state === "running" && list.data.watcher.lane === "interactive"
           && list.data.watcher.lanes?.interactive?.pulling === false ? (
-          <div className="voice-alert" role="alert">
-            <span className="hub-label">Interactive lane not pulling</span>
-            <p>
-              Nobody is pulling the interactive gateway consumer, so memos are being sent on the batch lane and may wait behind ticket grooming.
-              {" "}{laneQueueText("batch", list.data.watcher.lanes?.batch)}. Check <code>hermes-gateway.service</code> and <code>gateway.platforms.bloodbank.extra.interactive</code>.
-            </p>
-          </div>
+          list.data.watcher.lanes?.batch?.pulling === true ? (
+            <div className="voice-alert" role="alert">
+              <span className="hub-label">Interactive lane not pulling</span>
+              <p>
+                Nobody is pulling the interactive gateway consumer but the batch lane is alive, so memos are being sent on the batch lane and may wait behind ticket grooming.
+                {" "}{laneQueueText("batch", list.data.watcher.lanes?.batch)}. Check <code>gateway.platforms.bloodbank.extra.interactive</code> and the interactive durable.
+              </p>
+            </div>
+          ) : (
+            <div className="voice-alert" role="alert">
+              <span className="hub-label">Gateway not pulling</span>
+              <p>
+                Neither gateway lane is being pulled (<code>hermes-gateway.service</code> is down or reconnecting, about 2 min after a restart).
+                Memos stay on the interactive lane and start first when it comes back.
+              </p>
+            </div>
+          )
         ) : null}
 
         {list.data && !memos.length ? (

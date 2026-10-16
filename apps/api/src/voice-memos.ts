@@ -200,6 +200,10 @@ function agentFailure(e: JourneyEvent): HopFailure {
 }
 
 const first = (events: JourneyEvent[], ...types: string[]) => events.find((e) => types.includes(e.type));
+const last = (events: JourneyEvent[], ...types: string[]) => {
+  for (let i = events.length - 1; i >= 0; i--) if (types.includes(events[i].type)) return events[i];
+  return undefined;
+};
 
 /** The lane a dispatched fact names: `lane`, else derived from command_subject, else batch (a fact from before lanes). */
 export function laneOfDispatch(d: Record<string, unknown>): Lane {
@@ -291,8 +295,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const memoFacts = events.filter((e) => e.type.startsWith("bloodbank.audio.memo."));
   if (!memoFacts.length) return undefined;
 
-  const dispatched = first(events, "bloodbank.audio.memo.dispatched");
-  const commandId = str(dispatched?.data.command_id) ?? str(first(events, "bloodbank.audio.memo.replied")?.data.command_id);
+  // A retried memo is dispatched again under a fresh command id (and may pick another lane): the NEWEST
+  // dispatched fact is the live command, the same one memo:trace reports.
+  const dispatched = last(events, "bloodbank.audio.memo.dispatched");
+  const commandId = str(dispatched?.data.command_id) ?? str(last(events, "bloodbank.audio.memo.replied")?.data.command_id);
   // Agent facts must belong to this memo's command when both ids are known.
   const relevant = events.filter((e) => {
     if (e.type.startsWith("bloodbank.audio.memo.")) return true;

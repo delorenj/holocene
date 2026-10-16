@@ -60,7 +60,12 @@ VOICE = os.environ.get("MEMO_VOX_VOICE", "rick")
 # An interactive memo falls back to batch, loudly, when nothing is pulling the interactive consumer.
 LANE = os.environ.get("MEMO_LANE", "interactive").strip().lower()
 if LANE not in mc_.GATEWAY_CONSUMERS:
-    LANE = "interactive"
+    # A typo in the rollback lever (MEMO_LANE=bacth) must not quietly put memos on the lane the operator
+    # was trying to leave. Refuse to start: systemd shows the failure and the log says why.
+    sys.stderr.write(json.dumps({"level": "error", "event": "bad_memo_lane", "value": LANE,
+                                 "valid": sorted(mc_.GATEWAY_CONSUMERS),
+                                 "note": "MEMO_LANE must be 'interactive' or 'batch'"}) + "\n")
+    raise SystemExit(2)
 LANE_PROBE_GAP_S = float(os.environ.get("MEMO_LANE_PROBE_GAP_S", "1.5"))
 LANE_HEARTBEAT_PROBE_S = float(os.environ.get("MEMO_LANE_HEARTBEAT_PROBE_S", "5"))
 
@@ -282,20 +287,30 @@ class Watcher:
         self.lane_probe: LaneProbe | None = None  # started by main(); tests leave it off
 
     def choose_lane(self) -> tuple[str, str | None]:
-        """(lane, reason). The configured lane, unless it is interactive and nobody pulls its consumer.
+        """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
 
-        Two failed probes 1.5 s apart are required: a parked pull request can be momentarily absent between
-        fetch cycles. A monitor that cannot be read (ok is None) keeps the configured lane: it is diagnostic,
-        the publish is core NATS either way."""
+        Falling back is only worth it when batch is verifiably pulling and interactive is not (lane disabled, durable
+        missing, its fetch loop dead). When BOTH lanes are unpulled the gateway itself is down or restarting (the
+        usual cause of an unpulled interactive consumer): the command queues durably on either subject, and the
+        interactive durable drains first on reconnect, so the memo stays interactive instead of being pinned behind
+        whatever grooming backlog builds during the outage.
+
+        Two failed probes 1.5 s apart are required: a parked pull request can be momentarily absent between fetch
+        cycles. A monitor that cannot be read (ok is None) keeps the configured lane: it is diagnostic, the publish is
+        core NATS either way. Both lanes come from ONE monitor read, so the verdict is one consistent snapshot."""
         if LANE != "interactive":
             return LANE, None
         for attempt in range(2):
-            info = mc_.gateway_liveness("interactive")
-            if info.get("ok") is not False:
+            lanes = mc_.gateway_lanes()
+            if lanes.get("interactive", {}).get("ok") is not False:
                 return "interactive", None
             if attempt == 0:
                 time.sleep(LANE_PROBE_GAP_S)
-        return "batch", "interactive_consumer_not_pulling"
+                continue
+            if lanes.get("batch", {}).get("ok") is True:
+                return "batch", "interactive_consumer_not_pulling"
+            return "interactive", "gateway_not_pulling_queued_on_interactive"
+        return "interactive", None  # unreachable
 
     def shutdown(self, wait: bool) -> None:
         for p in self.pools.values():
@@ -679,11 +694,17 @@ class Watcher:
                 m["lane"], m["lane_reason"] = "batch", None  # dispatched before lanes existed
             else:
                 m["lane"], m["lane_reason"] = self.choose_lane()
-                if m["lane_reason"]:
+                if m["lane_reason"] and m["lane"] != LANE:
                     log("lane_fallback", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch",
                         lane=m["lane"], configured=LANE, reason=m["lane_reason"],
-                        gateway=mc_.gateway_liveness_text(lane="interactive"),
+                        gateway=mc_.gateway_lanes_text(),
                         note="no puller on the interactive consumer; sending on the batch lane (answer may be late)")
+                elif m["lane_reason"]:
+                    log("lane_kept", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch",
+                        lane=m["lane"], configured=LANE, reason=m["lane_reason"],
+                        gateway=mc_.gateway_lanes_text(),
+                        note="no puller on either lane (gateway down or restarting); queued on the interactive lane, "
+                             "which drains first when the gateway reconnects")
         lane = m["lane"]
         with self.mu:
             m.setdefault("command_id", str(uuid.uuid4()))
@@ -822,7 +843,7 @@ class Watcher:
                     why = mc_.gateway_log_lines([m["command_id"], m["agent"]])
                     raise StageError("agent", "gateway_terminated",
                                      f"gateway consumed command {m['command_id']} without a journal row and the consumer is empty "
-                                     f"({lane} consumer pending=0 ack_pending=0): it was rejected before starting. "
+                                     f"({lane} consumer pending=0 ack_pending=0): it was rejected before starting, or abandoned after exhausting its redeliveries (max_deliver). "
                                      f"gateway log: {why[-1] if why else 'no matching line in ' + mc_.GATEWAY_UNIT}",
                                      retryable=False)
             else:

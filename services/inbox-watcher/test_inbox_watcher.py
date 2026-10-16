@@ -486,22 +486,33 @@ class Pipeline(unittest.TestCase):
     def _dispatched(key):
         return [r for t, r in facts() if t == "bloodbank.audio.memo.dispatched" and r["data"]["s3_key"] == key][-1]["data"]
 
-    def test_20_interactive_consumer_down_falls_back_to_batch_loudly(self):
+    @staticmethod
+    def _lanes(interactive_ok, batch_ok):
+        def one(lane, ok):
+            return {"ok": ok, "lane": lane, "num_waiting": 1 if ok else 0, "num_pending": 0, "num_ack_pending": 0,
+                    **({"error": f"consumer for {lane} not registered"} if ok is False else {})}
+        return {"interactive": one("interactive", interactive_ok), "batch": one("batch", batch_ok)}
+
+    def _await_with(self, name, answers):
+        """Run a dispatch with gateway_lanes() answering from `answers` (last answer repeats); returns (key, memo, probes)."""
         from unittest import mock
         probes = []
 
-        def liveness(lane="batch"):
-            probes.append(lane)
-            return {"ok": lane != "interactive", "lane": lane, "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0,
-                    **({"error": "consumer bloodbank-hermes-gateway-interactive not registered on BLOODBANK_COMMANDS"}
-                       if lane == "interactive" else {})}
+        def lanes():
+            probes.append(1)
+            return answers[min(len(probes), len(answers)) - 1]
         old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
         try:
-            with mock.patch.object(mc_, "gateway_liveness", side_effect=liveness):
-                key, m = self._await("fallback")
+            with mock.patch.object(mc_, "gateway_lanes", side_effect=lanes):
+                key, m = self._await(name)
         finally:
             iw.LANE_PROBE_GAP_S = old_gap
-        self.assertEqual(probes[:2], ["interactive", "interactive"])  # two failed probes before giving up
+        return key, m, probes
+
+    def test_20_interactive_consumer_down_falls_back_to_batch_loudly(self):
+        # interactive has no puller but batch does (lane disabled / durable missing): batch is the better bet
+        key, m, probes = self._await_with("fallback", [self._lanes(False, True)])
+        self.assertGreaterEqual(len(probes), 2)  # two failed probes before giving up
         t, _ = self._cmd(key)
         self.assertEqual(t, "bloodbank.cmd.agent.invocation.start")
         d = self._dispatched(key)
@@ -509,16 +520,34 @@ class Pipeline(unittest.TestCase):
         self.assertEqual((m["lane"], m["lane_reason"]), ("batch", "interactive_consumer_not_pulling"))
 
     def test_21_one_failed_probe_is_not_enough_to_leave_the_interactive_lane(self):
-        from unittest import mock
-        answers = iter([{"ok": False, "lane": "interactive"}, {"ok": True, "lane": "interactive"}])
-        old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
-        try:
-            with mock.patch.object(mc_, "gateway_liveness", side_effect=lambda lane="batch": next(answers, {"ok": True})):
-                key, m = self._await("blip")
-        finally:
-            iw.LANE_PROBE_GAP_S = old_gap
+        key, m, _ = self._await_with("blip", [self._lanes(False, True), self._lanes(True, True)])
         self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
         self.assertEqual(self._dispatched(key)["lane"], "interactive")
+        self.assertIsNone(self._dispatched(key)["lane_reason"])
+
+    def test_21b_both_lanes_down_means_the_gateway_is_down_so_the_memo_stays_interactive(self):
+        # a gateway restart leaves BOTH consumers unpulled for ~2 min; batch would queue the memo behind grooming
+        key, m, probes = self._await_with("gwdown", [self._lanes(False, False)])
+        self.assertGreaterEqual(len(probes), 2)
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
+        d = self._dispatched(key)
+        self.assertEqual(d["lane"], "interactive")
+        self.assertEqual(d["lane_reason"], "gateway_not_pulling_queued_on_interactive")
+        self.assertEqual(m["lane"], "interactive")
+
+    def test_21c_batch_unreadable_is_not_a_reason_to_leave_interactive(self):
+        key, m, _ = self._await_with("batchunk", [self._lanes(False, None)])
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
+
+    def test_21d_an_unrecognised_memo_lane_refuses_to_start(self):
+        import subprocess
+        r = subprocess.run([sys.executable, "-c", "import inbox_watcher"], cwd=str(Path(iw.__file__).parent),
+                           env={**os.environ, "MEMO_LANE": "bacth"}, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("bad_memo_lane", r.stderr)
+        ok = subprocess.run([sys.executable, "-c", "import inbox_watcher"], cwd=str(Path(iw.__file__).parent),
+                            env={**os.environ, "MEMO_LANE": " Batch "}, capture_output=True, text=True)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
 
     def test_22_lane_is_pinned_to_the_command_id_across_dispatch_retries(self):
         from unittest import mock
@@ -536,7 +565,7 @@ class Pipeline(unittest.TestCase):
         # the interactive consumer now disappears; the retry must NOT hop to the start subject
         old_gap, iw.LANE_PROBE_GAP_S = iw.LANE_PROBE_GAP_S, 0
         try:
-            with mock.patch.object(mc_, "gateway_liveness", return_value={"ok": False, "lane": "interactive"}):
+            with mock.patch.object(mc_, "gateway_lanes", return_value=self._lanes(False, True)):
                 self.w.step_dispatch(m)
         finally:
             iw.LANE_PROBE_GAP_S = old_gap
