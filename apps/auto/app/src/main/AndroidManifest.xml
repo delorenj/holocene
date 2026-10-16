@@ -22,6 +22,11 @@
             android:name="android.car"
             android:required="false" />
         <activity android:name=".MainActivity" android:exported="true">
+            <!-- Agent Pad has a driving layout (big tiles, steering-wheel control, spoken feedback, no text, no motion),
+                 so the OS keeps this activity in front while the car moves. AAOS honours the tag only for apps
+                 installed by a trusted source (Honda: com.android.vending); Play policy allows it on the internal
+                 and closed tracks only. Never promote a build carrying it to open testing or production. -->
+            <meta-data android:name="distractionOptimized" android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -246,8 +246,48 @@ function renderedAt(key: string): number {
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0
 }
 
+// ---- host bridge (Holocene Auto app): layout flag, steering-wheel control, spoken feedback ----
+// The page stays the single source of truth for selection and recording. The Android host drives it through
+// window.__hnControl({action}) (wheel / rotary) and learns what happened through HoloceneNative.padEvent(json),
+// which it speaks ("Holocene", "Recording for Holocene", "Sent to Holocene"). Every call is feature-detected:
+// in a normal browser or an old host nothing here does anything.
+type HostInfo = { driving: boolean; noVideo: boolean; noText: boolean; maxLabel: number }
+const PARKED_HOST: HostInfo = { driving: false, noVideo: false, noText: false, maxLabel: 0 }
+function normHost(h: unknown): HostInfo {
+  const o = (h || {}) as Partial<HostInfo>
+  return { driving: !!o.driving, noVideo: !!o.noVideo, noText: !!o.noText, maxLabel: typeof o.maxLabel === 'number' ? o.maxLabel : 0 }
+}
+function readHost(): HostInfo {
+  try {
+    const raw = (window as any).HoloceneNative?.hostState?.()
+    if (raw) return normHost(JSON.parse(raw))
+  } catch { /* old host or bad json */ }
+  try {
+    // ?driving=1 previews the driving layout in a normal browser.
+    if (new URLSearchParams(location.search).get('driving') === '1') return { driving: true, noVideo: true, noText: true, maxLabel: 0 }
+  } catch { /* no location */ }
+  return PARKED_HOST
+}
+type PadEventMsg = { t: string; id?: string; name?: string; reason?: string }
+function emitHost(e: PadEventMsg) {
+  try { (window as any).HoloceneNative?.padEvent?.(JSON.stringify(e)) } catch { /* host bridge absent */ }
+}
+type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'silent' | 'cancelled' | 'error'
+const PHASE_LABEL: Record<PadPhase, string> = {
+  idle: 'READY', arming: 'STARTING', recording: 'RECORDING', sending: 'SENDING', sent: 'SENT',
+  queued: 'SAVED, RETRYING', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
+}
+const LS_AGENT = 'agentpad.agent'
+
 function App() {
-  const [selected, setSelected] = useState<Agent | null>(null)
+  const [selected, setSelected] = useState<Agent | null>(() => AGENTS.find((a) => a.id === lsGet(LS_AGENT)) || null)
+  const [host, setHost] = useState<HostInfo>(readHost)
+  const [phase, setPhase] = useState<PadPhase>('idle')
+  const arming = useRef(false)
+  const discardRef = useRef(false)
+  const selectedRef = useRef<Agent | null>(null)
+  const recordingRef = useRef(false)
+  const controlRef = useRef<(c: { action?: string; via?: string }) => void>(() => {})
   const [recording, setRecording] = useState(false)
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [status, setStatus] = useState('idle')
@@ -414,6 +454,7 @@ function App() {
         await outboxDel(p.key)
         clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
         setStatus(`sent → ${p.agentName} (after a retry)`)
+        emitHost({ t: 'sent', name: p.agentName })
       } catch (e) {
         await outboxPut({ ...p, attempts: p.attempts + 1 })
         void e
@@ -433,6 +474,7 @@ function App() {
   // Send a finished recording: a few quick retries holding the blob; if the network is really gone, keep it
   // in the outbox (IndexedDB) and say so, so nothing recorded in the car is ever thrown away silently.
   const sendRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture?: Capture) => {
+    setPhase('sending')
     const memo = await memoIdFor(key)
     setMemoShort(memo ? memo.slice(0, 8) : null)
     const delays = [0, 1500, 4000, 10000, 20000]
@@ -445,6 +487,8 @@ function App() {
       try {
         await putObject(key, blob, capture)
         setStatus(`sent → ${agent.name}`)
+        setPhase('sent')
+        emitHost({ t: 'sent', id: agent.id, name: agent.name })
         if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
         return
       } catch (e) {
@@ -454,6 +498,8 @@ function App() {
     await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now(), capture })
     setOutboxCount((await outboxAll()).length)
     setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
+    setPhase('queued')
+    emitHost({ t: 'queued', id: agent.id, name: agent.name })
     clientEvent({ event: 'upload_failed', key, error: lastErr, attempts: delays.length, retryable: true })
   }, [])
 
@@ -463,6 +509,8 @@ function App() {
     if (capture && isSilent(capture)) {
       setSilentHold({ agent, key, blob, capture, ms })
       setStatus('not sent')
+      setPhase('silent')
+      emitHost({ t: 'silent', id: agent.id, name: agent.name })
       clientEvent({ event: 'record_silent', key, bytes: blob.size, duration_ms: ms, capture, code: 'silent_capture', retryable: false,
         error: `no sound reached the microphone (peak ${capture.peak_dbfs} dBFS)` })
       return
@@ -492,15 +540,23 @@ function App() {
     const mk = (ext: string) => `${INBOX_PREFIX}/${agent.id}/${todayPrefix()}/${ts()}.${ext}`
     // Inside the Holocene Auto app the WebView's own mic capture is unreliable on car audio stacks,
     // so the host injects a native recorder. Same upload path, different capture source.
-    const native = (window as any).HoloceneNative as { start(): void; stop(): void; micClosed?(): void } | undefined
+    const native = (window as any).HoloceneNative as { start(): void; startFor?(name: string): void; stop(): void; micClosed?(): void } | undefined
     if (native) {
       const key = mk('ogg')
       const w = window as any
+      arming.current = true
+      discardRef.current = false
+      setPhase('arming')
       const started = await new Promise<{ ok: boolean; err: string }>((resolve) => {
         w.__hnStarted = (ok: boolean, err: string) => resolve({ ok, err })
-        native.start()
+        // startFor names the agent so the host can say "Recording for X" before the mic opens (never recorded).
+        if (native.startFor) native.startFor(agent.name)
+        else native.start()
       })
+      arming.current = false
       if (!started.ok) {
+        setPhase(started.err === 'interrupted' ? 'idle' : 'error')
+        if (started.err !== 'interrupted') emitHost({ t: 'failed', reason: started.err || 'mic' })
         setStatus(`mic unavailable: ${started.err || 'unknown'}`)
         clientEvent({ event: 'record_failed', key, error: `native recorder start failed: ${started.err || 'unknown'}`, code: 'mic_unavailable', retryable: false })
         return
@@ -512,6 +568,12 @@ function App() {
         nativeActive.current = false
         setRecording(false)
         const ms = Date.now() - recStart.current
+        if (discardRef.current) {
+          discardRef.current = false
+          setPhase('cancelled')
+          setStatus('cancelled')
+          return
+        }
         if (!b64) {
           setStatus('no audio captured')
           clientEvent({ event: 'record_failed', key, error: 'native recorder returned no audio', code: 'empty_capture', duration_ms: ms, retryable: false, capture: normCapture(cap, 'native') })
@@ -525,6 +587,8 @@ function App() {
         await finishRecording(agent, key, blob, normCapture(cap, 'native'), ms)
       }
       setRecording(true)
+      setPhase('recording')
+      emitHost({ t: 'recording', id: agent.id, name: agent.name })
       setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
       return
     }
@@ -569,6 +633,12 @@ function App() {
       analyser.current = null
       closeStream()
       setRecording(false)
+      if (discardRef.current) {
+        discardRef.current = false
+        setPhase('cancelled')
+        setStatus('cancelled')
+        return
+      }
       if (blob.size === 0) {
         setStatus('no audio captured')
         clientEvent({ event: 'record_failed', key, error: 'MediaRecorder produced 0 bytes', code: 'empty_capture', retryable: false })
@@ -576,23 +646,79 @@ function App() {
       }
       await finishRecording(agent, key, blob, capture, Date.now() - recStart.current)
     }
+    discardRef.current = false
     mr.start()
     setRecording(true)
+    setPhase('recording')
+    emitHost({ t: 'recording', id: agent.id, name: agent.name })
     setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
   }, [selected, finishRecording, onLevel])
 
   const stopRecording = useCallback(() => {
+    emitHost({ t: 'stopped', name: selectedRef.current?.name })
     if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
     mediaRecorder.current?.stop()
   }, [])
 
+  // Throw the note away (wheel: hold play/pause, or the stop key). Goes through the normal stop path, which drops it.
+  const cancelRecording = useCallback(() => {
+    discardRef.current = true
+    emitHost({ t: 'cancelled', name: selectedRef.current?.name })
+    if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
+    mediaRecorder.current?.stop()
+  }, [])
+
+  // The one place a choice of agent is made (tile tap or wheel); the host hears it and says the name.
+  const chooseAgent = useCallback((a: Agent) => {
+    setSelected(a)
+    lsSet(LS_AGENT, a.id)
+    if (phase !== 'idle') setPhase('idle')
+    emitHost({ t: 'selected', id: a.id, name: a.name })
+  }, [phase])
+
+  // Wheel / rotary / media-key control. Switching agent while recording is refused: the target is snapshotted at
+  // record start, and a spoken name that does not match the memo would be worse than no switch.
+  controlRef.current = (c) => {
+    const a = c.action
+    if (a === 'select_next' || a === 'select_prev') {
+      if (recordingRef.current || arming.current) { emitHost({ t: 'refused', reason: 'recording' }); return }
+      const n = AGENTS.length
+      const i = selectedRef.current ? AGENTS.findIndex((x) => x.id === selectedRef.current!.id) : -1
+      const j = i < 0 ? (a === 'select_next' ? 0 : n - 1) : (i + (a === 'select_next' ? 1 : n - 1)) % n
+      chooseAgent(AGENTS[j])
+    } else if (a === 'toggle_record') {
+      if (recordingRef.current) stopRecording()
+      else if (arming.current) return
+      else if (!selectedRef.current) emitHost({ t: 'refused', reason: 'no_agent' })
+      else void startRecording()
+    } else if (a === 'cancel') {
+      if (recordingRef.current) cancelRecording()
+    }
+  }
+  useEffect(() => {
+    const w = window as any
+    w.__hnControl = (c: { action?: string; via?: string }) => controlRef.current(c)
+    w.__hnHost = (h: unknown) => setHost(normHost(h))
+    return () => { delete w.__hnControl; delete w.__hnHost }
+  }, [])
+
+  selectedRef.current = selected
+  recordingRef.current = recording
   const canRecord = !!selected
+  const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
 
   return (
-    <div className="pad">
+    <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
       <style>{CSS}</style>
-      {!soundUnlocked && (
+      {host.driving && (
+        <div className="hero" data-phase={phase} style={{ ['--c' as string]: selected?.color ?? '#5a6275' }} aria-live="polite">
+          <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
+          <div className="hstate">{PHASE_LABEL[phase]}</div>
+          {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
+        </div>
+      )}
+      {!soundUnlocked && !host.driving && (
         <button className="unlock" onClick={unlockAudio}>
           🔊 Tap to enable sound
         </button>
@@ -607,17 +733,17 @@ function App() {
               aria-checked={on}
               className={`tile${on ? ' on' : ''}`}
               disabled={recording && !on}
-              onClick={() => setSelected(a)}
+              onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
             >
               <span className="swatch">{a.name.charAt(0)}</span>
-              <span className="name">{a.name}</span>
+              <span className="name">{label(a.name)}</span>
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
           )
         })}
       </div>
-      {recording && meterOn && (
+      {recording && meterOn && !host.noVideo && !host.driving && (
         <div className={`meterwrap${waited && !heard ? ' dead' : ''}`}>
           <div
             className="meter"
@@ -632,7 +758,7 @@ function App() {
           <div className="mlabel">{waited && !heard ? 'No sound yet — speak up or check the mic' : 'Mic level'}</div>
         </div>
       )}
-      {silentHold && (
+      {silentHold && !host.driving && (
         <div className="silent" role="alert">
           <strong>No sound reached the microphone — nothing to send</strong>
           <span>The recording is digital silence (peak {silentHold.capture.peak_dbfs} dBFS). Check the mic, then record again.</span>
@@ -647,7 +773,7 @@ function App() {
           style={{ ['--c' as string]: selected?.color ?? '#444' }}
         >
           {recording && <span className="dot" />}
-          {recording ? 'Stop & Send' : selected ? `Record for ${selected.name}` : 'Pick an agent'}
+          {recording ? 'Stop & Send' : selected ? `Record for ${label(selected.name)}` : 'Pick an agent'}
         </button>
         <div className="status" aria-live="polite">
           {statusText}
@@ -711,6 +837,27 @@ const CSS = `
 .meterwrap.dead .mlabel { color:#ffb454; }
 .silent { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; padding:14px 18px; border-radius:16px; border:3px solid #ffb454; background:#2a2112; color:#ffd9a0; font-size:clamp(20px,2.4vw,28px); line-height:1.25; }
 .silent strong { color:#ffb454; font-size:clamp(24px,3vw,34px); }
+.still *, .still *::before, .still *::after { animation:none !important; transition:none !important; }
+/* Driving layout (UX restricted): five big tiles, one giant record toggle, state readable at a glance, no scrolling,
+   no motion, no text beyond agent names. */
+.pad.drive { overflow:hidden; gap:clamp(8px,1.6vh,16px); padding:clamp(8px,1.6vh,16px) clamp(10px,2vw,20px); }
+.drive .hero { flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 24px; padding:clamp(6px,1.4vh,14px) 24px; border-radius:20px; border:5px solid var(--c); background:color-mix(in srgb, var(--c) 28%, #0b1020); }
+.drive .hname { font-size:clamp(34px,7vh,68px); font-weight:800; line-height:1.05; }
+.drive .hstate { font-size:clamp(34px,7vh,68px); font-weight:900; letter-spacing:.04em; line-height:1.05; }
+.drive .hsound { flex:1 0 100%; font-size:clamp(20px,3.2vh,30px); font-weight:700; color:#b8c2d6; }
+.hero[data-phase="recording"] { background:#7a1d16; border-color:#ff5b4d; }
+.hero[data-phase="sent"] { background:#12361f; border-color:#2ecc71; }
+.hero[data-phase="queued"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
+.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; max-height:none; flex:1 1 0; min-height:0; }
+.drive .tile { min-height:0; padding:4px; border-radius:18px; }
+.drive .tile:not(.on) { opacity:.5; }
+.drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
+.drive .tile .swatch { width:clamp(44px,9vh,84px); height:clamp(44px,9vh,84px); font-size:clamp(26px,5vh,48px); }
+.drive .tile .name { font-size:clamp(20px,3.6vh,32px); }
+.drive .bar { flex:1.25 1 0; min-height:0; }
+.drive .rec { flex:1 1 100%; height:100%; min-height:0; border-radius:36px; font-size:clamp(36px,9vh,84px); }
+.drive .rec.live { background:#d93a2b; }
+.drive .status, .drive .unlock, .drive .silent { display:none; }
 .linkbtn { align-self:flex-start; background:none; border:none; padding:10px 0; min-height:48px; color:#8ab4ff; font-size:clamp(18px,2vw,24px); text-decoration:underline; cursor:pointer; }
 `
 

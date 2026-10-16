@@ -29,7 +29,10 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.widget.EditText
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -51,6 +54,22 @@ class MainActivity : Activity() {
     private var showingPad = true
     private var carHost: CarHost? = null
     private var unrestricted = false
+    private var hostUx = HostUx.UNKNOWN // fail closed until the car host reports
+
+    // Steering-wheel control (see DriveControls): pure state machine plus the Android plumbing around it.
+    private lateinit var tabs: LinearLayout
+    private lateinit var settings: DriveSettings
+    private lateinit var inspector: KeyInspector
+    private val controls = DriveControls()
+    private val feedback by lazy { DriveFeedback(this) }
+    private var wheelSession: WheelSession? = null
+    private var resumed = false
+    private var lastWheelAt = 0L
+    private var learning: DriveAction? = null
+    private val learnSwallowed = HashSet<Int>()
+    private var askedMic = false
+    private var inspectorLog: TextView? = null
+    private var inspectorInfo: TextView? = null
     private var recognizer: SpeechRecognizer? = null
     private var recorder: AudioRecord? = null
     private var speech: TextToSpeech? = null
@@ -73,7 +92,15 @@ class MainActivity : Activity() {
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val devUrl = AgentPadPolicy.devPadUrlOrNull(intent.getStringExtra(EXTRA_PAD_URL), debuggable)
         pad = AgentPadHost(this, content, devUrl)
-        val tabs = LinearLayout(this).apply {
+        settings = DriveSettings(this)
+        controls.mapping = settings.mapping
+        inspector = KeyInspector(this).also {
+            it.meta = { mapOf("mapping" to controls.mapping.serialize(), "installer" to installSource(), "session" to (wheelSession?.held == true).toString()) }
+            it.onChanged = { refreshInspector() }
+        }
+        pad.onPadEvent = { ev -> onPadEvent(ev) }
+        pad.beforeRecord = { name, go -> announceRecording(name, go) }
+        tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(11, 16, 32))
             for ((title, toPad) in listOf("Agent Pad" to true, "Diagnostics" to false)) {
@@ -87,6 +114,14 @@ class MainActivity : Activity() {
                     setOnClickListener { showView(toPad) }
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             }
+            if (CarHost.isCarHostAvailable(this@MainActivity) && installSource() != PLAY_STORE) addView(TextView(this@MainActivity).apply {
+                text = "SIDELOAD: blocked while driving"
+                textSize = 14f
+                gravity = android.view.Gravity.CENTER
+                setPadding(16, 0, 16, 0)
+                setTextColor(Color.BLACK)
+                setBackgroundColor(Color.rgb(255, 152, 0))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT))
             if (devUrl != null) addView(TextView(this@MainActivity).apply {
                 text = "DEV $devUrl"
                 textSize = 14f
@@ -114,8 +149,13 @@ class MainActivity : Activity() {
         showView(true)
     }
 
+    private fun mode(): PadMode = PadModes.of(carHost != null, hostUx)
+
     private fun showView(toPad: Boolean) {
+        // Diagnostics (probes, key inspector, settings) are for a parked car or a desk phone only.
+        if (!toPad && !PadModes.diagnosticsAllowed(mode())) return
         showingPad = toPad
+        syncWheel()
         if (toPad) {
             refreshPad()
         } else {
@@ -127,11 +167,17 @@ class MainActivity : Activity() {
 
     private fun refreshPad() {
         if (!showingPad) return
-        if (AgentPadPolicy.padAllowed(carHost != null, unrestricted)) {
-            pad.show()
-        } else {
-            pad.message("Agent Pad is available when parked", retry = false)
-        }
+        // Never torn down for driving: the page switches to its driving layout instead.
+        pad.setHost(mode(), hostUx)
+        pad.show()
+    }
+
+    /** Parked shows the tabs; driving shows only the pad. */
+    private fun applyMode() {
+        val driving = mode() == PadMode.DRIVING
+        tabs.visibility = if (driving) android.view.View.GONE else android.view.View.VISIBLE
+        if (driving && !showingPad) showView(true)
+        syncWheel()
     }
 
     private fun label(text: String, size: Float = 16f): TextView = TextView(this).apply {
@@ -203,6 +249,7 @@ class MainActivity : Activity() {
                 openPrivacyPolicy()
             }
         }
+        if (carHost == null || unrestricted) body.addView(buildInspector())
         if (!unrestricted) return
         for (agent in Fixtures.agents) {
             label("FIXTURE · ${agent.employee} · ${agent.state}\n${agent.runtime} / ${agent.nativeSession}\nObserved ${agent.observedAt} · read-only")
@@ -246,9 +293,11 @@ class MainActivity : Activity() {
                     releaseAll("Host restricted; stopped")
                 }
                 render()
+                applyMode()
                 refreshPad()
             },
             onStatus = { message -> if (::status.isInitialized) report(message) },
+            onUx = { ux -> hostUx = ux },
         )
         carHost = host
         host.connect(this, main)
@@ -529,6 +578,231 @@ class MainActivity : Activity() {
         if (::status.isInitialized) report(reason)
     }
 
+    private fun installSource(): String = try {
+        packageManager.getInstallSourceInfo(packageName).installingPackageName ?: "none"
+    } catch (e: Exception) { "unknown" }
+
+    /** Wheel control is live only while Agent Pad itself is in front. */
+    private fun syncWheel() {
+        if (!::settings.isInitialized) return
+        val on = settings.wheelControl && showingPad && resumed
+        if (controls.active != on) controls.reset()
+        controls.active = on
+        // The MediaSession is the price of getting media keys on a car that routes them there: held only in front.
+        val wantSession = settings.wheelControl && resumed && carHost != null
+        if (wantSession) {
+            val s = wheelSession ?: WheelSession(this, ::sessionKey, ::sessionCallback).also { wheelSession = it }
+            s.acquire()
+        } else {
+            wheelSession?.release()
+        }
+    }
+
+    private fun wheelRecent() = SystemClock.elapsedRealtime() - lastWheelAt < WHEEL_RECENT_MS
+
+    private fun speaking() = DriveSpeech.shouldSpeak(settings.spokenFeedback, carHost != null, wheelRecent())
+
+    private fun describe(r: DriveResult): String? = when {
+        r.action != null -> r.action.name
+        r.refusal != null -> "refused:${r.refusal.name}"
+        r.consumed -> "swallowed"
+        else -> null
+    }
+
+    private fun textFieldFocused() = currentFocus is EditText
+
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        val now = SystemClock.uptimeMillis()
+        val typing = textFieldFocused()
+        val target = learning
+        if (target != null && !typing && e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0 && e.keyCode !in Keys.PROTECTED) {
+            inspector.key(e, "learn", target.name)
+            learnKey(e.keyCode, target)
+            learnSwallowed += e.keyCode
+            return true
+        }
+        if (e.action == KeyEvent.ACTION_UP && learnSwallowed.remove(e.keyCode)) return true
+        val result = when (e.action) {
+            KeyEvent.ACTION_DOWN -> controls.onKeyDown(e.keyCode, e.repeatCount, now)
+            KeyEvent.ACTION_UP -> controls.onKeyUp(e.keyCode, now)
+            else -> DriveResult.PASS
+        }
+        if (!typing) {
+            inspector.key(e, "activity", describe(result))
+            if (!showingPad) inspector.scheduleAutoUpload()
+        }
+        if (result.consumed) {
+            perform(result)
+            return true
+        }
+        return super.dispatchKeyEvent(e)
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        if (ev.action == MotionEvent.ACTION_SCROLL) {
+            inspector.scroll(ev, "activity")
+            if (!showingPad) inspector.scheduleAutoUpload()
+            val rotary = ev.getAxisValue(MotionEvent.AXIS_SCROLL)
+            val delta = if (rotary != 0f) rotary else if (ev.source and InputDevice.SOURCE_ROTARY_ENCODER != 0) ev.getAxisValue(MotionEvent.AXIS_HSCROLL) else 0f
+            if (delta != 0f) {
+                val r = controls.onScroll(delta, SystemClock.uptimeMillis())
+                if (r.consumed) {
+                    perform(r)
+                    return true
+                }
+            }
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
+    /** MediaSession media-button route: same state machine, same swallow rules. */
+    private fun sessionKey(code: Int, action: Int, repeat: Int, ev: KeyEvent): Boolean {
+        val now = SystemClock.uptimeMillis()
+        val target = learning
+        if (target != null && action == KeyEvent.ACTION_DOWN && repeat == 0 && code !in Keys.PROTECTED) {
+            inspector.key(ev, "session-learn", target.name)
+            learnKey(code, target)
+            learnSwallowed += code
+            return true
+        }
+        if (action == KeyEvent.ACTION_UP && learnSwallowed.remove(code)) return true
+        val result = when (action) {
+            KeyEvent.ACTION_DOWN -> controls.onKeyDown(code, repeat, now)
+            KeyEvent.ACTION_UP -> controls.onKeyUp(code, now)
+            else -> DriveResult.PASS
+        }
+        inspector.key(ev, "session", describe(result))
+        if (!showingPad) inspector.scheduleAutoUpload()
+        if (result.consumed) perform(result)
+        return result.consumed
+    }
+
+    /** Transport-control callbacks (the car's own media UI pressing our session): log, and treat as a press. */
+    private fun sessionCallback(name: String, code: Int?) {
+        inspector.session(name, code)
+        if (!showingPad) inspector.scheduleAutoUpload()
+        if (code == null) return
+        val r = controls.onCommand(code, SystemClock.uptimeMillis())
+        if (r.consumed) perform(r)
+    }
+
+    private fun perform(r: DriveResult) {
+        lastWheelAt = SystemClock.elapsedRealtime()
+        val action = r.action
+        if (action != null) {
+            pad.control(action, "wheel")
+            return
+        }
+        if (r.refusal == Refusal.RECORDING_LOCKED && speaking()) {
+            feedback.tone(DriveSpeech.Tone.ERROR) { feedback.say("Recording. Stop first.") }
+        }
+    }
+
+    private fun onPadEvent(ev: PadEvent) {
+        controls.onPadEvent(ev.type)
+        if (!speaking()) return
+        val tone = DriveSpeech.toneFor(ev)
+        val words = DriveSpeech.forEvent(ev)
+        when {
+            tone != null && words != null -> feedback.tone(tone) { feedback.say(words) }
+            tone != null -> feedback.tone(tone)
+            words != null -> feedback.say(words)
+        }
+    }
+
+    /** Say "Recording for X" and beep, then let the page open the mic: the announcement must not end up in the memo. */
+    private fun announceRecording(name: String, go: () -> Unit): Boolean {
+        if (!speaking()) return false
+        feedback.say(DriveSpeech.recordingStart(name)) { feedback.tone(DriveSpeech.Tone.START) { go() } }
+        return true
+    }
+
+    private fun learnKey(code: Int, action: DriveAction) {
+        learning = null
+        controls.mapping = controls.mapping.bind(code, action)
+        settings.mapping = controls.mapping
+        inspector.note("learned ${KeyEvent.keyCodeToString(code)} -> ${action.name}")
+        render()
+        report("${KeyEvent.keyCodeToString(code)} now means ${action.name}")
+        inspector.scheduleAutoUpload()
+    }
+
+    private fun refreshInspector() {
+        inspectorLog?.text = inspector.buffer.recent(LOG_LINES).asReversed().joinToString("\n") { it.substringAfter('T').take(200) }
+    }
+
+    private fun buildInspector(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, 16, 0, 16)
+        fun text(t: String, size: Float = 16f) = TextView(this@MainActivity).apply {
+            this.text = t
+            textSize = size
+            setTextColor(Color.rgb(238, 243, 255))
+            setPadding(0, 8, 0, 8)
+        }
+        fun btn(t: String, action: () -> Unit) = Button(this@MainActivity).apply {
+            text = t
+            isAllCaps = false
+            minHeight = 56
+            setOnClickListener { action() }
+        }
+        addView(text("Steering wheel control", 22f))
+        addView(btn("Wheel control + media session: ${if (settings.wheelControl) "ON" else "OFF"}") {
+            settings.wheelControl = !settings.wheelControl
+            syncWheel()
+            render()
+        })
+        addView(btn("Spoken feedback: ${if (settings.spokenFeedback) "ON" else "OFF"}") {
+            settings.spokenFeedback = !settings.spokenFeedback
+            render()
+        })
+        inspectorInfo = text("Install source: ${installSource()} (distraction-optimized only honoured from ${PLAY_STORE}) · session held: ${wheelSession?.held == true}")
+        addView(inspectorInfo)
+        addView(text("Key inspector: press every wheel button once. Lines are logged (tag HoloceneKeys) and uploaded after 6 s of quiet."))
+        addView(text(if (learning != null) "Press the wheel button for ${learning?.name} now…" else "Learn a button:"))
+        for ((label, action) in listOf("Previous agent" to DriveAction.SELECT_PREV, "Next agent" to DriveAction.SELECT_NEXT, "Record / stop" to DriveAction.TOGGLE_RECORD, "Cancel note" to DriveAction.CANCEL)) {
+            addView(btn("Learn: $label") {
+                learning = action
+                render()
+            })
+        }
+        val editor = EditText(this@MainActivity).apply {
+            setText(controls.mapping.serialize().replace(";", "\n"))
+            textSize = 14f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(Color.rgb(238, 243, 255))
+            setBackgroundColor(Color.rgb(24, 32, 56))
+            setPadding(16, 12, 16, 12)
+            minLines = 4
+            isSingleLine = false
+        }
+        addView(editor)
+        addView(btn("Save mapping text (KEY=ACTION, L prefix = hold)") {
+            val parsed = KeyMapping.parse(editor.text.toString())
+            controls.mapping = parsed.mapping
+            settings.mapping = parsed.mapping
+            inspector.note("mapping saved")
+            render()
+            report(if (parsed.errors.isEmpty()) "Mapping saved" else "Mapping saved; skipped: ${parsed.errors.joinToString("; ")}")
+        })
+        addView(btn("Reset mapping to defaults") {
+            settings.resetMapping()
+            controls.mapping = KeyMapping.DEFAULT
+            render()
+            report("Mapping reset")
+        })
+        addView(btn("Upload key log now") {
+            inspector.upload { result -> report(result) }
+        })
+        inspectorLog = TextView(this@MainActivity).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(Color.rgb(170, 200, 255))
+        }
+        addView(inspectorLog)
+        refreshInspector()
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (StopKeys.isStop(keyCode)) {
             probe("key_stop", "key=${KeyEvent.keyCodeToString(keyCode)} simulated_diagnostic=true")
@@ -540,11 +814,24 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         pad.onResume()
         refreshPad()
+        syncWheel()
+        if (carHost != null && settings.spokenFeedback) feedback.prepare()
+        // Permission prompts are "setup": ask once while parked so a first recording never needs one while driving.
+        if (carHost != null && mode() == PadMode.PARKED && !askedMic && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            askedMic = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_PREGRANT_MIC)
+        }
     }
 
     override fun onPause() {
+        resumed = false
+        syncWheel() // hands the media keys back to the radio
+        feedback.stop()
+        pad.interruptStart()
+        inspector.cancelAutoUpload()
         cancelDiagnostic("Activity paused; capture cancelled", "pause")
         pad.onPause()
         super.onPause()
@@ -562,6 +849,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        wheelSession?.release()
+        feedback.shutdown()
+        inspector.shutdown()
         pad.destroy()
         session.cancel()
         releaseAll("Activity destroyed")
@@ -574,6 +864,10 @@ class MainActivity : Activity() {
     private companion object {
         const val TAG = "HoloceneProbe"
         const val PRIVACY_POLICY_URL = "https://holocene.delo.sh/auto/privacy"
+        const val PLAY_STORE = "com.android.vending"
+        const val WHEEL_RECENT_MS = 4000L
+        const val LOG_LINES = 25
+        const val REQUEST_PREGRANT_MIC = 4
         const val EXTRA_PAD_URL = "sh.delo.holocene.extra.PAD_URL"
         const val EXTRA_RUN_MIC = "sh.delo.holocene.extra.RUN_MIC"
         const val EXTRA_RUN_ASR = "sh.delo.holocene.extra.RUN_ASR"

@@ -76,8 +76,13 @@ object AgentPadPolicy {
         devUrl: String? = null,
     ): Boolean = isPadUrl(origin, devUrl) && requestsAudioOnly && micPermissionGranted && padVisible
 
-    /** Phones always; a car host only while parked/unrestricted. */
-    fun padAllowed(isCarHost: Boolean, unrestricted: Boolean): Boolean = !isCarHost || unrestricted
+    // There is deliberately no "is the pad allowed" gate: a restricted or unknown car host gets the driving
+    // layout (see [PadModes]), never a teardown. Only Diagnostics is parked-only ([PadModes.diagnosticsAllowed]).
+
+    /** The JSON the page reads (HoloceneNative.hostState / window.__hnHost) to choose its layout. */
+    fun hostJson(mode: PadMode, ux: HostUx): String =
+        "{\"driving\":${mode == PadMode.DRIVING},\"noVideo\":${mode == PadMode.DRIVING || ux.noVideo}," +
+            "\"noText\":${ux.noText},\"maxLabel\":${ux.maxLabel},\"maxItems\":${ux.maxItems},\"mask\":${ux.mask}}"
 }
 
 /**
@@ -124,6 +129,18 @@ class AgentPadHost(
     private var web: WebView? = null
     private var held: PermissionRequest? = null
     private var visible = false
+    private var hostJson = AgentPadPolicy.hostJson(PadMode.PARKED, HostUx.PARKED)
+    private var startToken = 0
+    private var announcing = false
+
+    /** Selection / recording / send events from the page, for spoken and audible feedback. */
+    var onPadEvent: ((PadEvent) -> Unit)? = null
+
+    /**
+     * Called when the page wants to open the mic. Return true if you took over (announcing first) and will call
+     * `go` once it is safe to record; return false to start immediately.
+     */
+    var beforeRecord: ((name: String, go: () -> Unit) -> Boolean)? = null
     private val state = PadState()
     private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
         rec.onAutoStopped = { activity.runOnUiThread { finishNative() } }
@@ -177,6 +194,8 @@ class AgentPadHost(
 
     fun teardown() {
         visible = false
+        startToken++
+        announcing = false
         state.reset()
         recorder.cancel()
         held?.let { try { it.deny() } catch (e: RuntimeException) { Log.i(TAG, "Held request already gone") } }
@@ -249,7 +268,31 @@ class AgentPadHost(
 
     private fun js(script: String) { web?.evaluateJavascript(script, null) }
 
+    /** Tell the page which layout to use and which UX restrictions apply (also re-sent when a page finishes loading). */
+    fun setHost(mode: PadMode, ux: HostUx) {
+        hostJson = AgentPadPolicy.hostJson(mode, ux)
+        pushHost()
+    }
+
+    private fun pushHost() { js("window.__hnHost&&window.__hnHost($hostJson)") }
+
+    /** Drive the page's own selection / record controls (steering wheel, rotary). The page stays the source of truth. */
+    fun control(action: DriveAction, via: String) {
+        js("window.__hnControl&&window.__hnControl({action:'${action.js}',via:'$via'})")
+    }
+
+    fun recordingLive(): Boolean = state.micLive
+
+    /** The host stopped waiting (backgrounded mid-announcement): release a page that is still arming. */
+    fun interruptStart() {
+        if (!announcing) return
+        announcing = false
+        startToken++
+        js("window.__hnStarted && window.__hnStarted(false, 'interrupted')")
+    }
+
     private fun startNative() {
+        startToken++
         val err = recorder.start()
         state.micLive = err == null
         js("window.__hnStarted && window.__hnStarted(${err == null}, '${err ?: ""}')")
@@ -257,11 +300,19 @@ class AgentPadHost(
 
     /** Native capture for the pad: WebView getUserMedia loops on AAudio disconnects on the Honda audio stack. */
     private inner class NativeBridge {
-        @JavascriptInterface fun start() {
+        @JavascriptInterface fun start() = startFor("")
+
+        /** Same as [start], naming the agent so the host can announce "Recording for X" before the mic opens. */
+        @JavascriptInterface fun startFor(name: String) {
             activity.runOnUiThread {
                 if (web == null) return@runOnUiThread
-                if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startNative()
-                else {
+                if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    val token = ++startToken
+                    val go = { if (web != null && startToken == token) { announcing = false; startNative() } }
+                    // The announcement is spoken first so it is never recorded into the memo.
+                    announcing = true
+                    if (beforeRecord?.invoke(name, go) != true) go()
+                } else {
                     state.requestNative()
                     activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_NATIVE_MIC)
                 }
@@ -270,6 +321,19 @@ class AgentPadHost(
 
         @JavascriptInterface fun stop() {
             activity.runOnUiThread { finishNative() }
+        }
+
+        /** The layout and UX flags for this moment, as JSON; the page also receives later changes through __hnHost. */
+        @JavascriptInterface fun hostState(): String = hostJson
+
+        /** The page reports what happened (selected, recording, sent...) as JSON; the host speaks and plays tones. */
+        @JavascriptInterface fun padEvent(json: String) {
+            val ev = try {
+                val o = org.json.JSONObject(json)
+                PadEvent(o.optString("t"), o.optString("id"), o.optString("name").take(60), o.optString("reason").take(40))
+            } catch (e: Exception) { return }
+            if (ev.type.isEmpty()) return
+            activity.runOnUiThread { if (web != null) onPadEvent?.invoke(ev) }
         }
 
         /** Fallback getUserMedia path: the page reports its stream closed so backgrounding stops reloading it. */
@@ -307,6 +371,8 @@ class AgentPadHost(
         }
         addJavascriptInterface(NativeBridge(), "HoloceneNative")
         webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String?) { if (view === web) pushHost() }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 !AgentPadPolicy.isPadUrl(request.url.toString(), devUrl)
 

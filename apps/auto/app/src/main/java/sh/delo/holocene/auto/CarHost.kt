@@ -33,6 +33,8 @@ internal class HostGate {
 class CarHost(
     private val onUnrestrictedChange: (Boolean) -> Unit,
     private val onStatus: (String) -> Unit,
+    /** The restriction flags and content limits as plain values, delivered just before [onUnrestrictedChange]. */
+    private val onUx: (HostUx) -> Unit = {},
 ) {
     companion object {
         fun isCarHostAvailable(context: Context): Boolean = try {
@@ -70,7 +72,7 @@ class CarHost(
                 if (!ready) {
                     teardown()
                     onStatus("Car service unavailable")
-                    onUnrestrictedChange(false)
+                    hostUnknown()
                     return@createCar
                 }
                 try {
@@ -88,12 +90,12 @@ class CarHost(
                     if (!gate.accept()) return@createCar
                     teardown()
                     onStatus("Host UX unavailable: ${error.javaClass.simpleName}")
-                    onUnrestrictedChange(false)
+                    hostUnknown()
                 } catch (error: LinkageError) {
                     if (!gate.accept()) return@createCar
                     teardown()
                     onStatus("Host UX unavailable: ${error.javaClass.simpleName}")
-                    onUnrestrictedChange(false)
+                    hostUnknown()
                 }
             }
             if (gate.accept()) {
@@ -105,12 +107,12 @@ class CarHost(
             if (!gate.accept()) return
             teardown()
             onStatus("Car connection blocked: ${error.javaClass.simpleName}")
-            onUnrestrictedChange(false)
+            hostUnknown()
         } catch (error: LinkageError) {
             if (!gate.accept()) return
             teardown()
             onStatus("Car connection blocked: ${error.javaClass.simpleName}")
-            onUnrestrictedChange(false)
+            hostUnknown()
         }
     }
 
@@ -123,7 +125,22 @@ class CarHost(
             "mask=${restrictions.activeRestrictions}; unrestricted=$unrestricted",
         )
         if (!gate.accept()) return
+        onUx(
+            HostUx(
+                requiresDo = restrictions.isRequiresDistractionOptimization,
+                mask = restrictions.activeRestrictions,
+                maxStringLength = restrictions.maxRestrictedStringLength,
+                maxItems = restrictions.maxCumulativeContentItems,
+                maxDepth = restrictions.maxContentDepth,
+            ),
+        )
         onUnrestrictedChange(unrestricted)
+    }
+
+    /** Disconnected, failed or never connected: report the strictest state so the UI fails closed. */
+    private fun hostUnknown() {
+        onUx(HostUx.UNKNOWN)
+        onUnrestrictedChange(false)
     }
 
     fun disconnect() {

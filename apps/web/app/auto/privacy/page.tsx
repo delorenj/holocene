@@ -124,8 +124,16 @@ export default function PrivacyPage() {
             to Logcat on the device. These include audio statistics, returned
             speech-recognition transcript text and text-to-speech acknowledgement
             text. Spoken words and transcripts may contain personal information.
-            The app does not write log files or send logs anywhere. Agent Pad
-            memos and replies are kept in AutomaticAI&apos;s storage until the
+            The one exception is the steering-wheel key inspector in
+            Diagnostics, available only while the car is parked: it records
+            which keys and rotary or media-session inputs the app receives
+            (key codes, names, timing and the input device name; never audio or
+            text) in a small log file in the app&apos;s private storage and
+            uploads those lines to <code>agent-pad.delo.sh</code>, so the
+            steering-wheel buttons can be identified. The app also speaks short
+            confirmations (the selected agent&apos;s name, “Recording”, “Sent”)
+            with Android&apos;s text-to-speech. It sends no other logs
+            anywhere. Agent Pad memos and replies are kept in AutomaticAI&apos;s storage until the
             operator deletes them.
           </p>
           <p>

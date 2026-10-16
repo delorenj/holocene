@@ -47,11 +47,13 @@ class AgentPadPolicyTest {
         assertFalse(AgentPadPolicy.mayGrantAudio(pad, false, false, false))
     }
 
-    @Test fun padAllowedOnPhonesAndParkedCarsOnly() {
-        assertTrue(AgentPadPolicy.padAllowed(isCarHost = false, unrestricted = false))
-        assertTrue(AgentPadPolicy.padAllowed(isCarHost = false, unrestricted = true))
-        assertTrue(AgentPadPolicy.padAllowed(isCarHost = true, unrestricted = true))
-        assertFalse(AgentPadPolicy.padAllowed(isCarHost = true, unrestricted = false))
+    @Test fun hostJsonCarriesLayoutAndRestrictions() {
+        assertEquals(
+            "{\"driving\":false,\"noVideo\":false,\"noText\":false,\"maxLabel\":0,\"maxItems\":0,\"mask\":0}",
+            AgentPadPolicy.hostJson(PadMode.PARKED, HostUx.PARKED),
+        )
+        val json = AgentPadPolicy.hostJson(PadMode.DRIVING, HostUx(true, HostUx.FULLY_RESTRICTED, 120, 6, 3))
+        assertTrue(json, json.startsWith("{\"driving\":true,\"noVideo\":true,\"noText\":true,\"maxLabel\":120,"))
     }
 }
 

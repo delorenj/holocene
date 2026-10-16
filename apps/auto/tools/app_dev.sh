@@ -9,7 +9,9 @@ need_sim
 cd "$here/.."
 ./gradlew --max-workers=1 :app:assembleDebug --console=plain -q
 u="$(fg_user)"
-adb install --user "$u" -r app/build/outputs/apk/debug/app-debug.apk
+# -i com.android.vending: the Honda image only honours distractionOptimized for apps installed by Play (see DEV.md),
+# so the sim needs the Play installer of record to behave like a Play internal-testing install. INSTALLER= to override.
+adb install --user "$u" -r -i "${INSTALLER:-com.android.vending}" app/build/outputs/apk/debug/app-debug.apk
 (( grant )) && adb shell pm grant --user "$u" "$APP_ID" android.permission.RECORD_AUDIO
 launch_app
 (( logs )) && exec "$ADB_BIN" -s "$SERIAL" logcat -v time HoloceneProbe:V HoloceneNativeRec:V HoloceneAgentPad:V chromium:V AndroidRuntime:V '*:S'

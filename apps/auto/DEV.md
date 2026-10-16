@@ -48,8 +48,7 @@ mise run auto:sim:mic-check   # runs the in-app mic probe + inspects the host's 
 Verdicts: `OK`; `SILENT ... stream stuck` (restart the sim); `SILENT ... passthrough is off` (the check
 turns `hostmicon` on and retries once by itself); `SILENT ... host default microphone is muted`;
 `SILENT ... live but delivers silence` (wrong default source / unplugged mic). Silent means the probe's
-peak stayed under -60 dBFS, the same line Agent Pad and the inbox watcher use. It also taps "Do not show
-this again" + Cancel on the Honda "Connect the Device" dialog when that covers the app.
+peak stayed under -60 dBFS, the same line Agent Pad and the inbox watcher use.
 
 ## Injecting a known utterance (end-to-end proof)
 
@@ -67,6 +66,85 @@ The utterance must be under 5 s (a longer one is refused). If the emulator proce
 `Unable to connect to adb daemon on port: 5037` in `~/.local/state/holocene-auto/emulator.log`, run
 `adb start-server`, kill the stuck `qemu-system-x86_64`, and `mise run auto:sim` again.
 
+## Driving mode and the steering wheel
+
+Agent Pad is never torn down for driving. `CarHost` (the only `android.car.*` file) hands the UX restrictions to
+`MainActivity` as a plain `HostUx`; `PadModes.of` turns that into PARKED or DRIVING and a car host that is not
+provably parked (or not connected yet) is DRIVING. Driving shows only the pad: tabs hidden, Diagnostics unreachable,
+the page switches to its driving layout (`window.__hnHost`, or `?driving=1` in a normal browser): five big tiles with
+the selection highlighted, one giant record toggle, a banner with the agent and the state in capitals, no scrolling,
+no text beyond agent names, no animation (NO_VIDEO), no mic meter.
+
+`MainActivity` carries `<meta-data android:name="distractionOptimized" android:value="true"/>`, which is the only
+reason the OS keeps it in front while the car moves. AAOS honours the tag only for apps installed by a trusted source
+(Honda: `allowedAppInstallSources = [com.android.vending]`), so:
+
+- **Sideloaded builds are not DO.** On the Honda image they get "Unavailable, for your safety" once the car moves. The
+  tab bar shows an orange `SIDELOAD` badge when the install source is not Play, Diagnostics prints the source.
+- To exercise the real path on the sim: `adb -s emulator-5554 install -r -i com.android.vending <apk>` (the
+  `auto:dev` script installs with plain `adb install`).
+- **Play policy:** a non-driving-category app with a DO activity is rejected in open testing and production
+  (quality criteria DD-2/DD-3). Keep this on the internal (or closed) track only; drop the meta-data before any wider release.
+- RECORD_AUDIO is asked once while parked (NO_SETUP), never while driving.
+
+### Wheel / rotary control (`DriveControls`, pure and JUnit-tested)
+
+| input | default action |
+| --- | --- |
+| MEDIA_NEXT / MEDIA_PREVIOUS (Honda `<` `>`), DPAD_RIGHT/LEFT, NAVIGATE_NEXT/PREVIOUS, rotary clockwise/counter-clockwise | next / previous agent (wraps) |
+| hold MEDIA_NEXT (600 ms) | toggle recording |
+| MEDIA_PLAY_PAUSE, HEADSETHOOK, PLAY, PAUSE, RECORD, F7 (Honda source), DPAD_CENTER, ENTER, FAST_FORWARD | toggle recording |
+| hold MEDIA_PLAY_PAUSE / HEADSETHOOK, MEDIA_STOP, ESC while recording | cancel (discard) the note |
+
+Never mapped or swallowed: volume, HOME, BACK, CALL/ENDCALL, VOICE_ASSIST (the car keeps them). Unmapped keys are never
+consumed; a consumed press swallows both DOWN and UP. Selection changes are debounced (150 ms), record toggles
+400 ms, auto-repeats are ignored. Switching agent while recording or while the mic is starting is refused ("Recording.
+Stop first."). The page stays the source of truth: native calls `window.__hnControl({action})`; the page reports
+`selected / recording / stopped / sent / queued / silent / cancelled / failed / refused` through
+`HoloceneNative.padEvent(json)`.
+
+Inputs arrive two ways, both feed the same state machine: `dispatchKeyEvent` / `dispatchGenericMotionEvent`
+(AXIS_SCROLL, rotary) in the foreground activity, and an optional `MediaSession` ("Wheel control + media session"
+in Diagnostics, default ON) for cars that route media keys to the active media-button session instead of the
+window. **Trade-off:** while Holocene Auto is in front, Next/Previous/Play-Pause go to Agent Pad instead of the
+radio; the session is released in `onPause`, so backgrounding the app gives the radio its keys back. It never
+plays audio and is not a media source. Which route the real Civic uses is exactly what the key inspector answers.
+
+Spoken feedback (`DriveFeedback`, Diagnostics toggle, default ON in a car, or after wheel use anywhere): the agent's
+name on each selection, "Recording for Holocene" + a rising beep and only then the mic opens (so the announcement is
+never in the memo), a falling beep on stop, "Sent to Holocene", "Not sent. Saved, will retry.", "Nothing heard, not
+sent.", "Cancelled.". Local Android TTS and generated earcons, `USAGE_ASSISTANT`, `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`
+per phrase, no standing focus. Replies still play through the WebView `<audio>` (media usage); moving them to a
+native assistant-usage player is a follow-up.
+
+### Key inspector (Diagnostics, parked): find the real Civic buttons
+
+Parked, open Diagnostics and press every steering-wheel button once. Every KeyEvent (code, name, scancode, source,
+device, repeat, long press, which mapping it hit), scroll/rotary value and MediaSession callback is shown, logged to
+logcat (`adb logcat -s HoloceneKeys`), appended to `files/wheel-keys.log` and uploaded 6 s after the last press
+(`event=wheel_keys` to `/upload/client-event`; no audio). Read the answer with:
+
+```bash
+docker logs agent-pad-upload 2>&1 | grep wheel_key
+```
+
+`route=activity` lines are keys that reached the window; `route=session` lines came through the MediaSession. Use
+"Learn: ..." to bind the next button you press to an action, or edit the mapping text (`KEY=ACTION`, `L` prefix for a
+hold; saved in SharedPreferences `drive`/`mapping`, "Reset" restores the defaults).
+
+### Smoke on the sim
+
+```bash
+mise run auto:dev                          # build + install + start
+apps/auto/tools/sim_drive.sh drive         # car starts moving: UX fully restricted, the pad stays, tabs vanish
+apps/auto/tools/sim_drive.sh key next      # via CarInputService + Honda VehicleInputService (the wheel path)
+apps/auto/tools/sim_drive.sh hwkey playpause
+apps/auto/tools/sim_drive.sh rotary 2
+apps/auto/tools/sim_drive.sh park
+```
+
+Remember a sideloaded build is swapped for the system blocking activity while moving; use the Play installer trick above.
+
 ## What is debug-only
 
 Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a build constant:
@@ -82,15 +160,9 @@ Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a
 - `empty_transcript` / `silent_audio` on a sim memo = stuck PulseAudio capture (qemu's source output stays
   `Corked: yes`, emulator log: `pulseaudio: pa_simple_read failed / Bad state`), so the guest mic records dither
   only, even with `hostmicon`. Confirm with `mise run auto:sim:mic-check`; fix with
-  `mise run auto:sim:stop && mise run auto:sim`. Agent Pad shows a live level meter while recording and
-  refuses to upload a recording that stayed under -60 dBFS ("No sound reached the microphone", with a small
-  "send anyway"), so you see it immediately instead of a failed memo a minute later.
-- **The gRPC mic injection leaves the capture stream stuck.** After `emulator_audio.py inject` finishes, the next
-  recording is silent (mic-check reproduces the exact incident: peak 2, N corked qemu streams) and the
-  recording that was running can end with `MediaRecorder stop failed: -1004`. Restart the sim after an
-  injection run (`mise run auto:sim:stop && mise run auto:sim`). It can also crash the emulator outright.
-- A sim that crash-loops on boot ("Failed to load snapshot", crashpad dump in the log): `SIM_COLD=1 mise run auto:sim`
-  cold boots without the quick-boot snapshot (slow, 1-3 min, no data wipe).
+  `mise run auto:sim:stop && mise run auto:sim`. Agent Pad now shows a live level meter while recording and
+  refuses to upload a recording that stayed under -60 dBFS ("No sound reached the microphone"), so you see it
+  immediately instead of a failed memo a minute later.
 - Always `adb -s emulator-5554`. A physical phone is usually on adb too; bare `adb` commands are
   ambiguous or hit the wrong device. `auto:dev` and `pad:dev` honor `ANDROID_SERIAL` but default to the simulator and refuse any non-`emulator-*` serial unless `ALLOW_PHYSICAL_DEVICE=1`; `auto:sim`/`auto:sim:stop` always target `emulator-5554`.
 - `pad:dev` refuses to run unless the installed app is a debuggable build (release builds ignore the dev URL); `auto:dev` installs one.
