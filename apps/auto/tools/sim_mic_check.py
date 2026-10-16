@@ -33,6 +33,7 @@ ADB = os.path.join(os.environ.get("ANDROID_HOME", os.path.expanduser("~/Android/
 # Same line the Agent Pad and the inbox watcher use: a peak under -60 dBFS heard nothing.
 SILENCE_DBFS = -60.0
 SILENCE_PEAK = 32768 * 10 ** (SILENCE_DBFS / 20)  # ~32.8 of 32768
+STORAGE_FLUSH_SECONDS = 2.5
 RESTART = "mise run auto:sim:stop && mise run auto:sim"
 
 
@@ -169,6 +170,19 @@ def dismiss_honda_dialog():
     time.sleep(1)
 
 
+def stop_app(user, adb_fn=None, sleep=time.sleep):
+    """Stop the app WITHOUT losing the pad's WebView storage.
+
+    `am force-stop` kills the process before Chromium commits localStorage (it flushes on a short timer or when the
+    page is hidden), so the pad's last-played-reply marker was lost and the pad replayed the newest reply and
+    re-published audio.memo.played for old memos after every run. Sending the app to the background hides the page
+    and commits the storage first; only then is it stopped."""
+    run_adb = adb_fn or adb
+    run_adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    sleep(STORAGE_FLUSH_SECONDS)
+    run_adb("shell", "am", "force-stop", "--user", user, APP_ID)
+
+
 def probe_once(log=print):
     """Run the in-app mic probe; returns (mic_result or None, qemu streams sampled while it records, refused).
 
@@ -181,7 +195,7 @@ def probe_once(log=print):
         user = "10"
     adb("shell", "pm", "grant", "--user", user, APP_ID, "android.permission.RECORD_AUDIO")
     adb("logcat", "-c")
-    adb("shell", "am", "force-stop", "--user", user, APP_ID)
+    stop_app(user)
     adb("shell", "am", "start", "--user", user, "-n", f"{APP_ID}/{APP_ACTIVITY}", "--ez", EXTRA_RUN_MIC, "true")
     log("mic probe running (about 10 s)...")
     streams = None
@@ -211,7 +225,7 @@ def probe_once(log=print):
             blocked = "covered"
             break
     # leave the app in its normal state rather than on the probe screen
-    adb("shell", "am", "force-stop", "--user", user, APP_ID)
+    stop_app(user)
     adb("shell", "am", "start", "--user", user, "-n", f"{APP_ID}/{APP_ACTIVITY}")
     return result, streams, blocked
 

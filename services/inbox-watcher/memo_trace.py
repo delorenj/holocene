@@ -78,8 +78,11 @@ def level_of(d: dict) -> str:
 def capture_of(d: dict) -> str:
     """The device-reported capture level (data.capture of the uploaded fact), '' when the pad sent none."""
     cap = d.get("capture") or {}
-    bits = [f"{k} {c.fmt_dbfs(cap[k])}" for k in ("peak_dbfs", "rms_dbfs") if isinstance(cap.get(k), (int, float))]
-    return "device heard " + ", ".join(b.replace("_dbfs", "") for b in bits) if bits else ""
+    # rms_dbfs is the RMS of the recorder's 100 ms WINDOW PEAKS, not of the samples, so it reads louder than the
+    # watcher's true mean. Labelled "window avg" so the two numbers on one trace never look like one measurement.
+    names = {"peak_dbfs": "peak", "rms_dbfs": "window avg"}
+    bits = [f"{names[k]} {c.fmt_dbfs(cap[k])}" for k in ("peak_dbfs", "rms_dbfs") if isinstance(cap.get(k), (int, float))]
+    return "device heard " + ", ".join(bits) if bits else ""
 
 
 def lane_of(dispatched: dict | None, rec: dict | None = None, row: dict | None = None) -> str:

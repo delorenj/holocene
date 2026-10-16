@@ -287,7 +287,7 @@ test("a silent recording names the microphone: its own stage label, the measured
   assert.deepEqual(d.audio, hop.audio);
   // the device's own recorder level shows on the uploaded hop and the summary, so "mic dead" is visible before the file left the phone
   assert.deepEqual(d.capture, { peakDbfs: -71.2, rmsDbfs: -80, silent: true });
-  assert.equal(d.hops[0].detail, "26589 bytes · device heard peak -71 dBFS, rms -80 dBFS (silent)");
+  assert.equal(d.hops[0].detail, "26589 bytes · device heard peak -71 dBFS, window avg -80 dBFS (silent)");
   assert.equal(toSummary(d).audio?.silent, true);
   assert.match(d.error!, /^silent_audio: recording is silent/);
 });

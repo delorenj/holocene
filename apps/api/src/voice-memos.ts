@@ -138,9 +138,9 @@ export function audioLevelText(l: AudioLevel): string {
   return [`max ${dbfs(l.maxDbfs)}`, l.meanDbfs !== undefined ? `mean ${dbfs(l.meanDbfs)}` : undefined, l.silent ? "silent" : "audible"].filter(Boolean).join(" · ");
 }
 
-/** "device heard peak -70 dBFS, rms -78 dBFS" */
+/** "device heard peak -70 dBFS, window avg -78 dBFS" (the device's rms_dbfs is the RMS of 100 ms window peaks, not of samples) */
 export function captureLevelText(c: CaptureLevel): string {
-  const bits = [c.peakDbfs !== undefined ? `peak ${dbfs(c.peakDbfs)}` : undefined, c.rmsDbfs !== undefined ? `rms ${dbfs(c.rmsDbfs)}` : undefined].filter(Boolean);
+  const bits = [c.peakDbfs !== undefined ? `peak ${dbfs(c.peakDbfs)}` : undefined, c.rmsDbfs !== undefined ? `window avg ${dbfs(c.rmsDbfs)}` : undefined].filter(Boolean);
   return `device heard ${bits.join(", ")}${c.silent ? " (silent)" : ""}`;
 }
 

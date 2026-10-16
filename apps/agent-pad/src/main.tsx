@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 
 type Agent = { id: string; name: string; color: string }
 
@@ -41,23 +42,6 @@ function lsGet(k: string): string {
 function lsSet(k: string, v: string) {
   try { localStorage.setItem(k, v) } catch { /* storage blocked */ }
 }
-
-// ---- capture level: did any sound reach the microphone? (the same -60 dBFS line the watcher uses) ----
-// A recording whose loudest moment stays under SILENCE_DBFS is digital silence (a stuck emulator capture stream,
-// a muted or unplugged mic), not speech. It is held back instead of uploaded: the driver hears about it now,
-// not as an "empty_transcript" 40 seconds later.
-const SILENCE_DBFS = -60
-const FLOOR_DBFS = -96
-type Capture = { peak_dbfs: number; rms_dbfs: number; samples?: number; source?: string; sent_anyway?: boolean }
-const toDb = (x: number) => (x > 0 ? Math.max(FLOOR_DBFS, 20 * Math.log10(x)) : FLOOR_DBFS)
-const meter01 = (db: number) => Math.min(1, Math.max(0, (db - SILENCE_DBFS) / -SILENCE_DBFS))
-const round1 = (x: number) => Math.round(x * 10) / 10
-function normCapture(c: unknown, source: string): Capture | undefined {
-  const o = c as Partial<Capture> | null
-  if (!o || typeof o.peak_dbfs !== 'number' || typeof o.rms_dbfs !== 'number' || !isFinite(o.peak_dbfs) || !isFinite(o.rms_dbfs)) return undefined
-  return { peak_dbfs: round1(o.peak_dbfs), rms_dbfs: round1(o.rms_dbfs), samples: typeof o.samples === 'number' ? o.samples : undefined, source: o.source || source, sent_anyway: o.sent_anyway }
-}
-const isSilent = (c?: Capture) => !!c && c.peak_dbfs < SILENCE_DBFS
 
 // Browser-side level reader for the getUserMedia path (a normal browser, or the WebView fallback).
 function startAnalyser(stream: MediaStream, onLevel: (l: number) => void): { stop(): Capture | undefined } | null {
@@ -282,6 +266,8 @@ const LS_AGENT = 'agentpad.agent'
 function App() {
   const [selected, setSelected] = useState<Agent | null>(() => AGENTS.find((a) => a.id === lsGet(LS_AGENT)) || null)
   const [host, setHost] = useState<HostInfo>(readHost)
+  const drivingRef = useRef(host.driving) // read when a recording ends: the car may have started moving mid-note
+  drivingRef.current = host.driving
   const [phase, setPhase] = useState<PadPhase>('idle')
   const arming = useRef(false)
   const discardRef = useRef(false)
@@ -506,7 +492,12 @@ function App() {
   // A finished recording: hold it back if no sound ever reached the mic, else send it with its capture levels.
   const finishRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture: Capture | undefined, ms: number) => {
     setLevel(0)
-    if (capture && isSilent(capture)) {
+    const action = silenceAction(capture, drivingRef.current)
+    if (capture && action === 'advisory') {
+      // Driving: the device's silence verdict is advisory only. Upload it and let the watcher's ffmpeg decide.
+      capture = { ...capture, sent_anyway: true }
+    }
+    if (capture && action === 'hold') {
       setSilentHold({ agent, key, blob, capture, ms })
       setStatus('not sent')
       setPhase('silent')

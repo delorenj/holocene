@@ -109,6 +109,10 @@ run = "'{{config_root}}/apps/auto/tools/app_dev.sh' ${@}"
 description = "Agent Pad hot reload on the simulator: Vite HMR + adb reverse + debug app pointed at localhost"
 run = "'{{config_root}}/apps/auto/tools/pad_dev.sh'"
 
+[tasks."pad:test"]
+description = "Agent Pad unit tests (capture-level policy: when a silent recording is held back, when it is sent anyway)"
+run = "cd '{{config_root}}/apps/agent-pad' && npm test"
+
 [tasks."pad:build"]
 description = "Build Agent Pad; nginx serves apps/agent-pad/dist so this deploys production"
 run = "'{{config_root}}/apps/auto/tools/pad_build.sh'"

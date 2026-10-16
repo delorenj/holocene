@@ -823,7 +823,7 @@ class LaneProbes(unittest.TestCase):
         d = {"audio_max_dbfs": -73.4, "audio_mean_dbfs": -83.3, "audio_duration_seconds": 6.38}
         self.assertEqual(mt.level_of(d), "max -73 dBFS, mean -83 dBFS over 6.4 s")
         self.assertEqual(mt.level_of({}), "")
-        self.assertEqual(mt.capture_of({"capture": {"peak_dbfs": -71.2, "rms_dbfs": -80}}), "device heard peak -71 dBFS, rms -80 dBFS")
+        self.assertEqual(mt.capture_of({"capture": {"peak_dbfs": -71.2, "rms_dbfs": -80}}), "device heard peak -71 dBFS, window avg -80 dBFS")
         self.assertEqual(mt.capture_of({}), "")
         detail = ("silent_audio: recording is silent (max -73 dBFS, mean -83 dBFS over 6.4 s): the microphone delivered no sound "
                   "(retryable=False, attempt=1)")

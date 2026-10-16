@@ -17,7 +17,7 @@ export function audioChip(a: AudioLevel): string {
 /** "device heard peak -71 dBFS" · undefined when the pad reported nothing. */
 export function captureChip(c: CaptureLevel | undefined): string | undefined {
   if (!c) return undefined;
-  const bits = [c.peakDbfs !== undefined ? `peak ${Math.round(c.peakDbfs)} dBFS` : undefined, c.rmsDbfs !== undefined ? `rms ${Math.round(c.rmsDbfs)} dBFS` : undefined].filter(Boolean);
+  const bits = [c.peakDbfs !== undefined ? `peak ${Math.round(c.peakDbfs)} dBFS` : undefined, c.rmsDbfs !== undefined ? `window avg ${Math.round(c.rmsDbfs)} dBFS` : undefined].filter(Boolean);
   return bits.length ? `device heard ${bits.join(", ")}` : undefined;
 }
 

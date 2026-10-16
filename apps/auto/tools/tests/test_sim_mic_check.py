@@ -42,6 +42,17 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(M.parse_mic_result(""))
 
 
+class StopAppTests(unittest.TestCase):
+    def test_backgrounds_the_app_and_waits_before_force_stop(self):
+        calls = []
+        M.stop_app("10", adb_fn=lambda *a, **k: calls.append(("adb",) + a), sleep=lambda s: calls.append(("sleep", s)))
+        self.assertEqual(calls[0], ("adb", "shell", "input", "keyevent", "KEYCODE_HOME"))
+        self.assertEqual(calls[1][0], "sleep")
+        self.assertGreaterEqual(calls[1][1], 2)  # Chromium commits localStorage on hide / a short timer
+        self.assertEqual(calls[2][:4], ("adb", "shell", "am", "force-stop"))
+        self.assertEqual(len(calls), 3)
+
+
 class VerdictTests(unittest.TestCase):
     def streams(self, *specs):
         return M.qemu_streams(M.parse_source_outputs(pactl(*specs)))
