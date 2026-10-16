@@ -1,0 +1,82 @@
+{
+ "memo": {
+  "memoId": "90de48a9-254c-5fbf-935c-7aea6e51952d",
+  "agent": "holocene-pm",
+  "status": "complete",
+  "reached": "played",
+  "lane": "interactive",
+  "laneReason": null,
+  "totalSeconds": 55.68,
+  "commandId": "62c3f0c3-6421-49d4-8579-7329e3142c5d",
+  "transcript": "Priority lane test. Please reply with words lane works.",
+  "replyText": "lane works",
+  "hops": [
+   {
+    "id": "uploaded",
+    "status": "ok",
+    "at": "2026-10-16T02:40:38.956Z",
+    "detail": "62935 bytes \u00b7 Mozilla/5.0 (Linux; Android 13; IVI-SYSTEM Build/ADA1318R1.250312.1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.86 Safari/537.36"
+   },
+   {
+    "id": "received",
+    "status": "ok",
+    "at": "2026-10-16T02:40:42.011Z",
+    "detail": "watcher lag 3082 ms"
+   },
+   {
+    "id": "transcribed",
+    "status": "ok",
+    "at": "2026-10-16T02:41:25.489Z",
+    "detail": "9 words \u00b7 42.1 s \u00b7 large-v3"
+   },
+   {
+    "id": "dispatched",
+    "status": "ok",
+    "at": "2026-10-16T02:41:25.793Z",
+    "detail": "command 62c3f0c3-6421-49d4-8579-7329e3142c5d \u00b7 interactive lane"
+   },
+   {
+    "id": "agent_started",
+    "status": "ok",
+    "at": "2026-10-16T02:41:25.811933Z",
+    "detail": "hermes-agent:holocene-pm"
+   },
+   {
+    "id": "agent_done",
+    "status": "ok",
+    "at": "2026-10-16T02:41:30.213729Z",
+    "detail": "invocation completed"
+   },
+   {
+    "id": "replied",
+    "status": "ok",
+    "at": "2026-10-16T02:41:34.636Z",
+    "detail": "tts 1.55 s \u00b7 vibevoice \u00b7 replies/2026/10/16/024132Z-holocene-pm-90de48a9-254c-5fbf-935c-7aea6e51952d.ogg"
+   },
+   {
+    "id": "played",
+    "status": "ok",
+    "at": "2026-10-16T02:41:39.570Z",
+    "detail": "played to the end \u00b7 10418 ms after rendering \u00b7 2.41 s of audio"
+   }
+  ]
+ },
+ "watcher": {
+  "lanes": {
+   "interactive": {
+    "pulling": true,
+    "waiting": 1,
+    "inFlight": 0,
+    "queued": 0,
+    "slots": 2
+   },
+   "batch": {
+    "pulling": true,
+    "waiting": 1,
+    "inFlight": 0,
+    "queued": 0,
+    "slots": 4
+   }
+  }
+ }
+}

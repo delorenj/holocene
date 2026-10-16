@@ -1,0 +1,12 @@
+{"id":"cb4b0243-f2a5-4328-aa65-ff0cd90ca1d5","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"c1e75a7f-b636-4888-b8c1-b246747a8143","command_id":"2b06ea5d-bab3-4289-8739-98928479a199","idempotency_key":"fe0ee23b-3bef-5193-a825-2719be286dac","ordering_key":"turn:3a50a9c2-b849-4422-adf5-a5e78325ec05"}
+n=1 cid=2b06ea5d-bab3-4289-8739-98928479a199 at 02:40:18.808
+{"id":"fd268283-407c-4884-bb86-c0d894d07d42","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"5bbcf353-7d32-4a7f-98eb-7562a0a0a5af","command_id":"a05cf628-7a96-427d-8e86-aa212587dd8b","idempotency_key":"bab2ccf0-44f0-52f0-8049-9b8e290abd7b","ordering_key":"turn:18e90a31-5141-42db-9614-269f967340cb"}
+n=2 cid=a05cf628-7a96-427d-8e86-aa212587dd8b at 02:40:18.901
+{"id":"de05d2a6-a530-45c6-bcab-80597b6c1644","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"5bfa6514-25e2-483d-81f6-065ef1092ce6","command_id":"da09d660-1915-4f36-a546-8dd77da0550f","idempotency_key":"74f25085-3e5b-5349-9919-1c74d34aa5be","ordering_key":"turn:040d4792-a11b-4293-ad54-948990cea6fb"}
+n=3 cid=da09d660-1915-4f36-a546-8dd77da0550f at 02:40:18.987
+{"id":"fff43a05-d59e-42e0-9aee-e1cbb3357bb1","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"9e0985b1-99b9-4e5e-9195-6a69f384a7d8","command_id":"f9f3b080-f8ee-4e61-bad5-d3bd177430cc","idempotency_key":"243215b0-370f-52e7-95ba-368ac92d5459","ordering_key":"turn:3ad5d1cd-54f8-46e2-aa0b-39a8a092821b"}
+n=4 cid=f9f3b080-f8ee-4e61-bad5-d3bd177430cc at 02:40:19.087
+{"id":"752488ec-56a3-40ee-bd36-de0273d2542c","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"18b3c609-8cc8-450d-90a4-5943b5f02883","command_id":"b44464c5-d063-418c-b43d-539aeceeba44","idempotency_key":"1b94b080-29bb-5778-8406-c00e0b752d45","ordering_key":"turn:37aa6260-41dc-4bff-8f5e-6962bcfab2cb"}
+n=5 cid=b44464c5-d063-418c-b43d-539aeceeba44 at 02:40:19.185
+{"id":"6b470126-d0bb-4624-9854-4d4013b5da4b","type":"bloodbank.agent.invocation.start","subject":"bloodbank.cmd.agent.invocation.start","correlationid":"1ab1fc77-c102-49ab-ac3d-c5622f545e2b","command_id":"785abe15-cc8f-4251-8e40-8de92fcc2059","idempotency_key":"b41120b0-2726-5489-afdf-548ef324bd9f","ordering_key":"turn:bda7562a-0928-4b4d-a4b7-e0bf981823b0"}
+n=6 cid=785abe15-cc8f-4251-8e40-8de92fcc2059 at 02:40:19.287
