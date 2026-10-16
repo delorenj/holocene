@@ -1,7 +1,7 @@
 from lib import Svg, figure
 
 def html():
-    g = Svg(1340, 620, "auto", "3a")
+    g = Svg(1340, 710, "auto", "3a")
     g.zone(20, 10, 900, 430, "Holocene Auto app [APK, Kotlin, sh.delo.holocene.auto]")
     # components
     g.node(40, 70, 220, 100, "MainActivity", "[component: Activity]", ["launcher; builds UI, owns lifecycle;", "mic / speech / TTS diagnostic", "probes; StopKeys handling"], "component")
@@ -12,7 +12,7 @@ def html():
     g.node(680, 230, 230, 100, "NativeRecorder", "[component: MediaRecorder]", ["MIC > OGG container, OPUS", "bounded duration (auto-stop);", "keeps nothing after stop/cancel"], "component", accent=True)
     g.node(40, 480, 220, 70, "Android Car service", "[external: android.car]", ["CarUxRestrictions (parked)"], "ext")
     g.node(680, 500, 230, 80, "Agent Pad", "[container: Vite/React SPA]", ["loaded from agent-pad.delo.sh;", "IndexedDB outbox"], "container")
-    g.node(1050, 330, 250, 60, "Operator", "[person]", [], "person")
+    g.node(680, 630, 230, 62, "Operator", "[person]", ["taps the pad UI in the WebView"], "person")
     g.node(1050, 500, 250, 80, "agent-pad-upload", "[container: Python]", ["PUT /upload/inbox/..."], "container")
     # edges
     g.edge([(260,95),(340,95)]); g.label(300,87,"fixtures",anchor="middle")
@@ -24,7 +24,7 @@ def html():
     g.edge([(795,330),(795,500)]); g.label(787,420,"Ogg/Opus bytes,|evaluateJavascript",anchor="end")
     g.edge([(460,310),(460,540),(680,540)]); g.label(468,526,"loads pad (WebView, HTTPS)",anchor="start")
     g.edge([(910,520),(960,520),(960,130),(910,130)]); g.label(968,300,"start() / stop() /|micClosed()",anchor="start")
-    g.raw_edge("M1050 360 L966 360 a6 6 0 0 0 -12 0 L870 360 L870 500"); g.label(1008,350,"taps record",anchor="middle")
+    g.edge([(795,630),(795,580)]); g.label(803,612,"taps record|(parked only)",anchor="start")
     g.edge([(910,550),(1050,550)]); g.label(980,542,"PUT .ogg, HTTPS",anchor="middle")
     svg = g.render("Holocene Auto app components", "Inside the Android app: the car UX gate, the WebView host that loads Agent Pad, the JavaScript bridge and the native recorder.")
     pre = '<h2 id="l3a">Level 3a: components, the Holocene Auto app</h2><p class="lede">The app is a thin shell: it decides whether the pad may open (parked only), hosts it in a WebView and records audio natively because WebView getUserMedia is unreliable on the head unit. Recording is parked-only by construction.</p>'

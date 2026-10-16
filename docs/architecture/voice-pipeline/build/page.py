@@ -53,6 +53,8 @@ ul.gaps{margin:10px 0 0;padding-left:22px;font-size:14px;max-width:110ch}ul.gaps
 @media (min-width:1000px){ol.hops{columns:2;column-gap:32px}}
 code{overflow-wrap:anywhere}
 .tw{overflow-x:auto}
+.hint{display:none;margin:8px 0 0;font-size:12.5px;color:var(--mut)}
+@media (max-width:900px){.hint{display:block}.scroll{box-shadow:inset -14px 0 12px -12px color-mix(in srgb,var(--fg) 35%,transparent)}}
 @media (max-width:640px){h1{font-size:32px}main{padding:20px 16px 56px}}
 """
 
@@ -60,4 +62,4 @@ HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
 <style>""" + CSS + "</style></head><body><main>"
 
-LEGEND = """<div class="legend"><span><i class="p"></i>person</span><span><i class="sy"></i>software system</span><span><i></i>container</span><span><i class="cm"></i>component</span><span><i class="ex"></i>external</span><span><i class="ac"></i>focal: per-turn wall clock path</span><span><i class="zn"></i>boundary</span><span><b></b>sync / async call</span><span><b class="d"></b>read-only look-up / optional</span><span><b class="a"></b>timeout path</span></div>"""
+LEGEND = """<div class="legend"><span><i class="p"></i>person</span><span><i class="sy"></i>software system</span><span><i></i>container</span><span><i class="cm"></i>component</span><span><i class="ex"></i>external</span><span><i class="ac"></i>focal: per-turn wall clock path</span><span><i class="zn"></i>boundary</span><span><b></b>call or message (sync or async)</span><span><b class="d"></b>read-only look-up / optional / not replayed</span><span><b class="a"></b>timeout path</span></div>"""

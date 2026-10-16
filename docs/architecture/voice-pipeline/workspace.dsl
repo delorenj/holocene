@@ -5,12 +5,12 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
     model {
         operator = person "Operator" "Jarad. Records memos from the parked Honda, reads /voice, gets push alerts."
 
-        playStore = softwareSystem "Google Play internal testing" "Distributes io.automaticai.holocene (repo: v10 0.2.8-internal)." "External"
+        playStore = softwareSystem "Google Play internal testing" "Distributes the Holocene Auto APK (repo: v10 0.2.8-internal; the dev emulator runs v9)." "External"
         cloudflare = softwareSystem "Cloudflare" "DNS, edge and Tunnel in front of Traefik for *.delo.sh." "External"
         googleOidc = softwareSystem "Google OIDC" "Identity provider for holocene-web login." "External"
-        llmGateway = softwareSystem "AutomaticAI gateway" "api.automaticai.io, chat_completions, model automaticai/auto." "External"
+        llmGateway = softwareSystem "AutomaticAI gateway" "api.automaticai.io, chat_completions, model automaticai/auto (fallback chain glm-5.3, kimi-2.8 in ~/.hermes/config.yaml)." "External"
         alerts = softwareSystem "ntfy and Telegram" "Phone push (ntfy.delo.sh) and Alertmanager receiver (DeLoNETBot)." "External"
-        plane = softwareSystem "Plane and n8n" "Ticket webhooks -> n8n (PM2) -> invocation.start commands on the batch lane." "External"
+        plane = softwareSystem "Plane and n8n" "Ticket webhooks -> n8n (PM2 on the host) -> invocation.start commands on the batch lane. The n8n publish path to NATS was not read." "External"
 
         auto = softwareSystem "Holocene Auto" "Android app on the Honda AAOS head unit; hosts Agent Pad and records Ogg/Opus while parked." {
             app = container "Holocene Auto app" "APK, minSdk 32. Activity, WebView host, native recorder, car UX gate." "Kotlin, Android" "Device" {
@@ -34,14 +34,14 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         watcherSys = softwareSystem "Inbox watcher" "One state machine per memo: discover, transcribe, dispatch, await, speak, upload." {
             watcher = container "inbox-watcher" "holocene-inbox-watcher.service. memo_id = uuid5(s3 key) = correlationid. Stage facts + command dispatch + heartbeat." "Python, systemd --user"
             transcribe = container "transcribe" "faster-whisper large-v3, CPU int8 when the GPU is full; invoked --ephemeral." "bash + Python CLI"
-            vox = container "vox TTS" "POST /synthesize-url, voice rick, vibevoice engine (voxcpm/elevenlabs fallback)." "Containers, vox.delo.sh"
+            vox = container "vox TTS" "POST /synthesize-url returns meta.audio_url; the watcher then GETs that URL. Voice rick, vibevoice engine (VOX_ENGINES lists only vibevoice; a voxcpm engine container exists but is not wired in, fallback not shown)." "Containers, vox.delo.sh"
             watcherState = container "Watcher state" "state.json, heartbeat.json, control/ drop-ins for memo:retry." "Files under ~/.local/state/holocene-auto" "Database"
         }
 
         bloodbank = softwareSystem "Bloodbank" "Event and command bus; owns distribution." {
             nats = container "NATS JetStream" "Streams BLOODBANK_EVENTS (bloodbank.evt.>) and BLOODBANK_COMMANDS (workqueue). Monitor :8222." "nats:2.10, container"
             bb = container "bb-emit" "Validates against schemas/bloodbank and publishes facts and commands." "CLI"
-            ntfyRouter = container "bloodbank-ntfy-router" "Policy classes mute/loud/digest. For memos only audio.memo.failed pushes." "Container"
+            ntfyRouter = container "bloodbank-ntfy-router" "Policy classes mute/loud/digest. For memos only audio.memo.failed pushes. Uses a core NATS subscribe on bloodbank.evt.> with no durable consumer, so events published while it is down are never pushed." "Container"
         }
 
         hermes = softwareSystem "Hermes" "Single multiplexed gateway for ~37 agent profiles." {
@@ -50,8 +50,8 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
                 decoder = component "decode_command" "Envelope + lane type check; data.deadline_seconds; poison -> term." "contract.py"
                 journal = component "Execution journal" "SQLite executions: pending -> started -> completed, outcome, lane, failure_code." "execution_state.py, SQLite WAL"
                 dispatch = component "Dispatch" "Per-conversation lock profile:thread_id; MessageEvent(internal) into Hermes handle_message." "adapter.py"
-                awaitTurn = component "Turn wall clock (_await_turn)" "wait_for(shield(completion), min(deadline_seconds, lane limit)); interactive default 300 s, batch none." "adapter.py"
-                timeoutPath = component "Timeout path" "Claim outcome, /stop the turn, close journal (turn_timeout), publish invocation.failed, ack." "adapter.py"
+                awaitTurn = component "Turn wall clock (_await_turn)" "wait_for(shield(completion), min(deadline_seconds, lane limit)); interactive default 300 s, batch none. The clock starts at dispatch, after the per-conversation lock, not at claim." "adapter.py"
+                timeoutPath = component "Timeout path" "Claim outcome, /stop the turn (10 s budget, then cancel_session_processing, 10 s), close journal (turn_timeout), publish invocation.failed, ack." "adapter.py"
                 lifecycle = component "Lifecycle publisher" "invocation.started / completed / failed (data.lane) and conversation.turn.* with inherited correlationid." "adapter.py"
                 progressAck = component "Progress ack" "In-progress ack every 30 s so JetStream does not redeliver a long turn." "adapter.py"
             }
@@ -77,7 +77,10 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         # Context level
         operator -> auto "Speaks a memo, hears the reply" "Voice, touch (parked)"
         playStore -> auto "Installs and updates the APK" "Play internal track"
-        auto -> ingest "Uploads audio, polls replies" "HTTPS"
+        auto -> cloudflare "Loads the pad, uploads audio, posts played beacons" "HTTPS"
+        auto -> ingest "Polls replies/ directly from MinIO (unsigned S3, s3.delo.sh)" "HTTPS via Cloudflare"
+        ingest -> bloodbank "memo.uploaded / played / failed" "Raw NATS"
+        watcherSys -> ingest "Lists and downloads inbox/, uploads replies/" "S3 via mc"
         ingest -> watcherSys "Inbox objects" "S3 (MinIO)"
         watcherSys -> bloodbank "Stage facts and invoke command" "NATS JetStream"
         bloodbank -> hermes "Delivers invoke / start commands" "NATS pull"
@@ -91,16 +94,19 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         plane -> bloodbank "invocation.start (batch lane)" "n8n -> NATS"
         operator -> readSide "Reads /voice" "HTTPS, Google OIDC"
         readSide -> googleOidc "Login" "OIDC"
-        cloudflare -> ingest "Edge and Tunnel" "HTTPS"
+        cloudflare -> ingest "Tunnel to Traefik (agent-pad.delo.sh, s3.delo.sh)" "HTTPS"
 
         # Container level: device and ingress
-        operator -> auto.app "Taps record" "Touch (parked only)"
+        operator -> auto.pad "Speaks, taps record in the pad UI (parked only)" "Touch, voice"
         auto.app -> auto.pad "Hosts in WebView" "In-process"
         auto.pad -> auto.app "Recorder calls" "window.HoloceneNative"
-        auto.pad -> ingest.traefik "PUT audio, POST beacons, GET pad and replies" "HTTPS via Cloudflare"
+        auto.pad -> cloudflare "Loads the pad, PUT audio, POST played beacons (agent-pad.delo.sh)" "HTTPS"
+        auto.pad -> ingest.minio "S3 ListObjectsV2 + GET replies/ every 15 s (anonymous, s3.delo.sh)" "HTTPS via Cloudflare and Traefik router minio-api"
+        cloudflare -> ingest.traefik "Tunnel to https://traefik:443" "HTTPS"
         ingest.traefik -> ingest.padWeb "Host(agent-pad.delo.sh)" "HTTP"
         ingest.traefik -> ingest.upload "PathPrefix(/upload/)" "HTTP"
         ingest.upload -> ingest.minio "Stores inbox object" "S3 via mc"
+        ingest.traefik -> ingest.minio "Host(s3.delo.sh), router minio-api" "HTTP"
         ingest.upload -> bloodbank.nats "memo.uploaded / played / failed" "Raw NATS, fail-open"
 
         # Container level: watcher
@@ -108,11 +114,11 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         watcherSys.watcher -> watcherSys.transcribe "ffprobe then transcribe" "Subprocess"
         watcherSys.watcher -> bloodbank.bb "Emit facts and command" "Subprocess"
         bloodbank.bb -> bloodbank.nats "Publish" "NATS"
-        watcherSys.watcher -> bloodbank.nats "Lane probe" "HTTP :8222 jsz"
+        watcherSys.watcher -> bloodbank.nats "Lane probe; falls back to .start only if interactive is unpulled and batch is pulled" "HTTP :8222 jsz"
         watcherSys.watcher -> hermes.gateway "Journal row by command_id" "SQLite, read-only"
         watcherSys.watcher -> hermes.agent "Reply text by chat_id = memo_id" "SQLite, read-only"
         watcherSys.watcher -> hermes.registry "Agent exists / enabled" "File read"
-        watcherSys.watcher -> watcherSys.vox "Text -> Ogg/Opus" "HTTPS"
+        watcherSys.watcher -> watcherSys.vox "POST /synthesize-url, then GET audio_url (Ogg/Opus)" "HTTPS"
         watcherSys.watcher -> readSide.candystore "Fallback completion + trace" "HTTP GET"
         watcherSys.watcher -> watcherSys.watcherState "Heartbeat, state, retry drop-ins" "File I/O"
 
@@ -126,7 +132,7 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         # Container level: read side and monitoring
         bloodbank.nats -> readSide.candystore "evt.>" "Dapr pubsub.jetstream"
         bloodbank.nats -> readSide.holoApi "evt.> (ephemeral consumer)" "JetStream"
-        bloodbank.nats -> bloodbank.ntfyRouter "evt.>" "JetStream"
+        bloodbank.nats -> bloodbank.ntfyRouter "evt.> (core subscribe, no durable, not replayed)" "NATS core"
         bloodbank.ntfyRouter -> alerts "Push audio.memo.failed" "HTTPS"
         readSide.holoApi -> watcherSys.watcherState "Reads heartbeat" "File read"
         readSide.holoWeb -> readSide.holoApi "Voice memo model" "HTTP"
@@ -156,7 +162,7 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
         hermes.gateway.dispatch -> hermes.agent.runner "MessageEvent(internal)" "handle_message"
         hermes.gateway.dispatch -> hermes.gateway.awaitTurn "Await completion future" "In-process"
         hermes.gateway.awaitTurn -> hermes.gateway.timeoutPath "Budget expired" "In-process"
-        hermes.gateway.timeoutPath -> hermes.agent.runner "/stop" "Hermes stop path"
+        hermes.gateway.timeoutPath -> hermes.agent.runner "/stop (10 s budget), then cancel_session_processing" "Hermes stop path"
         hermes.gateway.timeoutPath -> hermes.gateway.journal "completed / failure / turn_timeout" "SQLite"
         hermes.gateway.timeoutPath -> hermes.gateway.lifecycle "invocation.failed" "In-process"
         hermes.gateway.awaitTurn -> hermes.gateway.lifecycle "completed / failed" "In-process"
@@ -166,9 +172,8 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
     }
 
     views {
-        systemContext auto "SystemContext" "The operator's memo travels through five systems; Hermes agents and the model gateway sit behind the bus." {
-            include *
-            exclude googleOidc cloudflare plane monitoring
+        systemContext auto "SystemContext" "The operator's memo travels through the car app, Cloudflare, ingress, watcher, bus and Hermes; every system and external named on the HTML level 1 is included." {
+            include operator playStore cloudflare auto ingest watcherSys bloodbank hermes readSide monitoring llmGateway alerts plane googleOidc
             autolayout lr 300 150
         }
 
@@ -202,24 +207,24 @@ workspace "Holocene voice memo pipeline" "From a spoken memo on the Honda to an 
             autolayout lr 300 100
         }
 
-        dynamic * "MemoJourney" "One voice memo, verified run 657e81ba (33god-pm, interactive lane, 65.0 s)." {
-            1: operator -> auto.app "Taps record (parked)"
-            2: auto.app -> auto.pad "Native recorder returns Ogg/Opus"
-            3: auto.pad -> ingest.upload "PUT /upload/inbox/<agent>/<date>/<ts>.ogg"
-            4: ingest.upload -> ingest.minio "mc cp"
-            5: ingest.upload -> bloodbank.nats "evt.audio.memo.uploaded"
-            6: watcherSys.watcher -> ingest.minio "Discovers object, downloads"
-            7: watcherSys.watcher -> watcherSys.transcribe "ffprobe, transcribe (43 s)"
-            8: watcherSys.watcher -> bloodbank.bb "memo.received / transcribed / dispatched, cmd.invoke"
-            9: bloodbank.nats -> hermes.gateway "Interactive durable pulls the command"
-            10: hermes.gateway -> hermes.agent "Runs the turn (10.3 s), wall clock armed"
-            11: hermes.gateway -> bloodbank.nats "invocation.started / completed"
-            12: watcherSys.watcher -> hermes.gateway "Journal row completed"
-            13: watcherSys.watcher -> hermes.agent "Reads reply text"
-            14: watcherSys.watcher -> watcherSys.vox "Synthesize (1.9 s)"
-            15: watcherSys.watcher -> ingest.minio "Uploads replies/ ogg"
-            16: watcherSys.watcher -> bloodbank.bb "evt.audio.memo.replied"
-            17: auto.pad -> ingest.traefik "Polls replies/, plays, beacons played"
+        dynamic * "MemoJourney" "One voice memo, verified run 657e81ba (33god-pm, interactive lane, 65.0 s). System level: Structurizr only allows people and software systems in a workspace-scope dynamic view; the container-level hops are in the description of each step and in the HTML swimlane." {
+            1: operator -> auto "Taps record in the pad UI (parked); native recorder captures Ogg/Opus"
+            2: auto -> cloudflare "PUT /upload/inbox/<agent>/<date>/<ts>.ogg"
+            3: cloudflare -> ingest "Tunnel to Traefik, then agent-pad-upload stores it in MinIO"
+            4: ingest -> bloodbank "evt.audio.memo.uploaded (raw NATS, fail-open)"
+            5: watcherSys -> ingest "Discovers inbox/ object, downloads it (S3 via mc)"
+            6: watcherSys -> bloodbank "ffprobe + transcribe (43 s); memo.received / transcribed / dispatched, cmd.invoke"
+            7: bloodbank -> hermes "Interactive durable pulls the command; journal claim"
+            8: hermes -> llmGateway "Agent turn (10.3 s), wall clock armed at dispatch"
+            9: hermes -> bloodbank "invocation.started / completed (or failed: turn_timeout)"
+            10: watcherSys -> hermes "Reads journal row and reply text (SQLite, read-only)"
+            11: watcherSys -> ingest "vox TTS (1.9 s), uploads replies/ ogg"
+            12: watcherSys -> bloodbank "evt.audio.memo.replied"
+            13: auto -> ingest "Pad lists and GETs replies/ straight from MinIO (S3, every 15 s), plays"
+            14: auto -> cloudflare "POST /upload/played beacon"
+            15: ingest -> bloodbank "evt.audio.memo.played"
+            16: bloodbank -> readSide "evt.> projected (Candystore, Holocene API)"
+            17: operator -> readSide "Reads /voice"
             autolayout lr 300 100
         }
 

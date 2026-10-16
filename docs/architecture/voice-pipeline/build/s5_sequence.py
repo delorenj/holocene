@@ -18,7 +18,7 @@ STEPS = [
  (2,5,"read reply","Watcher reads the answer","journal row by command_id; last assistant message by chat_id; prompt_match 115 chars","memo:trace hop hermes_session   (read-only sqlite, never written)","dash"),
  (2,2,"TTS 1.9 s","vox synthesizes the reply","POST https://vox.delo.sh/synthesize-url  voice rick  vibevoice  text cut to 500 chars","vox logs   replied fact carries tts_engine",""),
  (2,1,"put replies/ .ogg","Reply stored","replies/2026/10/16/121157Z-33god-pm-657e81ba-....ogg  14465 B   evt  audio.memo.replied","mc stat delo/holocene-auto/<reply key>   journald stage=reply_upload   (12:12:00.363)",""),
- (0,1,"poll, play, beacon","Pad plays the answer","poll replies/ every 15 s; POST /upload/played started, ended   evt  audio.memo.played","docker logs agent-pad-upload | grep playback   /voice 'played on pad'   (12:12:11.566)","dash"),
+ (0,1,"list + GET replies/","Pad polls MinIO, plays, beacons","S3 list-type=2 + GET on s3.delo.sh every 15 s (unsigned); POST /upload/played  evt  audio.memo.played","docker logs agent-pad-upload | grep playback   /voice 'played on pad'   (12:12:11.566)","dash"),
  (3,6,"evt.> projections","Read side projects every fact","Candystore + holocene-api (own consumer) feed /voice; only memo.failed pushes","curl -s 'http://127.0.0.1:8683/events?correlationid=<memo_id>'   mise run memo:trace 657e81ba",""),
  (4,3,"failed turn_timeout","VARIANT: turn exceeds the wall clock","/stop, journal failure_code=turn_timeout, evt invocation.failed, ack; watcher: agent_reply/turn_timeout","memo:trace STOPPED AT agent finished: turn timeout (300.1s)   /voice 'timed out after 300s'   memo:retry","accent"),
 ]

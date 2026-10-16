@@ -30,10 +30,28 @@ class Svg:
             out.append(f'<text class="s" x="{cx}" y="{ty}" text-anchor="middle">{esc(ln)}</text>')
         self.nodes.append("".join(out))
 
-    # orthogonal polyline with r=8 rounded corners
+    # orthogonal polyline with r=8 rounded corners; horizontal runs hop over
+    # the vertical runs of edges drawn before them
     def edge(self, pts, cls="", start=False, end=True):
         r = 8
+        verts = getattr(self, "_verts", None)
+        if verts is None:
+            verts = self._verts = []
+        def line_to(cur, tgt):
+            (cx, cy), (tx, ty) = cur, tgt
+            if abs(cy - ty) > 0.01 or abs(cx - tx) < 30:
+                return f" L{tx:g} {ty:g}"
+            lo, hi = sorted((cx, tx))
+            hops = sorted({vx for (vx, y1, y2) in verts if lo + 10 < vx < hi - 10 and y1 + 1 < cy < y2 - 1})
+            if not hops:
+                return f" L{tx:g} {ty:g}"
+            sgn = 1 if tx > cx else -1
+            out = ""
+            for vx in (hops if sgn > 0 else hops[::-1]):
+                out += f" L{vx - 6 * sgn:g} {cy:g} a6 6 0 0 {1 if sgn > 0 else 0} {12 * sgn} 0"
+            return out + f" L{tx:g} {ty:g}"
         d = f"M{pts[0][0]} {pts[0][1]}"
+        cur = pts[0]
         for i in range(1, len(pts) - 1):
             (x0, y0), (x1, y1), (x2, y2) = pts[i - 1], pts[i], pts[i + 1]
             def toward(ax, ay, bx, by, k):
@@ -44,8 +62,12 @@ class Svg:
             k2 = min(r, (abs(x2 - x1) + abs(y2 - y1)) / 2)
             ax, ay = toward(x1, y1, x0, y0, k1)
             bx, by = toward(x1, y1, x2, y2, k2)
-            d += f" L{ax:g} {ay:g} Q{x1} {y1} {bx:g} {by:g}"
-        d += f" L{pts[-1][0]} {pts[-1][1]}"
+            d += line_to(cur, (ax, ay)) + f" Q{x1} {y1} {bx:g} {by:g}"
+            cur = (bx, by)
+        d += line_to(cur, pts[-1])
+        for (xa, ya), (xb, yb) in zip(pts, pts[1:]):
+            if abs(xa - xb) < 0.01:
+                verts.append((xa, min(ya, yb), max(ya, yb)))
         acc = "accent" in cls
         me = f' marker-end="url(#{"aa" if acc else "a"}{self.sid})"' if end else ""
         ms = f' marker-start="url(#{"as"}{self.sid})"' if start else ""
@@ -86,4 +108,4 @@ class Svg:
                 + "</svg>")
 
 def figure(svg, caption, extra=""):
-    return f'<figure><div class="scroll">{svg}</div><figcaption>{caption}</figcaption>{extra}</figure>'
+    return f'<figure><div class="scroll">{svg}</div><p class="hint">Wider than the screen: swipe the diagram sideways.</p><figcaption>{caption}</figcaption>{extra}</figure>'
