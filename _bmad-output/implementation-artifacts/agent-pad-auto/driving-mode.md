@@ -1,0 +1,81 @@
+# Driving mode and steering-wheel control: sim proof and review
+
+Date 2026-10-16. Build under test: `a76492d` (driving mode) plus `4dd894a` (review fixes). Target: Honda IVI
+emulator `HOLOC_9_Honda_API33` (`emulator-5554`, Android 13, **user build**, 1280x720), app user 10, installed with the
+Play installer of record (`-i com.android.vending`). Screenshots are in [`driving/`](driving/).
+
+Short version: on the sim the pad stays up while the car moves, five agents and the record toggle work from keys alone,
+a memo recorded entirely by keys went through the whole pipeline and its reply played on the pad. What nobody can
+prove outside the Civic is which physical wheel buttons reach Android at all.
+
+## Proven on the sim
+
+| # | Claim | Evidence |
+| --- | --- | --- |
+| 1 | Parked layout: tabs, five tiles, record button. | `driving/01-parked.png` |
+| 2 | Parked to driving (emulator gRPC `sim_drive.sh drive`: gear D, 13 m/s): `Host UX requiresDO=true, mask=511` (fully restricted). The OS does **not** replace our activity: `topResumedActivity` stays `io.automaticai.holocene/.MainActivity`, tabs vanish, the page switches to the driving layout. | `driving/02-driving.png`, `dumpsys activity activities` |
+| 3 | **Negative control.** The same APK installed with no installer (`adb install`) is swapped for `com.android.systemui/.car.activity.ActivityBlockingActivity` ("You can't use this feature while driving") the moment the car moves. So the distractionOptimized tag is only honoured from a trusted installer on this image, exactly as researched. Restored with `-i com.android.vending` afterwards. | `driving/13-sideload-blocked-while-driving.png` |
+| 4 | Agent selection by key while driving (`sim_drive.sh key next/prev` = `cmd car_service inject-key`, which goes through Honda `VehicleInputService`): selection moves with wraparound, the host speaks the name (logcat `HoloceneWheel: say "Grolf"`, `say "Holocene"`; Google TTS dispatched). | `driving/03-driving-selected.png`, logcat |
+| 5 | Record by key: `key playpause` says "Recording for Holocene.", plays the start tone, then the mic opens (`tone START` 1.4-2 s later); the announcement is never in the memo. Switching agent while recording or arming is refused with an error tone and "Recording. Stop first." | `driving/05-recording.png`, logcat |
+| 6 | Whole memo by keys for `holocene-pm`: next, next, playpause, gRPC-injected utterance "Steering wheel test. Please reply with the words wheel works.", playpause again. Spoken "Sent to Holocene". `mise run memo:trace latest`: **COMPLETE in 70.0 s**, memo `de7e0540-fcab-516a-9459-c7c065913c03`, key `inbox/holocene-pm/2026/10/16/20261016T204426Z.ogg`, lane interactive, dispatched, invocation completed, reply rendered (`replies/2026/10/16/204554Z-holocene-pm-de7e0540-....ogg`), **played on the pad** (proxy log `playback started/ended`, UA `IVI-SYSTEM`, 19.6 s after render, 8.3 s). The transcript was "Steering wheel test. Play towards wheel arcs." (flite voice misheard by whisper; the pipeline does not depend on it). Peak -11 dBFS. | `driving/07-after-stop.png`, `memo:trace` |
+| 7 | Parked to driving **mid-recording**: the note keeps recording and the layout flips. (Before this feature the restriction cancelled it.) | `driving/09-park-to-drive-recording.png` |
+| 8 | Cancel: `key 86` (MEDIA_STOP) while recording discards the note, "Cancelled."; hold NEXT (600 ms, `input keyevent --longpress`, repeat events) toggles recording; MEDIA_STOP with no recording is passed through to the radio (unit-tested, not observed on the sim). | `driving/10-cancelled.png`, logcat |
+| 9 | Radio/media: with Agent Pad in front, `dumpsys media_session` shows `Media button session is io.automaticai.holocene/HoloceneWheel`. After HOME the session is gone (`Media button session is null`, stack = `FmMediaSession`, Bluetooth), and an injected `key next` goes through Honda `VehicleInputService.injectInputEvent` with our app not involved. Re-foreground re-acquires it. | `dumpsys media_session` |
+| 10 | Key inspector (Diagnostics, parked): next/prev/playpause show on screen, in logcat `HoloceneKeys`, and as `event=wheel_keys` lines in `docker logs agent-pad-upload` ("Uploaded 18 lines" 6 s after the last key; `route=activity` and `route=session` both seen). VOICE_ASSIST (231), CALL, VOLUME never reach the app, as researched. | `driving/11-diagnostics-mapping.png`, `driving/12-key-inspector-lines.png` |
+| 11 | Checks: `testDebugUnitTest` 92 tests, 0 failures (re-run clean), `lintDebug` clean (abortOnError), `assembleDebug`, pad `tsc --noEmit`. `android.car` is referenced only in `CarHost.kt` (plus the manifest `uses-library` and `useLibrary`; a comment in `HostUx.kt`). | gradle log |
+
+Driving state can be simulated on this user build through the emulator gRPC `CarService` (what `sim_drive.sh` does);
+`cmd car_service emulate-driving-state` still throws "requires non-user build". The October finding was too pessimistic.
+
+## What only the real Civic can prove
+
+1. **Which wheel buttons reach Android.** The sim injects through Honda's own `VehicleInputService`, so it proves the app
+   handles the keys that arrive, not that the Civic sends them. Expected from the Honda key table (unverified):
+   left `<` `>` = MEDIA_PREVIOUS (88) / MEDIA_NEXT (87); possibly FAST_FORWARD/REWIND on hold; F7 for Source. Talk (231), pick-up/hang-up,
+   volume, the selector wheel and the whole right side (cruise, lane keeping, cluster) never arrive.
+2. Whether the Honda radio source or AutoCore eats NEXT/PREVIOUS before they reach the window or our session (test with the radio playing and with it off).
+3. That a Play **internal-testing** install is honoured as distraction-optimized on the production firmware (`allowedAppInstallSources`), the one thing the sim can only imitate with `-i com.android.vending`.
+4. Rotary and D-pad: `inject-key` for DPAD/NAVIGATE targets display 0 and `inject-rotary` produced no event in the activity, so those mappings are unit-tested only. The Civic has no rotary anyway.
+5. Real-radio ducking and resume after announcements and after a reply.
+
+### In-car steps (about five minutes, parked)
+
+1. Install from Play internal testing (not a sideload; the tab bar shows an orange `SIDELOAD` badge if the source is wrong).
+2. Park, open **Diagnostics**, scroll to "Steering wheel control". Check "Install source: com.android.vending".
+3. Press every left-wheel button once: `<`, `>`, a long press of each, Source/Mode if there is one, play/pause if there is one. Repeat with the radio playing, then with the radio off (and once with Maps navigating).
+4. At the desk: `docker logs agent-pad-upload 2>&1 | grep wheel_key`. `route=activity` means the key reached the window; `route=session` means it came through the MediaSession. No line for a button means Android never sees it.
+5. If the useful keys differ from the defaults, use "Learn: ..." in Diagnostics (press the real button) or edit the mapping text (`KEY=ACTION`, `L` prefix = hold). Then drive-test the toggle with the pad in front: short `>` = next agent, hold `>` = record.
+6. If nothing arrives, the fallback is touch plus spoken feedback (five big tiles, one giant record target); wheel integration is then blocked by Honda's system-only key services, not by this app.
+
+## Adversarial review
+
+Severity: blocker, major, minor. No blockers found. Status says whether it is fixed in `4dd894a`.
+
+| Sev | Finding | Detail and evidence | Status |
+| --- | --- | --- | --- |
+| major | A note in progress is silently discarded when the activity is paused. | `AgentPadHost.onPause` tears the page down when the mic is live. Reproduced: recording, HOME, return: no send, no spoken notice, page back at READY. A Maps prompt, a call UI or the Honda Source key mid-dictation loses the memo. | open. Fix: stop and hand the audio to a native outbox/upload instead of discarding, or at least speak and show "Note discarded" |
+| major | Reply playback takes permanent audio focus. | The WebView `<audio>` requests `AUDIOFOCUS_GAIN` with `USAGE_MUSIC` (`MediaFocusControl: requestAudioFocus ... USAGE_MEDIA, AUDIOFOCUS_GAIN`). A radio app gets a permanent loss and may not resume after the reply. Announcements and tones are fine (transient may-duck, `USAGE_ASSISTANT`; attenuation seen in `AudioFocusControl`). | open. Fix: play replies natively as `USAGE_ASSISTANT` with transient may-duck (already noted as a follow-up) |
+| minor | Second wheel press while arming delayed the mic by ~3 s. | `QUEUE_FLUSH` dropped "Recording for X" and its continuation waited for the 4 s fallback: toggle at 41.95 s, `tone START` at 46.25 s, so the first words of the note were clipped. | fixed (`onStop` releases the continuation; re-measured 1.4 s) |
+| minor | Key-log lines stranded when the activity pauses. | `onPause` cancelled the 6 s upload timer; pressing a button that opens the car's own UI lost the upload. | fixed (upload on pause) |
+| minor | Touch can retarget during arming. | The tile is disabled only while `recording`; during the 1-4 s announcement a tap changes the shown agent while the memo goes to the agent snapshotted at start. The wheel path is locked correctly. | open (disable tiles while `arming`) |
+| minor | Short tap read as a hold under lag. | Press length is measured at arrival, not from `KeyEvent.eventTime`, on purpose: Honda's injection stamps `eventTime` in nanoseconds (`eventTime=77860000000`). Observed: a gRPC hw key whose UP arrived 700 ms after DOWN became TOGGLE_RECORD. A laggy head unit (Honda logs a 500 ms pre-dispatch timeout on the first key) can do the same to a `>` tap. Not destructive: it announces and starts a note, the cancel key discards it. | open; consider raising `LONG_MS` or requiring a repeat event for hold |
+| minor | Unselected tile labels are small and dim in the driving layout. | `clamp(20px,3.6vh,32px)` at 50% opacity, about 21 px at 590 px height. The hero already shows the selection at 41 px, so eyes-free use is fine; glanceable use is weaker. | open |
+| minor | Wheel keys go to Agent Pad, not the radio, while the pad is in front. | By design: the MediaSession gives the car's media-button route to the pad while resumed, released in `onPause` (proven, item 9). Mitigation is the Diagnostics toggle (parked only). | accepted |
+| minor | TTS stutter on a fast rotary spin. | Select debounce 150 ms (scroll 120 ms), each accepted step flushes and re-speaks the name; a long spin chatters then settles on the final name. Does not queue up. The Civic has no rotary. | open (trailing announcement) |
+| minor | Mic permission asked while driving if it was refused while parked. | `startFor` falls back to `requestPermissions`; the dialog is a setup flow (NO_SETUP). | open |
+| minor | Key inspector noise. | In Diagnostics every unconsumed media key is logged twice (`activity`, then `session`), and the "session held" line is stale after render. | open |
+
+Checked and found sound: Diagnostics is unreachable while driving (tabs `GONE`, `showView(false)` refused, `applyMode` returns to the pad, fixture
+probes and diagnostic intents guarded by `unrestricted`); an unknown or disconnected car host fails closed to the driving layout;
+restriction changes no longer cancel a pad recording; the 5-minute recorder cap auto-stops and sends; wheel selection is refused while recording or arming
+and the memo target is snapshotted at start; unmapped keys, VOLUME, HOME, BACK, CALL and VOICE_ASSIST are never swallowed; UP is consumed with DOWN; the
+phone build is unaffected (no car host: parked layout, no session, speech only after wheel use).
+
+Play policy reminder: a non-driving-category app with a distractionOptimized activity is rejected in open testing and production
+(quality criteria DD-2 and DD-3). Keep this build on internal or closed testing and drop the meta-data before any wider release.
+
+## Environment notes
+
+The sim was shared with the silent-mic workflow, which relaunched the app and restarted the emulator several times during this run (a
+windowed start while a headless one was still alive hung on a crash dialog and had to be killed). Evidence was therefore collected in short
+bursts; every claim above was observed in a single uninterrupted sequence. The sim is left windowed, parked, with Agent Pad open.
