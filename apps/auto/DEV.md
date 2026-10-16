@@ -44,6 +44,9 @@ mise run auto:sim:mic-check   # runs the in-app mic probe + inspects the host's 
 # SILENT (rms 2.0 peak 2): emulator audio stream stuck (1 corked qemu stream) -> run mise run auto:sim:stop && mise run auto:sim
 ```
 
+Pad state that must survive a restart lives natively (`PadPrefs`, `HoloceneNative.getPref/setPref`), not in the WebView's
+localStorage: that is empty after every cold start of the app (ignition, `am force-stop`), which used to make the pad replay
+the newest replies and re-publish `audio.memo.played` after each restart. Today that is only the last-played-reply marker.
 `auto:sim` runs it after a cold boot and warns (`SIM_MIC_CHECK=0` skips, headless skips). It takes about 10 s.
 Verdicts: `OK`; `SILENT ... stream stuck` (restart the sim); `SILENT ... passthrough is off` (the check
 turns `hostmicon` on and retries once by itself); `SILENT ... host default microphone is muted`;

@@ -119,22 +119,44 @@ mics (-72.2 vs -68) and 0 dB on speech.
 - Tests: `mise run memo:test` (watcher 41, upload-proxy 27), `pnpm test` in the API (65, incl. 2 new), `apps/auto/tools` python tests (60, 4 skipped, incl. 1 new),
   `./gradlew testDebugUnitTest lintDebug` green, both typechecks green.
 
-### Open risks (not changed, need a decision or a real car)
+### Open risks, and what was done about them (follow-up pass, same day)
 
-1. **`getMaxAmplitude` on the real Civic is unverified.** If the car's audio HAL returns 0 for every window, every note would be
-   held back as silent. In the parked layout "send anyway" recovers (the watcher's ffmpeg measurement is ground truth and would pass a
-   real recording), but the **driving layout hides the silent banner and "send anyway"**: the driver only hears "Nothing heard, not sent".
-   Before shipping to the car: record one normal note on the real head unit and confirm `device heard peak` is sane in `memo:trace`.
-   If it reads -96 on speech, make the hold-back advisory in driving mode (upload anyway, let the watcher decide).
-2. **`rms_dbfs` from the device is the RMS of 100 ms window peaks**, not true RMS (-19 dBFS device vs -33 dBFS watcher mean on the same
-   memo). It is documented in `CaptureLevel.kt`, but two different "rms/mean" numbers on one trace line will confuse; consider
-   renaming it `window_peak_rms_dbfs` in a later schema bump.
-3. **Any recording under ~100 ms** (an accidental double tap) has no samples, reads -96 dBFS and is held back with the "digital
-   silence" message. Harmless, slightly misleading.
-4. **`mic-check` force-stops the app**, which loses the WebView's lazily-flushed `localStorage` (the pad's "last reply played"
-   marker). After each run the pad replays the newest reply and publishes a duplicate `audio.memo.played` fact for an old memo
-   (seen 3 times today). Not part of this change; worth moving that marker to the native side or making the probe not force-stop.
-5. The gRPC `injectAudio` crash and the stuck-stream-after-a-killed-stream behaviour are emulator bugs we only work around (DEV.md).
+1. **`getMaxAmplitude` on the real Civic is unverified: FIXED so it cannot matter.** The pad's silence verdict is now policy in
+   `apps/agent-pad/src/capture.ts` (`silenceAction`, node tests, `mise run pad:test`): parked and silent -> hold back with "send
+   anyway" (unchanged); **driving and silent -> never held back**: the note is uploaded with `sent_anyway: true` and the watcher's
+   ffmpeg measurement (ground truth) decides. A car HAL that reports amplitude 0 for every window can therefore no longer swallow a
+   note the driver dictates. The driving state is read from a ref at the moment the recording ends (the car may start moving
+   mid-note). Proof on the sim, host mic off, `sim_drive.sh drive` (driving layout, `silent-mic/06`, `07`): Stop uploaded the note
+   (proxy `upload ... sent_anyway: true`, `record_silent` NOT published), the pad showed SENT, memo `5ccbb641`: watcher
+   `silent_audio` 1.7 s after `received`, `memo:trace` verdict `STOPPED AT transcribe: SILENT MICROPHONE ... [device heard peak -72
+   dBFS, window avg -72 dBFS]`. Still worth one real note on the head unit to see what `device heard peak` reads on speech.
+2. **Device `rms_dbfs` is the RMS of window peaks: RELABELLED, no schema bump.** `/voice` and `memo:trace` now print `window avg`
+   (not `rms`) for the device number, so `device heard peak -10 dBFS, window avg -19 dBFS` no longer looks like a second reading of
+   the watcher's `mean -33 dBFS`. The wire field stays `rms_dbfs` (the schema description already says it is the RMS of per-window
+   peaks).
+3. **A recording under 5 windows (about 0.5 s) is no longer called digital silence: FIXED.** `isSilent` returns false when the
+   summary carries fewer than `MIN_JUDGEABLE_SAMPLES` = 5 samples, so an accidental double tap is sent (and the watcher judges it)
+   instead of raising the "digital silence" banner. Test added.
+4. **After every `mic-check` the pad replayed the newest reply and re-published `audio.memo.played`: ROOT-CAUSED AND FIXED, and it was
+   not about `mic-check`.** The WebView's `localStorage` is empty after EVERY cold start of the app: with the marker on disk (leveldb
+   log inspected over `run-as`), the next page load reads `localStorage.length == 0` and `lastDoneReply` null (checked over the
+   WebView devtools socket), so the pad ran its first-run path and replayed everything newer than 30 minutes. Plain
+   `am force-stop` + `am start` reproduced it with no mic-check involved, i.e. it also happens at every car ignition. Fix: the
+   marker is kept natively. `PadPrefs` (SharedPreferences `pad`, `commit()`, whitelisted key, capped value, JUnit) behind
+   `HoloceneNative.getPref/setPref`; the page reads/writes it through `durable.ts` (host first, localStorage fallback in a browser or
+   on an old host; node tests). Proof: after the first marker write, three consecutive `force-stop` + `start` cycles produced no
+   `playback` events for old replies (only a genuinely new reply played once), where before every start replayed two. The first
+   attempt (sending the app HOME before force-stop so Chromium flushes) was wrong twice over: the flush is not the problem, and HOME
+   raises the Honda "Connect the Device" dialog so the next probe never recorded; it was backed out.
+   **Not fixed, flagged:** the IndexedDB outbox (unsent recordings) lives in the same WebView storage. If that is also reset by a
+   cold start, a note queued offline is lost when the app restarts. Needs its own test with a queued note before trusting it.
+5. **`auto:sim:mic-check` came back INCONCLUSIVE after the driving-mode work: FIXED.** A car host reports "restricted" first and
+   "unrestricted" about 1.7 s after start, just after the 1.5 s `HOST_SETTLE_MS`; the diagnostic intent was refused in that gap and the
+   check timed out after 45 s. `MainActivity.scheduleDiagnosticIntent` now waits (up to 6 s more, 500 ms steps) for the host to
+   become unrestricted before refusing. Verified: with the fix `mic-check` ran and correctly reported a REAL stuck stream
+   (`SILENT (rms 2.0 peak 2): emulator audio stream stuck (2 corked qemu streams)`), and `auto:sim:stop && auto:sim` ended with
+   `OK (rms 105.3 peak 480)`.
+6. The gRPC `injectAudio` crash and the stuck-stream-after-a-killed-stream behaviour are emulator bugs we only work around (DEV.md).
 
 ## Commits
 
@@ -143,5 +165,6 @@ See `git log` for this file's commit: "review(voice): ..." touching `apps/api/sr
 
 ## End state
 
-Simulator running windowed (`qemu-system-x86_64`, not headless), `hostmicon`, `auto:sim:mic-check` = OK, Holocene Auto open on the
+(Follow-up pass: simulator restarted cold with `auto:sim`, windowed, `mic-check` OK, `hostmicon`, parked, `silent-mic/08-parked-again.png`.)
+Earlier pass: simulator running windowed (`qemu-system-x86_64`, not headless), `hostmicon`, `auto:sim:mic-check` = OK, Holocene Auto open on the
 Agent Pad, parked layout (`silent-mic/05-final-state.png`). holocene-api restarted with the /voice fix (`/health` ok).

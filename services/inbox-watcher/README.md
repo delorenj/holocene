@@ -328,8 +328,9 @@ and `mise run memo:list` has a LANE column.
 A silent recording reads as its own outcome too: the list and header show a level chip (`max -73 dBFS · silent`, red when
 silent), the stage label is `Silent microphone` (`No words recognised` for audible audio Whisper could not read), the
 **Transcribed** hop is failed with `silent_audio` and the measured level, and the **Recorded and uploaded** hop shows
-`device heard peak -71 dBFS` when the pad reports its own capture level (`data.capture.peak_dbfs` / `rms_dbfs` on the
-uploaded fact). `memo:trace` prints an `audio_level` line and ends
+`device heard peak -71 dBFS, window avg -80 dBFS` when the pad reports its own capture level (`data.capture.peak_dbfs` /
+`rms_dbfs` on the uploaded fact; the device's `rms_dbfs` is the RMS of its 100 ms window peaks, so it reads louder than the
+watcher's true mean and is labelled "window avg"). `memo:trace` prints an `audio_level` line and ends
 `STOPPED AT transcribe: SILENT MICROPHONE - recording is silent (max -73 dBFS, ...)`.
 
 A turn timeout reads as its own outcome everywhere: the list stage label is `Agent turn timed out after 300s`,

@@ -158,6 +158,7 @@ class AgentPadHost(
     private val player = ReplyPlayer(activity.applicationContext).also { p ->
         p.onPhase = { id, phase, detail -> js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'$phase',${org.json.JSONObject.quote(detail)})") }
     }
+    private val prefs = PadPrefs.forContext(activity)
     private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
         rec.onAutoStopped = { activity.runOnUiThread { finishNative() } }
         // Live input level for the page's meter: 0..1 about every 100 ms while a note is being recorded.
@@ -372,6 +373,11 @@ class AgentPadHost(
 
         /** The layout and UX flags for this moment, as JSON; the page also receives later changes through __hnHost. */
         @JavascriptInterface fun hostState(): String = hostJson
+
+        /** Durable page state that must outlive a cold start (the WebView's localStorage does not); see [PadPrefs]. */
+        @JavascriptInterface fun getPref(key: String): String = prefs.get(key)
+
+        @JavascriptInterface fun setPref(key: String, value: String): Boolean = prefs.set(key, value)
 
         /** The page reports what happened (selected, recording, sent...) as JSON; the host speaks and plays tones. */
         @JavascriptInterface fun padEvent(json: String) {

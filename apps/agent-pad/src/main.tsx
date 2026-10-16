@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, replyExt, stripDataUrl } from './flight'
 
@@ -40,6 +41,12 @@ const LS_EVENTS = 'agentpad.pendingEvents'
 function lsGet(k: string): string {
   try { return localStorage.getItem(k) || '' } catch { return '' }
 }
+// The last-played-reply marker lives in the host's SharedPreferences when there is one (localStorage is wiped by a cold start).
+function safeLs(): Storage | undefined {
+  try { return localStorage } catch { return undefined }
+}
+const markerGet = () => durableGet(LS_LAST_DONE, (window as any).HoloceneNative, safeLs())
+const markerSet = (v: string) => durableSet(LS_LAST_DONE, v, (window as any).HoloceneNative, safeLs())
 function lsSet(k: string, v: string) {
   try { localStorage.setItem(k, v) } catch { /* storage blocked */ }
 }
@@ -314,7 +321,7 @@ function App() {
   // ---- playback: an ordered queue of every unseen reply, played one after the other ----
   // lastDone is the newest reply key whose playback finished, failed or was skipped. It is persisted, so a
   // restart (the car app restarts at every ignition) resumes from there instead of dropping or replaying.
-  const lastDone = useRef<string>(lsGet(LS_LAST_DONE))
+  const lastDone = useRef<string>(markerGet())
   const queue = useRef<string[]>([])
   const enqueued = useRef<Set<string>>(new Set())
   const loadFails = useRef<Record<string, number>>({})
@@ -332,7 +339,7 @@ function App() {
   const finish = useCallback((key: string) => {
     if (key > lastDone.current) {
       lastDone.current = key
-      lsSet(LS_LAST_DONE, key)
+      markerSet(key)
     }
     queue.current = queue.current.filter((k) => k !== key)
     playingKey.current = ''
@@ -451,7 +458,7 @@ function App() {
             if (!firstRun && age < 6 * 3600 * 1000) {
               beacon(key, 'skipped', { error: `stale: rendered ${Math.round(age / 60000)} min before the pad saw it` })
             }
-            if (key > lastDone.current) { lastDone.current = key; lsSet(LS_LAST_DONE, key) }
+            if (key > lastDone.current) { lastDone.current = key; markerSet(key) }
             continue
           }
           queue.current.push(key)

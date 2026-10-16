@@ -38,3 +38,9 @@ test('level math: floor, full scale and meter range', () => {
   assert.equal(meter01(-60), 0)
   assert.equal(meter01(0), 1)
 })
+
+test('a blip too short to judge is sent, not called digital silence', () => {
+  assert.equal(silenceAction({ ...silent, samples: 2 }, false), 'send')
+  assert.equal(silenceAction({ ...silent, samples: 5 }, false), 'hold')
+  assert.equal(silenceAction({ ...silent, samples: 60 }, false), 'hold')
+})

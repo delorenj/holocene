@@ -197,18 +197,22 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun scheduleDiagnosticIntent(intent: Intent) {
+    private fun scheduleDiagnosticIntent(intent: Intent, attempt: Int = 0) {
         val mic = intent.getBooleanExtra(EXTRA_RUN_MIC, false)
         val asr = intent.getBooleanExtra(EXTRA_RUN_ASR, false)
         if (mic == asr) return
         timers.postDelayed({
-            probe("diagnostic_intent", "mic=$mic asr=$asr unrestricted=$unrestricted")
+            // A car host reports "restricted" first and "unrestricted" a moment later (about 1.7 s after start on the
+            // Honda image, just after HOST_SETTLE_MS). Wait for it instead of refusing the probe in that gap, which made
+            // auto:sim:mic-check time out as INCONCLUSIVE.
+            if (!unrestricted && attempt < HOST_WAIT_ATTEMPTS) { scheduleDiagnosticIntent(intent, attempt + 1); return@postDelayed }
+            probe("diagnostic_intent", "mic=$mic asr=$asr unrestricted=$unrestricted attempt=$attempt")
             when {
                 mic && unrestricted -> microphoneProbe()
                 asr && unrestricted -> recognitionProbe()
                 else -> report("Diagnostic intent refused: host restricted or unknown")
             }
-        }, HOST_SETTLE_MS)
+        }, if (attempt == 0) HOST_SETTLE_MS else HOST_WAIT_STEP_MS)
     }
 
     private fun probe(event: String, detail: String = "") {
@@ -882,6 +886,8 @@ class MainActivity : Activity() {
         const val SAMPLE_RATE = 16000
         const val MIC_WINDOW_MS = 6000L
         const val HOST_SETTLE_MS = 1500L
+        const val HOST_WAIT_STEP_MS = 500L
+        const val HOST_WAIT_ATTEMPTS = 12 // 6 s more
         const val ASR_BOUND_MS = 15000L
         const val TTS_BOUND_MS = 10000L
     }

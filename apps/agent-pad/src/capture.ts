@@ -16,7 +16,10 @@ export function normCapture(c: unknown, source: string): Capture | undefined {
   return { peak_dbfs: round1(o.peak_dbfs), rms_dbfs: round1(o.rms_dbfs), samples: typeof o.samples === 'number' ? o.samples : undefined, source: o.source || source, sent_anyway: o.sent_anyway }
 }
 
-export const isSilent = (c?: Capture) => !!c && c.peak_dbfs < SILENCE_DBFS
+// Fewer 100 ms windows than this (an accidental double tap) is too short to call silent: no window may have
+// carried speech yet, and the "digital silence" banner would be a misleading verdict. Unknown, so it is sent.
+export const MIN_JUDGEABLE_SAMPLES = 5
+export const isSilent = (c?: Capture) => !!c && c.peak_dbfs < SILENCE_DBFS && !(typeof c.samples === 'number' && c.samples < MIN_JUDGEABLE_SAMPLES)
 
 /**
  * What to do with a finished recording.
