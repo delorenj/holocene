@@ -127,6 +127,8 @@ class AgentPadHost(
     private val state = PadState()
     private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
         rec.onAutoStopped = { activity.runOnUiThread { finishNative() } }
+        // Live input level for the page's meter: 0..1 about every 100 ms while a note is being recorded.
+        rec.onLevel = { level -> js(String.format(java.util.Locale.ROOT, "window.__hnLevel&&window.__hnLevel(%.3f)", level)) }
     }
 
     fun show() {
@@ -280,7 +282,9 @@ class AgentPadHost(
         val bytes = recorder.stop()
         state.micLive = false
         val b64 = if (bytes == null) "" else Base64.encodeToString(bytes, Base64.NO_WRAP)
-        js("window.__hnStopped && window.__hnStopped('$b64', 'audio/ogg')")
+        // Third argument: peak/rms in dBFS so the page can refuse a recording that heard nothing.
+        val capture = recorder.lastSummary?.toJson() ?: "null"
+        js("window.__hnStopped && window.__hnStopped('$b64', 'audio/ogg', $capture)")
     }
 
     private fun audioOnly(request: PermissionRequest) =

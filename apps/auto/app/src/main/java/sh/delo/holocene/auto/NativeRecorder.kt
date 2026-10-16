@@ -2,6 +2,8 @@ package sh.delo.holocene.auto
 
 import android.content.Context
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.File
 
@@ -9,6 +11,30 @@ import java.io.File
 class NativeRecorder(private val context: Context) {
     private var rec: MediaRecorder? = null
     private var file: File? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var stats: CaptureStats? = null
+
+    /** Level of the last [CaptureLevel.SAMPLE_MS] window, 0..1 (see [CaptureLevel.meter01]); main thread. */
+    var onLevel: ((Double) -> Unit)? = null
+
+    /** Peak/RMS of the most recent recording, set by [stop]/[cancel] and kept until the next [start]. */
+    var lastSummary: CaptureStats? = null
+        private set
+
+    private val sampler = object : Runnable {
+        override fun run() {
+            if (rec == null) return
+            sampleOnce()
+            handler.postDelayed(this, CaptureLevel.SAMPLE_MS)
+        }
+    }
+
+    private fun sampleOnce() {
+        val r = rec ?: return
+        val amplitude = try { r.maxAmplitude } catch (e: RuntimeException) { return }
+        stats?.add(amplitude)
+        onLevel?.invoke(CaptureLevel.meter01(amplitude))
+    }
 
     /** Fired when MediaRecorder ends the note by itself (max duration); the caller should [stop] and deliver it. */
     var onAutoStopped: (() -> Unit)? = null
@@ -16,6 +42,7 @@ class NativeRecorder(private val context: Context) {
     /** Returns null on success, else a short error name. */
     fun start(): String? {
         cancel()
+        lastSummary = null
         var f: File? = null
         var r: MediaRecorder? = null
         return try {
@@ -36,6 +63,9 @@ class NativeRecorder(private val context: Context) {
             r.start()
             rec = r
             file = f
+            r.maxAmplitude // the first call only resets the window; its value is meaningless
+            stats = CaptureStats()
+            handler.postDelayed(sampler, CaptureLevel.SAMPLE_MS)
             null
         } catch (e: Exception) {
             Log.w(TAG, "start failed: ${e.javaClass.simpleName}: ${e.message}")
@@ -49,6 +79,10 @@ class NativeRecorder(private val context: Context) {
     fun stop(): ByteArray? {
         val r = rec ?: return null
         val f = file
+        handler.removeCallbacks(sampler)
+        sampleOnce() // the tail of the note since the last tick
+        lastSummary = stats
+        stats = null
         rec = null
         file = null
         return try {

@@ -33,6 +33,71 @@ class UploadedFact(unittest.TestCase):
             self.skipTest("jsonschema not installed")
 
 
+class CaptureLevels(unittest.TestCase):
+    GOOD = {"peak_dbfs": -12.34, "rms_dbfs": -30.0, "samples": 50, "source": "native"}
+
+    def test_parse_accepts_header_json_and_dicts(self):
+        import json
+        c = up.parse_capture(json.dumps(self.GOOD))
+        self.assertEqual((c["peak_dbfs"], c["rms_dbfs"], c["samples"], c["source"]), (-12.3, -30.0, 50, "native"))
+        self.assertEqual(up.parse_capture(self.GOOD), c)
+        self.assertTrue(up.parse_capture({**self.GOOD, "sent_anyway": True})["sent_anyway"])
+
+    def test_parse_drops_malformed_levels(self):
+        for bad in (None, "", "not json", "[1]", {}, {"peak_dbfs": "x", "rms_dbfs": -3}, {"peak_dbfs": True, "rms_dbfs": -3},
+                    {"peak_dbfs": float("nan"), "rms_dbfs": -3}, {"peak_dbfs": -3}):
+            self.assertIsNone(up.parse_capture(bad), bad)
+
+    def test_parse_clamps_absurd_values(self):
+        c = up.parse_capture({"peak_dbfs": -9999, "rms_dbfs": 99})
+        self.assertEqual((c["peak_dbfs"], c["rms_dbfs"]), (-120.0, 6.0))
+
+    def test_uploaded_fact_carries_capture_only_when_known(self):
+        env = up.build_uploaded_envelope(KEY, 10, "audio/ogg", "ua", 1.0, up.parse_capture(self.GOOD))
+        self.assertEqual(env["data"]["capture"]["peak_dbfs"], -12.3)
+        self.assertNotIn("capture", up.build_uploaded_envelope(KEY, 10, "audio/ogg", "ua", 1.0)["data"])
+
+    def test_uploaded_fact_with_capture_passes_the_contract(self):
+        if not BB_HOOKS.is_dir():
+            self.skipTest("bloodbank repo not available")
+        sys.path.insert(0, str(BB_HOOKS))
+        from core import validate
+        env = up.build_uploaded_envelope(KEY, 10, "audio/ogg", "ua", 1.0, up.parse_capture(self.GOOD))
+        validate.assert_contract(env)
+        try:
+            validate.validate_envelope(env)
+        except validate.ValidationUnavailable:
+            self.skipTest("jsonschema not installed")
+
+    def test_silent_recording_becomes_a_terminal_record_failure_with_levels(self):
+        env = up.build_client_envelope({"event": "record_silent", "key": KEY, "capture": {"peak_dbfs": -84.0, "rms_dbfs": -90.0}}, "ua")
+        d = env["data"]
+        self.assertEqual((d["stage"], d["error_code"], d["retryable"]), ("record", "silent_capture", False))
+        self.assertEqual(d["capture"]["peak_dbfs"], -84.0)
+        self.assertIn("no sound reached the microphone", d["error_message"])
+        self.assertEqual(env["correlationid"], mc.memo_id_for(KEY))
+
+    def test_silent_fact_without_levels_still_publishes(self):
+        env = up.build_client_envelope({"event": "record_silent", "key": KEY}, "ua")
+        self.assertEqual(env["data"]["error_code"], "silent_capture")
+        self.assertNotIn("capture", env["data"])
+
+    def test_silent_fact_passes_the_contract(self):
+        if not BB_HOOKS.is_dir():
+            self.skipTest("bloodbank repo not available")
+        sys.path.insert(0, str(BB_HOOKS))
+        from core import validate
+        env = up.build_client_envelope({"event": "record_silent", "key": KEY, "capture": {"peak_dbfs": -84.0, "rms_dbfs": -90.0}}, "ua")
+        validate.assert_contract(env)
+        try:
+            validate.validate_envelope(env)
+        except validate.ValidationUnavailable:
+            self.skipTest("jsonschema not installed")
+
+    def test_stopped_event_publishes_nothing(self):
+        self.assertIsNone(up.build_client_envelope({"event": "record_stopped", "key": KEY, "capture": self.GOOD}, "ua"))
+
+
 MEMO = mc.memo_id_for(KEY)
 REPLY = f"replies/2026/10/15/201846Z-holocene-pm-{MEMO}.ogg"
 
@@ -120,6 +185,31 @@ class HttpBehaviour(unittest.TestCase):
     def test_complete_upload_is_accepted(self):
         self.assertIn(b" 200 ", self.put(KEY, b"OggS" + b"\0" * 100).split(b"\r\n")[0])
 
+    def test_capture_header_reaches_the_uploaded_fact(self):
+        import json
+        captured = []
+        real = up.emit_uploaded_async
+        up.emit_uploaded_async = lambda *a, **k: captured.append(a)
+        try:
+            cap = json.dumps({"peak_dbfs": -20.5, "rms_dbfs": -33.0, "samples": 12})
+            body = b"OggS" + b"\0" * 100
+            head = (f"PUT /upload/{KEY} HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\nContent-Type: audio/ogg\r\n"
+                    f"X-Holocene-Capture: {cap}\r\nConnection: close\r\n\r\n").encode()
+            self.assertIn(b" 200 ", self.raw(head + body).split(b"\r\n")[0])
+        finally:
+            up.emit_uploaded_async = real
+        self.assertEqual(captured[-1][5]["peak_dbfs"], -20.5)
+
+    def test_upload_without_capture_header_still_works(self):
+        captured = []
+        real = up.emit_uploaded_async
+        up.emit_uploaded_async = lambda *a, **k: captured.append(a)
+        try:
+            self.assertIn(b" 200 ", self.put(KEY, b"OggS" + b"\0" * 100).split(b"\r\n")[0])
+        finally:
+            up.emit_uploaded_async = real
+        self.assertIsNone(captured[-1][5])
+
     def test_truncated_upload_is_rejected_not_stored_as_a_complete_memo(self):
         n0 = len(self.published)
         out = self.put(KEY, b"OggS" + b"\0" * 96, claimed=1000)
@@ -161,6 +251,18 @@ class ClientEvents(unittest.TestCase):
     def test_skipped_playback_is_a_retryable_playback_failure(self):
         env = up.build_playback_envelope({"reply_key": REPLY, "phase": "skipped", "error": "stale"}, "ua")
         self.assertEqual((env["data"]["stage"], env["data"]["error_code"]), ("playback", "not_played"))
+
+
+class WheelKeyLines(unittest.TestCase):
+    def test_only_bounded_strings_survive(self):
+        lines = up.wheel_key_lines({"event": "wheel_keys", "lines": ["a key\nline", 5, None, "x" * 1000] + ["y"] * 500})
+        self.assertEqual(len(lines), up.WHEEL_KEYS_MAX_LINES - 2)  # 200 taken, 2 of them not strings
+        self.assertEqual(lines[0], "a key line")
+        self.assertTrue(all(len(x) <= 300 for x in lines))
+
+    def test_garbage_is_ignored(self):
+        self.assertEqual(up.wheel_key_lines({"lines": "nope"}), [])
+        self.assertEqual(up.wheel_key_lines({}), [])
 
 
 if __name__ == "__main__":

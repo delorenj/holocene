@@ -97,6 +97,10 @@ run = "'{{config_root}}/apps/auto/tools/sim_start.sh' ${@}"
 description = "Stop the simulator (saves the quick-boot snapshot)"
 run = "'{{config_root}}/apps/auto/tools/sim_stop.sh'"
 
+[tasks."auto:sim:mic-check"]
+description = "Does the simulator mic deliver sound? Runs the app's mic probe + inspects qemu capture streams; prints OK / SILENT verdict"
+run = "/usr/bin/python3 -B '{{config_root}}/apps/auto/tools/sim_mic_check.py' ${@}"
+
 [tasks."auto:dev"]
 description = "Build the debug APK, install on the simulator, restart the app (--logs, --grant-mic)"
 run = "'{{config_root}}/apps/auto/tools/app_dev.sh' ${@}"

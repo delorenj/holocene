@@ -42,6 +42,59 @@ function lsSet(k: string, v: string) {
   try { localStorage.setItem(k, v) } catch { /* storage blocked */ }
 }
 
+// ---- capture level: did any sound reach the microphone? (the same -60 dBFS line the watcher uses) ----
+// A recording whose loudest moment stays under SILENCE_DBFS is digital silence (a stuck emulator capture stream,
+// a muted or unplugged mic), not speech. It is held back instead of uploaded: the driver hears about it now,
+// not as an "empty_transcript" 40 seconds later.
+const SILENCE_DBFS = -60
+const FLOOR_DBFS = -96
+type Capture = { peak_dbfs: number; rms_dbfs: number; samples?: number; source?: string; sent_anyway?: boolean }
+const toDb = (x: number) => (x > 0 ? Math.max(FLOOR_DBFS, 20 * Math.log10(x)) : FLOOR_DBFS)
+const meter01 = (db: number) => Math.min(1, Math.max(0, (db - SILENCE_DBFS) / -SILENCE_DBFS))
+const round1 = (x: number) => Math.round(x * 10) / 10
+function normCapture(c: unknown, source: string): Capture | undefined {
+  const o = c as Partial<Capture> | null
+  if (!o || typeof o.peak_dbfs !== 'number' || typeof o.rms_dbfs !== 'number' || !isFinite(o.peak_dbfs) || !isFinite(o.rms_dbfs)) return undefined
+  return { peak_dbfs: round1(o.peak_dbfs), rms_dbfs: round1(o.rms_dbfs), samples: typeof o.samples === 'number' ? o.samples : undefined, source: o.source || source, sent_anyway: o.sent_anyway }
+}
+const isSilent = (c?: Capture) => !!c && c.peak_dbfs < SILENCE_DBFS
+
+// Browser-side level reader for the getUserMedia path (a normal browser, or the WebView fallback).
+function startAnalyser(stream: MediaStream, onLevel: (l: number) => void): { stop(): Capture | undefined } | null {
+  const AC = window.AudioContext || (window as any).webkitAudioContext
+  if (!AC) return null
+  try {
+    const ctx: AudioContext = new AC()
+    void ctx.resume?.()
+    const src = ctx.createMediaStreamSource(stream)
+    const an = ctx.createAnalyser()
+    an.fftSize = 2048
+    src.connect(an) // deliberately not to the destination: no speaker feedback
+    const buf = new Float32Array(an.fftSize)
+    let peak = 0, sumSq = 0, n = 0, polls = 0
+    const t = window.setInterval(() => {
+      an.getFloatTimeDomainData(buf)
+      let p = 0
+      for (let i = 0; i < buf.length; i++) { const v = buf[i]; if (Math.abs(v) > p) p = Math.abs(v); sumSq += v * v }
+      n += buf.length
+      polls++
+      if (p > peak) peak = p
+      onLevel(meter01(toDb(p)))
+    }, 50)
+    return {
+      stop() {
+        window.clearInterval(t)
+        const running = ctx.state === 'running' // a suspended context reads all zeros: that is "unknown", not "silent"
+        try { src.disconnect(); void ctx.close() } catch { /* already closed */ }
+        if (!running || polls === 0) return undefined
+        return { peak_dbfs: round1(toDb(peak)), rms_dbfs: round1(toDb(Math.sqrt(sumSq / Math.max(1, n)))), samples: polls, source: 'analyser' }
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
 // ---- memo id: the same uuid5(URL, "s3://holocene-auto/<key>") the proxy and the watcher derive ----
 async function memoIdFor(key: string): Promise<string | null> {
   try {
@@ -87,7 +140,7 @@ async function listRepliesAfter(startAfter: string): Promise<string[]> {
   return out
 }
 
-async function putObject(key: string, blob: Blob): Promise<void> {
+async function putObject(key: string, blob: Blob, capture?: Capture): Promise<void> {
   // Upload via the proxy (same origin) so credentials stay server-side
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), 90000)
@@ -95,7 +148,8 @@ async function putObject(key: string, blob: Blob): Promise<void> {
     const res = await fetch(`/upload/${key}`, {
       method: 'PUT',
       body: blob,
-      headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+      // The capture levels ride along as a header; the proxy puts them in audio.memo.uploaded data.capture.
+      headers: { 'Content-Type': blob.type || 'application/octet-stream', ...(capture ? { 'X-Holocene-Capture': JSON.stringify(capture) } : {}) },
       signal: ctl.signal,
     })
     if (!res.ok) throw new Error(`PUT ${key}: ${res.status}`)
@@ -111,7 +165,7 @@ async function getBlob(url: string): Promise<Blob> {
 }
 
 // ---- upload outbox (IndexedDB): a recording that could not be sent is KEPT and retried ----
-type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number }
+type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number; capture?: Capture }
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('agentpad', 1)
@@ -139,7 +193,7 @@ const outboxDel = (key: string) => idbRun('readwrite', (s) => s.delete(key))
 // ---- client events: what only the device can see (record start/stop/failure, upload failure) ----
 // The proxy logs each one; failures also become audio.memo.failed(stage record|upload) facts keyed by the
 // key the memo would have had, so a memo that never reached S3 still shows up in memo:trace and /voice.
-type ClientEvent = { event: string; key: string; error?: string; code?: string; bytes?: number; duration_ms?: number; attempts?: number; retryable?: boolean }
+type ClientEvent = { event: string; key: string; error?: string; code?: string; bytes?: number; duration_ms?: number; attempts?: number; retryable?: boolean; capture?: Capture }
 function postEvent(ev: ClientEvent): Promise<boolean> {
   return fetch('/upload/client-event', {
     method: 'POST',
@@ -200,6 +254,12 @@ function App() {
   const [memoShort, setMemoShort] = useState<string | null>(null)
   const [outboxCount, setOutboxCount] = useState(0)
   const [soundUnlocked, setSoundUnlocked] = useState(false)
+  const [level, setLevel] = useState(0) // live input level 0..1 while recording
+  const [meterOn, setMeterOn] = useState(false) // true once the host or the analyser reports levels
+  const [heard, setHeard] = useState(false) // some sound (> -60 dBFS) arrived during this recording
+  const [waited, setWaited] = useState(false) // 2 s of recording have passed
+  const [silentHold, setSilentHold] = useState<{ agent: Agent; key: string; blob: Blob; capture: Capture; ms: number } | null>(null)
+  const analyser = useRef<{ stop(): Capture | undefined } | null>(null)
   const mediaRecorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
   const nativeActive = useRef(false)
@@ -327,13 +387,30 @@ function App() {
     return () => window.clearInterval(t)
   }, [])
 
+  // Live level from whichever capture source is active (native host callback or browser analyser).
+  const onLevel = useCallback((l: number) => {
+    setMeterOn(true)
+    setLevel(l)
+    if (l > 0) setHeard(true)
+  }, [])
+  useEffect(() => {
+    ;(window as any).__hnLevel = onLevel
+    return () => { delete (window as any).__hnLevel }
+  }, [onLevel])
+  useEffect(() => {
+    if (!recording) return
+    setWaited(false)
+    const t = window.setTimeout(() => setWaited(true), 2000)
+    return () => window.clearTimeout(t)
+  }, [recording])
+
   // ---- upload outbox: retry everything that could not be sent, on a timer and when the network returns ----
   const flushOutbox = useCallback(async () => {
     const all = await outboxAll()
     setOutboxCount(all.length)
     for (const p of all) {
       try {
-        await putObject(p.key, p.blob)
+        await putObject(p.key, p.blob, p.capture)
         await outboxDel(p.key)
         clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
         setStatus(`sent → ${p.agentName} (after a retry)`)
@@ -355,7 +432,7 @@ function App() {
 
   // Send a finished recording: a few quick retries holding the blob; if the network is really gone, keep it
   // in the outbox (IndexedDB) and say so, so nothing recorded in the car is ever thrown away silently.
-  const sendRecording = useCallback(async (agent: Agent, key: string, blob: Blob) => {
+  const sendRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture?: Capture) => {
     const memo = await memoIdFor(key)
     setMemoShort(memo ? memo.slice(0, 8) : null)
     const delays = [0, 1500, 4000, 10000, 20000]
@@ -366,7 +443,7 @@ function App() {
         await new Promise((r) => setTimeout(r, delays[i]))
       }
       try {
-        await putObject(key, blob)
+        await putObject(key, blob, capture)
         setStatus(`sent → ${agent.name}`)
         if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
         return
@@ -374,16 +451,43 @@ function App() {
         lastErr = (e as Error).message || String(e)
       }
     }
-    await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now() })
+    await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now(), capture })
     setOutboxCount((await outboxAll()).length)
     setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
     clientEvent({ event: 'upload_failed', key, error: lastErr, attempts: delays.length, retryable: true })
   }, [])
 
+  // A finished recording: hold it back if no sound ever reached the mic, else send it with its capture levels.
+  const finishRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture: Capture | undefined, ms: number) => {
+    setLevel(0)
+    if (capture && isSilent(capture)) {
+      setSilentHold({ agent, key, blob, capture, ms })
+      setStatus('not sent')
+      clientEvent({ event: 'record_silent', key, bytes: blob.size, duration_ms: ms, capture, code: 'silent_capture', retryable: false,
+        error: `no sound reached the microphone (peak ${capture.peak_dbfs} dBFS)` })
+      return
+    }
+    clientEvent({ event: 'record_stopped', key, bytes: blob.size, duration_ms: ms, capture })
+    await sendRecording(agent, key, blob, capture)
+  }, [sendRecording])
+
+  const sendAnyway = useCallback(async () => {
+    const h = silentHold
+    if (!h) return
+    setSilentHold(null)
+    const capture = { ...h.capture, sent_anyway: true }
+    clientEvent({ event: 'record_stopped', key: h.key, bytes: h.blob.size, duration_ms: h.ms, capture })
+    await sendRecording(h.agent, h.key, h.blob, capture)
+  }, [silentHold, sendRecording])
+
   const startRecording = useCallback(async () => {
     if (!selected) return
     const agent = selected
     setMemoShort(null)
+    setSilentHold(null)
+    setLevel(0)
+    setHeard(false)
+    setMeterOn(false)
     // One key per recording, minted at the button press, so every device-side event and the upload share it.
     const mk = (ext: string) => `${INBOX_PREFIX}/${agent.id}/${todayPrefix()}/${ts()}.${ext}`
     // Inside the Holocene Auto app the WebView's own mic capture is unreliable on car audio stacks,
@@ -404,21 +508,21 @@ function App() {
       nativeActive.current = true
       recStart.current = Date.now()
       clientEvent({ event: 'record_started', key })
-      w.__hnStopped = async (b64: string, mime: string) => {
+      w.__hnStopped = async (b64: string, mime: string, cap?: unknown) => {
         nativeActive.current = false
         setRecording(false)
         const ms = Date.now() - recStart.current
         if (!b64) {
           setStatus('no audio captured')
-          clientEvent({ event: 'record_failed', key, error: 'native recorder returned no audio', code: 'empty_capture', duration_ms: ms, retryable: false })
+          clientEvent({ event: 'record_failed', key, error: 'native recorder returned no audio', code: 'empty_capture', duration_ms: ms, retryable: false, capture: normCapture(cap, 'native') })
           return
         }
         const bin = atob(b64)
         const bytes = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
         const blob = new Blob([bytes], { type: mime })
-        clientEvent({ event: 'record_stopped', key, bytes: blob.size, duration_ms: ms })
-        await sendRecording(agent, key, blob)
+        // Old hosts pass no capture summary: unknown levels are never treated as silence.
+        await finishRecording(agent, key, blob, normCapture(cap, 'native'), ms)
       }
       setRecording(true)
       setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
@@ -457,9 +561,12 @@ function App() {
     chunks.current = []
     recStart.current = Date.now()
     clientEvent({ event: 'record_started', key })
+    analyser.current = startAnalyser(stream, onLevel)
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data) }
     mr.onstop = async () => {
       const blob = new Blob(chunks.current, { type: mimeType })
+      const capture = analyser.current?.stop()
+      analyser.current = null
       closeStream()
       setRecording(false)
       if (blob.size === 0) {
@@ -467,13 +574,12 @@ function App() {
         clientEvent({ event: 'record_failed', key, error: 'MediaRecorder produced 0 bytes', code: 'empty_capture', retryable: false })
         return
       }
-      clientEvent({ event: 'record_stopped', key, bytes: blob.size, duration_ms: Date.now() - recStart.current })
-      await sendRecording(agent, key, blob)
+      await finishRecording(agent, key, blob, capture, Date.now() - recStart.current)
     }
     mr.start()
     setRecording(true)
     setStatus(`🔴 recording for ${agent.name}… tap Stop to send`)
-  }, [selected, sendRecording])
+  }, [selected, finishRecording, onLevel])
 
   const stopRecording = useCallback(() => {
     if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
@@ -511,6 +617,28 @@ function App() {
           )
         })}
       </div>
+      {recording && meterOn && (
+        <div className={`meterwrap${waited && !heard ? ' dead' : ''}`}>
+          <div
+            className="meter"
+            role="meter"
+            aria-label="Microphone level"
+            aria-valuemin={0}
+            aria-valuemax={1}
+            aria-valuenow={Number(level.toFixed(2))}
+          >
+            <div className="fill" style={{ width: `${Math.round(level * 100)}%`, background: level > 0.85 ? '#e74c3c' : level > 0.65 ? '#f1c40f' : '#2ecc71' }} />
+          </div>
+          <div className="mlabel">{waited && !heard ? 'No sound yet — speak up or check the mic' : 'Mic level'}</div>
+        </div>
+      )}
+      {silentHold && (
+        <div className="silent" role="alert">
+          <strong>No sound reached the microphone — nothing to send</strong>
+          <span>The recording is digital silence (peak {silentHold.capture.peak_dbfs} dBFS). Check the mic, then record again.</span>
+          <button className="linkbtn" onClick={() => void sendAnyway()}>send anyway</button>
+        </div>
+      )}
       <div className="bar">
         <button
           className={`rec${recording ? ' live' : ''}`}
@@ -575,6 +703,15 @@ const CSS = `
 .status { flex:1 1 240px; font-size:clamp(20px,2.4vw,28px); font-weight:600; line-height:1.2; opacity:.85; }
 .status small { display:block; margin-top:6px; font-size:clamp(18px,2vw,24px); font-weight:500; opacity:.9; color:#b8c2d6; overflow-wrap:anywhere; }
 .status small.warn { color:#ffb454; font-weight:700; }
+.meterwrap { flex:0 0 auto; display:flex; align-items:center; gap:clamp(12px,2vw,24px); flex-wrap:wrap; }
+.meter { flex:1 1 320px; height:48px; border-radius:24px; background:#141a24; border:2px solid #2a3140; overflow:hidden; }
+.meter .fill { height:100%; min-width:0; transition:width .09s linear, background-color .09s; }
+.mlabel { flex:1 1 240px; font-size:clamp(20px,2.4vw,28px); font-weight:700; color:#b8c2d6; }
+.meterwrap.dead .meter { border-color:#ffb454; }
+.meterwrap.dead .mlabel { color:#ffb454; }
+.silent { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; padding:14px 18px; border-radius:16px; border:3px solid #ffb454; background:#2a2112; color:#ffd9a0; font-size:clamp(20px,2.4vw,28px); line-height:1.25; }
+.silent strong { color:#ffb454; font-size:clamp(24px,3vw,34px); }
+.linkbtn { align-self:flex-start; background:none; border:none; padding:10px 0; min-height:48px; color:#8ab4ff; font-size:clamp(18px,2vw,24px); text-decoration:underline; cursor:pointer; }
 `
 
 createRoot(document.getElementById('root')!).render(<App />)

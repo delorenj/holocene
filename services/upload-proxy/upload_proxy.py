@@ -28,6 +28,12 @@ publish bloodbank.audio.memo.failed (stage record | upload) keyed by the key the
 so a memo that never reached S3 still has a memo_id and a place in memo:trace and /voice.
 A PUT whose body is shorter than its Content-Length (cell drop mid-upload) is rejected 400 and
 published as failed(stage upload) instead of being stored as a complete memo.
+
+Capture levels: the pad measures the input level while it records (peak / RMS in dBFS) and sends them as
+the `X-Holocene-Capture` header on the PUT (JSON). They land in audio.memo.uploaded `data.capture`, so a
+memo that arrives silent can be told apart from one that was spoken. A recording whose peak stayed under
+-60 dBFS never reaches the PUT: the pad holds it back and POSTs `record_silent`, which the proxy logs and
+publishes as failed(stage record, error_code silent_capture, retryable false) with `data.capture`.
 """
 import re
 
@@ -81,10 +87,41 @@ def agent_from_key(key: str):
 
 # ---------------------------------------------------------------- bloodbank fact
 
-def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: str, upload_ms: float) -> dict:
+CAPTURE_HEADER = "X-Holocene-Capture"
+SILENCE_DBFS = -60.0  # a whole recording quieter than this heard nothing; agreed with the pad and the watcher
+
+
+def parse_capture(raw):
+    """Validated capture levels {peak_dbfs, rms_dbfs, samples?, source?, sent_anyway?} from the pad, or None.
+
+    Accepts the header's JSON text or an already-parsed dict. Anything malformed is dropped, never guessed.
+    """
+    try:
+        c = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    except ValueError:
+        return None
+    if not isinstance(c, dict):
+        return None
+    out = {}
+    for name in ("peak_dbfs", "rms_dbfs"):
+        v = c.get(name)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+            return None
+        out[name] = round(max(-120.0, min(6.0, float(v))), 1)
+    samples = c.get("samples")
+    if isinstance(samples, int) and not isinstance(samples, bool) and 0 <= samples <= 10_000_000:
+        out["samples"] = samples
+    if isinstance(c.get("source"), str) and c["source"]:
+        out["source"] = c["source"][:20]
+    if c.get("sent_anyway") is True:
+        out["sent_anyway"] = True
+    return out
+
+
+def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None) -> dict:
     memo_id = memo_id_for(key)
     ce_type = "bloodbank.audio.memo.uploaded"
-    return {
+    env = {
         "specversion": "1.0",
         "id": str(uuid.uuid4()),
         "source": f"urn:33god:service:{SERVICE}",
@@ -108,6 +145,9 @@ def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: 
             "client_user_agent": user_agent, "upload_ms": round(upload_ms, 1),
         },
     }
+    if capture:
+        env["data"]["capture"] = capture
+    return env
 
 
 # ---------------------------------------------------------------- playback beacon
@@ -167,7 +207,19 @@ def build_playback_envelope(beacon: dict, user_agent: str):
         "retryable": True, "attempt": 1, "client_user_agent": user_agent[:200]})
 
 
-CLIENT_EVENTS = ("record_started", "record_stopped", "record_failed", "upload_failed", "upload_recovered")
+WHEEL_KEYS_MAX_BYTES = 32768
+WHEEL_KEYS_MAX_LINES = 200
+
+
+def wheel_key_lines(ev: dict) -> list:
+    """The inspector lines of a wheel_keys upload: strings only, bounded count and length, control chars dropped."""
+    raw = ev.get("lines")
+    if not isinstance(raw, list):
+        return []
+    return [re.sub(r"[\x00-\x1f\x7f]", " ", x)[:300] for x in raw[:WHEEL_KEYS_MAX_LINES] if isinstance(x, str)]
+
+
+CLIENT_EVENTS = ("record_started", "record_stopped", "record_failed", "record_silent", "upload_failed", "upload_recovered")
 KEY_RE = re.compile(r"^inbox/[^/]+/\d{4}/\d{2}/\d{2}/[^/]+\.(ogg|webm|m4a|mp3|wav|opus|mp4)$")
 
 
@@ -175,16 +227,26 @@ def build_client_envelope(ev: dict, user_agent: str):
     """failed(stage record|upload) for a device-side failure, or None for log-only events / bad input."""
     key = ev.get("key")
     kind = ev.get("event")
-    if not isinstance(key, str) or not KEY_RE.match(key) or kind not in ("record_failed", "upload_failed"):
+    if not isinstance(key, str) or not KEY_RE.match(key) or kind not in ("record_failed", "record_silent", "upload_failed"):
         return None
-    stage = "record" if kind == "record_failed" else "upload"
+    stage = "upload" if kind == "upload_failed" else "record"
     attempts = ev.get("attempts")
+    capture = parse_capture(ev.get("capture"))
+    if kind == "record_silent":
+        # The pad held the recording back: nothing was uploaded, so this is the whole story of the memo.
+        peak = capture["peak_dbfs"] if capture else None
+        return _envelope("failed", memo_id_for(key), {
+            "target_agent_id": agent_from_key(key), "s3_key": key, "stage": "record", "error_code": "silent_capture",
+            "error_message": ("no sound reached the microphone"
+                              + (f" (peak {peak} dBFS, threshold {SILENCE_DBFS:g})" if peak is not None else ""))[:300],
+            "retryable": False, "attempt": 1, "client_user_agent": user_agent[:200], "source": "agent-pad",
+            **({"capture": capture} if capture else {})})
     return _envelope("failed", memo_id_for(key), {
         "target_agent_id": agent_from_key(key), "s3_key": key, "stage": stage,
         "error_code": str(ev.get("code") or kind)[:60], "error_message": str(ev.get("error") or kind)[:300],
         "retryable": bool(ev.get("retryable", kind == "upload_failed")),
         "attempt": attempts if isinstance(attempts, int) and attempts >= 1 else 1,
-        "client_user_agent": user_agent[:200], "source": "agent-pad"})
+        "client_user_agent": user_agent[:200], "source": "agent-pad", **({"capture": capture} if capture else {})})
 
 
 def publish_async(env: dict, key: str) -> None:
@@ -219,12 +281,12 @@ def nats_publish(subject: str, body: bytes, timeout: float = 3.0) -> None:
                 raise IOError(line.decode(errors="replace").strip())
 
 
-def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float) -> None:
+def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None) -> None:
     if not EMIT_FACTS or not key.startswith("inbox/") or agent_from_key(key) is None:
         return
 
     def work():
-        env = build_uploaded_envelope(key, size, content_type, user_agent, upload_ms)
+        env = build_uploaded_envelope(key, size, content_type, user_agent, upload_ms, capture)
         try:
             nats_publish(env["subject"], json.dumps(env, separators=(",", ":")).encode())
             log("fact_published", key=key, memo_id=env["correlationid"], fact="audio.memo.uploaded", fact_id=env["id"])
@@ -260,6 +322,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(content_length)
         content_type = self.headers.get("Content-Type", "application/octet-stream")
         ua = self.headers.get("User-Agent", "")
+        raw_capture = self.headers.get(CAPTURE_HEADER)
+        capture = parse_capture(raw_capture[:512]) if raw_capture else None
         if len(body) != content_length:
             # The client went away mid-body (a cell drop in the car). Storing the prefix would hand the
             # watcher a cut-off recording and dispatch half a sentence to an agent as a real prompt.
@@ -298,36 +362,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             log("upload", key=key, memo_id=memo_id_for(key), agent=agent_from_key(key), bytes=len(body), status=200,
                 content_type=content_type, s3_ms=int(s3_ms), ms=int((time.time() - t0) * 1000),
-                remote=self.client_address[0], ua=ua)
+                peak_dbfs=capture and capture["peak_dbfs"], rms_dbfs=capture and capture["rms_dbfs"],
+                sent_anyway=capture and capture.get("sent_anyway"), remote=self.client_address[0], ua=ua)
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
-            emit_uploaded_async(key, len(body), content_type, ua, s3_ms)
+            emit_uploaded_async(key, len(body), content_type, ua, s3_ms, capture)
         finally:
             os.unlink(tmp_path)
 
     def _client_event(self):
-        """Device-side event: POST /upload/client-event {event, key, error?, code?, bytes?, duration_ms?, attempts?, retryable?}."""
+        """Device-side event: POST /upload/client-event {event, key, error?, code?, bytes?, duration_ms?, attempts?, retryable?, capture?}."""
         try:
             n = int(self.headers.get("Content-Length", 0))
-            ev = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+            ev = json.loads(self.rfile.read(min(n, WHEEL_KEYS_MAX_BYTES)) or b"{}")
             if not isinstance(ev, dict):
                 raise ValueError("not an object")
         except (ValueError, json.JSONDecodeError):
             log("client", status=400, reason="bad json", remote=self.client_address[0])
             return self.send_error(400, "bad json")
         ua = self.headers.get("User-Agent", "")
+        if ev.get("event") == "wheel_keys":
+            return self._wheel_keys(ev, ua)
         key, kind = ev.get("key"), ev.get("event")
+        capture = parse_capture(ev.get("capture"))
         ok = isinstance(key, str) and KEY_RE.match(key) and kind in CLIENT_EVENTS
         log("client", key=key if ok else str(key)[:200], memo_id=memo_id_for(key) if ok else None, agent=agent_from_key(key) if ok else None,
             client_event=kind, status=200 if ok else 202, error=ev.get("error"), code=ev.get("code"), bytes=ev.get("bytes"),
-            duration_ms=ev.get("duration_ms"), attempts=ev.get("attempts"), remote=self.client_address[0], ua=ua)
+            duration_ms=ev.get("duration_ms"), attempts=ev.get("attempts"),
+            peak_dbfs=capture and capture["peak_dbfs"], rms_dbfs=capture and capture["rms_dbfs"], remote=self.client_address[0], ua=ua)
         self.send_response(200 if ok else 202)
         self.send_header("Content-Length", "0")
         self.end_headers()
         env = build_client_envelope(ev, ua) if ok else None
         if env:
             publish_async(env, key)
+
+    def _wheel_keys(self, ev: dict, ua: str):
+        """Steering-wheel key inspector upload from Holocene Auto (Diagnostics, parked): key/scroll/session lines.
+
+        Log-only: one `wheel_keys` line per upload and one `wheel_key` line per input, so
+        `docker logs agent-pad-upload | grep wheel_key` shows which codes the Civic's buttons really send.
+        No audio, no memo, nothing published.
+        """
+        lines = wheel_key_lines(ev)
+        log("wheel_keys", status=200, lines=len(lines), app=str(ev.get("app"))[:80], device=str(ev.get("device"))[:80],
+            installer=str(ev.get("installer"))[:60], session=str(ev.get("session"))[:10], mapping=str(ev.get("mapping"))[:400],
+            remote=self.client_address[0], ua=ua[:120])
+        for line in lines:
+            log("wheel_key", line=line)
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""

@@ -36,6 +36,21 @@ turned on). `auto:sim` runs `adb -s emulator-5554 emu avd hostmicon` after boot,
 `hw.audioInput=yes`. Toggle by hand with `emu avd hostmicoff` / `hostmicon`. Verified by the diagnostic mic probe: RMS ~5
 off, RMS 25-70 with room noise on. Headless runs leave it off.
 
+### Is the sim mic alive? `auto:sim:mic-check`
+
+```bash
+mise run auto:sim:mic-check   # runs the in-app mic probe + inspects the host's qemu capture streams
+# OK (rms 142.7 peak 707)
+# SILENT (rms 2.0 peak 2): emulator audio stream stuck (1 corked qemu stream) -> run mise run auto:sim:stop && mise run auto:sim
+```
+
+`auto:sim` runs it after a cold boot and warns (`SIM_MIC_CHECK=0` skips, headless skips). It takes about 10 s.
+Verdicts: `OK`; `SILENT ... stream stuck` (restart the sim); `SILENT ... passthrough is off` (the check
+turns `hostmicon` on and retries once by itself); `SILENT ... host default microphone is muted`;
+`SILENT ... live but delivers silence` (wrong default source / unplugged mic). Silent means the probe's
+peak stayed under -60 dBFS, the same line Agent Pad and the inbox watcher use. It also taps "Do not show
+this again" + Cancel on the Honda "Connect the Device" dialog when that covers the app.
+
 ## Injecting a known utterance (end-to-end proof)
 
 The emulator opens a loopback gRPC bridge (`-grpc 8554 -grpc-use-token`). The injector needs
@@ -64,6 +79,18 @@ Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a
 
 ## Pitfalls
 
+- `empty_transcript` / `silent_audio` on a sim memo = stuck PulseAudio capture (qemu's source output stays
+  `Corked: yes`, emulator log: `pulseaudio: pa_simple_read failed / Bad state`), so the guest mic records dither
+  only, even with `hostmicon`. Confirm with `mise run auto:sim:mic-check`; fix with
+  `mise run auto:sim:stop && mise run auto:sim`. Agent Pad shows a live level meter while recording and
+  refuses to upload a recording that stayed under -60 dBFS ("No sound reached the microphone", with a small
+  "send anyway"), so you see it immediately instead of a failed memo a minute later.
+- **The gRPC mic injection leaves the capture stream stuck.** After `emulator_audio.py inject` finishes, the next
+  recording is silent (mic-check reproduces the exact incident: peak 2, N corked qemu streams) and the
+  recording that was running can end with `MediaRecorder stop failed: -1004`. Restart the sim after an
+  injection run (`mise run auto:sim:stop && mise run auto:sim`). It can also crash the emulator outright.
+- A sim that crash-loops on boot ("Failed to load snapshot", crashpad dump in the log): `SIM_COLD=1 mise run auto:sim`
+  cold boots without the quick-boot snapshot (slow, 1-3 min, no data wipe).
 - Always `adb -s emulator-5554`. A physical phone is usually on adb too; bare `adb` commands are
   ambiguous or hit the wrong device. `auto:dev` and `pad:dev` honor `ANDROID_SERIAL` but default to the simulator and refuse any non-`emulator-*` serial unless `ALLOW_PHYSICAL_DEVICE=1`; `auto:sim`/`auto:sim:stop` always target `emulator-5554`.
 - `pad:dev` refuses to run unless the installed app is a debuggable build (release builds ignore the dev URL); `auto:dev` installs one.
