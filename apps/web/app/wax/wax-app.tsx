@@ -3,7 +3,8 @@
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, SourceStrip, sinceSeconds, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import type { WaxPass, WaxPayload, WaxPipeline, WaxPipelineNode } from "./types";
+import { PipelineGraph } from "./pipeline-graph";
+import type { WaxPass, WaxPayload, WaxPipeline, WaxPipelineNode, WaxWorkerStatus } from "./types";
 
 // The Wax tab: what the enrichment system IS, read from the one safe discovery
 // snapshot (`wax catalog --json` via the Holocene API). Read-only by design —
@@ -107,16 +108,52 @@ function PassCard({ pass }: { pass: WaxPass }) {
   );
 }
 
-function PipelineNode({ node }: { node: WaxPipelineNode }) {
+function WorkerStrip({ worker }: { worker?: WaxWorkerStatus }) {
+  if (!worker) return null;
+  const live = worker.state === "live";
+  const idle = live && worker.pipeline_enabled === false;
+  const state = !live ? "down" : idle ? "idle" : "live";
+  const label = !live
+    ? `worker down — ${worker.note ?? "no heartbeat"}`
+    : idle
+      ? "worker live · pipeline disabled (healthy idle — nobody scans)"
+      : `worker live · document scan every ${worker.documents?.interval_s ?? "?"}s · heartbeat ${worker.age_seconds ?? "?"}s ago`;
   return (
-    <li className={`wax-node${node.applicable === false ? " is-na" : ""}`}>
-      <span className="wax-node-slug">{node.slug}</span>
-      {node.applicable === false
-        ? <span className="wax-node-na" title="the pass declares no document capability, so document runs skip it">n/a for documents</span>
-        : node.availability?.state
-          ? <AvailabilityBadge state={node.availability.state} reason={node.availability.reason} />
-          : null}
-    </li>
+    <p className={`wax-worker is-${state}`} title={worker.note ?? undefined}>
+      <span className={`wax-worker-dot is-${state}`} aria-hidden="true" />
+      {label}
+      {worker.documents?.scanning && live && !idle ? " · scanning" : ""}
+    </p>
+  );
+}
+
+function RecentRuns({ pipeline }: { pipeline: WaxPipeline }) {
+  const runs = pipeline.recent_runs ?? [];
+  if (!runs.length) return null;
+  return (
+    <section className="wax-section">
+      <h4>Recent runs <span className="wax-section-note">(last {runs.length}, durable receipts)</span></h4>
+      <table className="wax-runs">
+        <thead>
+          <tr><th>document</th><th>state</th><th>attempts</th><th>last attempt</th><th>error</th></tr>
+        </thead>
+        <tbody>
+          {runs.map((run, i) => (
+            <tr key={`${run.doc_id}-${i}`} className={run.state === "completed" ? "" : "is-bad"}>
+              <td><code className="hub-code">{(run.doc_id ?? "?").slice(0, 20)}</code></td>
+              <td>
+                <span className={`wax-run-state is-${run.state ?? "unknown"}`}>
+                  {run.state ?? "unknown"}{run.exhausted_at ? " · exhausted" : ""}
+                </span>
+              </td>
+              <td>{run.attempts ?? 0}</td>
+              <td>{run.last_attempt_at ? `${formatDuration(Math.max(0, (Date.now() - Date.parse(run.last_attempt_at)) / 1000))} ago` : "—"}</td>
+              <td className="wax-run-error" title={run.error ?? undefined}>{run.error ? run.error.slice(0, 60) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -148,24 +185,18 @@ function PipelineCard({ pipeline }: { pipeline: WaxPipeline }) {
         <p className="wax-defid">
           <CopyRef value={pipeline.definition_id} label={pipeline.definition_id.slice(0, 12)} />
           {pipeline.compiled_at ? <span className="hub-age"> compiled {formatDuration(Math.max(0, (Date.now() - Date.parse(pipeline.compiled_at)) / 1000))} ago</span> : null}
+          {pipeline.source === "n8n" && pipeline.source_ref ? <span className="hub-age"> · authored in n8n “{pipeline.source_ref}”</span> : null}
+        </p>
+      ) : null}
+      {pipeline.registry_drift?.count ? (
+        <p className="wax-registry-drift">
+          {pipeline.registry_drift.count} node{pipeline.registry_drift.count === 1 ? "" : "s"} differ from the live registry — the frozen definition executes until an explicit recompile.
         </p>
       ) : null}
       {pipeline.nodes?.length ? (
         <section className="wax-section">
-          <h4>Nodes</h4>
-          <ul className="wax-nodes">
-            {pipeline.nodes.map((node) => <PipelineNode key={node.slug} node={node} />)}
-          </ul>
-          {pipeline.edges?.length ? (
-            <ul className="wax-edges-list">
-              {pipeline.edges.map((edge, i) => (
-                <li key={`${edge.from}-${edge.to}-${i}`}>
-                  <code className="hub-code">{edge.from}</code> → <code className="hub-code">{edge.to}</code>
-                  {edge.kind ? <span className="wax-edge-kind"> ({edge.kind})</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <h4>Graph <span className="wax-section-note">(frozen compiled definition)</span></h4>
+          <PipelineGraph pipeline={pipeline} />
         </section>
       ) : null}
       {pipeline.bindings?.length ? (
@@ -180,12 +211,16 @@ function PipelineCard({ pipeline }: { pipeline: WaxPipeline }) {
                   {binding.folder_exists === false ? " · folder missing" : ""}
                   {binding.documents !== undefined ? ` · ${binding.documents} documents` : ""}
                   {binding.documents_unprocessed ? ` · ${binding.documents_unprocessed} unprocessed` : ""}
+                  {binding.documents_failed ? ` · ${binding.documents_failed} failed` : ""}
+                  {binding.documents_exhausted ? ` · ${binding.documents_exhausted} exhausted` : ""}
+                  {binding.last_scan_at ? ` · scanned ${formatDuration(Math.max(0, (Date.now() - Date.parse(binding.last_scan_at)) / 1000))} ago` : " · never scanned"}
                 </span>
               </li>
             ))}
           </ul>
         </section>
       ) : null}
+      <RecentRuns pipeline={pipeline} />
       <footer className="wax-card-foot">
         <Outcomes outcomes={pipeline.outcomes ? Object.values(pipeline.outcomes)[0] : undefined} />
         {pipeline.documents_processed !== undefined ? (
@@ -238,6 +273,8 @@ export function WaxApp() {
           Read-only view. Enabling a pass, compiling a pipeline or running one happens in the Wax CLI
           (<code className="hub-code">wax ep · wax pipeline · wax documents</code>) or n8n — never here.
         </p>
+
+        <WorkerStrip worker={list.data?.catalog.worker} />
 
         {list.data && !passes.length && !pipelines.length && !list.data.source.down ? (
           <div className="hub-placeholder">

@@ -47,15 +47,33 @@ const CATALOG = {
       {
         name: "doc-standard", trigger: "documents", enabled: false, failure_policy: "independent",
         definition_id: "abc123def456", executed_by: "wax pipeline run/scan",
-        drift: { state: "authored-not-compiled", detail: "never compiled" },
-        nodes: [{ slug: "title-slug", availability: { state: "available", reason: "" }, capabilities: ["document"], applicable: true }],
-        edges: [{ from: "frontmatter-stamp", to: "title-slug", kind: "after" }],
+        source: "n8n", source_ref: "Wax Documents Standard",
+        drift: { state: "in_sync", detail: "authored in n8n" },
+        nodes: [
+          {
+            slug: "title-slug", name: "Title", availability: { state: "available", reason: "compiled definition" },
+            live_availability: { state: "available", reason: "" }, capabilities: ["document"], applicable: true,
+            version: 1, conditions: { when: [{ field: "title", exists: false }] },
+            registry_drift: { change: "definition", frozen_version: 1, live_version: 2 }
+          }
+        ],
+        edges: [{ from: "classification", to: "title-slug", kind: "requires" }],
         bindings: [{ binding_id: "b1", folder: "/srv/docs", enabled: false, folder_exists: false }],
-        documents_processed: 0, outcomes: { "title-slug": { completed: 0 } },
+        documents_processed: 3, outcomes: { "title-slug": { completed: 3 } },
+        registry_drift: { changed: [{ slug: "title-slug", change: "definition" }], count: 1 },
+        recent_runs: [
+          { doc_id: "doc-0123456789abcdef", path: "/srv/docs/n.md", state: "completed", attempts: 1, last_attempt_at: "2026-10-16T11:00:00Z", completed_at: "2026-10-16T11:00:01Z", exhausted_at: null, error: null },
+          { doc_id: "doc-fedcba9876543210", state: "failed", attempts: 3, last_attempt_at: "2026-10-16T11:30:00Z", exhausted_at: "2026-10-16T11:30:00Z", error: "provider_down: gateway 502", secret: "leak" }
+        ],
         env: { SECRET: "nope" }
       }
     ],
-    document_status: { bindings: [], documents_total: 0 }
+    document_status: { bindings: [], documents_total: 3, scan_interval_s: 120, max_attempts: 3 },
+    worker: {
+      state: "live", heartbeat_at: "2026-10-16T11:59:55Z", age_seconds: 5, tick: 4021,
+      pipeline_enabled: true, documents: { interval_s: 120, scanning: true },
+      command: ["/bin/true"], env: { LEAK: "x" }
+    }
   }
 };
 
@@ -80,6 +98,32 @@ test("a healthy CLI read returns the catalog with a live source", async (t) => {
   assert.equal(payload.catalog.pipelines?.[0].name, "doc-standard");
   assert.equal("env" in (payload.catalog.pipelines?.[0] as object), false);
   assert.equal(payload.catalog.pipelines?.[0].nodes?.[0].applicable, true);
+});
+
+test("the graph view projects authored names, conditions, drift, runs and worker — still allowlisted", async (t) => {
+  t.after(resetWaxCatalogCache);
+  const executable = await fakeWax(`console.log(JSON.stringify(${JSON.stringify(CATALOG)}));`);
+  const payload = await readWaxCatalog({ executable, root: "/srv/heyma", now: T0 });
+  const pipeline = payload.catalog.pipelines?.[0];
+  // authored identity + frozen graph fields pass through
+  assert.equal(pipeline?.source, "n8n");
+  assert.equal(pipeline?.source_ref, "Wax Documents Standard");
+  const node = pipeline?.nodes?.[0];
+  assert.equal(node?.name, "Title");
+  assert.deepEqual(node?.conditions?.when, [{ field: "title", exists: false }]);
+  assert.equal(node?.registry_drift?.live_version, 2);
+  assert.equal(pipeline?.registry_drift?.count, 1);
+  // recent runs: bounded, and the planted `secret` key never passes
+  assert.equal(pipeline?.recent_runs?.length, 2);
+  assert.equal(pipeline?.recent_runs?.[1].error, "provider_down: gateway 502");
+  assert.equal("secret" in (pipeline?.recent_runs?.[1] as object), false);
+  // worker freshness, and the planted command/env keys never pass
+  assert.equal(payload.catalog.worker?.state, "live");
+  assert.equal(payload.catalog.worker?.documents?.interval_s, 120);
+  assert.equal("command" in (payload.catalog.worker as object), false);
+  assert.equal("env" in (payload.catalog.worker as object), false);
+  // document_status carries scan timing
+  assert.equal(payload.catalog.document_status?.scan_interval_s, 120);
 });
 
 test("a CLI failure is a DOWN source, never healthy emptiness", async (t) => {

@@ -249,3 +249,59 @@
 .hub-root .wax-bindings li.is-off { opacity: 0.65; }
 .hub-root .wax-binding-flags { color: var(--ink-soft, var(--ink)); font-size: 11px; }
 .hub-root .wax-count { color: var(--ink-soft, var(--ink)); }
+
+/* ---- compiled graph -------------------------------------------------- */
+
+.hub-root .wax-graph-wrap { overflow-x: auto; }
+.hub-root .wax-graph { width: 100%; height: auto; display: block; min-width: 420px; }
+.hub-root .wax-edge { fill: none; stroke-width: 1.5; }
+.hub-root .wax-edge.is-gated { stroke: var(--accent, #b3591f); stroke-dasharray: none; }
+.hub-root .wax-edge.is-continue { stroke: var(--ink-soft, #8a8a8a); stroke-dasharray: 5 4; }
+.hub-root .wax-arrow-gated { fill: var(--accent, #b3591f); }
+.hub-root .wax-arrow-continue { fill: var(--ink-soft, #8a8a8a); }
+.hub-root .wax-gnode-box { fill: var(--panel, #f5f2ec); stroke: var(--line, #d8d2c6); }
+.hub-root .wax-gnode.is-na .wax-gnode-box { stroke-dasharray: 3 3; opacity: 0.7; }
+.hub-root .wax-gnode.is-drifted .wax-gnode-box { stroke: var(--accent, #b3591f); stroke-width: 1.5; }
+.hub-root .wax-gnode-slug { font-size: 13px; font-weight: 600; fill: var(--ink, #232323); }
+.hub-root .wax-gnode-name { font-size: 10px; fill: var(--ink-soft, #8a8a8a); }
+.hub-root .wax-gnode-cond { font-size: 9px; fill: var(--accent, #b3591f); font-weight: 600; }
+.hub-root .wax-gnode-driftdot { fill: var(--accent, #b3591f); }
+.hub-root .wax-graph-legend {
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--ink-soft, var(--ink));
+}
+.hub-root .wax-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.hub-root .wax-legend-line { display: inline-block; width: 22px; height: 0; border-top: 1.5px solid var(--accent, #b3591f); }
+.hub-root .wax-legend-line.is-continue { border-top-style: dashed; border-top-color: var(--ink-soft, #8a8a8a); }
+.hub-root .wax-section-note { font-weight: 400; color: var(--ink-soft, var(--ink)); font-size: 11px; }
+.hub-root .wax-registry-drift { font-size: 12px; color: var(--accent, #b3591f); margin: 4px 0 0; }
+
+/* ---- worker freshness + recent runs ---------------------------------- */
+
+.hub-root .wax-worker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 0 0 8px;
+  color: var(--ink-soft, var(--ink));
+}
+.hub-root .wax-worker-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.hub-root .wax-worker-dot.is-live { background: #2e7d4f; }
+.hub-root .wax-worker-dot.is-idle { background: #b3862e; }
+.hub-root .wax-worker-dot.is-down { background: #a33c3c; }
+.hub-root .wax-runs { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.hub-root .wax-runs th {
+  text-align: left; font-weight: 600; padding: 3px 8px 3px 0;
+  color: var(--ink-soft, var(--ink)); border-bottom: 1px solid var(--line, #d8d2c6);
+}
+.hub-root .wax-runs td { padding: 3px 8px 3px 0; border-bottom: 1px solid color-mix(in srgb, var(--line, #d8d2c6) 45%, transparent); vertical-align: top; }
+.hub-root .wax-runs tr.is-bad td { color: var(--accent, #b3591f); }
+.hub-root .wax-run-state { font-weight: 600; }
+.hub-root .wax-run-state.is-completed { color: #2e7d4f; }
+.hub-root .wax-run-state.is-failed, .hub-root .wax-run-state.is-halted { color: #a33c3c; }
+.hub-root .wax-run-error { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft, var(--ink)); }

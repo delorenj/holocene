@@ -45,6 +45,44 @@ export type WaxPipelineBinding = {
   folder_exists?: boolean;
   documents?: number;
   documents_unprocessed?: number;
+  documents_pending?: number;
+  documents_seeded?: number;
+  documents_failed?: number;
+  documents_processed?: number;
+  documents_exhausted?: number;
+};
+
+export type WaxPipelineNode = {
+  slug: string;
+  name?: string;
+  availability?: { state?: string; reason?: string };
+  live_availability?: { state?: string; reason?: string };
+  capabilities?: string[];
+  applicable?: boolean;
+  version?: number;
+  conditions?: { when?: unknown; skip_when?: unknown };
+  registry_drift?: { change?: string; frozen_version?: number; live_version?: number };
+};
+
+export type WaxRecentRun = {
+  doc_id?: string;
+  path?: string;
+  state?: string;
+  attempts?: number;
+  last_attempt_at?: string;
+  completed_at?: string;
+  exhausted_at?: string;
+  error?: string | null;
+};
+
+export type WaxWorkerStatus = {
+  state?: string;
+  heartbeat_at?: string;
+  age_seconds?: number;
+  tick?: number;
+  pipeline_enabled?: boolean;
+  documents?: { interval_s?: number; scanning?: boolean };
+  note?: string;
 };
 
 export type WaxPipeline = {
@@ -52,6 +90,8 @@ export type WaxPipeline = {
   description?: string;
   authored_path?: string;
   authored_error?: string;
+  source?: string;
+  source_ref?: string;
   drift?: { state?: string; detail?: string };
   version?: number;
   definition_id?: string;
@@ -60,11 +100,13 @@ export type WaxPipeline = {
   enabled?: boolean;
   failure_policy?: string;
   executed_by?: string;
-  nodes?: { slug: string; availability?: { state?: string; reason?: string }; capabilities?: string[]; applicable?: boolean }[];
+  nodes?: WaxPipelineNode[];
   edges?: { from: string; to: string; kind?: string }[];
   bindings?: WaxPipelineBinding[];
   documents_processed?: number;
   outcomes?: Record<string, Record<string, number>>;
+  registry_drift?: { changed?: unknown[]; count?: number };
+  recent_runs?: WaxRecentRun[];
 };
 
 export type WaxCatalog = {
@@ -72,7 +114,8 @@ export type WaxCatalog = {
   passes?: WaxPass[];
   counts?: { registered?: number; enabled?: number; automatic?: number; quarantined?: number; failing?: number };
   pipelines?: WaxPipeline[];
-  document_status?: { bindings?: WaxPipelineBinding[]; documents_total?: number };
+  document_status?: { bindings?: WaxPipelineBinding[]; documents_total?: number; scan_interval_s?: number; max_attempts?: number };
+  worker?: WaxWorkerStatus;
 };
 
 export type WaxCatalogPayload = {
@@ -109,10 +152,50 @@ export function projectPass(raw: unknown): WaxPass | undefined {
 }
 
 const PIPELINE_FIELDS = new Set([
-  "name", "description", "authored_path", "authored_error", "drift", "version",
-  "definition_id", "compiled_at", "trigger", "enabled", "failure_policy",
-  "executed_by", "nodes", "edges", "bindings", "documents_processed", "outcomes"
+  "name", "description", "authored_path", "authored_error", "source", "source_ref",
+  "drift", "version", "definition_id", "compiled_at", "trigger", "enabled",
+  "failure_policy", "executed_by", "nodes", "edges", "bindings",
+  "documents_processed", "outcomes", "registry_drift", "recent_runs"
 ]);
+
+// Per-node allowlist: the authored node name (n8n identity), availability of
+// the compiled definition, live-registry availability and drift beside it.
+const NODE_FIELDS = new Set([
+  "slug", "name", "availability", "live_availability", "capabilities",
+  "applicable", "version", "conditions", "registry_drift"
+]);
+
+const RECENT_RUN_FIELDS = new Set([
+  "doc_id", "path", "state", "attempts", "last_attempt_at", "completed_at",
+  "exhausted_at", "error"
+]);
+
+const WORKER_FIELDS = new Set([
+  "state", "heartbeat_at", "age_seconds", "tick", "pipeline_enabled",
+  "documents", "note"
+]);
+
+function projectNode(raw: unknown): WaxPipelineNode | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const row: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (NODE_FIELDS.has(key)) row[key] = value;
+  }
+  return typeof row.slug === "string" ? row as unknown as WaxPipelineNode : undefined;
+}
+
+function projectRecentRuns(raw: unknown): WaxRecentRun[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row))
+    .map((raw) => {
+      const row: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (RECENT_RUN_FIELDS.has(key)) row[key] = value;
+      }
+      return row as unknown as WaxRecentRun;
+    });
+}
 
 function projectPipeline(raw: unknown): WaxPipeline | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
@@ -121,6 +204,14 @@ function projectPipeline(raw: unknown): WaxPipeline | undefined {
     if (PIPELINE_FIELDS.has(key)) row[key] = value;
   }
   if (typeof row.name !== "string") return undefined;
+  if (Array.isArray(row.nodes)) {
+    row.nodes = (row.nodes as unknown[])
+      .map(projectNode)
+      .filter((n): n is WaxPipelineNode => n !== undefined);
+  }
+  if (row.recent_runs !== undefined) {
+    row.recent_runs = projectRecentRuns(row.recent_runs);
+  }
   return row as unknown as WaxPipeline;
 }
 
@@ -146,12 +237,24 @@ function projectCatalog(body: unknown): WaxCatalog {
   const documentStatus = pipelineView.document_status && typeof pipelineView.document_status === "object" && !Array.isArray(pipelineView.document_status)
     ? pipelineView.document_status as WaxCatalog["document_status"]
     : undefined;
+  const workerRaw = pipelineView.worker && typeof pipelineView.worker === "object" && !Array.isArray(pipelineView.worker)
+    ? pipelineView.worker as Record<string, unknown>
+    : undefined;
+  let worker: WaxCatalog["worker"];
+  if (workerRaw) {
+    const row: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(workerRaw)) {
+      if (WORKER_FIELDS.has(key)) row[key] = value;
+    }
+    worker = row as unknown as WaxCatalog["worker"];
+  }
   return {
     generated_at: typeof snapshot.generated_at === "string" ? snapshot.generated_at : undefined,
     passes,
     counts,
     pipelines,
-    document_status: documentStatus
+    document_status: documentStatus,
+    ...(worker ? { worker } : {})
   };
 }
 
