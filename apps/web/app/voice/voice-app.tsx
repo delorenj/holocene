@@ -61,6 +61,7 @@ export function VoiceApp() {
           <a className="hub-tab" href="/?view=agents">Agents</a>
           <a className="hub-tab" href="/?view=projects">Projects</a>
           <a className="hub-tab" href="/voice" aria-current="page">Voice</a>
+          <a className="hub-tab" href="/wax">Wax</a>
         </nav>
         <div className="hub-header-end">
           <SourceStrip sources={sources} />

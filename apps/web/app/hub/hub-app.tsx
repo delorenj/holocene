@@ -198,6 +198,7 @@ export function HubApp() {
           <button type="button" className="hub-tab" aria-current={view === "agents" ? "page" : undefined} onClick={() => go("agents")}>Agents</button>
           <button type="button" className="hub-tab" aria-current={view === "projects" ? "page" : undefined} onClick={() => go("projects")}>Projects</button>
           <a className="hub-tab" href="/voice">Voice</a>
+          <a className="hub-tab" href="/wax">Wax</a>
         </nav>
         <div className="hub-header-end">
           <SourceStrip sources={sources} />

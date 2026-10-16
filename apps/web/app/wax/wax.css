@@ -1,0 +1,251 @@
+/* The Wax tab, in the Ledger theme from ../hub/hub.css. Everything is prefixed with
+   .hub-root so it outranks the legacy globals. Availability states borrow the hub's
+   signal colors: available is the working green, disabled the quiet gray, quarantined
+   and unparseable the broken red family, placeholder the amber "needs you". */
+
+.hub-root[data-theme="ledger"] {
+  --wax-soft-fail: #fbe3e0;
+}
+.hub-root[data-theme="ledger-night"] {
+  --wax-soft-fail: #3d1f1c;
+}
+
+.hub-root .wax-readonly {
+  margin: 0 0 18px;
+  padding: 8px 12px;
+  border-left: 4px solid var(--line-strong);
+  background: var(--sunken);
+  color: var(--ink-soft, var(--ink));
+  font-size: 13px;
+}
+
+.hub-root .wax-heading {
+  margin: 22px 0 10px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, var(--ink));
+}
+
+.hub-root .wax-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.hub-root .wax-card {
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  box-shadow: 4px 4px 0 var(--shadow);
+  padding: 12px 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-root .wax-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hub-root .wax-slug {
+  margin: 0;
+  font-size: 15px;
+  font-family: var(--mono, monospace);
+  overflow-wrap: anywhere;
+}
+
+.hub-root .wax-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft, var(--ink));
+}
+
+.hub-root .wax-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  background: var(--sunken);
+  white-space: nowrap;
+}
+.hub-root .wax-badge.is-available { border-color: var(--working, var(--cleared)); color: var(--cleared); }
+.hub-root .wax-badge.is-disabled { color: var(--ink-soft, var(--ink)); }
+.hub-root .wax-badge.is-placeholder { border-color: var(--you, #b8860b); color: var(--you, #b8860b); }
+.hub-root .wax-badge.is-quarantined,
+.hub-root .wax-badge.is-unparseable { border-color: var(--broken); color: var(--broken); background: var(--wax-soft-fail); }
+
+.hub-root .wax-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hub-root .wax-chip {
+  display: inline-block;
+  font-size: 11px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  margin-right: 4px;
+}
+
+.hub-root .wax-flags,
+.hub-root .wax-caps {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.hub-root .wax-flag {
+  font-size: 11px;
+  padding: 0 6px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  color: var(--ink-soft, var(--ink));
+}
+.hub-root .wax-flag.is-on { color: var(--cleared); border-color: var(--cleared); }
+.hub-root .wax-flag.is-auto { color: var(--working, var(--cleared)); border-color: var(--working, var(--cleared)); }
+
+.hub-root .wax-edges p,
+.hub-root .wax-edges {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-root .wax-edges {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft, var(--ink));
+}
+.hub-root .wax-cond {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--mono, monospace);
+  color: var(--ink-soft, var(--ink));
+  overflow-wrap: anywhere;
+}
+.hub-root .wax-emits {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.hub-root .wax-emits .hub-code {
+  font-size: 11px;
+}
+
+.hub-root .wax-outcomes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.hub-root .wax-outcomes-empty { color: var(--ink-soft, var(--ink)); }
+.hub-root .wax-outcome.is-completed { color: var(--cleared); }
+.hub-root .wax-outcome.is-failed,
+.hub-root .wax-outcome.is-exhausted { color: var(--broken); font-weight: 600; }
+.hub-root .wax-outcome.is-running { color: var(--working, var(--cleared)); }
+.hub-root .wax-outcome.is-skipped,
+.hub-root .wax-outcome.is-stale { color: var(--ink-soft, var(--ink)); }
+
+.hub-root .wax-card-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.hub-root .wax-drift {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.hub-root .wax-drift.is-drifted {
+  border-color: var(--you, #b8860b);
+  color: var(--you, #b8860b);
+  background: var(--sunken);
+}
+
+.hub-root .wax-executed {
+  margin: 0;
+  font-size: 12px;
+}
+.hub-root .wax-defid {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hub-root .wax-section h4 {
+  margin: 4px 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft, var(--ink));
+}
+
+.hub-root .wax-nodes {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hub-root .wax-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--line);
+}
+.hub-root .wax-node-slug { font-family: var(--mono, monospace); overflow-wrap: anywhere; }
+.hub-root .wax-node.is-na { opacity: 0.55; }
+.hub-root .wax-node-na { font-size: 11px; color: var(--ink-soft, var(--ink)); }
+
+.hub-root .wax-edges-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--ink-soft, var(--ink));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-root .wax-edge-kind { color: var(--ink-soft, var(--ink)); }
+
+.hub-root .wax-bindings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.hub-root .wax-bindings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.hub-root .wax-bindings li.is-off { opacity: 0.65; }
+.hub-root .wax-binding-flags { color: var(--ink-soft, var(--ink)); font-size: 11px; }
+.hub-root .wax-count { color: var(--ink-soft, var(--ink)); }
