@@ -72,7 +72,8 @@ export type WaxRecentRun = {
   last_attempt_at?: string;
   completed_at?: string;
   exhausted_at?: string;
-  error?: string | null;
+  /** Machine cause only. Raw error/stderr prose never passes the projection. */
+  reason_code?: string;
 };
 
 export type WaxWorkerStatus = {
@@ -80,6 +81,9 @@ export type WaxWorkerStatus = {
   heartbeat_at?: string;
   age_seconds?: number;
   tick?: number;
+  pid?: number;
+  /** What the worker thread is doing right now (inbox / documents / sweep). */
+  busy?: string | null;
   pipeline_enabled?: boolean;
   documents?: { interval_s?: number; scanning?: boolean };
   note?: string;
@@ -165,14 +169,17 @@ const NODE_FIELDS = new Set([
   "applicable", "version", "conditions", "registry_drift"
 ]);
 
+// Receipts carry a reason CODE only: `last_error`/`error` prose (exception
+// text, stderr tails — secret-bearing) must never pass, even if the CLI's
+// catalog contract regresses and starts emitting it again.
 const RECENT_RUN_FIELDS = new Set([
   "doc_id", "path", "state", "attempts", "last_attempt_at", "completed_at",
-  "exhausted_at", "error"
+  "exhausted_at", "reason_code"
 ]);
 
 const WORKER_FIELDS = new Set([
-  "state", "heartbeat_at", "age_seconds", "tick", "pipeline_enabled",
-  "documents", "note"
+  "state", "heartbeat_at", "age_seconds", "tick", "pid", "busy",
+  "pipeline_enabled", "documents", "note"
 ]);
 
 function projectNode(raw: unknown): WaxPipelineNode | undefined {

@@ -122,7 +122,7 @@ function WorkerStrip({ worker }: { worker?: WaxWorkerStatus }) {
     <p className={`wax-worker is-${state}`} title={worker.note ?? undefined}>
       <span className={`wax-worker-dot is-${state}`} aria-hidden="true" />
       {label}
-      {worker.documents?.scanning && live && !idle ? " · scanning" : ""}
+      {live && worker.busy ? ` · busy: ${worker.busy}` : ""}
     </p>
   );
 }
@@ -135,7 +135,7 @@ function RecentRuns({ pipeline }: { pipeline: WaxPipeline }) {
       <h4>Recent runs <span className="wax-section-note">(last {runs.length}, durable receipts)</span></h4>
       <table className="wax-runs">
         <thead>
-          <tr><th>document</th><th>state</th><th>attempts</th><th>last attempt</th><th>error</th></tr>
+          <tr><th>document</th><th>state</th><th>attempts</th><th>last attempt</th><th>reason</th></tr>
         </thead>
         <tbody>
           {runs.map((run, i) => (
@@ -148,7 +148,7 @@ function RecentRuns({ pipeline }: { pipeline: WaxPipeline }) {
               </td>
               <td>{run.attempts ?? 0}</td>
               <td>{run.last_attempt_at ? `${formatDuration(Math.max(0, (Date.now() - Date.parse(run.last_attempt_at)) / 1000))} ago` : "—"}</td>
-              <td className="wax-run-error" title={run.error ?? undefined}>{run.error ? run.error.slice(0, 60) : "—"}</td>
+              <td className="wax-run-error">{run.reason_code ? <code className="hub-code">{run.reason_code}</code> : "—"}</td>
             </tr>
           ))}
         </tbody>

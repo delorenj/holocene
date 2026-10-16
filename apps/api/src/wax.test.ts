@@ -62,8 +62,8 @@ const CATALOG = {
         documents_processed: 3, outcomes: { "title-slug": { completed: 3 } },
         registry_drift: { changed: [{ slug: "title-slug", change: "definition" }], count: 1 },
         recent_runs: [
-          { doc_id: "doc-0123456789abcdef", path: "/srv/docs/n.md", state: "completed", attempts: 1, last_attempt_at: "2026-10-16T11:00:00Z", completed_at: "2026-10-16T11:00:01Z", exhausted_at: null, error: null },
-          { doc_id: "doc-fedcba9876543210", state: "failed", attempts: 3, last_attempt_at: "2026-10-16T11:30:00Z", exhausted_at: "2026-10-16T11:30:00Z", error: "provider_down: gateway 502", secret: "leak" }
+          { doc_id: "doc-0123456789abcdef", path: "/srv/docs/n.md", state: "completed", attempts: 1, last_attempt_at: "2026-10-16T11:00:00Z", completed_at: "2026-10-16T11:00:01Z", exhausted_at: null },
+          { doc_id: "doc-fedcba9876543210", state: "failed", attempts: 3, last_attempt_at: "2026-10-16T11:30:00Z", exhausted_at: "2026-10-16T11:30:00Z", reason_code: "provider_down", error: "Authorization Bearer sk-live-LEAKME", secret: "leak" }
         ],
         env: { SECRET: "nope" }
       }
@@ -71,6 +71,7 @@ const CATALOG = {
     document_status: { bindings: [], documents_total: 3, scan_interval_s: 120, max_attempts: 3 },
     worker: {
       state: "live", heartbeat_at: "2026-10-16T11:59:55Z", age_seconds: 5, tick: 4021,
+      pid: 4242, busy: "documents",
       pipeline_enabled: true, documents: { interval_s: 120, scanning: true },
       command: ["/bin/true"], env: { LEAK: "x" }
     }
@@ -113,12 +114,18 @@ test("the graph view projects authored names, conditions, drift, runs and worker
   assert.deepEqual(node?.conditions?.when, [{ field: "title", exists: false }]);
   assert.equal(node?.registry_drift?.live_version, 2);
   assert.equal(pipeline?.registry_drift?.count, 1);
-  // recent runs: bounded, and the planted `secret` key never passes
+  // recent runs: bounded; the reason CODE passes, while the planted raw
+  // `error` prose (secret-bearing) and `secret` key never do — even if the
+  // CLI's catalog contract regresses back to emitting them
   assert.equal(pipeline?.recent_runs?.length, 2);
-  assert.equal(pipeline?.recent_runs?.[1].error, "provider_down: gateway 502");
+  assert.equal(pipeline?.recent_runs?.[1].reason_code, "provider_down");
+  assert.equal("error" in (pipeline?.recent_runs?.[1] as object), false);
   assert.equal("secret" in (pipeline?.recent_runs?.[1] as object), false);
-  // worker freshness, and the planted command/env keys never pass
+  const encoded = JSON.stringify(pipeline?.recent_runs);
+  assert.equal(encoded.includes("sk-live-LEAKME"), false);
+  // worker freshness (busy state passes), and the planted command/env keys never pass
   assert.equal(payload.catalog.worker?.state, "live");
+  assert.equal(payload.catalog.worker?.busy, "documents");
   assert.equal(payload.catalog.worker?.documents?.interval_s, 120);
   assert.equal("command" in (payload.catalog.worker as object), false);
   assert.equal("env" in (payload.catalog.worker as object), false);

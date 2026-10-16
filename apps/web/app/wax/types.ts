@@ -59,7 +59,8 @@ export type WaxRecentRun = {
   last_attempt_at?: string;
   completed_at?: string;
   exhausted_at?: string;
-  error?: string | null;
+  /** Machine cause only; raw error prose never reaches this surface. */
+  reason_code?: string;
 };
 
 export type WaxWorkerStatus = {
@@ -67,6 +68,8 @@ export type WaxWorkerStatus = {
   heartbeat_at?: string;
   age_seconds?: number;
   tick?: number;
+  pid?: number;
+  busy?: string | null;
   pipeline_enabled?: boolean;
   documents?: { interval_s?: number; scanning?: boolean };
   note?: string;
