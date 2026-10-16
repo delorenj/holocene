@@ -14,7 +14,7 @@ export default function PrivacyPage() {
           <p className={styles.kicker}>AutomaticAI · Android app</p>
           <h1>Holocene Auto privacy policy</h1>
           <p className={styles.meta}>
-            Effective date: <time dateTime="2026-10-15">October 15, 2026</time>
+            Effective date: <time dateTime="2026-10-16">October 16, 2026</time>
           </p>
         </header>
 
@@ -23,7 +23,9 @@ export default function PrivacyPage() {
           <p>
             This policy covers only the Holocene Auto Android app, published by
             AutomaticAI, package <code>io.automaticai.holocene</code>. The current
-            internal build is version <code>0.2.7-internal</code> (version code 9).
+            internal build is version <code>0.2.8-internal</code> (version code 10);
+            version <code>0.2.7-internal</code> (version code 9) handles data the
+            same way.
             Earlier internal builds (version codes 6 to 8) may appear as
             “Holocene Fixture”; they had no Internet permission and sent no
             data, as described in the “Diagnostics” sections below.
@@ -58,7 +60,12 @@ export default function PrivacyPage() {
             the agents&apos; spoken replies from that storage to play them.
             Audio is recorded only after you press Record; while recording, it
             is held in a temporary file in the app&apos;s private cache, which
-            is deleted after the upload. AutomaticAI does not sell this data or
+            is deleted after the upload. If an upload fails, the recording is kept
+            in the app&apos;s private storage on the device and retried until it
+            is delivered. The app also reports operational status to the same
+            AutomaticAI server (recording started or stopped, upload and
+            playback results, and error messages) so failures can be diagnosed;
+            these reports contain no audio. AutomaticAI does not sell this data or
             share it with third parties, and the app contains no
             advertising or analytics.
           </p>
