@@ -68,6 +68,20 @@ def watcher_heartbeat() -> dict | None:
         return None
 
 
+def level_of(d: dict) -> str:
+    """'max -8 dBFS, mean -30 dBFS over 6.4 s' from a transcribed/failed fact, '' when the watcher measured nothing."""
+    if d.get("audio_max_dbfs") is None:
+        return ""
+    return c.level_text(d.get("audio_max_dbfs"), d.get("audio_mean_dbfs"), d.get("audio_duration_seconds"))
+
+
+def capture_of(d: dict) -> str:
+    """The device-reported capture level (data.capture of the uploaded fact), '' when the pad sent none."""
+    cap = d.get("capture") or {}
+    bits = [f"{k} {c.fmt_dbfs(cap[k])}" for k in ("peak_dbfs", "rms_dbfs") if isinstance(cap.get(k), (int, float))]
+    return "device heard " + ", ".join(b.replace("_dbfs", "") for b in bits) if bits else ""
+
+
 def lane_of(dispatched: dict | None, rec: dict | None = None, row: dict | None = None) -> str:
     """The gateway lane a memo's command rode: the dispatched fact's `lane`, else its command_subject,
     else the watcher record, else the journal row. A memo with none of those predates lanes: batch."""
@@ -171,11 +185,24 @@ def build(key: str) -> tuple[list[Hop], dict]:
         else:
             hops.append(Hop(name, MISSING, detail=f"no bloodbank.audio.memo.{action} with correlationid={memo_id}", optional=optional))
 
-    add_fact_hop("fact:uploaded", "uploaded", lambda d: f"{d.get('bytes')} bytes ua={str(d.get('client_user_agent'))[:40]}", optional=True)
+    add_fact_hop("fact:uploaded", "uploaded",
+                 lambda d: f"{d.get('bytes')} bytes ua={str(d.get('client_user_agent'))[:40]}"
+                           + (f" | {capture_of(d)}" if capture_of(d) else ""), optional=True)
     add_fact_hop("fact:received", "received", lambda d: f"watcher saw it, lag {d.get('detect_lag_ms')}ms")
     add_fact_hop("fact:transcribed", "transcribed",
-                 lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({d.get('model')}): "
-                           f"{str(d.get('transcript_text'))[:80]!r}")
+                 lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({d.get('model')})"
+                           + (f", audio {level_of(d)}" if level_of(d) else "") + f": {str(d.get('transcript_text'))[:80]!r}")
+    # The recording's level, from whichever transcribe-stage fact carries it (a silent or unrecognised memo never
+    # gets a transcribed fact, only the failed one). It is the evidence behind a "silent microphone" verdict.
+    lvl_src = next((x for x in [fact("transcribed")] + list(reversed(by_type.get("bloodbank.audio.memo.failed", [])))
+                    if x and (x.get("data") or {}).get("audio_max_dbfs") is not None), None)
+    if lvl_src:
+        ld = lvl_src.get("data") or {}
+        silent = ld["audio_max_dbfs"] < c.SILENT_MAX_DBFS
+        dev = capture_of((fact("uploaded") or {}).get("data") or {})
+        hops.append(Hop("audio_level", FAILED if silent else OK, evt_ts(lvl_src),
+                        f"{level_of(ld)}  -> {'SILENT: no sound reached the recording' if silent else 'audible'}"
+                        + (f" | {dev}" if dev else ""), optional=True))
     add_fact_hop("fact:dispatched", "dispatched",
                  lambda d: f"command {d.get('command_id')} -> {d.get('command_subject')} "
                            f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}"
@@ -333,6 +360,15 @@ def timeout_verdict(h: Hop) -> str | None:
     return f"STOPPED AT agent finished: turn timeout - {msg}"
 
 
+def silent_verdict(h: Hop, hops: list[Hop]) -> str | None:
+    """The watcher measured the recording and found no sound in it: name the microphone, not the transcript."""
+    if "silent_audio" not in h.detail:
+        return None
+    msg = re.sub(r"\s*\(retryable=.*\)$", "", h.detail.split("silent_audio:", 1)[-1].strip())
+    dev = next((x.detail.split("| ", 1)[1] for x in hops if x.name == "audio_level" and "| " in x.detail), "")
+    return f"STOPPED AT transcribe: SILENT MICROPHONE - {msg}" + (f" [{dev}]" if dev else "")
+
+
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     rec = ctx.get("watcher_record") or {}
     # a terminal failed fact (retryable=false) always wins
@@ -346,6 +382,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         h = terminal[-1]
         if timeout_verdict(h):
             return timeout_verdict(h), False
+        if silent_verdict(h, hops):
+            return silent_verdict(h, hops), False
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
         if h.name.startswith("fact:failed"):

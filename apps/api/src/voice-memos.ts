@@ -89,6 +89,8 @@ export type HopFailure = {
   attempt?: number;
   /** Set when the gateway stopped the agent's turn at its per-turn wall clock (error code turn_timeout). */
   timeout?: TurnTimeout;
+  /** Set on transcribe-stage failures that happened after the watcher measured the recording (silent_audio, empty_transcript, ...). */
+  audio?: AudioLevel;
 };
 
 /** Numbers from a turn_timeout fact (the gateway's invocation.failed, or the watcher's memo.failed copy of it). */
@@ -103,6 +105,42 @@ export type TurnTimeout = {
 };
 
 export const TURN_TIMEOUT = "turn_timeout";
+/** Watcher error code for a recording with no sound in it (the microphone delivered nothing). */
+export const SILENT_AUDIO = "silent_audio";
+/** Same line as the watcher (MEMO_SILENT_MAX_DBFS): a loudest sample below this is silence. Used only to label a level the watcher did not already judge. */
+export const SILENT_MAX_DBFS = -60;
+
+/** How loud a recording is, measured by the watcher (ffmpeg volumedetect) before it spent a transcription. */
+export type AudioLevel = { maxDbfs: number; meanDbfs?: number; durationSeconds?: number; silent: boolean };
+/** What the recorder on the device itself saw (data.capture on the uploaded fact), before the file left the phone. */
+export type CaptureLevel = { peakDbfs?: number; rmsDbfs?: number; silent?: boolean };
+
+export function audioLevelOf(d: Record<string, unknown>): AudioLevel | undefined {
+  const max = num(d.audio_max_dbfs);
+  if (max === undefined) return undefined;
+  return { maxDbfs: max, meanDbfs: num(d.audio_mean_dbfs), durationSeconds: num(d.audio_duration_seconds), silent: max < SILENT_MAX_DBFS };
+}
+
+export function captureLevelOf(d: Record<string, unknown>): CaptureLevel | undefined {
+  const cap = rec(d.capture);
+  const peak = num(cap.peak_dbfs);
+  const rms = num(cap.rms_dbfs);
+  if (peak === undefined && rms === undefined) return undefined;
+  return { peakDbfs: peak, rmsDbfs: rms, silent: (peak ?? rms ?? 0) < SILENT_MAX_DBFS };
+}
+
+const dbfs = (v: number) => `${Math.round(v)} dBFS`;
+
+/** "max -73 dBFS · mean -83 dBFS · silent" */
+export function audioLevelText(l: AudioLevel): string {
+  return [`max ${dbfs(l.maxDbfs)}`, l.meanDbfs !== undefined ? `mean ${dbfs(l.meanDbfs)}` : undefined, l.silent ? "silent" : "audible"].filter(Boolean).join(" · ");
+}
+
+/** "device heard peak -70 dBFS, rms -78 dBFS" */
+export function captureLevelText(c: CaptureLevel): string {
+  const bits = [c.peakDbfs !== undefined ? `peak ${dbfs(c.peakDbfs)}` : undefined, c.rmsDbfs !== undefined ? `rms ${dbfs(c.rmsDbfs)}` : undefined].filter(Boolean);
+  return `device heard ${bits.join(", ")}${c.silent ? " (silent)" : ""}`;
+}
 
 export function turnTimeoutOf(d: Record<string, unknown>): TurnTimeout {
   return {
@@ -134,6 +172,10 @@ export type Hop = {
   error?: HopFailure;
   failures: HopFailure[];
   events: JourneyEvent[];
+  /** Transcribed hop: how loud the recording was (from the transcribed fact, else the transcribe failure). */
+  audio?: AudioLevel;
+  /** Uploaded hop: what the device's own recorder measured, when it reported it. */
+  capture?: CaptureLevel;
 };
 
 export type MemoSummary = {
@@ -155,6 +197,10 @@ export type MemoSummary = {
   transcriptPreview?: string;
   replyPreview?: string;
   error?: string;
+  /** Loudness of the recording as the watcher measured it (absent for memos from before levels existed). */
+  audio?: AudioLevel;
+  /** Level the device's recorder reported (absent unless the pad / Honda app sends data.capture). */
+  capture?: CaptureLevel;
 };
 
 export type MemoDetail = MemoSummary & {
@@ -215,7 +261,8 @@ function failureOf(e: JourneyEvent): HopFailure {
     message: str(d.error_message),
     retryable: d.retryable === true,
     attempt: num(d.attempt),
-    ...(str(d.error_code) === TURN_TIMEOUT ? { timeout: turnTimeoutOf(d) } : {})
+    ...(str(d.error_code) === TURN_TIMEOUT ? { timeout: turnTimeoutOf(d) } : {}),
+    ...(audioLevelOf(d) ? { audio: audioLevelOf(d) } : {})
   };
 }
 
@@ -252,15 +299,19 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
   if (!e) return "";
   const d = e.data;
   switch (id) {
-    case "uploaded":
-      return [num(d.bytes) !== undefined ? `${num(d.bytes)} bytes` : undefined, str(d.client_user_agent)].filter(Boolean).join(" · ");
+    case "uploaded": {
+      const cap = captureLevelOf(d);
+      return [num(d.bytes) !== undefined ? `${num(d.bytes)} bytes` : undefined, cap ? captureLevelText(cap) : undefined, str(d.client_user_agent)]
+        .filter(Boolean).join(" · ");
+    }
     case "received":
       return num(d.detect_lag_ms) !== undefined ? `watcher lag ${num(d.detect_lag_ms)} ms` : "";
     case "transcribed": {
       const bits = [
         num(d.word_count) !== undefined ? `${num(d.word_count)} words` : undefined,
         num(d.processing_seconds) !== undefined ? `${num(d.processing_seconds)} s` : undefined,
-        str(d.model)
+        str(d.model),
+        audioLevelOf(d) ? audioLevelText(audioLevelOf(d)!) : undefined
       ].filter(Boolean);
       return bits.join(" · ");
     }
@@ -366,6 +417,12 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       detail: hopDetail(spec.id, spec.id === "played" ? evs.find((e) => str(e.data.phase) === "ended") ?? happened : happened),
       failures, events: evs
     };
+    if (spec.id === "uploaded") out.capture = memoFacts.map((e) => captureLevelOf(e.data)).find(Boolean);
+    if (spec.id === "transcribed") {
+      out.audio = (evs[0] ? audioLevelOf(evs[0].data) : undefined) ?? failures.map((f) => f.audio).filter(Boolean).at(-1);
+      // The watcher fails a silent recording before it transcribes: that failure IS the transcribed hop's verdict, with the level as evidence.
+      if (out.audio && !evs[0]) out.detail = audioLevelText(out.audio);
+    }
     if (agentBad && !happened?.type.endsWith(".completed")) {
       out.status = "failed";
       out.error = agentFailure(agentBad);
@@ -466,6 +523,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   else if (status === "failed" && failedHop?.error?.timeout) {
     const secs = failedHop.error.timeout.elapsedSeconds;
     stageLabel = `Agent turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
+  } else if (status === "failed" && failedHop?.error?.code === SILENT_AUDIO) {
+    stageLabel = "Silent microphone";
+  } else if (status === "failed" && failedHop?.id === "transcribed" && failedHop.error?.code === "empty_transcript" && failedHop.error.audio) {
+    stageLabel = "No words recognised";
   } else if (status === "failed") stageLabel = `Failed at ${(failedHop?.label ?? "unknown").toLowerCase()}`;
   else if (status === "stuck") stageLabel = `Stuck before ${(hops.find((h) => h.id === stuckAt)?.label ?? "").toLowerCase()}`;
   else stageLabel = hops[nextIdx] ? `Waiting for ${hops[nextIdx].label.toLowerCase()}` : "Running";
@@ -489,6 +550,8 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     stageLabel,
     stuckAt,
     lane, laneReason,
+    audio: hops.find((h) => h.id === "transcribed")?.audio,
+    capture: hops.find((h) => h.id === "uploaded")?.capture,
     transcriptPreview: preview(transcript, 140),
     replyPreview: preview(replyText, 140),
     error: (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
@@ -502,7 +565,7 @@ export function toSummary(detail: MemoDetail): MemoSummary {
   return {
     memoId: detail.memoId, agent: detail.agent, s3Key: detail.s3Key, startedAt: detail.startedAt, updatedAt: detail.updatedAt,
     totalSeconds: detail.totalSeconds, status: detail.status, reached: detail.reached, stageLabel: detail.stageLabel,
-    stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
+    stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
   };
 }
 

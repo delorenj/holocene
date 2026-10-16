@@ -60,6 +60,12 @@ WATCHER_UNIT = "holocene-inbox-watcher.service"
 REGISTRY_PATH = Path(os.environ.get("MEMO_AGENT_REGISTRY", HOME / ".hermes/agents-registry.yaml"))
 GATEWAY_UNIT = os.environ.get("MEMO_GATEWAY_UNIT", "hermes-gateway.service")
 FFPROBE = os.environ.get("MEMO_FFPROBE", "ffprobe")
+FFMPEG = os.environ.get("MEMO_FFMPEG", "ffmpeg")
+# A recording whose LOUDEST sample is below this is silent: the microphone delivered no sound, so Whisper is not
+# worth a run. Chosen from the bucket (2026-10-16): every real recording peaks at -16 dBFS or louder, the two
+# dead-mic recordings from the corked emulator capture peak at -73 / -75, digital silence reads -91. Room noise
+# from a live mic sits around -45 to -35, far above this line, so a quiet room is still "audible but no words".
+SILENT_MAX_DBFS = float(os.environ.get("MEMO_SILENT_MAX_DBFS", "-60"))
 
 MC_BIN = os.environ.get("MC_BIN") or shutil.which("mc") or "/usr/local/bin/mc"
 BB_EMIT = os.environ.get("BB_EMIT", "/home/delorenj/code/33GOD/bloodbank/bin/bb-emit")
@@ -168,6 +174,42 @@ def probe_audio(path: Path) -> dict:
         return {"ok": True, "duration": float(r.stdout.strip().splitlines()[0]), "error": None}
     except (ValueError, IndexError):
         return {"ok": False, "duration": None, "error": f"ffprobe gave no duration: {r.stdout.strip()[:100]!r}"}
+
+
+def measure_levels(path: Path) -> dict:
+    """{ok, mean_dbfs, max_dbfs, error} from ffmpeg volumedetect (one decode pass, a few ms for a voice memo).
+
+    mean_dbfs is the RMS-style mean volume, max_dbfs the loudest sample, both in dBFS (0 = full scale; digital
+    silence reads about -91). ok=None when ffmpeg itself is unavailable or timed out: the level is diagnostic and
+    must never block a transcription. ok=False when ffmpeg ran but gave no readings (no audio stream)."""
+    try:
+        r = subprocess.run([FFMPEG, "-hide_banner", "-nostats", "-nostdin", "-i", str(path), "-vn", "-af", "volumedetect",
+                            "-f", "null", "-"], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        return {"ok": None, "mean_dbfs": None, "max_dbfs": None, "error": f"{FFMPEG} not installed"}
+    except subprocess.TimeoutExpired:
+        return {"ok": None, "mean_dbfs": None, "max_dbfs": None, "error": "ffmpeg volumedetect timed out"}
+    mean = re.search(r"mean_volume:\s*(-?[0-9.]+|-?inf)\s*dB", r.stderr)
+    peak = re.search(r"max_volume:\s*(-?[0-9.]+|-?inf)\s*dB", r.stderr)
+    if not (mean and peak):
+        return {"ok": False, "mean_dbfs": None, "max_dbfs": None,
+                "error": (r.stderr.strip().splitlines() or ["ffmpeg gave no volume readings"])[-1][:200]}
+    floor = -96.0  # -inf (an all-zero stream) is reported as the 16-bit floor so it stays a finite JSON number
+    vals = [max(floor, float(x.group(1))) if "inf" not in x.group(1) else floor for x in (mean, peak)]
+    return {"ok": True, "mean_dbfs": round(vals[0], 1), "max_dbfs": round(vals[1], 1), "error": None}
+
+
+def fmt_dbfs(v) -> str:
+    return f"{v:.0f} dBFS" if isinstance(v, (int, float)) else "? dBFS"
+
+
+def level_text(max_dbfs, mean_dbfs=None, duration=None) -> str:
+    """'max -73 dBFS, mean -83 dBFS over 6.4 s' for messages and trace lines."""
+    bits = [f"max {fmt_dbfs(max_dbfs)}"]
+    if mean_dbfs is not None:
+        bits.append(f"mean {fmt_dbfs(mean_dbfs)}")
+    out = ", ".join(bits)
+    return f"{out} over {duration:.1f} s" if isinstance(duration, (int, float)) else out
 
 
 # ---------------------------------------------------------------- S3 (mc)

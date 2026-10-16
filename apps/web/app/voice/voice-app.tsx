@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
+import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
 import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
@@ -156,6 +156,7 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
               <span className="voice-row-foot">
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
                 {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
+                {m.audio ? <span className={`voice-level${m.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(m.audio)}</span> : null}
                 {m.status === "stuck" ? <span className="voice-badge is-stuck">stuck</span> : null}
                 {m.status === "failed" ? <span className="voice-badge is-failed">failed</span> : null}
               </span>
@@ -207,6 +208,8 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
             <p className="hub-note">
               {dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}
               {memo.lane ? <> · <LaneChip lane={memo.lane} reason={memo.laneReason} /></> : null}
+              {memo.audio ? <> · <span className={`voice-level${memo.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(memo.audio)}</span></> : null}
+              {captureChip(memo.capture) ? <> · <span className={`voice-level${memo.capture?.silent ? " is-silent" : ""}`} title="level the device's recorder reported">{captureChip(memo.capture)}</span></> : null}
             </p>
           </div>
         </div>

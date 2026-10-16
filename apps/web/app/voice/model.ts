@@ -1,5 +1,5 @@
 import type { Signal } from "../hub/types";
-import type { Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary } from "./types";
+import type { AudioLevel, CaptureLevel, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary } from "./types";
 
 export const HOP_SIGNAL: Record<HopStatus, Signal> = {
   ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown"
@@ -8,6 +8,18 @@ export const MEMO_SIGNAL: Record<MemoStatus, Signal> = { complete: "cleared", fa
 export const HOP_WORD: Record<HopStatus, string> = {
   ok: "Done", failed: "Failed", waiting: "Waiting", stuck: "Stuck", pending: "Not reached", missing: "Not recorded"
 };
+
+/** "max -73 dBFS · silent" · "max -8 dBFS · audible": the recording's loudest sample, as the watcher measured it. */
+export function audioChip(a: AudioLevel): string {
+  return `max ${Math.round(a.maxDbfs)} dBFS · ${a.silent ? "silent" : "audible"}`;
+}
+
+/** "device heard peak -71 dBFS" · undefined when the pad reported nothing. */
+export function captureChip(c: CaptureLevel | undefined): string | undefined {
+  if (!c) return undefined;
+  const bits = [c.peakDbfs !== undefined ? `peak ${Math.round(c.peakDbfs)} dBFS` : undefined, c.rmsDbfs !== undefined ? `rms ${Math.round(c.rmsDbfs)} dBFS` : undefined].filter(Boolean);
+  return bits.length ? `device heard ${bits.join(", ")}` : undefined;
+}
 
 /** 240 ms · 2.1 s · 46 s · 12m · 1h 06m */
 export function formatLatency(ms: number): string {

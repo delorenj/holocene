@@ -83,6 +83,7 @@ TRANSCRIBE_RATIO = float(os.environ.get("MEMO_TRANSCRIBE_RATIO", "8"))  # CPU la
 TRANSCRIBE_MAX_S = int(os.environ.get("MEMO_TRANSCRIBE_MAX_S", "7200"))
 MAX_ATTEMPTS = int(os.environ.get("MEMO_MAX_ATTEMPTS", "3"))
 MIN_AUDIO_S = float(os.environ.get("MEMO_MIN_AUDIO_S", "0.7"))
+SILENT_MAX_DBFS = mc_.SILENT_MAX_DBFS  # loudest-sample line below which a recording is silent (see memo_common)
 # Prepended to the transcript so the agent knows it is speech-to-text, not typed text.
 VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - speech-to-text, may contain recognition errors] ")
 # Whisper's usual output on noise or an accidental tap: never a real prompt.
@@ -119,6 +120,13 @@ def log(event: str, level: str = "info", **fields) -> None:
     rec = {"ts": iso(now_utc()), "svc": SERVICE, "level": level, "event": event}
     rec.update({k: v for k, v in fields.items() if v is not None})
     print(json.dumps(rec, separators=(",", ":"), default=str), flush=True)
+
+
+def level_fields(levels: dict) -> dict:
+    """Additive fact fields for a measured recording (audio.memo.transcribed / failed): loudest and mean level in dBFS."""
+    if not levels.get("ok"):
+        return {}
+    return {"audio_max_dbfs": levels["max_dbfs"], "audio_mean_dbfs": levels["mean_dbfs"]}
 
 
 class StageError(Exception):
@@ -216,14 +224,32 @@ def transcribe_timeout(audio_s: float | None, timeouts_so_far: int) -> int:
     return int(min(TRANSCRIBE_MAX_S, base * (1 + timeouts_so_far)))
 
 
-def junk_reason(text: str, audio_s: float | None) -> tuple[str, str] | None:
-    """(code, message) when a transcript is not a real prompt, else None."""
+def silent_reason(levels: dict, audio_s: float | None) -> tuple[str, str] | None:
+    """(code, message) when the recording is too quiet for any speech to be in it, else None.
+
+    Needs a successful measurement: an unmeasurable file (ffmpeg missing) goes on to transcription as before."""
+    if levels.get("ok") and levels["max_dbfs"] < SILENT_MAX_DBFS:
+        return "silent_audio", (f"recording is silent ({mc_.level_text(levels['max_dbfs'], levels['mean_dbfs'], audio_s)}): "
+                                "the microphone delivered no sound; on the simulator run `mise run auto:sim:mic-check`, "
+                                "in the car check the mic permission and mute")
+    return None
+
+
+def junk_reason(text: str, audio_s: float | None, levels: dict | None = None) -> tuple[str, str] | None:
+    """(code, message) when a transcript is not a real prompt, else None.
+
+    `levels` (from measure_levels) turns "empty" into a statement about the audio: it was audible, Whisper just
+    found no words in it. Silent audio never gets this far (see silent_reason)."""
+    lv = levels or {}
+    heard = f" ({mc_.level_text(lv['max_dbfs'], lv['mean_dbfs'], audio_s)})" if lv.get("ok") else ""
     norm = re.sub(r"[^a-z0-9' ]+", " ", text.lower()).strip()
     norm = re.sub(r"\s+", " ", norm)
     if not norm:
+        if lv.get("ok"):
+            return "empty_transcript", f"audible{heard} but no words recognised"
         return "empty_transcript", "transcript is empty (silence or unrecognised audio)"
     if norm in HALLUCINATIONS:
-        return "garbage_transcript", f"transcript {text.strip()!r} is a typical Whisper hallucination on noise, not a prompt"
+        return "garbage_transcript", f"transcript {text.strip()!r} is a typical Whisper hallucination on noise, not a prompt{heard}"
     return None
 
 
@@ -633,43 +659,63 @@ class Watcher:
             if probe["ok"] and audio_s is not None and audio_s < MIN_AUDIO_S:
                 raise StageError("transcribe", "too_short", f"recording is {audio_s:.2f}s (< {MIN_AUDIO_S}s): an accidental tap, not a prompt",
                                  retryable=False)
-            timeout = transcribe_timeout(audio_s, timeouts)
 
-            out_md = tmp / (audio.stem + ".md")
-            tlog = tmp / "transcribe.log"
-            env = {**os.environ, "TRANSCRIBE_DIR": TRANSCRIBE_DIR, "TRANSCRIBE_LOG_FILE": str(tlog)}
-            # --output keeps the transcript out of ~/d/Transcripts (--ephemeral only skips S3 archiving)
-            cmd = [TRANSCRIBE, str(audio), "--no-diarization", "--ephemeral", "--output", str(out_md)]
-            log("transcribe_start", memo_id=mid, key=key, agent=agent, stage="transcribe",
-                audio_s=audio_s, timeout_s=timeout)
-            t1 = time.time()
+            # Measure the level BEFORE spending a transcription: a dead microphone (a corked emulator capture, a
+            # revoked permission, a muted car mic) records a perfectly valid file of digital silence, and "the
+            # transcript is empty" says nothing about why. Every later failure of this stage carries the levels.
+            levels = mc_.measure_levels(audio)
+            lvl = level_fields(levels)
+            log("audio_level", memo_id=mid, key=key, agent=agent, stage="transcribe", audio_s=audio_s, **lvl,
+                measured=levels["ok"], error=levels["error"])
+            silent = silent_reason(levels, audio_s)
+            if silent:
+                raise StageError("transcribe", silent[0], silent[1], retryable=False,
+                                 extra={**lvl, "audio_duration_seconds": round(audio_s, 2) if audio_s is not None else None})
             try:
-                r = run(cmd, timeout, env=env)
-            except subprocess.TimeoutExpired:
-                raise StageError("transcribe", "timeout",
-                                 f"transcribe exceeded {timeout}s for {audio_s}s of audio") from None
-            took = time.time() - t1
-            if r.returncode != 0:
-                raise StageError("transcribe", f"rc_{r.returncode}", f"transcribe failed: {r.stderr.strip()[-400:]}")
-            md_path = Path(r.stdout.strip().splitlines()[-1].strip()) if r.stdout.strip() else out_md
-            if not md_path.exists():
-                md_path = out_md
-            if not md_path.exists():
-                raise StageError("transcribe", "no_output", f"transcribe wrote no markdown (stdout={r.stdout[-200:]!r})")
-            text = parse_transcript(md_path.read_text())
-            meta = {}
-            for line in r.stderr.splitlines():
-                if line.startswith("Transcription-Metadata:"):
-                    try:
-                        meta = json.loads(line.split(":", 1)[1].strip())
-                    except json.JSONDecodeError:
-                        pass
-            junk = junk_reason(text, meta.get("duration_seconds") or audio_s)
-            if junk:
-                raise StageError("transcribe", junk[0], junk[1], retryable=False)
-            return {"text": text, "meta": meta, "took": took, "audio_s": audio_s}
+                return self._transcribe_run(tmp, audio, mid, key, agent, audio_s, levels, lvl, timeouts)
+            except StageError as e:
+                e.extra = {**lvl, "audio_duration_seconds": round(audio_s, 2) if audio_s is not None else None, **e.extra}
+                raise
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def _transcribe_run(self, tmp: Path, audio: Path, mid: str, key: str, agent: str, audio_s: float | None,
+                        levels: dict, lvl: dict, timeouts: int) -> dict:
+        timeout = transcribe_timeout(audio_s, timeouts)
+
+        out_md = tmp / (audio.stem + ".md")
+        tlog = tmp / "transcribe.log"
+        env = {**os.environ, "TRANSCRIBE_DIR": TRANSCRIBE_DIR, "TRANSCRIBE_LOG_FILE": str(tlog)}
+        # --output keeps the transcript out of ~/d/Transcripts (--ephemeral only skips S3 archiving)
+        cmd = [TRANSCRIBE, str(audio), "--no-diarization", "--ephemeral", "--output", str(out_md)]
+        log("transcribe_start", memo_id=mid, key=key, agent=agent, stage="transcribe",
+            audio_s=audio_s, timeout_s=timeout)
+        t1 = time.time()
+        try:
+            r = run(cmd, timeout, env=env)
+        except subprocess.TimeoutExpired:
+            raise StageError("transcribe", "timeout",
+                             f"transcribe exceeded {timeout}s for {audio_s}s of audio") from None
+        took = time.time() - t1
+        if r.returncode != 0:
+            raise StageError("transcribe", f"rc_{r.returncode}", f"transcribe failed: {r.stderr.strip()[-400:]}")
+        md_path = Path(r.stdout.strip().splitlines()[-1].strip()) if r.stdout.strip() else out_md
+        if not md_path.exists():
+            md_path = out_md
+        if not md_path.exists():
+            raise StageError("transcribe", "no_output", f"transcribe wrote no markdown (stdout={r.stdout[-200:]!r})")
+        text = parse_transcript(md_path.read_text())
+        meta = {}
+        for line in r.stderr.splitlines():
+            if line.startswith("Transcription-Metadata:"):
+                try:
+                    meta = json.loads(line.split(":", 1)[1].strip())
+                except json.JSONDecodeError:
+                    pass
+        junk = junk_reason(text, audio_s or meta.get("duration_seconds"), levels)
+        if junk:
+            raise StageError("transcribe", junk[0], junk[1], retryable=False)
+        return {"text": text, "meta": meta, "took": took, "audio_s": audio_s, "levels": lvl}
 
     def _transcribe_apply(self, m: dict, w: dict) -> None:
         text, meta, took = w["text"], w["meta"], w["took"]
@@ -680,7 +726,8 @@ class Watcher:
             "word_count": meta.get("word_count") or len(text.split()),
             "audio_duration_seconds": meta.get("duration_seconds") or w["audio_s"],
             "processing_seconds": round(took, 2), "model": meta.get("model"),
-            "backend": meta.get("backend"), "language": meta.get("language")})
+            "backend": meta.get("backend"), "language": meta.get("language"), **w.get("levels", {})})
+        m.update({k: v for k, v in w.get("levels", {}).items() if v is not None})
         self.done_stage(m, "transcribed", "dispatch", ms=took * 1000, chars=len(text),
                         audio_s=meta.get("duration_seconds") or w["audio_s"], model=meta.get("model"),
                         text=text[:120])

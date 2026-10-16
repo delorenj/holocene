@@ -17,7 +17,11 @@ export type JourneyEvent = {
 };
 
 export type TurnTimeout = { elapsedSeconds?: number; limitSeconds?: number; lane?: string; source?: string; stopped?: boolean };
-export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout };
+/** Recording loudness the watcher measured before transcribing (dBFS; silent = no sound reached the file). */
+export type AudioLevel = { maxDbfs: number; meanDbfs?: number; durationSeconds?: number; silent: boolean };
+/** What the device's own recorder saw (data.capture on the uploaded fact). */
+export type CaptureLevel = { peakDbfs?: number; rmsDbfs?: number; silent?: boolean };
+export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout; audio?: AudioLevel };
 
 export type Hop = {
   id: HopId;
@@ -31,6 +35,8 @@ export type Hop = {
   error?: HopFailure;
   failures: HopFailure[];
   events: JourneyEvent[];
+  audio?: AudioLevel;
+  capture?: CaptureLevel;
 };
 
 export type MemoSummary = {
@@ -49,6 +55,8 @@ export type MemoSummary = {
   transcriptPreview?: string;
   replyPreview?: string;
   error?: string;
+  audio?: AudioLevel;
+  capture?: CaptureLevel;
 };
 
 export type MemoDetail = MemoSummary & { commandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[] };

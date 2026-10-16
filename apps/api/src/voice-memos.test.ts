@@ -268,3 +268,47 @@ test("a memo re-dispatched after a failed agent shows the NEWEST command's lane 
   assert.equal(hopHasType(d, "agent_done", "bloodbank.agent.invocation.failed"), false);
   assert.equal(hopHasType(d, "agent_started", "bloodbank.agent.invocation.started"), true);
 });
+
+test("a silent recording names the microphone: its own stage label, the measured level, no transcript hop", () => {
+  const silent = fact("audio.memo.failed", 47, {
+    occurred_at: iso(47), stage: "transcribe", error_code: "silent_audio", retryable: false, attempt: 1,
+    error_message: "recording is silent (max -73 dBFS, mean -83 dBFS over 6.4 s): the microphone delivered no sound",
+    audio_max_dbfs: -73.4, audio_mean_dbfs: -83.3, audio_duration_seconds: 6.38
+  });
+  const up = fact("audio.memo.uploaded", 0, { occurred_at: iso(0), bytes: 26589, capture: { peak_dbfs: -71.2, rms_dbfs: -80 } }, MEMO, "agent-pad-upload");
+  const d = buildMemoDetail(MEMO, [up, received(), silent], now(60))!;
+  assert.equal(d.status, "failed");
+  assert.equal(d.stageLabel, "Silent microphone");
+  const hop = d.hops.find(h => h.id === "transcribed")!;
+  assert.equal(hop.status, "failed");
+  assert.equal(hop.error?.code, "silent_audio");
+  assert.deepEqual(hop.audio, { maxDbfs: -73.4, meanDbfs: -83.3, durationSeconds: 6.38, silent: true });
+  assert.equal(hop.detail, "max -73 dBFS · mean -83 dBFS · silent");
+  assert.deepEqual(d.audio, hop.audio);
+  // the device's own recorder level shows on the uploaded hop and the summary, so "mic dead" is visible before the file left the phone
+  assert.deepEqual(d.capture, { peakDbfs: -71.2, rmsDbfs: -80, silent: true });
+  assert.equal(d.hops[0].detail, "26589 bytes · device heard peak -71 dBFS, rms -80 dBFS (silent)");
+  assert.equal(toSummary(d).audio?.silent, true);
+  assert.match(d.error!, /^silent_audio: recording is silent/);
+});
+
+test("audible audio with no words recognised says so, and the transcribed hop shows the level when it did work", () => {
+  const empty = fact("audio.memo.failed", 47, {
+    occurred_at: iso(47), stage: "transcribe", error_code: "empty_transcript", retryable: false, attempt: 1,
+    error_message: "audible (max -20 dBFS, mean -31 dBFS over 6.4 s) but no words recognised", audio_max_dbfs: -20, audio_mean_dbfs: -31
+  });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), empty], now(60))!;
+  assert.equal(d.stageLabel, "No words recognised");
+  assert.equal(d.hops.find(h => h.id === "transcribed")!.audio?.silent, false);
+  assert.equal(d.hops.find(h => h.id === "transcribed")!.detail, "max -20 dBFS · mean -31 dBFS · audible");
+
+  const ok = buildMemoDetail(MEMO, [uploaded(), received(), fact("audio.memo.transcribed", 41, { occurred_at: iso(41), transcript_text: "hello", word_count: 1, audio_max_dbfs: -8.2, audio_mean_dbfs: -30.3 })], now(60))!;
+  assert.match(ok.hops.find(h => h.id === "transcribed")!.detail, /1 words · max -8 dBFS · mean -30 dBFS · audible$/);
+
+  // memos from before levels existed keep the old shape
+  const legacy = buildMemoDetail(MEMO, [uploaded(), received(), transcribed()], now(60))!;
+  assert.equal(legacy.audio, undefined);
+  assert.equal(legacy.hops.find(h => h.id === "transcribed")!.detail, "6 words · 40.3 s · large-v3");
+  const oldEmpty = fact("audio.memo.failed", 47, { stage: "transcribe", error_code: "empty_transcript", retryable: false, error_message: "transcript is empty" });
+  assert.equal(buildMemoDetail(MEMO, [uploaded(), received(), oldEmpty], now(60))!.stageLabel, "Failed at transcribed");
+});

@@ -18,8 +18,9 @@ tools to see every hop of it.
         v
    inbox_watcher.py                                      memo_id = uuid5(URL, "s3://holocene-auto/"+key)
         |-- received    fact: audio.memo.received         HOP 3  watcher owns it
-        |-- download + `transcribe` (faster-whisper)      HOP 4  speech to text
-        |-- transcribed fact: audio.memo.transcribed      (text, seconds, model, audio duration)
+        |-- download, then measure the level (ffmpeg)     silent file -> failed(silent_audio), no transcription spent
+        |-- `transcribe` (faster-whisper)                 HOP 4  speech to text
+        |-- transcribed fact: audio.memo.transcribed      (text, seconds, model, audio duration, max/mean dBFS)
         |-- bb-emit --kind command                        HOP 5  dispatch
         |     bloodbank.cmd.agent.invocation.invoke       (interactive lane; .start = batch lane, the fallback)
         |                                                 correlationid = memo_id, thread_id = memo_id,
@@ -93,6 +94,7 @@ Exit code is 0 only for COMPLETE.
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
 | reply_object | the TTS audio | `mc stat delo/holocene-auto/<reply_s3_key>` |
+| audio level | loudest/mean sample in dBFS, measured before transcribing (`audio_max_dbfs`, `audio_mean_dbfs` on `transcribed` and on every transcribe-stage `failed`); `audio_level` hop in `memo:trace`; `device heard peak ...` from the pad when it sends `data.capture` | `ffmpeg -i <file> -af volumedetect -f null -` |
 | device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |
 | played | the pad's beacon (`started`/`ended`/`blocked`/`error`/`skipped`) | `docker logs agent-pad-upload \| grep '"event":"playback"'`, `audio.memo.played` |
 
@@ -200,6 +202,22 @@ Behaviour worth knowing:
   noise hallucinations ("Thank you.", "you", ...) never become prompts
   (`garbage_transcript`); all terminal. Skipped memos (no agent in the key, older
   than 24 h) publish `failed(stage=receive, code=no_agent|too_old)`.
+- **A silent recording names the microphone, not the transcript.** After the
+  download and before Whisper the watcher runs `ffmpeg -af volumedetect` and puts
+  the loudest and mean sample (`audio_max_dbfs`, `audio_mean_dbfs`, dBFS) on the
+  `transcribed` fact and on every transcribe-stage `failed` fact. A recording
+  whose loudest sample is below `MEMO_SILENT_MAX_DBFS` (default -60) fails at once
+  with the terminal code `silent_audio` and no transcription is spent:
+  `recording is silent (max -73 dBFS, mean -83 dBFS over 6.4 s): the microphone
+  delivered no sound; on the simulator run mise run auto:sim:mic-check, in the car
+  check the mic permission and mute`. The line was chosen from the bucket: every
+  real recording peaks at -16 dBFS or louder, the two dead-mic memos of
+  2026-10-16 (a corked emulator capture) peak at -73 / -75, digital silence reads
+  -91, and a live mic in a quiet room sits around -45 to -35. `empty_transcript`
+  now means audible-but-unrecognised and says so
+  (`audible (max -20 dBFS, mean -31 dBFS over 6.4 s) but no words recognised`).
+  An unmeasurable file (no ffmpeg) skips the check and behaves as before.
+  `memo:retry` re-enters at transcribe, so it re-runs the level check.
 - **The agent is told it is a transcript.** The prompt is
   `MEMO_VOICE_PREFIX` + transcript. After the turn the watcher compares the
   session's first user message with what it sent (`prompt_match` on the
@@ -306,6 +324,13 @@ hop shows its lane's queue (`interactive lane: 1/2 in flight, 0 queued`, from th
 watcher is configured for the interactive lane but nobody is pulling that consumer. `mise run memo:trace` prints
 `lane <lane>   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 4/4 in flight, 17 queued`,
 and `mise run memo:list` has a LANE column.
+
+A silent recording reads as its own outcome too: the list and header show a level chip (`max -73 dBFS · silent`, red when
+silent), the stage label is `Silent microphone` (`No words recognised` for audible audio Whisper could not read), the
+**Transcribed** hop is failed with `silent_audio` and the measured level, and the **Recorded and uploaded** hop shows
+`device heard peak -71 dBFS` when the pad reports its own capture level (`data.capture.peak_dbfs` / `rms_dbfs` on the
+uploaded fact). `memo:trace` prints an `audio_level` line and ends
+`STOPPED AT transcribe: SILENT MICROPHONE - recording is silent (max -73 dBFS, ...)`.
 
 A turn timeout reads as its own outcome everywhere: the list stage label is `Agent turn timed out after 300s`,
 the **Agent finished** hop is failed with `turn_timeout` / `agent turn timed out after 300s on interactive lane (limit 300s)`

@@ -142,6 +142,12 @@
   white-space: nowrap;
   color: var(--ink-3);
 }
+.hub-root .voice-level {
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.hub-root .voice-level.is-silent { color: var(--fail); font-weight: 700; }
 .hub-root .voice-lane.is-interactive { color: var(--cleared); }
 .hub-root .voice-lane.is-fallback { color: var(--stuck); border-style: dashed; }
 

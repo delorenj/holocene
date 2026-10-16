@@ -97,6 +97,22 @@ FAKE_FFPROBE.write_text(textwrap.dedent("""\
     """))
 FAKE_FFPROBE.chmod(0o755)
 
+# ffmpeg -af volumedetect: DEADMIC = a microphone that delivered no sound (the corked emulator capture, 2026-10-16)
+FAKE_FFMPEG = ROOT / "ffmpeg"
+FAKE_FFMPEG.write_text(textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import sys
+    args = sys.argv[1:]
+    data = open(args[args.index("-i") + 1], "rb").read().decode("latin1")
+    if "NOFFMPEGOUT" in data:
+        print("Output file #0 does not contain any stream", file=sys.stderr); sys.exit(1)
+    mean, peak = ("-83.3", "-73.4") if "DEADMIC" in data else ("-31.0", "-20.1")
+    print("[Parsed_volumedetect_0 @ 0x1] n_samples: 305280", file=sys.stderr)
+    print(f"[Parsed_volumedetect_0 @ 0x1] mean_volume: {mean} dB", file=sys.stderr)
+    print(f"[Parsed_volumedetect_0 @ 0x1] max_volume: {peak} dB", file=sys.stderr)
+    """))
+FAKE_FFMPEG.chmod(0o755)
+
 REGISTRY = ROOT / "agents-registry.yaml"
 REGISTRY.write_text(textwrap.dedent("""\
     schema_version: 1
@@ -133,7 +149,7 @@ os.environ.update({
     "MEMO_STATE_DIR": str(ROOT / "state"), "MEMO_GATEWAY_DB": str(GATEWAY_DB),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
-    "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
+    "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_FFMPEG": str(FAKE_FFMPEG), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -264,6 +280,49 @@ class Pipeline(unittest.TestCase):
         self.tick_until(lambda: self.state.memos.get(key, {}).get("status") == "failed")
         f = [r for t, r in facts() if t == "bloodbank.audio.memo.failed" and r["data"]["s3_key"] == key][-1]["data"]
         self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("transcribe", "empty_transcript", False))
+        # audible audio that Whisper found no words in: say so, with the levels
+        self.assertEqual((f["audio_max_dbfs"], f["audio_mean_dbfs"]), (-20.1, -31.0))
+        self.assertIn("audible (max -20 dBFS, mean -31 dBFS over 9.0 s) but no words recognised", f["error_message"])
+
+    def test_04b_a_silent_recording_fails_before_whisper_naming_the_microphone(self):
+        key = "inbox/holocene-pm/2026/10/15/deadmic.ogg"
+        put(key, b"OggS DEADMIC")
+        n0 = len(facts())
+        # a transcription that is spent anyway would drop a marker file: the fake whisper must never run
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("status") == "failed")
+        new = [(t, r["data"]) for t, r in facts()[n0:] if r["data"].get("s3_key") == key]
+        self.assertEqual([t.split(".")[-1] for t, _ in new], ["received", "failed"])  # no transcribed, no dispatched
+        f = new[-1][1]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("transcribe", "silent_audio", False))
+        self.assertEqual((f["audio_max_dbfs"], f["audio_mean_dbfs"], f["audio_duration_seconds"]), (-73.4, -83.3, 9.0))
+        self.assertIn("recording is silent (max -73 dBFS, mean -83 dBFS over 9.0 s)", f["error_message"])
+        self.assertIn("microphone delivered no sound", f["error_message"])
+        self.assertIn("mise run auto:sim:mic-check", f["error_message"])
+        self.assertEqual(self.state.memos[key]["attempts"]["transcribe"], 1)  # terminal, not retried
+        self.assertEqual(self.state.memos[key]["resume_stage"], "transcribe")  # memo:retry re-enters at the level check
+
+    def test_04c_levels_ride_the_transcribed_fact(self):
+        key = "inbox/holocene-pm/2026/10/15/audible.ogg"
+        put(key)
+        n0 = len(facts())
+        self.tick_until(lambda: any(t.endswith("audio.memo.transcribed") and r["data"]["s3_key"] == key for t, r in facts()[n0:]))
+        d = next(r["data"] for t, r in facts()[n0:] if t.endswith("audio.memo.transcribed") and r["data"]["s3_key"] == key)
+        self.assertEqual((d["audio_max_dbfs"], d["audio_mean_dbfs"], d["audio_duration_seconds"]), (-20.1, -31.0, 1.5))
+
+    def test_04d_levels_are_diagnostic_never_a_gate_when_unmeasurable(self):
+        from unittest import mock
+        self.assertIsNone(iw.silent_reason({"ok": None, "max_dbfs": None, "mean_dbfs": None}, 5))
+        self.assertIsNone(iw.silent_reason({"ok": True, "max_dbfs": -59.0, "mean_dbfs": -70.0}, 5))  # quiet room, not a dead mic
+        self.assertEqual(iw.silent_reason({"ok": True, "max_dbfs": -60.5, "mean_dbfs": -70.0}, 5)[0], "silent_audio")
+        # ffmpeg missing: no levels, no fields, and the transcript still decides
+        with mock.patch.object(mc_, "FFMPEG", "/nonexistent/ffmpeg"):
+            lv = mc_.measure_levels(Path(__file__))
+        self.assertEqual((lv["ok"], iw.level_fields(lv)), (None, {}))
+        self.assertEqual(iw.junk_reason(" . ", 2.0, lv)[1], "transcript is empty (silence or unrecognised audio)")
+        # -inf (all-zero stream) stays a finite number
+        fake = mock.Mock(stderr="mean_volume: -inf dB\nmax_volume: -inf dB\n")
+        with mock.patch.object(mc_.subprocess, "run", return_value=fake):
+            self.assertEqual(mc_.measure_levels(Path("x")), {"ok": True, "mean_dbfs": -96.0, "max_dbfs": -96.0, "error": None})
 
     def test_05_dispatch_failure_retries_then_fails(self):
         key = "inbox/holocene-pm/2026/10/15/nonats.ogg"
@@ -758,6 +817,26 @@ class LaneProbes(unittest.TestCase):
         db.execute("UPDATE executions SET lane='interactive' WHERE command_id=?", (cid,))
         db.commit(); db.close()
         self.assertEqual(mc_.journal_row(cid)["lane"], "interactive")
+
+    def test_trace_names_a_silent_microphone_and_shows_levels(self):
+        import memo_trace as mt
+        d = {"audio_max_dbfs": -73.4, "audio_mean_dbfs": -83.3, "audio_duration_seconds": 6.38}
+        self.assertEqual(mt.level_of(d), "max -73 dBFS, mean -83 dBFS over 6.4 s")
+        self.assertEqual(mt.level_of({}), "")
+        self.assertEqual(mt.capture_of({"capture": {"peak_dbfs": -71.2, "rms_dbfs": -80}}), "device heard peak -71 dBFS, rms -80 dBFS")
+        self.assertEqual(mt.capture_of({}), "")
+        detail = ("silent_audio: recording is silent (max -73 dBFS, mean -83 dBFS over 6.4 s): the microphone delivered no sound "
+                  "(retryable=False, attempt=1)")
+        failed = mt.Hop("fact:failed[transcribe]", mt.FAILED, None, detail)
+        level = mt.Hop("audio_level", mt.FAILED, None, "max -73 dBFS  -> SILENT: no sound reached the recording | device heard peak -71 dBFS", optional=True)
+        text, complete = mt.verdict([failed, level], {"watcher_record": {}})
+        self.assertFalse(complete)
+        self.assertTrue(text.startswith("STOPPED AT transcribe: SILENT MICROPHONE - recording is silent (max -73 dBFS"), text)
+        self.assertNotIn("retryable", text)
+        self.assertTrue(text.endswith("[device heard peak -71 dBFS]"), text)
+        # audible-but-unrecognised keeps the ordinary verdict, with its levels
+        empty = mt.Hop("fact:failed[transcribe]", mt.FAILED, None, "empty_transcript: audible (max -20 dBFS) but no words recognised (retryable=False, attempt=1)")
+        self.assertTrue(mt.verdict([empty], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript: audible (max -20 dBFS)"))
 
 
 if __name__ == "__main__":
