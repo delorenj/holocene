@@ -148,8 +148,9 @@ mics (-72.2 vs -68) and 0 dB on speech.
    `playback` events for old replies (only a genuinely new reply played once), where before every start replayed two. The first
    attempt (sending the app HOME before force-stop so Chromium flushes) was wrong twice over: the flush is not the problem, and HOME
    raises the Honda "Connect the Device" dialog so the next probe never recorded; it was backed out.
-   **Not fixed, flagged:** the IndexedDB outbox (unsent recordings) lives in the same WebView storage. If that is also reset by a
-   cold start, a note queued offline is lost when the app restarts. Needs its own test with a queued note before trusting it.
+   **Checked, fine:** IndexedDB (the outbox of unsent recordings) does survive the same cold start: a 5 kB record written over
+   the devtools socket was still there after `force-stop` + `start` (database list `agentpad`, `zz_probe`; probe removed afterwards).
+   Only `localStorage` is reset, so nothing queued offline is lost by a restart.
 5. **`auto:sim:mic-check` came back INCONCLUSIVE after the driving-mode work: FIXED.** A car host reports "restricted" first and
    "unrestricted" about 1.7 s after start, just after the 1.5 s `HOST_SETTLE_MS`; the diagnostic intent was refused in that gap and the
    check timed out after 45 s. `MainActivity.scheduleDiagnosticIntent` now waits (up to 6 s more, 500 ms steps) for the host to
