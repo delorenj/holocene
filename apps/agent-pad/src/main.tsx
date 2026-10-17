@@ -3,10 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, replyExt, stripDataUrl } from './flight'
+import { type Agent, ROSTER_URL, driveTiles, normRoster, sameRoster, step } from './roster'
 
-type Agent = { id: string; name: string; color: string }
-
-const AGENTS: Agent[] = [
+// First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
+const FALLBACK_AGENTS: Agent[] = [
   { id: '33god-pm', name: 'Grolf', color: '#4f8cff' },
   { id: 'holocene-pm', name: 'Holocene', color: '#9b59b6' },
   { id: 'client-portal-pm', name: 'Client Portal', color: '#e67e22' },
@@ -243,11 +243,15 @@ function renderedAt(key: string): number {
 // window.__hnControl({action}) (wheel / rotary) and learns what happened through HoloceneNative.padEvent(json),
 // which it speaks ("Holocene", "Recording for Holocene", "Sent to Holocene"). Every call is feature-detected:
 // in a normal browser or an old host nothing here does anything.
-type HostInfo = { driving: boolean; noVideo: boolean; noText: boolean; maxLabel: number }
-const PARKED_HOST: HostInfo = { driving: false, noVideo: false, noText: false, maxLabel: 0 }
+type HostInfo = { driving: boolean; noVideo: boolean; noText: boolean; maxLabel: number; maxItems: number }
+const PARKED_HOST: HostInfo = { driving: false, noVideo: false, noText: false, maxLabel: 0, maxItems: 0 }
 function normHost(h: unknown): HostInfo {
   const o = (h || {}) as Partial<HostInfo>
-  return { driving: !!o.driving, noVideo: !!o.noVideo, noText: !!o.noText, maxLabel: typeof o.maxLabel === 'number' ? o.maxLabel : 0 }
+  return {
+    driving: !!o.driving, noVideo: !!o.noVideo, noText: !!o.noText,
+    maxLabel: typeof o.maxLabel === 'number' ? o.maxLabel : 0,
+    maxItems: typeof o.maxItems === 'number' ? o.maxItems : 0,
+  }
 }
 function readHost(): HostInfo {
   try {
@@ -256,7 +260,7 @@ function readHost(): HostInfo {
   } catch { /* old host or bad json */ }
   try {
     // ?driving=1 previews the driving layout in a normal browser.
-    if (new URLSearchParams(location.search).get('driving') === '1') return { driving: true, noVideo: true, noText: true, maxLabel: 0 }
+    if (new URLSearchParams(location.search).get('driving') === '1') return { driving: true, noVideo: true, noText: true, maxLabel: 0, maxItems: 0 }
   } catch { /* no location */ }
   return PARKED_HOST
 }
@@ -285,9 +289,35 @@ const PHASE_LABEL: Record<PadPhase, string> = {
   queued: 'SAVED, RETRYING', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
 }
 const LS_AGENT = 'agentpad.agent'
+const LS_ROSTER = 'agentpad.roster'
+const ROSTER_POLL_MS = 120_000
+const DRIVE_TILES = 5 // the driving layout's one row of big tiles
+const ROSTER_WAIT_MS = 2500 // how long a start with no cached roster waits for it before showing the fallback list
+// The car host's native prefs only take the reply marker, so in the car this is localStorage, which a cold start
+// empties: there the first fetch decides, and the tiles wait for it (briefly) rather than reorder under a finger.
+const rosterGet = () => normRoster(durableGet(LS_ROSTER, (window as any).HoloceneNative, safeLs()))
+const rosterSet = (list: Agent[]) => durableSet(LS_ROSTER, JSON.stringify({ agents: list }), (window as any).HoloceneNative, safeLs())
+
+// The bot's Telegram picture when the roster has one (and it loads), its initial on its colour otherwise.
+function Swatch({ a }: { a: Agent }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [a.avatar])
+  return (
+    <span className={`swatch${a.avatar && !broken ? ' pic' : ''}`}>
+      {a.avatar && !broken
+        ? <img src={a.avatar} alt="" draggable={false} decoding="async" onError={() => setBroken(true)} />
+        : a.name.charAt(0)}
+    </span>
+  )
+}
 
 function App() {
-  const [selected, setSelected] = useState<Agent | null>(() => AGENTS.find((a) => a.id === lsGet(LS_AGENT)) || null)
+  const [cachedRoster] = useState(rosterGet)
+  const [agents, setAgents] = useState<Agent[]>(() => cachedRoster || FALLBACK_AGENTS)
+  const [rosterReady, setRosterReady] = useState(!!cachedRoster)
+  const agentsRef = useRef(agents)
+  agentsRef.current = agents
+  const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === lsGet(LS_AGENT)) || null)
   const [host, setHost] = useState<HostInfo>(readHost)
   const drivingRef = useRef(host.driving) // read when a recording ends: the car may have started moving mid-note
   drivingRef.current = host.driving
@@ -762,10 +792,8 @@ function App() {
     const a = c.action
     if (a === 'select_next' || a === 'select_prev') {
       if (recordingRef.current || arming.current) { emitHost({ t: 'refused', reason: 'recording' }); return }
-      const n = AGENTS.length
-      const i = selectedRef.current ? AGENTS.findIndex((x) => x.id === selectedRef.current!.id) : -1
-      const j = i < 0 ? (a === 'select_next' ? 0 : n - 1) : (i + (a === 'select_next' ? 1 : n - 1)) % n
-      chooseAgent(AGENTS[j])
+      const next = step(agentsRef.current, selectedRef.current?.id, a === 'select_next' ? 1 : -1)
+      if (next) chooseAgent(next)
     } else if (a === 'toggle_record') {
       if (recordingRef.current) stopRecording()
       else if (arming.current) return
@@ -785,6 +813,44 @@ function App() {
     return () => { delete w.__hnControl; delete w.__hnHost }
   }, [])
 
+  // ---- roster: refreshed on start, every 2 minutes and on return to the foreground. A new order is applied only
+  // between notes: the memo target is snapshotted at record start and the tiles must not move under a finger mid-note.
+  const pendingRoster = useRef<{ list: Agent[] } | null>(null)
+  const applyRoster = useCallback(() => {
+    const p = pendingRoster.current
+    if (!p || recordingRef.current || arming.current) return
+    pendingRoster.current = null
+    rosterSet(p.list)
+    setRosterReady(true)
+    if (sameRoster(agentsRef.current, p.list)) return
+    setAgents(p.list)
+    // The selected agent keeps its selection with its new name and picture; one that left the roster stays
+    // selected (its memos still route until the registry says otherwise), it is just no longer listed.
+    setSelected((s) => (s ? p.list.find((x) => x.id === s.id) ?? s : p.list.find((x) => x.id === lsGet(LS_AGENT)) ?? null))
+  }, [])
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const r = await fetch(ROSTER_URL, { cache: 'no-cache' })
+        if (!r.ok) return
+        const list = normRoster(await r.text())
+        if (!alive || !list) return
+        pendingRoster.current = { list }
+        applyRoster()
+      } catch { /* offline: keep the cached roster */ }
+    }
+    void load()
+    const wait = window.setTimeout(() => setRosterReady(true), ROSTER_WAIT_MS)
+    const t = window.setInterval(load, ROSTER_POLL_MS)
+    const onVis = () => { if (document.visibilityState === 'visible') void load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { alive = false; window.clearTimeout(wait); window.clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
+  }, [applyRoster])
+  useEffect(() => {
+    if (!recording && phase !== 'arming') applyRoster()
+  }, [recording, phase, applyRoster])
+
   selectedRef.current = selected
   recordingRef.current = recording
   // A reply that waited for the note to finish (or a retry that was gated) plays once the mic is closed.
@@ -794,6 +860,7 @@ function App() {
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
+  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES) : agents
 
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
@@ -811,7 +878,7 @@ function App() {
         </button>
       )}
       <div className="tiles" role="radiogroup" aria-label="Agent">
-        {AGENTS.map((a) => {
+        {tiles.map((a) => {
           const on = selected?.id === a.id
           return (
             <button
@@ -823,7 +890,7 @@ function App() {
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
             >
-              <span className="swatch">{a.name.charAt(0)}</span>
+              <Swatch a={a} />
               <span className="name">{label(a.name)}</span>
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
@@ -898,15 +965,17 @@ const CSS = `
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 .pad { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:clamp(10px,2vw,20px); gap:clamp(10px,2vw,18px); overflow:auto; }
 .unlock { min-height:64px; padding:0 24px; border-radius:16px; border:3px solid #4f8cff; background:#141a24; color:#4f8cff; font-weight:700; font-size:clamp(18px,2.2vw,26px); cursor:pointer; }
-.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:minmax(120px,1fr); gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; }
+.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overscroll-behavior:contain; padding:2px; }
 @media (min-width:600px) { .tiles { grid-template-columns:repeat(3,1fr); } }
 @media (min-width:900px) { .tiles { grid-template-columns:repeat(5,1fr); } }
 .tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(8px,1.6vw,18px); min-height:120px; padding:8px; border-radius:20px; border:2px solid #2a3140; background:#141a24; color:#e6e6e6; cursor:pointer; transition:background .12s, border-color .12s, transform .08s; }
 .tile:active { transform:scale(.97); }
 .tile:disabled { opacity:.35; cursor:not-allowed; }
-.tile .swatch { display:flex; align-items:center; justify-content:center; width:clamp(56px,8vw,92px); height:clamp(56px,8vw,92px); border-radius:22px; background:var(--c); color:#fff; font-size:clamp(30px,4.6vw,54px); font-weight:800; text-shadow:0 2px 6px rgba(0,0,0,.35); }
+.tile .swatch { flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:clamp(56px,8vw,92px); height:clamp(56px,8vw,92px); border-radius:22px; background:var(--c); color:#fff; font-size:clamp(30px,4.6vw,54px); font-weight:800; text-shadow:0 2px 6px rgba(0,0,0,.35); }
 .tile .name { font-size:clamp(20px,2.4vw,30px); font-weight:700; line-height:1.15; text-align:center; overflow-wrap:anywhere; }
 .tile.on { border:5px solid var(--c); background:color-mix(in srgb, var(--c) 22%, #141a24); padding:5px; }
+.tile .swatch.pic { padding:0; overflow:hidden; border-radius:50%; background:#0b1020; text-shadow:none; }
+.tile .swatch.pic img { width:100%; height:100%; object-fit:cover; display:block; }
 .tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
 .bar { display:flex; align-items:center; gap:clamp(12px,2vw,24px); flex-wrap:wrap; flex:0 0 auto; }
 .rec { display:flex; align-items:center; justify-content:center; gap:14px; flex:1 1 320px; min-height:88px; padding:0 28px; border-radius:44px; border:none; background:var(--c); color:#fff; font-size:clamp(24px,3vw,36px); font-weight:800; cursor:pointer; }
@@ -935,7 +1004,7 @@ const CSS = `
 .hero[data-phase="recording"] { background:#7a1d16; border-color:#ff5b4d; }
 .hero[data-phase="sent"] { background:#12361f; border-color:#2ecc71; }
 .hero[data-phase="queued"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
-.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; max-height:none; flex:1 1 0; min-height:0; }
+.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; align-content:stretch; max-height:none; overflow:hidden; flex:1 1 0; min-height:0; }
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }

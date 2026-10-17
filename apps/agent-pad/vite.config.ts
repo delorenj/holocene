@@ -6,9 +6,10 @@ export default defineConfig({
   base: './',
   build: { outDir: 'dist' },
   server: {
-    // Dev only: recording uploads hit the real proxy so the full flow works under HMR.
+    // Dev only: recording uploads and the agent roster hit production so the full flow works under HMR.
     proxy: {
       '/upload': { target: 'https://agent-pad.delo.sh', changeOrigin: true },
+      '/roster': { target: 'https://agent-pad.delo.sh', changeOrigin: true },
     },
   },
 })
