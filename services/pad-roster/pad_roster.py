@@ -15,7 +15,8 @@ same rule the inbox watcher dispatches with). A tile for anything else would str
 "Most recently interacted with": the newest message the operator sent the agent, read from the agent's Hermes
 session store (~/.hermes/profiles/<profile>/state.db). Operator sessions are the ones a person drives (Telegram,
 CLI/TUI, desktop, Slack) plus voice memos (Bloodbank sessions opened by the inbox watcher). Cron, subagent, oneshot
-and other Bloodbank traffic is the fleet talking to itself and does not count.
+and other Bloodbank traffic is the fleet talking to itself and does not count, nor do Hermes' own role='user' notices
+or a CLI/TUI/desktop session no bigger than a probe (one question, one answer).
 
 Avatars are linked, not copied by hand: the source is the bot's live Telegram profile photo (the one the
 hermes-project-avatar skill sets), re-checked every PAD_ROSTER_AVATAR_TTL_S. First choice is the Bot API with the
@@ -52,7 +53,14 @@ OP_BIN = os.environ.get("OP_BIN", "op")
 TG_API = "https://api.telegram.org"
 
 OPERATOR_SOURCES = ("telegram", "cli", "tui", "desktop", "slack")
+# Sources a script can also open: a session there counts only past a probe's size (a "reply PONG" fleet sweep is one
+# question and one answer). A person typing in Telegram or Slack, or recording a memo, always counts.
+SCRIPTABLE_SOURCES = ("cli", "tui", "desktop")
+PROBE_MAX_MESSAGES = 2
 VOICE_MEMO_USER = "inbox-watcher"
+# Hermes stores its own notices (delegation results, compaction summaries, attachment notes) as role='user' rows.
+SYNTHETIC_PREFIXES = ("[ASYNC DELEGATION", "[CONTEXT COMPACTION", "[IMPORTANT", "[SYSTEM", "[Slack attachment notice")
+AVATAR_BUDGET_S = int(os.environ.get("PAD_ROSTER_AVATAR_BUDGET_S", "120"))
 
 # The five tiles the pad shipped with keep their colours, so the car looks the same for the agents it already had.
 LEGACY_COLORS = {
@@ -119,13 +127,20 @@ def last_interaction(profile_dir: Path) -> tuple[float | None, str | None]:
         return None, None
     try:
         marks = ",".join("?" * len(OPERATOR_SOURCES))
+        script_marks = ",".join("?" * len(SCRIPTABLE_SOURCES))
+        not_synthetic = " AND ".join("coalesce(m.content, '') NOT LIKE ?" for _ in SYNTHETIC_PREFIXES)
+        # A session with no real operator message (an empty desktop tab, a compaction stub) is not an interaction.
         row = con.execute(
-            f"""SELECT coalesce((SELECT max(m.timestamp) FROM messages m WHERE m.session_id = s.id AND m.role = 'user'),
-                                s.started_at) AS at, s.source
-                FROM sessions s
-                WHERE s.source IN ({marks}) OR (s.source = 'bloodbank' AND s.user_id = ?)
-                ORDER BY at DESC LIMIT 1""",
-            (*OPERATOR_SOURCES, VOICE_MEMO_USER),
+            f"""SELECT at, source FROM (
+                  SELECT (SELECT max(m.timestamp) FROM messages m
+                          WHERE m.session_id = s.id AND m.role = 'user' AND {not_synthetic}) AS at, s.source AS source
+                  FROM sessions s
+                  WHERE (s.source IN ({marks}) OR (s.source = 'bloodbank' AND s.user_id = ?))
+                    AND NOT (s.source IN ({script_marks})
+                             AND (SELECT count(*) FROM messages m WHERE m.session_id = s.id) <= ?))
+                WHERE at IS NOT NULL ORDER BY at DESC LIMIT 1""",
+            (*(p + "%" for p in SYNTHETIC_PREFIXES), *OPERATOR_SOURCES, VOICE_MEMO_USER, *SCRIPTABLE_SOURCES,
+             PROBE_MAX_MESSAGES),
         ).fetchone()
     except sqlite3.Error as e:
         log("interaction_unreadable", profile=profile_dir.name, error=type(e).__name__)
@@ -262,6 +277,7 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
 
     keep, skipped = routable_agents(registry)
     rows = []
+    started = time.monotonic()
     for a in keep:
         pdir = profiles / a["profile"]
         at, via = last_interaction(pdir)
@@ -269,6 +285,10 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
         cached = cache.get(a["id"])
         stale = force_avatars or not cached or now - cached.get("checked_at", 0) > AVATAR_TTL_S or (
             cached.get("file") and not (avatars / cached["file"]).is_file())
+        if stale and time.monotonic() - started > AVATAR_BUDGET_S:
+            # A slow 1Password or Telegram must never hold the ordering hostage: the rest wait for the next pass.
+            log("avatar_deferred", agent=a["id"], reason="avatar budget spent this pass")
+            stale = False
         if stale:
             entry, errors = None, []
             ref = token_ref(pdir)
@@ -280,11 +300,15 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
                     entry = refresh_avatar(a["id"], telegram(token), avatars)
                 except RuntimeError as e:
                     errors.append(str(e))
+                except Exception as e:  # noqa: BLE001  odd payload or local I/O: one avatar, never the whole pass
+                    errors.append(f"bot_api: {type(e).__name__}")
             if entry is None and a["bot_username"]:
                 try:
                     entry = public_avatar(a["id"], a["bot_username"], avatars, get=public_get)
                 except RuntimeError as e:
                     errors.append(str(e))
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"userpic: {type(e).__name__}")
             if entry is not None and entry.get("file") is None and errors and cached and cached.get("file") \
                     and (avatars / cached["file"]).is_file():
                 # The authoritative path failed and the public fallback found nothing (a stale registry username
@@ -320,6 +344,14 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
     for r in rows:
         if seen[r["name"].lower()] > 1:
             r["name"] = id_name(r["id"])
+
+    # Agents that left the roster take their pictures with them.
+    current = {a["id"] for a in keep}
+    cache = {k: v for k, v in cache.items() if k in current}
+    referenced = {v.get("file") for v in cache.values()}
+    for f in avatars.glob("*.jpg"):
+        if f.name not in referenced:
+            f.unlink(missing_ok=True)
 
     order = {a["id"]: i for i, a in enumerate(keep)}
     rows.sort(key=lambda r: (-r["_at"], order[r["id"]]))

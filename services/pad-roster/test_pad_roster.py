@@ -25,17 +25,18 @@ def fleet(row_id: str, display: str, bot: str | None = None, enabled: bool = Tru
             f"    bloodbank: {{enabled: {str(enabled).lower()}, gateway_scope: fleet, target_agent_id: {row_id}}}\n")
 
 
-def session_db(profile: Path, rows: list[tuple[str, str, str | None, float, list[float]]]) -> None:
-    """rows: (session id, source, user_id, started_at, [user message timestamps])"""
+def session_db(profile: Path, rows: list[tuple]) -> None:
+    """rows: (session id, source, user_id, started_at, [user message timestamp or (timestamp, content)])"""
     profile.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(profile / "state.db")
     con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, user_id TEXT, started_at REAL)")
-    con.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, timestamp REAL)")
+    con.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL)")
     for sid, source, user, started, msgs in rows:
         con.execute("INSERT INTO sessions VALUES (?,?,?,?)", (sid, source, user, started))
-        for t in msgs:
-            con.execute("INSERT INTO messages (session_id, role, timestamp) VALUES (?, 'user', ?)", (sid, t))
-            con.execute("INSERT INTO messages (session_id, role, timestamp) VALUES (?, 'assistant', ?)", (sid, t + 999999))
+        for m in msgs:
+            t, text = m if isinstance(m, tuple) else (m, "hey")
+            con.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'user', ?, ?)", (sid, text, t))
+            con.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'assistant', 'ok', ?)", (sid, t + 999999))
     con.commit()
     con.close()
 
@@ -87,11 +88,15 @@ class RosterTest(unittest.TestCase):
         ]))
         session_db(self.profiles / "holocene-pm", [
             ("a", "cron", None, 9000, [9000]),             # the fleet talking to itself: not an interaction
-            ("b", "bloodbank", "inbox-watcher", 100, [500]),  # a voice memo
+            ("b", "bloodbank", "inbox-watcher", 100, [800]),  # a voice memo: newer than Grolf's last real message
         ])
-        session_db(self.profiles / "33god-pm", [("c", "telegram", "7564050286", 200, [700, 650])])
+        session_db(self.profiles / "33god-pm", [
+            ("c", "telegram", "7564050286", 200, [700, 650, (900, "[ASYNC DELEGATION BATCH COMPLETE - deleg_1]")]),
+            ("c2", "desktop", None, 950, []),             # an empty desktop tab is not an interaction
+        ])
         session_db(self.profiles / "flume-pm", [
-            ("d", "cli", None, 50, []),                    # an operator session with no user message rows yet
+            ("d", "cli", None, 50, [60, 70]),              # a real CLI conversation
+            ("d2", "cli", None, 7000, [(7000, "Respond with pong")]),  # a fleet probe: one question, one answer
             ("e", "bloodbank", "bloodbank.integration.n8n", 8000, [8000]),  # n8n traffic does not count
             ("f", "subagent", None, 8500, [8500]),
         ])
@@ -116,11 +121,13 @@ class RosterTest(unittest.TestCase):
     def test_most_recent_operator_message_first_then_registry_order(self):
         r = self.build()
         self.assertEqual([a["id"] for a in r["agents"]],
-                         ["33god-pm", "holocene-pm", "infra-pm", "flume-pm", "monitoring-pm", "never-pm"])
+                         ["holocene-pm", "33god-pm", "infra-pm", "flume-pm", "monitoring-pm", "never-pm"])
         by = {a["id"]: a for a in r["agents"]}
         self.assertEqual(by["33god-pm"]["via"], "telegram")
         self.assertEqual(by["holocene-pm"]["via"], "voice")
         self.assertEqual(by["flume-pm"]["via"], "cli")
+        self.assertEqual(by["flume-pm"]["interactedAt"], "1970-01-01T00:01:10Z", "the pong probe at 7000 is not a conversation")
+        self.assertEqual(by["33god-pm"]["interactedAt"], "1970-01-01T00:11:40Z", "notices and empty tabs are not the operator")
         self.assertIsNone(by["never-pm"]["interactedAt"])
 
     def test_names_are_short_and_never_collide(self):
@@ -178,6 +185,22 @@ class RosterTest(unittest.TestCase):
         boom.call = lambda method, **kw: (_ for _ in ()).throw(RuntimeError(f"{method}: URLError"))
         r = self.build(tg=boom, force=True)
         self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/holocene-pm.UID1.jpg")
+
+    def test_agents_that_leave_take_their_pictures(self):
+        self.build()
+        self.assertTrue((self.out / "avatars/holocene-pm.UID1.jpg").exists())
+        REGISTRY.write_text(REGISTRY.read_text().replace("enabled: true, gateway_scope: fleet, target_agent_id: holocene-pm",
+                                                         "enabled: false, gateway_scope: fleet, target_agent_id: holocene-pm"))
+        self.build()
+        self.assertFalse((self.out / "avatars/holocene-pm.UID1.jpg").exists())
+        self.assertNotIn("holocene-pm", json.loads((self.out / "state.json").read_text())["avatars"])
+
+    def test_an_odd_telegram_payload_costs_one_avatar_not_the_roster(self):
+        odd = FakeTelegram("HolocenePMBot", "UID1")
+        odd.call = lambda method, **kw: {}  # no 'id': KeyError deep in refresh_avatar
+        r = self.build(tg=odd)
+        self.assertEqual(len(r["agents"]), 6)
+        self.assertTrue((self.out / "roster.json").exists())
 
     def test_token_never_reaches_output(self):
         secret = "123456:SECRET-TOKEN"

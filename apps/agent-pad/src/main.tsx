@@ -182,6 +182,27 @@ const outboxPut = (p: Pending) => idbRun('readwrite', (s) => s.put(p))
 const outboxAll = async () => ((await idbRun<Pending[]>('readonly', (s) => s.getAll() as IDBRequest<Pending[]>)) || [])
 const outboxDel = (key: string) => idbRun('readwrite', (s) => s.delete(key))
 
+// The last good roster, in its own database (never in the outbox's store, which is read whole as pending uploads).
+// IndexedDB is what survives a cold start in the car: localStorage is emptied and the native prefs take one key.
+function rosterDb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('agentpad-roster', 1)
+      req.onupgradeneeded = () => req.result.createObjectStore('kv')
+      req.onerror = () => resolve(null)
+      req.onsuccess = () => {
+        try {
+          const r = fn(req.result.transaction('kv', mode).objectStore('kv'))
+          r.onsuccess = () => resolve(r.result)
+          r.onerror = () => resolve(null)
+        } catch { resolve(null) }
+      }
+    } catch { resolve(null) }
+  })
+}
+const rosterDbGet = async () => normRoster(await rosterDb<unknown>('readonly', (s) => s.get('roster')))
+const rosterDbSet = (list: Agent[]) => rosterDb('readwrite', (s) => s.put({ agents: list }, 'roster'))
+
 // ---- client events: what only the device can see (record start/stop/failure, upload failure) ----
 // The proxy logs each one; failures also become audio.memo.failed(stage record|upload) facts keyed by the
 // key the memo would have had, so a memo that never reached S3 still shows up in memo:trace and /voice.
@@ -293,10 +314,10 @@ const LS_ROSTER = 'agentpad.roster'
 const ROSTER_POLL_MS = 120_000
 const DRIVE_TILES = 5 // the driving layout's one row of big tiles
 const ROSTER_WAIT_MS = 2500 // how long a start with no cached roster waits for it before showing the fallback list
-// The car host's native prefs only take the reply marker, so in the car this is localStorage, which a cold start
-// empties: there the first fetch decides, and the tiles wait for it (briefly) rather than reorder under a finger.
-const rosterGet = () => normRoster(durableGet(LS_ROSTER, (window as any).HoloceneNative, safeLs()))
-const rosterSet = (list: Agent[]) => durableSet(LS_ROSTER, JSON.stringify({ agents: list }), (window as any).HoloceneNative, safeLs())
+// localStorage answers synchronously (a browser keeps it); in the car a cold start empties it, so the IndexedDB copy
+// (rosterDbGet) is read next, and only a first-ever start with no network waits for the fallback list.
+const rosterGet = () => normRoster(lsGet(LS_ROSTER))
+const rosterSet = (list: Agent[]) => { lsSet(LS_ROSTER, JSON.stringify({ agents: list })); void rosterDbSet(list) }
 
 // The bot's Telegram picture when the roster has one (and it loads), its initial on its colour otherwise.
 function Swatch({ a }: { a: Agent }) {
@@ -815,12 +836,14 @@ function App() {
 
   // ---- roster: refreshed on start, every 2 minutes and on return to the foreground. A new order is applied only
   // between notes: the memo target is snapshotted at record start and the tiles must not move under a finger mid-note.
-  const pendingRoster = useRef<{ list: Agent[] } | null>(null)
+  const pendingRoster = useRef<{ list: Agent[]; cached?: boolean } | null>(null)
+  const rosterSeen = useRef(false) // a fetched roster has been applied: a late cache read must not undo it
   const applyRoster = useCallback(() => {
     const p = pendingRoster.current
     if (!p || recordingRef.current || arming.current) return
     pendingRoster.current = null
-    rosterSet(p.list)
+    if (p.cached && rosterSeen.current) return
+    if (!p.cached) { rosterSeen.current = true; rosterSet(p.list) }
     setRosterReady(true)
     if (sameRoster(agentsRef.current, p.list)) return
     setAgents(p.list)
@@ -840,6 +863,12 @@ function App() {
         applyRoster()
       } catch { /* offline: keep the cached roster */ }
     }
+    void rosterDbGet().then((list) => {
+      // A fetched roster that already landed wins over the cached one.
+      if (!alive || !list || pendingRoster.current || rosterSeen.current) return
+      pendingRoster.current = { list, cached: true }
+      applyRoster()
+    })
     void load()
     const wait = window.setTimeout(() => setRosterReady(true), ROSTER_WAIT_MS)
     const t = window.setInterval(load, ROSTER_POLL_MS)
@@ -850,6 +879,14 @@ function App() {
   useEffect(() => {
     if (!recording && phase !== 'arming') applyRoster()
   }, [recording, phase, applyRoster])
+
+  // Parked, the tiles scroll: keep the lit one in view when the wheel or a roster update moves it.
+  const tilesRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (host.driving || !selected) return
+    const el = tilesRef.current?.querySelector<HTMLElement>(`[data-agent="${selected.id}"]`)
+    try { el?.scrollIntoView({ block: 'nearest' }) } catch { /* old WebView */ }
+  }, [selected?.id, agents, host.driving, rosterReady])
 
   selectedRef.current = selected
   recordingRef.current = recording
@@ -877,12 +914,13 @@ function App() {
           🔊 Tap to enable sound
         </button>
       )}
-      <div className="tiles" role="radiogroup" aria-label="Agent">
+      <div className="tiles" role="radiogroup" aria-label="Agent" ref={tilesRef}>
         {tiles.map((a) => {
           const on = selected?.id === a.id
           return (
             <button
               key={a.id}
+              data-agent={a.id}
               role="radio"
               aria-checked={on}
               className={`tile${on ? ' on' : ''}`}
@@ -1004,7 +1042,7 @@ const CSS = `
 .hero[data-phase="recording"] { background:#7a1d16; border-color:#ff5b4d; }
 .hero[data-phase="sent"] { background:#12361f; border-color:#2ecc71; }
 .hero[data-phase="queued"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
-.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; align-content:stretch; max-height:none; overflow:hidden; flex:1 1 0; min-height:0; }
+.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; align-content:stretch; max-height:none; overflow:hidden; padding:6px; flex:1 1 0; min-height:0; }
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
