@@ -34,6 +34,9 @@ class FakeTelegram {
   failSet = false;
   publicPics: Record<string, Buffer> = {};
   seq = 0;
+  botId = 42;
+  /** Holds the next download until released: a sync pass caught mid-flight. */
+  gate?: Promise<void>;
   fetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.hostname === "t.me") {
@@ -44,10 +47,14 @@ class FakeTelegram {
     const [, kind, botPart, ...rest] = url.pathname.split("/");
     const token = (kind === "file" ? botPart : kind).replace(/^bot/, "");
     if (token !== TOKEN) return Response.json({ ok: false, description: "Unauthorized" }, { status: 401 });
-    if (kind === "file") return new Response(this.photos.find((p) => p.id === rest.join("/"))!.bytes);
+    if (kind === "file") {
+      const bytes = this.photos.find((p) => p.id === rest.join("/"))!.bytes;
+      if (this.gate) await this.gate;
+      return new Response(bytes);
+    }
     const method = botPart;
     const ok = (result: unknown) => Response.json({ ok: true, result });
-    if (method === "getMe") return ok({ id: 42, username: "HolocenePMBot" });
+    if (method === "getMe") return ok({ id: this.botId, username: "HolocenePMBot" });
     if (method === "getUserProfilePhotos") {
       return ok({ photos: this.photos.slice(0, 1).map((p) => [{ file_id: `s${p.id}`, file_unique_id: `${p.id}s`, width: 160 }, { file_id: p.id, file_unique_id: p.id, width: 640 }]) });
     }
@@ -163,4 +170,59 @@ test("old files go, and the token never lands on disk", async () => {
   const kept = Object.values(index().agents).map((r: any) => r.file).filter(Boolean);
   for (const f of kept) assert.ok(existsSync(join(ROOT, "store/files", f)));
   assert.equal(av.avatarUrls().get("holocene-pm"), av.FILE_URL_PREFIX + index().agents["holocene-pm"].file);
+});
+
+test("two overlapping uploads leave a record whose file exists", async () => {
+  await Promise.all([av.setAvatar("holocene-pm", jpeg("double-1"), deps), av.setAvatar("holocene-pm", jpeg("double-2"), deps)]);
+  const rec = index().agents["holocene-pm"];
+  assert.ok(existsSync(join(ROOT, "store/files", rec.file)), "the surviving record points at a real file");
+  assert.equal((await row("holocene-pm")).gateways[0].state, "in_sync");
+  assert.deepEqual(tg.photos[0].bytes, readFileSync(join(ROOT, "store/files", rec.file)), "Telegram wears what Holocene records");
+});
+
+test("an upload during a sync pass is not undone by that pass", async () => {
+  tg.photos.unshift({ id: "T4", bytes: jpeg("changed-on-telegram") });
+  let release!: () => void;
+  tg.gate = new Promise((r) => (release = r));
+  const pass = av.syncAll(deps);
+  await new Promise((r) => setTimeout(r, 20));
+  const upload = av.setAvatar("holocene-pm", jpeg("operator-upload"), deps);
+  await new Promise((r) => setTimeout(r, 30)); // without a per-agent lock the upload finishes in here, mid-pass
+  release();
+  tg.gate = undefined;
+  await pass;
+  await upload;
+  const r = await row("holocene-pm");
+  assert.equal(r.source, "holocene");
+  assert.deepEqual(readFileSync(join(ROOT, "store/files", r.avatar!.split("/").pop()!)), jpeg("operator-upload"));
+  assert.deepEqual(tg.photos[0].bytes, jpeg("operator-upload"));
+});
+
+test("a pending push does not overwrite a later change on Telegram", async () => {
+  tg.failSet = true;
+  await av.setAvatar("holocene-pm", jpeg("stale-upload"), deps);
+  tg.failSet = false;
+  tg.photos.unshift({ id: "T5", bytes: jpeg("newer-on-telegram") });
+  await av.syncAll(deps);
+  const r = await row("holocene-pm");
+  assert.equal(r.source, "telegram");
+  assert.deepEqual(tg.photos[0].bytes, jpeg("newer-on-telegram"), "Telegram keeps the later write");
+  assert.equal(r.gateways[0].state, "in_sync");
+});
+
+test("a profile pointed at a new bot gets the Holocene avatar pushed, not replaced", async () => {
+  await av.setAvatar("holocene-pm", jpeg("canonical"), deps);
+  tg.botId = 77;
+  tg.photos.unshift({ id: "T6", bytes: jpeg("new-bots-old-photo") });
+  await av.syncAll(deps);
+  const r = await row("holocene-pm");
+  assert.equal(r.source, "holocene");
+  assert.deepEqual(tg.photos[0].bytes, jpeg("canonical"));
+  tg.botId = 42;
+});
+
+test("pulling the public picture clears a pending push", async () => {
+  await av.setAvatar("grolf-pm", jpeg("grolf-upload-again"), deps);
+  await av.pullAvatar("grolf-pm", deps);
+  assert.notEqual(index().agents["grolf-pm"].telegram.pendingPush, true);
 });

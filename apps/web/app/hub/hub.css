@@ -282,7 +282,17 @@ html[data-hub-theme="ledger-night"] body {
 
 .hub-root .hub-tabs {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   border: 2px solid var(--line-strong);
+}
+.hub-root .hub-tab { flex: none; white-space: nowrap; }
+@media (max-width: 600px) {
+  /* Phones: the strip wraps instead of scrolling, so the current tab is never off-screen. */
+  .hub-root .hub-tabs { flex-wrap: wrap; overflow: visible; }
+  .hub-root .hub-tab { padding: 0 9px; letter-spacing: 0.06em; }
 }
 .hub-root .hub-tab {
   height: 28px;

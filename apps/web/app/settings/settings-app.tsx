@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { formatDuration, sinceSeconds } from "../hub/ui";
 
@@ -47,6 +47,8 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   useEffect(() => {
+    setError(undefined);
+    setImg(null);
     const url = URL.createObjectURL(file);
     const i = new Image();
     i.onload = () => { setImg(i); setZoom(1); setOff({ x: 0, y: 0 }); };
@@ -54,6 +56,20 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
     i.src = url;
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  // How far the picture can be panned (preview px) before the crop would leave it: zoom shrinks the crop square, the
+  // long side of a non-square picture leaves room too.
+  const limits = useCallback((im: HTMLImageElement, z: number) => {
+    const side = Math.min(im.naturalWidth, im.naturalHeight) / z;
+    const scale = side / VIEW;
+    return { x: (im.naturalWidth - side) / 2 / scale, y: (im.naturalHeight - side) / 2 / scale };
+  }, []);
+  const clampOff = useCallback((o: { x: number; y: number }, z: number) => {
+    if (!img) return o;
+    const l = limits(img, z);
+    return { x: Math.max(-l.x, Math.min(l.x, o.x)), y: Math.max(-l.y, Math.min(l.y, o.y)) };
+  }, [img, limits]);
+  useEffect(() => setOff((o) => clampOff(o, zoom)), [zoom, clampOff]);
 
   // Source rectangle for the current zoom and pan, clamped so the crop never leaves the image.
   const crop = useCallback((im: HTMLImageElement) => {
@@ -71,7 +87,8 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
     if (!c || !img) return;
     const ctx = c.getContext("2d")!;
     const { sx, sy, side } = crop(img);
-    ctx.clearRect(0, 0, VIEW, VIEW);
+    ctx.fillStyle = "#ffffff"; // the same ground the saved JPEG gets, so transparent pictures preview truthfully
+    ctx.fillRect(0, 0, VIEW, VIEW);
     ctx.drawImage(img, sx, sy, side, side, 0, 0, VIEW, VIEW);
   }, [img, crop]);
 
@@ -81,7 +98,15 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
   };
   const onMove = (e: ReactPointerEvent) => {
     const d = drag.current;
-    if (d) setOff({ x: d.ox + e.clientX - d.x, y: d.oy + e.clientY - d.y });
+    if (d) setOff(clampOff({ x: d.ox + e.clientX - d.x, y: d.oy + e.clientY - d.y }, zoom));
+  };
+  const onKey = (e: ReactKeyboardEvent) => {
+    const step = e.shiftKey ? 40 : 8;
+    const move: Record<string, [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    const m = move[e.key];
+    if (!m) return;
+    e.preventDefault();
+    setOff((o) => clampOff({ x: o.x + m[0], y: o.y + m[1] }, zoom));
   };
 
   const save = () => {
@@ -108,7 +133,10 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={() => (drag.current = null)}
-          aria-label="Drag to position the avatar"
+          onKeyDown={onKey}
+          tabIndex={0}
+          role="img"
+          aria-label="Avatar crop preview. Drag, or use the arrow keys, to position it."
         />
         <span className="set-crop-ring" aria-hidden="true" />
       </div>
@@ -117,7 +145,7 @@ function AvatarEditor({ file, onCancel, onSave, saving }: { file: File; onCancel
           <span className="hub-label">Zoom</span>
           <input type="range" min={1} max={4} step={0.01} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
         </label>
-        <p className="hub-note">Drag to position. The circle is what Telegram and the Agent Pad show.</p>
+        <p className="hub-note">Drag or use the arrow keys to position. The circle is what Telegram and the Agent Pad show.</p>
         <div className="set-actions">
           <button type="button" className="hub-btn" onClick={save} disabled={!img || saving}>{saving ? "Saving…" : "Save and send"}</button>
           <button type="button" className="hub-btn is-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
@@ -177,12 +205,13 @@ function AgentAvatarRow({ row, now, focused, onChanged }: { row: AvatarRow; now:
             hidden
             onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = ""; }}
           />
-          <button type="button" className="hub-btn" onClick={() => input.current?.click()} disabled={!!busy}>Upload…</button>
+          <button type="button" className="hub-btn" onClick={() => input.current?.click()} disabled={!!busy} aria-label={`Upload an avatar for ${row.name}`}>Upload…</button>
           <button
             type="button"
             className="hub-btn is-ghost"
             disabled={!!busy || !tg || tg.state === "not_configured"}
             title="Replace Holocene's copy with the bot's current photo"
+            aria-label={`Pull ${row.name}'s avatar from Telegram`}
             onClick={() => void send(`/api/modules/avatars/${row.id}/pull`, { method: "POST" }, "pull")}
           >
             {busy === "pull" ? "Pulling…" : "Pull from Telegram"}

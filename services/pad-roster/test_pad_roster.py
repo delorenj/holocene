@@ -129,6 +129,13 @@ class RosterTest(unittest.TestCase):
         self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/" + new)
         self.assertFalse((self.out / "avatars" / old).exists())
 
+    def test_a_published_file_that_vanished_is_copied_again(self):
+        name = put_store(self.store, {"holocene-pm": JPEG})["holocene-pm"]
+        self.build()
+        (self.out / "avatars" / name).unlink()
+        self.build()
+        self.assertTrue((self.out / "avatars" / name).is_file())
+
     def test_an_unreadable_store_keeps_the_pictures_the_pad_has(self):
         name = put_store(self.store, {"holocene-pm": JPEG})["holocene-pm"]
         self.build()

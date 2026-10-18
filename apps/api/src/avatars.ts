@@ -260,6 +260,20 @@ async function writeReceipt(agent: AgentRow, mirror: TelegramMirror, hash: strin
 
 // ---------------------------------------------------------------- operations
 
+const agentChains = new Map<string, Promise<unknown>>();
+/**
+ * One operation per agent at a time (upload, pull, sync pass). Decisions are made from what the agent's record says
+ * when the operation starts, so two of them interleaving would act on a stale record: a double upload pruning each
+ * other's file, or a pass pulling back the photo an upload pushed a moment ago.
+ */
+function perAgent<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+  const run = (agentChains.get(agentId) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => undefined);
+  agentChains.set(agentId, tail);
+  void tail.then(() => { if (agentChains.get(agentId) === tail) agentChains.delete(agentId); });
+  return run;
+}
+
 /** Push Holocene's copy to the agent's Telegram bot and record what Telegram now shows. */
 async function pushTelegram(agent: AgentRow, rec: AvatarRecord, deps: Deps): Promise<TelegramMirror> {
   const prev = rec.telegram ?? {};
@@ -269,9 +283,11 @@ async function pushTelegram(agent: AgentRow, rec: AvatarRecord, deps: Deps): Pro
     const ref = Boolean(telegramTokenRef(agent.profile));
     return { ...prev, pendingPush: ref, error: why, tokenUnreadable: ref || undefined };
   }
+  let me: { id: number; username: string } | undefined;
+  let before: string | undefined;
   try {
-    const me = await bot.me();
-    const before = (await bot.currentPhoto(me.id))?.file_unique_id;
+    me = await bot.me();
+    before = (await bot.currentPhoto(me.id))?.file_unique_id;
     await bot.setPhoto(await readFile(join(STORE_DIR, "files", rec.file)));
     // Telegram can take a moment to list the new photo; recording the old id would make the next pass pull our own
     // upload back as if it had been changed over there.
@@ -286,7 +302,10 @@ async function pushTelegram(agent: AgentRow, rec: AvatarRecord, deps: Deps): Pro
     deps.log?.info({ agent: agent.id, bot: me.username }, "avatar pushed to telegram");
     return mirror;
   } catch (e) {
-    return { ...prev, pendingPush: true, error: (e as Error).message };
+    // Remember what Telegram wore when this push was due: if it changes before the retry, someone wrote there after
+    // us and the retry must not overwrite it (last writer wins).
+    const seen = me && (prev.botId === undefined || prev.botId === me.id) ? { botId: me.id, username: me.username, fileUniqueId: before ?? null } : {};
+    return { ...prev, ...seen, pendingPush: true, error: (e as Error).message };
   }
 }
 
@@ -296,6 +315,12 @@ export async function setAvatar(agentId: string, jpeg: Buffer, deps: Deps = defa
   if (!agent) throw Object.assign(new Error(`unknown agent ${agentId}`), { statusCode: 404 });
   if (!isJpeg(jpeg)) throw Object.assign(new Error("avatar must be a JPEG"), { statusCode: 415 });
   if (jpeg.length > MAX_BYTES) throw Object.assign(new Error("avatar is larger than 5 MB"), { statusCode: 413 });
+  await perAgent(agentId, () => storeAndPush(agent, jpeg, deps));
+  return (await listAvatars()).find((r) => r.id === agentId)!;
+}
+
+async function storeAndPush(agent: AgentRow, jpeg: Buffer, deps: Deps): Promise<void> {
+  const agentId = agent.id;
   const { file, hash } = await storeFile(agentId, jpeg);
   const rec: AvatarRecord = await withIndex((idx) => {
     const prev = idx.agents[agentId];
@@ -307,16 +332,15 @@ export async function setAvatar(agentId: string, jpeg: Buffer, deps: Deps = defa
   const mirror = await pushTelegram(agent, rec, deps);
   await withIndex((idx) => {
     const cur = idx.agents[agentId];
-    if (cur?.file === file) cur.telegram = mirror; // a newer upload in between keeps its own state
+    if (cur?.file === file) cur.telegram = mirror;
   });
-  return (await listAvatars()).find((r) => r.id === agentId)!;
 }
 
 /** Take the gateway's current avatar into Holocene (the sync pass, or "Pull from Telegram"). */
 export async function pullAvatar(agentId: string, deps: Deps = defaultDeps()): Promise<AvatarRow | undefined> {
   const agent = readAgents().find((a) => a.id === agentId);
   if (!agent) throw Object.assign(new Error(`unknown agent ${agentId}`), { statusCode: 404 });
-  await syncOne(agent, deps, true);
+  await perAgent(agentId, () => syncOne(agent, deps, true));
   return (await listAvatars()).find((r) => r.id === agentId);
 }
 
@@ -327,8 +351,10 @@ export async function pullAvatar(agentId: string, deps: Deps = defaultDeps()): P
  */
 async function syncOne(agent: AgentRow, deps: Deps, forcePull = false): Promise<void> {
   const idx = await readIndex();
-  const cur = idx.agents[agent.id];
-  const mirror: TelegramMirror = cur?.telegram ?? {};
+  const rec = idx.agents[agent.id];
+  // A record whose file is gone (deleted by hand, a disk accident) counts as no avatar, so it is pulled again.
+  const cur = rec?.file && existsSync(join(STORE_DIR, "files", rec.file)) ? (rec as AvatarRecord) : undefined;
+  const mirror: TelegramMirror = rec?.telegram ?? {};
   const now = deps.now().toISOString();
   const { bot, why } = await botFor(agent, deps);
 
@@ -345,8 +371,9 @@ async function syncOne(agent: AgentRow, deps: Deps, forcePull = false): Promise<
     }
     const { file, hash } = await storeFile(agent.id, bytes);
     await withIndex((i) => {
+      // A fresh mirror: nothing pending survives a pull (or the next readable pass would push this thumbnail back).
       i.agents[agent.id] = { file, hash, source: "telegram", updatedAt: now,
-        telegram: { ...(cur?.telegram ?? {}), username: agent.botUsername, syncedAt: now, direction: "pull", error: why, tokenUnreadable: unreadable || undefined } };
+        telegram: { username: agent.botUsername, syncedAt: now, direction: "pull", error: why, tokenUnreadable: unreadable || undefined } };
     });
     await pruneFiles(agent.id, file);
     return;
@@ -356,14 +383,18 @@ async function syncOne(agent: AgentRow, deps: Deps, forcePull = false): Promise<
     const me = await bot.me();
     const photo = await bot.currentPhoto(me.id);
     const sameBot = mirror.botId === undefined || mirror.botId === me.id;
-    const changedThere = photo && (forcePull || !sameBot || photo.file_unique_id !== mirror.fileUniqueId);
-    if (cur?.file && !forcePull && (mirror.pendingPush || (!photo && cur.source === "holocene"))) {
-      // Holocene's copy is the newer one (or Telegram has none): send it.
-      const pushed = await pushTelegram(agent, cur as AvatarRecord, deps);
+    const changedThere = Boolean(photo && (forcePull || !sameBot || photo.file_unique_id !== mirror.fileUniqueId));
+    // Telegram changed after the upload that is still waiting to go out: that later write wins, the push is dropped.
+    const movedOn = Boolean(mirror.pendingPush && sameBot && mirror.fileUniqueId !== undefined && changedThere);
+    const holocene = cur?.source === "holocene";
+    if (cur && !forcePull && !movedOn && (mirror.pendingPush || (holocene && (!photo || !sameBot)))) {
+      // Holocene's copy is the newer one, Telegram has none, or the profile now points at another bot (a swap is
+      // nobody's write, so the canonical avatar goes to the new bot).
+      const pushed = await pushTelegram(agent, cur, deps);
       await withIndex((i) => { const r = i.agents[agent.id]; if (r?.file === cur.file) r.telegram = pushed; });
       return;
     }
-    if (photo && (changedThere || !cur?.file)) {
+    if (photo && (changedThere || !cur)) {
       const bytes = await bot.download(photo.file_id);
       if (!isJpeg(bytes)) throw new Error("download: not a JPEG");
       const { file, hash } = await storeFile(agent.id, bytes);
@@ -401,7 +432,7 @@ function noteError(agentId: string, error: string | undefined, tokenUnreadable =
 export async function syncAll(deps: Deps = defaultDeps()): Promise<void> {
   for (const agent of readAgents()) {
     try {
-      await syncOne(agent, deps);
+      await perAgent(agent.id, () => syncOne(agent, deps));
     } catch (e) {
       deps.log?.warn({ agent: agent.id, err: (e as Error).message }, "avatar sync failed");
     }

@@ -377,7 +377,7 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
         <span className="hub-label">{a.role === "director" ? "Director" : "Project manager"}</span>
         <div className="insp-title">
           <Glyph signal={a.signal} size={12} title={a.state} />
-          <a className={`insp-avatar${a.avatar ? "" : " is-empty"}`} href={`/settings?agent=${encodeURIComponent(a.id)}`} title={a.avatar ? "Change avatar" : "Set an avatar"}>
+          <a className={`insp-avatar${a.avatar ? "" : " is-empty"}`} href={`/settings?agent=${encodeURIComponent(a.id)}`} title={a.avatar ? "Change avatar" : "Set an avatar"} aria-label={a.avatar ? `Change ${a.name}'s avatar` : `Set an avatar for ${a.name}`}>
             {a.avatar ? <img src={a.avatar} alt="" /> : a.name.charAt(0)}
           </a>
           <h2>{a.name}</h2>

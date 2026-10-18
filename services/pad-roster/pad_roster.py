@@ -191,7 +191,7 @@ def build(out: Path, profiles: Path, registry: Path, now: float, store: Path | N
         pdir = profiles / a["profile"]
         at, via = last_interaction(pdir)
         name = files.get(a["id"])
-        if name and name != cache.get(a["id"]):
+        if name and (name != cache.get(a["id"]) or not (avatars / name).is_file()):
             try:
                 publish_avatar(store, avatars, name)
                 cache[a["id"]] = name
