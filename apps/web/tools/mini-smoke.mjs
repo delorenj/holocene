@@ -31,12 +31,23 @@ const stale = signInitData(token, { auth_date: String(now - 25 * 3600), query_id
 const tampered = signed.replace("smoke", "smokf");
 
 const results = [];
-async function check(name, url, init, expect) {
+async function check(name, url, init, expect, { reason, google } = {}) {
   const res = await fetch(url, { redirect: "manual", ...init });
   const want = [expect].flat();
-  const ok = want.includes(res.status);
+  let ok = want.includes(res.status);
+  let extra = "";
+  if (ok && reason) {
+    const got = (await res.clone().json().catch(() => ({})))?.reason;
+    ok = got === reason;
+    extra = ` reason=${got}`;
+  }
+  if (ok && google && res.status !== 401) {
+    // a redirect must point at Google, not just anywhere
+    ok = (res.headers.get("location") ?? "").includes("accounts.google.com");
+    extra = ` -> ${(res.headers.get("location") ?? "").slice(0, 40)}`;
+  }
   results.push(ok);
-  console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${res.status} (want ${want.join(" or ")})`);
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${res.status}${extra} (want ${want.join(" or ")}${reason ? ` reason=${reason}` : ""})`);
   return res;
 }
 // Google auth answers a browser with a 307 to accounts.google.com and a script (no cookie, fetch) with 401.
@@ -51,13 +62,17 @@ if (tree.status === 200) {
   results.push(good);
   console.log(`${good ? "ok  " : "FAIL"} org tree has agents: ${n}`);
 }
-await check("tampered initData", `${base}/hq/api/org-tree`, tma(tampered), 401);
-await check("missing initData", `${base}/hq/api/org-tree`, {}, 401);
-await check("stale initData (25 h)", `${base}/hq/api/org-tree`, tma(stale), 401);
+await check("tampered initData", `${base}/hq/api/org-tree`, tma(tampered), 401, { reason: "bad signature" });
+await check("missing initData", `${base}/hq/api/org-tree`, {}, 401, { reason: "missing initData" });
+await check("stale initData (25 h)", `${base}/hq/api/org-tree`, tma(stale), 401, { reason: "expired initData" });
+await check("unsigned control action refused", `${base}/hq/api/action`,
+  { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "/api/modules/hermes-fleet/agents/none/services/gateway/stop" }) }, 401);
 await check("action proxy refuses a path outside hermes-fleet", `${base}/hq/api/action?path=${encodeURIComponent("/api/modules/avatars")}`, tma(signed), 400);
 await check("/hq page loads without Google auth (Telegram WebView)", `${base}/hq`, {}, 200);
-await check("/mini is behind Google auth", `${base}/mini`, {}, GATED);
-await check("/api/modules/org/tree is behind Google auth", `${base}/api/modules/org/tree`, {}, GATED);
+await check("/mini is behind Google auth", `${base}/mini`, {}, GATED, { google: true });
+await check("/api/modules/org/tree is behind Google auth", `${base}/api/modules/org/tree`, {}, GATED, { google: true });
+await check("browser-mode control route is behind Google auth", `${base}/api/modules/hermes-fleet/agents/none/services/gateway/stop`,
+  { method: "POST" }, GATED, { google: true });
 
 const failed = results.filter((r) => !r).length;
 console.log(failed ? `${failed} check(s) failed` : `all ${results.length} checks passed`);

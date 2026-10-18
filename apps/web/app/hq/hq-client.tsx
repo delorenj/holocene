@@ -121,9 +121,13 @@ export default function HqClient() {
   return <MiniApp mode="telegram" />;
 }
 
-/** In browser mode an expired Google session turns same-origin API calls into a redirect to accounts.google.com. */
+/**
+ * Browser mode: is this response Google auth turning us away? Traefik's forward-auth answers a page navigation
+ * with a 307 to accounts.google.com but a fetch with 401/403, so both shapes count.
+ */
 function signedOut(res: Response) {
-  return res.type === "opaqueredirect" || (res.redirected && !res.url.startsWith(window.location.origin));
+  return res.status === 401 || res.status === 403 || res.type === "opaqueredirect" ||
+    (res.redirected && !res.url.startsWith(window.location.origin));
 }
 
 export function MiniApp({ mode }: { mode: MiniMode }) {
@@ -148,7 +152,7 @@ export function MiniApp({ mode }: { mode: MiniMode }) {
         if (cancelled) return;
         if (browser && signedOut(res)) {
           setState({ kind: "signed-out" });
-        } else if (res.status === 503) {
+        } else if (res.status === 503 && !browser) {
           setState({ kind: "not-configured" });
         } else if (res.status === 401) {
           let reason: string | undefined;
@@ -316,7 +320,7 @@ export function MiniApp({ mode }: { mode: MiniMode }) {
         <div className="hq-banner hq-banner-attention">
           <strong>Your Google sign-in expired.</strong>
           <br />
-          <a href="/mini">Reload {BRAND}</a> to sign in again.
+          <a href="/mini">Sign in again</a> (a full page load goes through Google).
         </div>
       </main>
     );

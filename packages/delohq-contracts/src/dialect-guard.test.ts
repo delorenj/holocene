@@ -29,6 +29,8 @@ import { validateProjectionEnvelope } from "./index.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const holoceneRoot = resolve(here, "..", "..", "..");
 const HQ_WEB_DIR = join(holoceneRoot, "apps", "web", "app", "hq");
+// Holocene Mini's browser route mounts the same client; anything added there is the same browser surface.
+const MINI_WEB_DIR = join(holoceneRoot, "apps", "web", "app", "mini");
 const API_SRC_DIR = join(holoceneRoot, "apps", "api", "src");
 
 const SOURCE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
@@ -352,7 +354,7 @@ export function isGuardedApiFile(relPath: string, content: string): boolean {
 const JSX_FILE = /\.(tsx|jsx)$/;
 
 function guardedFiles(): GuardedFile[] {
-  const web = walk(HQ_WEB_DIR).map((path) => ({ path, rel: toRel(path), browserSurface: true }));
+  const web = [...walk(HQ_WEB_DIR), ...walk(MINI_WEB_DIR)].map((path) => ({ path, rel: toRel(path), browserSurface: true }));
   const api = walk(API_SRC_DIR)
     .filter((file) => isGuardedApiFile(relative(API_SRC_DIR, file).split(sep).join("/"), readFileSync(file, "utf8")))
     .map((path) => ({ path, rel: toRel(path), browserSurface: false }));

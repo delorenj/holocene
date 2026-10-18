@@ -1,0 +1,118 @@
+[
+  {
+    "verdict": "PASS_WITH_NOTES",
+    "criteria": [
+      {
+        "criterion": "1. Rebranded Holocene Mini (title, bot menu button text, in-app naming), lives in the Holocene web app",
+        "met": true,
+        "evidence": "Page <title> is 'Holocene Mini' on /hq, /mini and live https://holocene.delo.sh/hq. In-app eyebrow reads 'HOLOCENE MINI · 33GOD CO.' and the unauthorized copy quotes the 'Holocene Mini' menu button. Telegram getters, run fresh against the DeLoHQ bot: getMe first_name and getMyName are 'Holocene Mini'; getMyShortDescription is 'Holocene Mini: your Hermes agent fleet, live. Tap Holocene Mini to open.'. getChatMenuButton with no chat_id (the DEFAULT button) returns {type:web_app,text:'Holocene Mini',url:https://holocene.delo.sh/hq}, and so does getChatMenuButton for the operator chat. The brief says the default still read 'Open HQ'. It does not now; the text is correct for both the default and the operator chat, so no BotFather action is needed for the menu button text. Two things stay outside the Bot API: the username remains @DeLoHQBot, and getMe has_main_web_app=false, so the Main Mini App is not set. Neither is in the acceptance wording. The nav 'Mini' tab was added to hub, voice, wax and settings (3 more one-line diffs). The app code is in apps/web, the Holocene web app."
+      },
+      {
+        "criterion": "2. Telegram initData validation preserved unchanged (tampered/missing/stale stay 401)",
+        "met": true,
+        "evidence": "git diff ff92055~1..ff92055 --stat for apps/web/app/hq/lib and apps/web/app/hq/api shows only the 3 routes under api/ (6 insertions, 6 deletions), all comment or message-string edits. verify-init-data.ts is not in the diff. Fresh `mise run mini:smoke` against prod: signed 200 (34 agents), tampered 401, missing 401, stale 25h 401, action proxy refuses a path outside hermes-fleet with 400, /hq 200 without Google auth, all 9 checks passed. Browser-driven /hq with a Telegram.WebApp stub: freshly signed initData renders the org (34 nodes) and sends the authorization 'tma ...' header on both GET /hq/api/org-tree and POST /hq/api/action. Tampered shows 'bad signature'. Stale shows 'expired initData'. /hq with no initData shows 'Open this from Telegram, or use the browser version' and sends no auth header."
+      },
+      {
+        "criterion": "3. A normal browser reaches the same Mini view through the existing Google-auth path, no Telegram secret involved",
+        "met": true,
+        "evidence": "Prod curl of https://holocene.delo.sh/mini returns 307 to accounts.google.com/o/oauth2 (the existing Google auth). /api/modules/org/tree is gated: the smoke shows 401 for a script without a session, which its GATED set accepts (302, 307 or 401). /mini against the container, which has no auth, renders the identical 34-node view, with GET /api/modules/org/tree and POST /api/modules/hermes-fleet/... calls, no authorization header on any request, and no Telegram SDK dependency. Limitation: I cannot complete a real Google login headlessly, so 'authenticated browser sees the view' is proven by the container run plus the prod 307 gate, not by a live signed-in session."
+      },
+      {
+        "criterion": "4. No recorder unless device mic support verified; agent rows open the agent's Telegram DM",
+        "met": true,
+        "evidence": "grep finds no getUserMedia or MediaRecorder in apps/web/app/hq or apps/web/app/mini, and no record element in the rendered DOM in either mode. The commit message says mic support is unverified, so omitting the recorder satisfies 'no recorder unless verified'. Clicking an agent row opens a sheet with 'Open DM →'. In telegram mode (stub) that calls Telegram.WebApp.openTelegramLink('https://t.me/Gr0lfBot'). In browser mode it calls window.open of the same t.me URL. 28 of 34 agents have a botUsername. Agents without one show a disabled 'No bot linked'. I clicked the DM button only; no bot setters were called."
+      },
+      {
+        "criterion": "5. Checks pass, production verified (Telegram-signed request + browser), independent spec and quality review recorded",
+        "met": true,
+        "evidence": "`pnpm --filter @holocene/web typecheck` clean. `pnpm --filter @holocene/delohq-contracts test`: 89 pass, 0 fail. mini:smoke 9/9 against prod. The holocene-web container (compose project 33god-platform) started 22:09:51Z, after the commit time of 22:09:12Z, and is healthy. Prod /hq serves the 'Holocene Mini' title, and origin/main is ff92055. This spec review is the independent spec review; its record in the repo is up to the caller, and the quality review is a separate reviewer's."
+      }
+    ],
+    "findings": [
+      {
+        "severity": "minor",
+        "summary": "Brief's claim that the default menu button still reads 'Open HQ' is stale or wrong. Do not file a BotFather follow-up for it.",
+        "evidence": "getChatMenuButton with no chat_id and with the operator chat_id both returned text 'Holocene Mini' on this run. Re-check once more before recording the ticket note.",
+        "fix": "Record the observed state (default and operator buttons both 'Holocene Mini') in the ticket; drop the BotFather claim for the menu button."
+      },
+      {
+        "severity": "minor",
+        "summary": "/tmp/h17ip is stale. The container is now at 172.19.0.60, not 172.19.0.56, so the builder's /tmp/h17/ui.mjs and any rerun of it will fail to connect.",
+        "evidence": "curl to 172.19.0.56:3001 gave 'No route to host'. docker inspect holocene-web shows proxy IP 172.19.0.60, StartedAt 22:09:51Z.",
+        "fix": "Refresh /tmp/h17ip or resolve the IP through docker inspect in the verification script."
+      },
+      {
+        "severity": "minor",
+        "summary": "'Verify rather than assume device mic support' is met only by omission. No mic capability probe was run, so a future recorder still needs a real device check.",
+        "evidence": "There is no getUserMedia or MediaRecorder code, and the commit message says Mini App microphone support is unverified.",
+        "fix": "Record in the ticket that the recorder is deferred pending an on-device mic check; no code change needed for this ticket."
+      },
+      {
+        "severity": "minor",
+        "summary": "Bot username is still @DeLoHQBot and the Main Mini App is unset (has_main_web_app=false). Both can only be changed in BotFather.",
+        "evidence": "getMe returns username DeLoHQBot, has_main_web_app false.",
+        "fix": "Optional BotFather steps for the operator: set the Main Mini App to https://holocene.delo.sh/hq, and rename the username if a full rebrand is wanted."
+      }
+    ]
+  },
+  {
+    "verdict": "PASS_WITH_NOTES",
+    "criteria": [
+      {
+        "criterion": "Rebranded Holocene Mini (title, bot menu button text, in-app naming), lives in the Holocene web app",
+        "met": true,
+        "evidence": "/mini renders title 'Holocene Mini' and eyebrow 'HOLOCENE MINI · 33GOD CO.' (headless Chromium on 172.19.0.60:3001). grep finds no remaining 'DeloHQ'/'Open HQ' in apps/web/app or tools, apart from a CSS comment. Telegram getters: getMyName='Holocene Mini'; getMyShortDescription is rebranded; the default getChatMenuButton and the operator-chat getChatMenuButton both read 'Holocene Mini' with url https://holocene.delo.sh/hq. The default button no longer reads 'Open HQ'."
+      },
+      {
+        "criterion": "Telegram initData validation preserved unchanged (tampered/missing/stale stay 401)",
+        "met": true,
+        "evidence": "The commit does not touch verify-init-data.ts. The only edits to the three /hq/api routes are comment and message strings. mise run mini:smoke against prod passed 9/9: signed 200, tampered 401, missing 401, stale 25h 401, a path outside hermes-fleet 400. Extra probes: unauthenticated POST /hq/api/action 401, a '..' traversal path 401 'missing initData', /hqx 404. delohq-contracts tests 89/89 pass, including the dialect guard. The web typecheck is clean."
+      },
+      {
+        "criterion": "A normal browser reaches the same Mini view through the existing Google-auth path, no Telegram secret involved",
+        "met": true,
+        "evidence": "Prod, no cookie: /mini, /api/modules/org/tree and POST /api/modules/hermes-fleet/... all return 307 to accounts.google.com on navigation (401 for fetch-style requests). Only /hq, /_next/static and /auto/privacy are carved out in ../33god-platform/compose.yaml. On the container, /mini renders the full org (34 agents) from /api/modules/org/tree with no Telegram code path. Browser-mode POST goes to /api/modules/hermes-fleet/agents/:id/services/:svc/:act with method POST, content-type application/json and body {}. That matches what the Telegram proxy relays (payload.body ?? {}) and the Fastify route. GET .../log?lines=80 works. Both are reachable through the Next rewrite '/api/modules/:path*'. Caveat: the expired-session UX is wrong (see findings)."
+      },
+      {
+        "criterion": "No recorder unless device mic support verified; agent rows open the agent's Telegram DM",
+        "met": true,
+        "evidence": "No getUserMedia or recorder code in the diff. The agent sheet's 'Open DM →' calls openDm(botUsername). In /mini, window.open('https://t.me/Gr0lfBot') fired for the Grolf row. In telegram mode it uses WebApp.openTelegramLink."
+      },
+      {
+        "criterion": "Checks pass, production verified, independent review recorded",
+        "met": true,
+        "evidence": "mini:smoke, typecheck and contracts tests all pass. Phone width 375px: scrollWidth equals innerWidth, no element overflows, the sheet does not overflow. Link colour #7fb0ff on the #121a2d panel is about 8:1 and the theme is dark-only, so contrast is fine. React deps are correct: the effect and both useCallbacks list [browser], mode is constant per route, and cleanup clears the timer and fetchOnceRef. The default export HqClient is still what /hq/page.tsx imports. The /hq security posture is not weakened; the public /_next/static chunks now include the /mini bundle, which holds no secret. The reviewer's note that the container IP in /tmp/h17ip (172.19.0.56) was stale; the container is now at 172.19.0.60, apparently recreated."
+      }
+    ],
+    "findings": [
+      {
+        "severity": "major",
+        "summary": "Expired Google session in browser mode never reaches the 'signed-out' state. The signedOut() check is dead code against the real Traefik forward-auth, and the user sees a wrong, circular banner.",
+        "evidence": "Measured in headless Chromium from a same-origin page on https://holocene.delo.sh: fetch('/api/modules/org/tree',{redirect:'manual'}) returns type 'basic', status 401, content-type text/plain, body 'Authentication required', redirected false. curl shows the cause: google-auth answers 307 for navigations or requests without Sec-Fetch-Mode, but 401 whenever 'Sec-Fetch-Mode: cors' is present, which every browser fetch() sends. signedOut() only tests res.type==='opaqueredirect' or res.redirected to an off-origin URL, and neither can happen. fetchOnce then takes the 401 branch: initDataRef.current is '' in browser mode, so the state becomes 'no-telegram'. With the tree request mocked to 401 text/plain, /mini shows 'Open this from Telegram, or use the browser version... In a browser, open holocene.delo.sh/mini'. That is circular, tells the user to open the page they are already on, and replaces the whole org view. Only a mocked 307 produced the intended 'Your Google sign-in expired' banner. The commit message claim 'an expired Google session shows a sign-in banner' is therefore untrue for real traffic. postAction and getAction in browser mode have the same hole. The 401 body is not JSON and signedOut is false, so the sheet shows the generic 'HTTP 401' instead of a sign-in message.",
+        "file": "apps/web/app/hq/hq-client.tsx",
+        "fix": "In browser mode, treat res.status === 401 (and 403) as signed-out in fetchOnce, postAction and getAction. Keep the opaqueredirect check as a secondary guard. Make the signed-out banner link to /mini, which navigates and so gets the 307 to Google. Consider pausing the 5s poll, or keeping the last tree visible, while signed out."
+      },
+      {
+        "severity": "minor",
+        "summary": "In browser mode a 503 from Traefik, the Next rewrite or the API is rendered as 'not wired up: set TELEGRAM_HQ_BOT_TOKEN'.",
+        "evidence": "fetchOnce maps any res.status===503 to the 'not-configured' banner, which is Telegram-only wording. The browser path never needs that token. A holocene-api restart or a Traefik 503 would send the operator to the wrong remedy.",
+        "file": "apps/web/app/hq/hq-client.tsx",
+        "fix": "Gate the 503 to not-configured on !browser. In browser mode use the generic 'Fleet API returned 503' error state."
+      },
+      {
+        "severity": "minor",
+        "summary": "mini-smoke does not cover the state-changing browser-mode surface, and its Google-auth assertions are weak.",
+        "evidence": "The script checks only GET /mini and GET /api/modules/org/tree for the Google gate. It never checks POST /hq/api/action without auth, nor POST /api/modules/hermes-fleet/agents/<nonexistent>/services/gateway/start without a cookie, although that route is what browser mode actually calls. I ran both by hand against prod: 401 and 307, which is correct. GATED=[302,307,401] accepts any 401, so a Next-level 401 would pass as 'behind Google auth'. Tampered and stale checks assert only the status, not reason 'bad signature' or 'expired initData'. Tampering works (the replace hits query_id 'mini-smoke' first, so the hash is invalid either way). Sorting by key with localeCompare matches verify's pairs.sort() for the keys used. The script exits 1 on failure; a run against the unauthenticated container failed 2 of 9 checks, as it should.",
+        "file": "apps/web/tools/mini-smoke.mjs",
+        "fix": "Add an unauthenticated POST to /hq/api/action (expect 401) and an unauthenticated POST to a nonexistent agent's service route (expect 307 or 401 with 'Authentication required'). Assert reason strings on the tampered and stale responses. For the Google checks, assert a Location header containing accounts.google.com, or the 'Authentication required' body."
+      },
+      {
+        "severity": "minor",
+        "summary": "The dialect guard is still meaningful but does not scan the new /mini route.",
+        "evidence": "dialect-guard.test.ts scans apps/web/app/hq only. The new browser-mode logic lives in hq-client.tsx, which is scanned and still pinned by its allowlist (legacy-ok-dialect, non-registry-payload-import). The new { ok:false, status:401, data } literals fall under the already-allowlisted legacy-ok-dialect reason. apps/web/app/mini holds only a layout and a thin page that imports MiniApp. The guard passes (89/89) and nothing was weakened. Browser mode consumes the raw org tree from /api/modules/org/tree, the same legacy payload the /hq relay already forwarded.",
+        "file": "packages/delohq-contracts/src/dialect-guard.test.ts",
+        "fix": "Optional: add apps/web/app/mini to the scanned dirs so a future dialect added there is caught."
+      }
+    ]
+  }
+]
