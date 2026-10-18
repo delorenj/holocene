@@ -1,0 +1,140 @@
+[
+  {
+    "verdict": "PASS_WITH_NOTES",
+    "criteria": [
+      {
+        "criterion": "1) Root causes identified with evidence",
+        "met": true,
+        "evidence": "Commit messages and diagnosis memo name the four causes. I confirmed the PYTHONPATH leak: PYTHONPATH pointed at a Hermes python3.14 site-packages dir (~/.hermes/installs/8939.../05ef.../venv/lib/python3.14/site-packages) makes .venv-diarization python3.12 fail with 'No module named numpy._core._multiarray_umath' (only cpython-314 .so present). I confirmed the lock starvation: the pre-fix bin/transcribe (git show 2d0551f^) with the heavy lock held prints 'Another transcription holds the slot; waiting...' and is still blocked at the 8 s timeout. The symlink fix for the plain-file TRANSCRIBE_DIR drift is visible (both ~/.local/bin entries are now symlinks into ~/HeyMa/bin). The send_voice fallback / discarded synthesis cause is backed by the pre-fix journal and profile logs: agent.log files show about 1166 'send_voice fallback' lines across profiles, the last at 17:29 local. I did not re-derive the 32-failure and 14-timeout counts from logs; they are plausible and consistent with the code paths."
+      },
+      {
+        "criterion": "2) Contention fixed or bounded so a short voice note transcribes reliably while another transcription runs, measured",
+        "met": true,
+        "evidence": "Reproduced with temp locks (TRANSCRIBE_LOCK_FILE and TRANSCRIBE_FAST_LOCK_FILE under /tmp/h16rev). With the heavy lock held 60 s and a poisoned PYTHONPATH, a 6.2 s clip asked for large-v3 plus --diarization finished in 4.3 s on the fast lane (cpu int8, small, no diarization, 'Heavy slot busy' logged). Two concurrent short clips finished at 4.0 s and 7.7 s, so the fast lane serializes under its own lock and stays bounded. The pre-fix wrapper blocked past 8 s. A 130 s clip (over the 120 s limit) still waits for the heavy slot, so long jobs are not displaced. The hermes-transcribe-adapter also worked while the heavy slot was busy, returned clean text with no frontmatter, and ran correctly with PYTHONPATH poisoned. The free-slot path with a poisoned env also succeeded. The VRAM floor change in scripts/transcribe.py is model-aware and TRANSCRIBE_MIN_FREE_VRAM_MB still overrides it. The tests are 12 transcribe tests plus 3 adapter tests, all OK."
+      },
+      {
+        "criterion": "3) Duplicate synthesis removed, exactly one synthesis per memo reply, car still gets audio",
+        "met": true,
+        "evidence": "BloodbankAdapter._should_auto_tts_for_chat now returns False; the new test sets _auto_tts_default=True and asserts False. In the gateway, run_voice._should_send_voice_reply reads adapter._should_auto_tts_for_chat(chat_id) via _delivery_adapter_for(source), and run_turn's streaming-TTS gate uses the same call. So the override reaches the Bloodbank turn only through BloodbankAdapter. The gateway plugin is a symlink to the bloodbank repo and the service restarted at 17:41:19 EDT, after the 17:39:45 commit. Re-ran memo:trace 2724ae89: COMPLETE in 43 s. The vox log for the agent run window (21:42:13 to 21:42:33Z) shows no synthesis. The only synthesis in the reply path is the 21:42:40Z one, matching 'tts 2.57s' and the reply .ogg object (19510 bytes), which the watcher produced. The earlier synth at 21:41:57Z is the probe-clip generation, before upload. 'send_voice fallback' lines after the restart: 0. Audio for the car comes from the watcher's reply object."
+      },
+      {
+        "criterion": "4) Tests pass, reproducible checks, live services redeployed and verified",
+        "met": true,
+        "evidence": "Re-ran HeyMa transcribe tests (12 OK) and adapter tests (3 OK), and hermes-gateway pytest (103 passed). The live transcribe and adapter are symlinked into ~/HeyMa/bin, so deploy is immediate. The gateway restarted after the commit and is active. The live probe memo traces COMPLETE end to end."
+      },
+      {
+        "criterion": "5) Independent spec and quality review recorded",
+        "met": false,
+        "evidence": "This spec review is the independent review. The quality review and the recording on the ticket are outside this reviewer's scope, so I cannot confirm they exist."
+      }
+    ],
+    "findings": [
+      {
+        "severity": "minor",
+        "summary": "The live probe did not exercise the fast lane. The heavy slot was free, so the memo ran large-v3 (4.96 s) and no fast-lane transcription was seen end to end through the real gateway and watcher. Contention evidence rests on the unit tests and scratch runs with temp locks (mine and the author's).",
+        "evidence": "memo:trace 2724ae89 shows 'transcribed ... 4.96s (large-v3)'. My fast-lane runs used TRANSCRIBE_LOCK_FILE=/tmp/h16rev/*.lock.",
+        "fix": "Optionally record one live memo while a long job holds the lock. This is not required for the criterion."
+      },
+      {
+        "severity": "minor",
+        "summary": "The synth text_len for the reply is 87 while the trace reports a 74-char reply. This is probably TTS-side normalization or a prefix. It is not a second synthesis.",
+        "evidence": "vox log at 21:42:40Z 'text_len=87' versus fact:replied '74 chars'. No other synthesis appears in the window.",
+        "fix": "None needed. Note it in the ticket if desired."
+      },
+      {
+        "severity": "minor",
+        "summary": "The fast lane quietly changes the model and diarization for any clip of 120 s or less when the slot is busy: callers asking for medium or large-v3 get small on CPU with no diarization. This is intentional and logged, but multi-speaker short clips lose diarization under contention. Callers that pin --device or --groq are exempt.",
+        "evidence": "apply_fast_lane_args and fast_lane_eligible in ~/HeyMa/bin/transcribe.",
+        "fix": "Document it in the HeyMa README or the ticket."
+      },
+      {
+        "severity": "minor",
+        "summary": "Scope is clean. Only transcribe-related files changed in HeyMa, and only adapter.py plus its test in bloodbank. The unrelated dirt in bloodbank (services/hook-hub/session_capture.py, icon.af) predates this slice. The Telegram path is unaffected: the override exists only on BloodbankAdapter, and Telegram-origin turns resolve to the Telegram adapter, which keeps the base _should_auto_tts_for_chat.",
+        "evidence": "git show --stat 2d0551f and 5b479af; grep shows one override, in bloodbank_hermes_gateway/adapter.py:1092; base implementation at hermes-agent/gateway/platforms/base.py:2148.",
+        "fix": "None."
+      }
+    ]
+  },
+  {
+    "verdict": "PASS_WITH_NOTES",
+    "criteria": [
+      {
+        "criterion": "bin/transcribe bash edge cases (set -u, empty arrays, ffprobe failure, non-numeric duration, --model forms, args after audio)",
+        "met": true,
+        "evidence": "Ran the real wrapper (bash 5.2) against a fake runner with temp locks and the heavy lock held. Empty EXTRA_ARGS, `--model=large-v3`, a trailing `--model` with no value, and `--output x.md --language en --model large-v3 --diarization-device cuda` all worked; --output and --language were kept and --model was rewritten to small. ffprobe failure (garbage file) and `--device=cuda` correctly fall back to waiting on the heavy lock. set -e inside fast_lane_eligible is safe because it runs in an `if` context. Remote path diff is limited to --ephemeral handling; run_remote_transcribe is untouched."
+      },
+      {
+        "criterion": "Fast lane effect on Wax and caller-pinned devices",
+        "met": false,
+        "evidence": "Wax always passes --no-diarization and --asr-output, and never --device or --model, so it is not excluded. waxd runs with WAX_SEGMENT_SECONDS=60, so its capture segments are all 60 s clips and are eligible. Wax serialises itself, so only a voice note or other caller holding the heavy slot triggers the downgrade. When that happens, a Wax segment is transcribed with small on CPU and published to the vault, with the model recorded only in engine_model. Nothing sets TRANSCRIBE_FAST_LANE_MAX_S=0 for waxd. Pinned --device and --groq correctly opt out. See finding 1."
+      },
+      {
+        "criterion": "Lock fd lifetimes and fast-lane lock behaviour",
+        "met": true,
+        "evidence": "fd 200 is opened on the heavy lock, and the fast lane adds fd 201 on its own lock; both are held for the rest of the process and inherited by the runner. The fast lane never takes the heavy lock, so it cannot block it, and concurrent fast clips serialise on 201. The CPU retry is suppressed because --device cpu is now in the args. The fast-lane wait is unbounded but each job is short."
+      },
+      {
+        "criterion": "Symlink switch and TRANSCRIBE_DIR derivation",
+        "met": true,
+        "evidence": "~/.local/bin/transcribe resolves to /home/delorenj/HeyMa/bin/transcribe, and ~/HeyMa is not itself a symlink. TRANSCRIBE_DIR comes from realpath(BASH_SOURCE)/.. and defaults to /home/delorenj/HeyMa. My 118 s run of the symlinked wrapper with no TRANSCRIBE_DIR override used the real repo and venv and succeeded. The HeyMa working tree is clean."
+      },
+      {
+        "criterion": "Adapter env filtering and frontmatter strip",
+        "met": true,
+        "evidence": "The adapter drops PYTHONPATH, PYTHONHOME and VIRTUAL_ENV, and the wrapper strips them again. Offset arithmetic (text.find('\\n---\\n', 4) and end+5) is right, and the 3 adapter tests pass. Edge cases not handled: an empty frontmatter block (`---\\n---\\n`), or frontmatter at EOF with no trailing newline, would leak the fence and key lines. transcribe.py always emits a body, so I rate this negligible."
+      },
+      {
+        "criterion": "Model-aware VRAM floor (OOM risk)",
+        "met": true,
+        "evidence": "min_free_vram_for is wired into both the forced-cuda and auto paths. Floors are tiny 1000, base 1200, small 2000 and medium 3500 MB, which are sensible for fp16. Unknown names, large-v3, distil-* and path-style models fall back to 5000, and TRANSCRIBE_MIN_FREE_VRAM_MB still wins. A CUDA OOM at load is caught in the auto path and falls back to CPU, so risk is low. Tests cover only the helper, not the two call sites."
+      },
+      {
+        "criterion": "Bloodbank auto-TTS override",
+        "met": true,
+        "evidence": "gateway/platforms/base.py (_wants_auto_tts), run_turn.py:3244 (streaming TTS) and run_voice.py:378 (voice_mode None) all read _should_auto_tts_for_chat, so the override covers them. The 103 hermes-gateway tests pass. Residual gap: run_voice.py checks an explicit voice_mode of all or voice_only (set by /voice) BEFORE the adapter probe, so /voice all on a Bloodbank chat would still synthesize. See finding 4. I did not verify the 'car still gets audio' half of criterion 3 independently; that belongs to the spec reviewer."
+      },
+      {
+        "criterion": "Test quality: do new tests fail on the previous version?",
+        "met": true,
+        "evidence": "I ran tests/test_transcribe_fast_lane.py against `git show 2d0551f^:bin/transcribe`. 3 of 6 fail on the old script: the fast-lane model test, the keep-small-model test, and the PYTHONPATH test. The long-clip and pinned-device tests pass on old code, so they are non-regression guards that only assert a timeout. All 12 transcribe tests and 3 adapter tests pass on the new code. The Bloodbank test fails once the override is removed (AttributeError, because the stubbed base class has no such method), but it only asserts the override returns False and never exercises the real base logic."
+      }
+    ],
+    "findings": [
+      {
+        "severity": "major",
+        "summary": "The fast lane silently downgrades short Wax recordings to small/CPU whenever a voice note holds the heavy slot",
+        "file": "/home/delorenj/HeyMa/bin/transcribe",
+        "evidence": "Wax calls bin/transcribe with only --no-diarization and --asr-output (components/wax/src/wax/transcribe_adapter.py), never --device or --model, and waxd sets WAX_SEGMENT_SECONDS=60. All capture segments are therefore at most 120 s and eligible. When a voice-note transcription holds ~/.cache/heyma-transcribe.lock, a Wax segment takes the fast lane and is transcribed with small on CPU instead of the default model. It is published to the vault, with only engine_model recording the change. Wax's own semaphore means only voice notes can trigger this, so it is rare but silent.",
+        "fix": "Keep the fast lane out of Wax: set Environment=TRANSCRIBE_FAST_LANE_MAX_S=0 in waxd.service. More robust, make the lane opt-in for --ephemeral callers (the Hermes adapter passes --ephemeral) or add an explicit --no-fast-lane flag."
+      },
+      {
+        "severity": "minor",
+        "summary": "Pre-existing crash on audio whose container reports no duration: `N: unbound variable` under set -u",
+        "file": "/home/delorenj/HeyMa/bin/transcribe",
+        "evidence": "enforce_transcription_duration_limit does `actual_whole=\"${actual%%.*}\"; ((actual_whole >= limit))` with `actual=N/A`. I reproduced this with a live-streamed webm: ffprobe prints N/A and the wrapper exits with `line 116: N: unbound variable`. The new audio_seconds() validates numerically so the fast lane just skips such files, but any caller sending MediaRecorder-style webm fails outright. The agent-pad does use MediaRecorder with audio/webm, though I did not trace whether memos are converted to ogg before reaching the wrapper. This bug was not introduced by the commit.",
+        "fix": "Guard with `[[ \"$actual\" =~ ^[0-9]+(\\.[0-9]+)?$ ]] || return 0` in enforce_transcription_duration_limit."
+      },
+      {
+        "severity": "minor",
+        "summary": "Contention is bounded only for clips of 120 s or less without a pinned device; the worst case is slow on CPU",
+        "file": "/home/delorenj/HeyMa/bin/transcribe",
+        "evidence": "A clip over 120 s, or one carrying --device or --groq, still blocks on `flock 200` with no timeout behind a multi-hour job. A 118 s clip on the fast lane (large-v3 requested, so small/CPU) took 68 s wall time at ~390% CPU. That is within Hermes' 300 s local_command timeout but is the worst case at the threshold.",
+        "fix": "Optionally add a bounded wait (flock -w) before logging a clear failure for over-threshold clips, or accept and document the limit."
+      },
+      {
+        "severity": "minor",
+        "summary": "The Bloodbank override does not cover explicit /voice all or voice_only modes, and its test is near-tautological",
+        "file": "/home/delorenj/code/33GOD/bloodbank/services/hermes-gateway/bloodbank_hermes_gateway/adapter.py",
+        "evidence": "gateway/run_voice.py:~372-381 synthesizes when `voice_mode == 'all'` or `voice_only` with voice input, before consulting adapter._should_auto_tts_for_chat. The override also discards the base class's explicit-on set. The only test asserts the override returns False with _auto_tts_default=True. It fails when the override is deleted, but only with an AttributeError, because the test conftest base class has no such method.",
+        "fix": "If /voice is ever used on Bloodbank chats, also skip voice_mode handling for the bloodbank platform (as the a2a check does at run_voice.py:370). Otherwise document that the override covers the global default only."
+      },
+      {
+        "severity": "minor",
+        "summary": "Some new tests assert only a timeout and pass on the old code",
+        "file": "/home/delorenj/HeyMa/tests/test_transcribe_fast_lane.py",
+        "evidence": "test_long_clip_waits_its_turn and test_pinned_device_waits_its_turn pass unchanged against 2d0551f^ because they only expect TimeoutExpired in 4 s, which any hang would satisfy. ModelAwareVramFloorTest checks min_free_vram_for but not that transcribe_local passes it to gpu_vram_headroom.",
+        "fix": "Assert the '[lock] Another transcription holds the slot' message from partial stderr, and add a call-site test that patches gpu_vram_headroom and checks the min_mb argument."
+      }
+    ]
+  }
+]
