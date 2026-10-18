@@ -6,6 +6,7 @@ import { load } from "js-yaml";
 import { createClient } from "redis";
 import type { EventStore, CollectedEvent } from "./event-store.js";
 import { foldActivity, ownerResolver, type ActivityEvent } from "./agent-activity.js";
+import { avatarUrls } from "./avatars.js";
 import { DONE_WINDOW_MS } from "./deckard-state.js";
 import {
   buildAgents,
@@ -412,7 +413,10 @@ async function snapshot(store: EventStore): Promise<Snapshot> {
 
 export async function getHubAgents(store: EventStore) {
   const snap = await snapshot(store);
-  return { generatedAt: new Date(snap.at).toISOString(), sources: snap.sources, ...snap.agents };
+  // Avatars are read per request (not cached with the snapshot) so a new one shows on the next poll.
+  const avatars = avatarUrls();
+  const agents = snap.agents.agents.map((a) => (avatars.has(a.id) ? { ...a, avatar: avatars.get(a.id) } : a));
+  return { generatedAt: new Date(snap.at).toISOString(), sources: snap.sources, ...snap.agents, agents };
 }
 
 export async function getHubProjects(store: EventStore) {

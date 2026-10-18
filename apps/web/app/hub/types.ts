@@ -21,6 +21,8 @@ export type ProjectLink = {
 export type Agent = {
   id: string;
   name: string;
+  /** The agent's avatar (Holocene's avatar store, mirrored with its Telegram bot); set on /settings. */
+  avatar?: string;
   role: "director" | "pm";
   declaredRole: string;
   state: string;

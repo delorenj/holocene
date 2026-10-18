@@ -1,5 +1,5 @@
 [Unit]
-Description=Holocene Agent Pad roster (routable agents, most recently talked to first, Telegram avatars)
+Description=Holocene Agent Pad roster (routable agents, most recently talked to first, avatars from Holocene)
 Documentation=file://%h/code/33GOD/holocene/services/pad-roster/pad_roster.py
 After=network-online.target
 Wants=network-online.target
@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=%h/code/33GOD/holocene/services/pad-roster
 ExecStart=/usr/bin/python3 -B %h/code/33GOD/holocene/services/pad-roster/pad_roster.py
-# OP_SERVICE_ACCOUNT_TOKEN comes from the user manager's environment; bot tokens are read per run, never stored.
+# Reads Holocene's avatar store (~/.local/share/holocene/avatars); no secrets, no network.
 Environment=PYTHONUNBUFFERED=1
 Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
 # Output: ~/.local/share/holocene-auto/pad-roster/ (served at https://agent-pad.delo.sh/roster/)

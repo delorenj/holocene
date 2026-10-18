@@ -1,0 +1,123 @@
+/* Settings, on the hub's Ledger tokens. */
+
+.hub-root .set-body { max-width: 1080px; }
+
+.hub-root .set-section {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.hub-root .set-section-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  align-items: end;
+  padding: 14px 16px 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.hub-root .set-section-head h2 {
+  grid-column: 1;
+  font: 600 22px/1.15 var(--font-display);
+  color: var(--ink);
+}
+.hub-root .set-section-head .hub-note { grid-column: 1; max-width: 68ch; }
+.hub-root .set-search {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  height: 30px;
+  width: 200px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  background: var(--ground);
+  color: var(--ink);
+  font: 500 13px var(--font-sans);
+}
+
+.hub-root .set-list { list-style: none; margin: 0; padding: 0; }
+.hub-root .set-row { border-bottom: 1px solid var(--line); }
+.hub-root .set-row:last-child { border-bottom: 0; }
+.hub-root .set-row.is-focused { background: var(--pop-soft); }
+.hub-root .set-row-main {
+  display: grid;
+  grid-template-columns: 48px minmax(160px, 1.1fr) minmax(200px, 1.4fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 16px;
+}
+
+.hub-root .set-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  background: var(--sunken);
+  font: 700 20px var(--font-display);
+  color: var(--ink-3);
+}
+.hub-root .set-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hub-root .set-avatar.is-empty { border-style: dashed; border-color: var(--line-strong); }
+
+.hub-root .set-who { display: grid; gap: 2px; min-width: 0; }
+.hub-root .set-name { font: 600 15px/1.2 var(--font-sans); color: var(--ink); }
+.hub-root .set-id { font: 500 11px/1.3 var(--font-mono); color: var(--ink-3); overflow-wrap: anywhere; }
+
+.hub-root .set-state { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.hub-root .set-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  font: 600 10px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.hub-root .set-chip.is-holocene { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.hub-root .set-chip.is-none { border-style: dashed; color: var(--ink-3); }
+.hub-root .set-gw { font: 500 12px/1.35 var(--font-sans); color: var(--ink-3); overflow-wrap: anywhere; }
+.hub-root .set-gw.is-in_sync { color: var(--cleared); }
+.hub-root .set-gw.is-pending { color: var(--working); }
+.hub-root .set-gw.is-error { color: var(--broken); }
+
+.hub-root .set-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hub-root .set-row-error { margin: 0 16px 10px 78px; }
+
+.hub-root .set-editor {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding: 4px 16px 16px 78px;
+}
+.hub-root .set-crop {
+  position: relative;
+  flex: 0 0 auto;
+  border: 2px solid var(--ink);
+  background: var(--sunken);
+  touch-action: none;
+  cursor: grab;
+}
+.hub-root .set-crop:active { cursor: grabbing; }
+.hub-root .set-crop canvas { display: block; }
+.hub-root .set-crop-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgba(18, 18, 16, 0.45);
+  outline: 2px solid var(--on-ink);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+.hub-root .set-crop { overflow: hidden; }
+.hub-root .set-editor-side { display: grid; gap: 10px; max-width: 300px; }
+.hub-root .set-zoom { display: grid; gap: 6px; }
+.hub-root .set-zoom input { width: 100%; accent-color: var(--pop); }
+
+@media (max-width: 760px) {
+  .hub-root .set-section-head { grid-template-columns: 1fr; }
+  .hub-root .set-search { grid-column: 1; grid-row: auto; width: 100%; }
+  .hub-root .set-row-main { grid-template-columns: 48px 1fr; }
+  .hub-root .set-state, .hub-root .set-row-main > .set-actions { grid-column: 2; }
+  .hub-root .set-editor, .hub-root .set-row-error { padding-left: 16px; margin-left: 16px; }
+}

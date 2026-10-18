@@ -298,6 +298,7 @@ function NodeBody({ node, now, inactive, open }: { node: LaidNode; now: number; 
     <>
       <span className="node-row">
         <Glyph signal={a.signal} title={a.state} />
+        {a.avatar ? <img className="node-avatar" src={a.avatar} alt="" draggable={false} /> : null}
         <span className="node-name">{a.name}</span>
         <Age seconds={a.heldSeconds} />
       </span>
@@ -376,6 +377,9 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
         <span className="hub-label">{a.role === "director" ? "Director" : "Project manager"}</span>
         <div className="insp-title">
           <Glyph signal={a.signal} size={12} title={a.state} />
+          <a className={`insp-avatar${a.avatar ? "" : " is-empty"}`} href={`/settings?agent=${encodeURIComponent(a.id)}`} title={a.avatar ? "Change avatar" : "Set an avatar"}>
+            {a.avatar ? <img src={a.avatar} alt="" /> : a.name.charAt(0)}
+          </a>
           <h2>{a.name}</h2>
           <Age seconds={a.heldSeconds} verb="held" />
         </div>

@@ -5,6 +5,7 @@ import Fastify from "fastify";
 import { registerHookHubRoutes } from "./hook-hub.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
 import { registerWaxRoutes } from "./wax.js";
+import { registerAvatarRoutes } from "./avatars.js";
 import { createEventCollector } from "./event-collector.js";
 import { registerEventRoutes } from "./event-routes.js";
 import { retentionFromEnv, startRetention } from "./event-retention.js";
@@ -44,6 +45,7 @@ await registerEventRoutes(app, eventCollector);
 registerHookHubRoutes(app, eventCollector);
 registerVoiceRoutes(app, eventCollector);
 registerWaxRoutes(app);
+registerAvatarRoutes(app);
 eventCollector.start();
 // Without retention the store grew ~0.9 GiB/day; prune hourly (HOLOCENE_RETENTION_* to tune, =off to disable).
 const stopRetention = startRetention(eventCollector.store, retentionFromEnv(), app.log);

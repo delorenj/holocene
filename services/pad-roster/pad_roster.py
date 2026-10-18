@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Agent Pad roster: every agent the pad can send a memo to, most recently talked to first, wearing its Telegram avatar.
+"""Agent Pad roster: every agent the pad can send a memo to, most recently talked to first, wearing its avatar.
 
 One pass per run (systemd timer). Writes, under PAD_ROSTER_DIR (default ~/.local/share/holocene-auto/pad-roster):
 
   roster.json                   what https://agent-pad.delo.sh/roster/roster.json serves to the pad
-  avatars/<agent>.<uid>.jpg     the bot's current Telegram profile photo, named by Telegram's file_unique_id (or a
-                                hash of the bytes) so a new avatar is a new URL (served immutable) and an unchanged
-                                one is never re-downloaded
-  state.json                    per-agent avatar check cache (bot id, file_unique_id, when it was last checked)
+  avatars/<agent>.<hash>.jpg    each agent's avatar, copied from Holocene's avatar store (content-addressed, so a new
+                                avatar is a new URL served immutable)
+  state.json                    agent id -> the avatar file the roster last published
 
 Who is on the pad: every registry row the Bloodbank gateway can route a command to (memo_common.registry_route, the
 same rule the inbox watcher dispatches with). A tile for anything else would strand every memo recorded for it.
@@ -18,11 +17,9 @@ CLI/TUI, desktop, Slack) plus voice memos (Bloodbank sessions opened by the inbo
 and other Bloodbank traffic is the fleet talking to itself and does not count, nor do Hermes' own role='user' notices
 or a CLI/TUI/desktop session no bigger than a probe (one question, one answer).
 
-Avatars are linked, not copied by hand: the source is the bot's live Telegram profile photo (the one the
-hermes-project-avatar skill sets), re-checked every PAD_ROSTER_AVATAR_TTL_S. First choice is the Bot API with the
-profile's own token (an op:// reference in its config.yaml, read with `op read` inside this process and never logged),
-which also says who the bot really is. A profile without a usable token falls back to the public t.me userpic of the
-registry's telegram.bot_username, which needs no secret.
+Avatars come from Holocene's avatar store (HOLOCENE_AVATAR_DIR, owned by apps/api/src/avatars.ts): one avatar per
+agent, set on holocene.delo.sh/settings or synced from the agent's Telegram bot, and mirrored back to it. This job
+only reads that store; it never talks to Telegram or 1Password.
 """
 from __future__ import annotations
 
@@ -30,15 +27,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import shutil
 import sqlite3
-import subprocess
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
-from typing import Callable
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "inbox-watcher"))
@@ -47,10 +41,9 @@ import memo_common as mc_  # noqa: E402  routability rule shared with the inbox 
 HOME = Path.home()
 OUT_DIR = Path(os.environ.get("PAD_ROSTER_DIR", HOME / ".local/share/holocene-auto/pad-roster"))
 PROFILES_DIR = Path(os.environ.get("PAD_ROSTER_PROFILES", HOME / ".hermes/profiles"))
-AVATAR_TTL_S = int(os.environ.get("PAD_ROSTER_AVATAR_TTL_S", "1800"))
+AVATAR_STORE = Path(os.environ.get("HOLOCENE_AVATAR_DIR", HOME / ".local/share/holocene/avatars"))
+STORE_FILE = re.compile(r"^[a-z0-9][a-z0-9-]*\.[0-9a-f]{16}\.jpg$")
 AVATAR_URL_PREFIX = "/roster/avatars/"
-OP_BIN = os.environ.get("OP_BIN", "op")
-TG_API = "https://api.telegram.org"
 
 OPERATOR_SOURCES = ("telegram", "cli", "tui", "desktop", "slack")
 # Sources a script can also open: a session there counts only past a probe's size (a "reply PONG" fleet sweep is one
@@ -60,7 +53,6 @@ PROBE_MAX_MESSAGES = 2
 VOICE_MEMO_USER = "inbox-watcher"
 # Hermes stores its own notices (delegation results, compaction summaries, attachment notes) as role='user' rows.
 SYNTHETIC_PREFIXES = ("[ASYNC DELEGATION", "[CONTEXT COMPACTION", "[IMPORTANT", "[SYSTEM", "[Slack attachment notice")
-AVATAR_BUDGET_S = int(os.environ.get("PAD_ROSTER_AVATAR_BUDGET_S", "120"))
 
 # The five tiles the pad shipped with keep their colours, so the car looks the same for the agents it already had.
 LEGACY_COLORS = {
@@ -105,10 +97,7 @@ def routable_agents(registry: Path) -> tuple[list[dict], list[dict]]:
     for agent_id in rows:
         route = mc_.registry_route(agent_id)
         if route["ok"] is True:
-            tg = rows[agent_id].get("telegram") if isinstance(rows[agent_id], dict) else None
-            bot = (tg or {}).get("bot_username") if isinstance(tg, dict) else None
-            keep.append({"id": agent_id, "profile": route["profile"], "display_name": route["display_name"],
-                         "bot_username": bot.lstrip("@") if isinstance(bot, str) and bot.strip() else None})
+            keep.append({"id": agent_id, "profile": route["profile"], "display_name": route["display_name"]})
         else:
             skipped.append({"id": agent_id, "reason": route["reason"]})
     return keep, skipped
@@ -154,118 +143,34 @@ def last_interaction(profile_dir: Path) -> tuple[float | None, str | None]:
 
 # ---------------------------------------------------------------- avatar
 
-def token_ref(profile_dir: Path) -> str | None:
+def store_avatars(store: Path) -> dict[str, str] | None:
+    """agent id -> avatar file name in Holocene's avatar store, or None when the store cannot be read."""
     try:
-        import yaml  # type: ignore
-        cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8")) or {}
-        ref = cfg["secrets"]["onepassword"]["env"]["TELEGRAM_BOT_TOKEN"]
-    except Exception:  # noqa: BLE001  no config, no secrets block, no Telegram bot
+        idx = json.loads((store / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
-    return ref if isinstance(ref, str) and ref.startswith("op://") else None
+    out = {}
+    for agent_id, rec in (idx.get("agents") or {}).items():
+        f = rec.get("file") if isinstance(rec, dict) else None
+        if isinstance(f, str) and STORE_FILE.match(f) and f.startswith(f"{agent_id}.") and (store / "files" / f).is_file():
+            out[agent_id] = f
+    return out
 
 
-def op_read(ref: str) -> str | None:
-    try:
-        p = subprocess.run([OP_BIN, "read", "--no-newline", ref], capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else None
-
-
-def http_get(url: str, timeout: int = 20) -> bytes:
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "holocene-pad-roster"}), timeout=timeout) as r:
-        return r.read()
-
-
-class Telegram:
-    """The three read-only Bot API calls the avatar needs. Error text never carries the token or the URL."""
-
-    def __init__(self, token: str, get: Callable[[str], bytes] = http_get):
-        self._t, self._get = token, get
-
-    def call(self, method: str, **params) -> dict:
-        q = ("?" + urllib.parse.urlencode(params)) if params else ""
-        try:
-            body = json.loads(self._get(f"{TG_API}/bot{self._t}/{method}{q}"))
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"{method}: HTTP {e.code}") from None
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"{method}: {type(e).__name__}") from None
-        if not body.get("ok"):
-            raise RuntimeError(f"{method}: {str(body.get('description', 'not ok'))[:120]}")
-        return body["result"]
-
-    def download(self, file_path: str) -> bytes:
-        try:
-            return self._get(f"{TG_API}/file/bot{self._t}/{urllib.parse.quote(file_path)}")
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"download: HTTP {e.code}") from None
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"download: {type(e).__name__}") from None
-
-
-def refresh_avatar(agent_id: str, tg: Telegram, avatars: Path) -> dict:
-    """Current profile photo of the agent's bot, downloaded only when Telegram says it changed."""
-    me = tg.call("getMe")
-    photos = tg.call("getUserProfilePhotos", user_id=me["id"], limit=1)
-    entry = {"bot_id": me["id"], "bot_username": "@" + str(me.get("username", "")), "checked_at": time.time()}
-    if not photos.get("photos"):
-        prune(avatars, agent_id, None)
-        return {**entry, "source": "bot_api", "file_unique_id": None, "file": None}
-    best = max(photos["photos"][0], key=lambda s: s.get("width", 0))
-    uid = best["file_unique_id"]
-    name = f"{agent_id}.{uid}.jpg"
-    if not (avatars / name).is_file():
-        data = tg.download(tg.call("getFile", file_id=best["file_id"])["file_path"])
-        if len(data) < 64:
-            raise RuntimeError("download: empty image")
-        tmp = avatars / f".{name}.tmp"
-        tmp.write_bytes(data)
-        tmp.replace(avatars / name)
-        log("avatar_downloaded", agent=agent_id, bot=entry["bot_username"], file_unique_id=uid, bytes=len(data))
-    prune(avatars, agent_id, name)
-    return {**entry, "source": "bot_api", "file_unique_id": uid, "file": name}
-
-
-def public_avatar(agent_id: str, username: str, avatars: Path, get: Callable[[str], bytes] = http_get) -> dict:
-    """The bot's public profile picture (t.me userpic), for a bot whose token this host cannot use.
-
-    Telegram answers 404 with a 1x1 gif when the bot has no photo. The file is named by a hash of its bytes, so a
-    changed photo is a new URL just like the Bot API path."""
-    entry = {"bot_username": "@" + username, "checked_at": time.time(), "source": "public_userpic"}
-    try:
-        data = get(f"https://t.me/i/userpic/320/{urllib.parse.quote(username)}.jpg")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return {**entry, "file": None}
-        raise RuntimeError(f"userpic: HTTP {e.code}") from None
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(f"userpic: {type(e).__name__}") from None
-    if not data.startswith(b"\xff\xd8"):
-        prune(avatars, agent_id, None)
-        return {**entry, "file": None}
-    name = f"{agent_id}.{hashlib.sha256(data).hexdigest()[:16]}.jpg"
-    if not (avatars / name).is_file():
-        tmp = avatars / f".{name}.tmp"
-        tmp.write_bytes(data)
-        tmp.replace(avatars / name)
-        log("avatar_downloaded", agent=agent_id, bot=entry["bot_username"], source="public_userpic", bytes=len(data))
-    prune(avatars, agent_id, name)
-    return {**entry, "file": name}
-
-
-def prune(avatars: Path, agent_id: str, keep: str | None) -> None:
-    for old in avatars.glob(f"{agent_id}.*.jpg"):  # agent ids never contain a dot
-        if old.name != keep:
-            old.unlink(missing_ok=True)
+def publish_avatar(store: Path, avatars: Path, name: str) -> None:
+    """Copy one store file next to the roster (same content-addressed name, so it is copied once)."""
+    if (avatars / name).is_file():
+        return
+    tmp = avatars / f".{name}.tmp"
+    shutil.copyfile(store / "files" / name, tmp)
+    os.chmod(tmp, 0o644)
+    tmp.replace(avatars / name)
 
 
 # ---------------------------------------------------------------- one pass
 
-def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: bool = False,
-          read_secret: Callable[[str], str | None] = op_read,
-          telegram: Callable[[str], Telegram] = Telegram,
-          public_get: Callable[[str], bytes] = http_get) -> dict:
+def build(out: Path, profiles: Path, registry: Path, now: float, store: Path | None = None) -> dict:
+    store = store or AVATAR_STORE
     avatars = out / "avatars"
     avatars.mkdir(parents=True, exist_ok=True)
     state_path = out / "state.json"
@@ -273,60 +178,28 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
         state = json.loads(state_path.read_text())
     except (OSError, ValueError):
         state = {}
-    cache: dict = state.get("avatars", {})
+    cache: dict = {k: v for k, v in (state.get("avatars") or {}).items() if isinstance(v, str)}
+    files = store_avatars(store)
+    if files is None:
+        # Holocene's store unreadable for a moment: the pad keeps the pictures it already has.
+        log("avatar_store_unreadable", store=str(store))
+        files = cache
 
     keep, skipped = routable_agents(registry)
     rows = []
-    started = time.monotonic()
     for a in keep:
         pdir = profiles / a["profile"]
         at, via = last_interaction(pdir)
-
-        cached = cache.get(a["id"])
-        stale = force_avatars or not cached or now - cached.get("checked_at", 0) > AVATAR_TTL_S or (
-            cached.get("file") and not (avatars / cached["file"]).is_file())
-        if stale and time.monotonic() - started > AVATAR_BUDGET_S:
-            # A slow 1Password or Telegram must never hold the ordering hostage: the rest wait for the next pass.
-            log("avatar_deferred", agent=a["id"], reason="avatar budget spent this pass")
-            stale = False
-        if stale:
-            entry, errors = None, []
-            ref = token_ref(pdir)
-            token = read_secret(ref) if ref else None
-            if ref and token is None:
-                errors.append("token unreadable")
-            if token:
-                try:
-                    entry = refresh_avatar(a["id"], telegram(token), avatars)
-                except RuntimeError as e:
-                    errors.append(str(e))
-                except Exception as e:  # noqa: BLE001  odd payload or local I/O: one avatar, never the whole pass
-                    errors.append(f"bot_api: {type(e).__name__}")
-            if entry is None and a["bot_username"]:
-                try:
-                    entry = public_avatar(a["id"], a["bot_username"], avatars, get=public_get)
-                except RuntimeError as e:
-                    errors.append(str(e))
-                except Exception as e:  # noqa: BLE001
-                    errors.append(f"userpic: {type(e).__name__}")
-            if entry is not None and entry.get("file") is None and errors and cached and cached.get("file") \
-                    and (avatars / cached["file"]).is_file():
-                # The authoritative path failed and the public fallback found nothing (a stale registry username
-                # reads the same as "no photo"): that is not evidence the photo went away.
-                entry = None
-            if entry is not None:
-                entry["checked_at"] = now
-                if errors:
-                    entry["fallback_reason"] = "; ".join(errors)
-                cache[a["id"]] = entry
-            elif errors:
-                # Keep the last good photo: a Telegram hiccup must not blank the car's tiles.
-                log("avatar_failed", agent=a["id"], error="; ".join(errors))
-                if cached:
-                    cache[a["id"]] = {**cached, "checked_at": now, "last_error": "; ".join(errors)}
-            else:
-                cache.pop(a["id"], None)
-        file = (cache.get(a["id"]) or {}).get("file")
+        name = files.get(a["id"])
+        if name and name != cache.get(a["id"]):
+            try:
+                publish_avatar(store, avatars, name)
+                cache[a["id"]] = name
+            except OSError as e:
+                log("avatar_copy_failed", agent=a["id"], error=type(e).__name__)
+        elif not name:
+            cache.pop(a["id"], None)
+        file = cache.get(a["id"])
         rows.append({
             "id": a["id"],
             "name": short_name(a["display_name"], a["id"]),
@@ -348,7 +221,7 @@ def build(out: Path, profiles: Path, registry: Path, now: float, force_avatars: 
     # Agents that left the roster take their pictures with them.
     current = {a["id"] for a in keep}
     cache = {k: v for k, v in cache.items() if k in current}
-    referenced = {v.get("file") for v in cache.values()}
+    referenced = set(cache.values())
     for f in avatars.glob("*.jpg"):
         if f.name not in referenced:
             f.unlink(missing_ok=True)
@@ -378,10 +251,9 @@ def write_json(path: Path, obj: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--force-avatars", action="store_true", help="re-check every bot's Telegram photo now")
     ap.add_argument("--print", action="store_true", help="print the roster after writing it")
     args = ap.parse_args(argv)
-    roster = build(OUT_DIR, PROFILES_DIR, mc_.REGISTRY_PATH, time.time(), force_avatars=args.force_avatars)
+    roster = build(OUT_DIR, PROFILES_DIR, mc_.REGISTRY_PATH, time.time())
     log("roster_written", path=str(OUT_DIR / "roster.json"), agents=len(roster["agents"]),
         with_avatar=sum(1 for a in roster["agents"] if a["avatar"]), skipped=[s["id"] for s in roster["skipped"]])
     if args.print:

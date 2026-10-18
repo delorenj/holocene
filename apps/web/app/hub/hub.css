@@ -1380,3 +1380,30 @@ html[data-hub-theme="ledger-night"] body {
   display: inline-block;
   text-decoration: none;
 }
+
+/* ---------- avatars (set on /settings) ---------- */
+
+.hub-root .node-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+}
+.hub-root .insp-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  background: var(--sunken);
+  font: 700 14px var(--font-display);
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.hub-root .insp-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hub-root .insp-avatar.is-empty { border-style: dashed; border-color: var(--line-strong); }

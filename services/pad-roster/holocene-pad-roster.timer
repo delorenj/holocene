@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh the Agent Pad roster every 2 minutes (avatars re-checked every 30)
+Description=Refresh the Agent Pad roster every 2 minutes
 
 [Timer]
 OnBootSec=1min

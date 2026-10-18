@@ -6,7 +6,6 @@ import os
 import sqlite3
 import tempfile
 import unittest
-import urllib.error
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="pad-roster-test-"))
@@ -41,42 +40,23 @@ def session_db(profile: Path, rows: list[tuple]) -> None:
     con.close()
 
 
-class FakeTelegram:
-    def __init__(self, username: str, uid: str | None):
-        self.username, self.uid, self.downloads = username, uid, 0
-
-    def __call__(self, token: str):
-        if token == "dead":
-            outer = self
-
-            class Dead:
-                def call(self, method, **kw):
-                    raise RuntimeError(f"{method}: HTTP 401")
-            return Dead()
-        return self
-
-    def call(self, method, **kw):
-        if method == "getMe":
-            return {"id": 42, "username": self.username}
-        if method == "getUserProfilePhotos":
-            if not self.uid:
-                return {"total_count": 0, "photos": []}
-            return {"photos": [[{"file_id": "s", "file_unique_id": self.uid + "s", "width": 160},
-                                {"file_id": "b", "file_unique_id": self.uid, "width": 640}]]}
-        if method == "getFile":
-            assert kw["file_id"] == "b", "the biggest size is the one downloaded"
-            return {"file_path": "photos/file_1.jpg"}
-        raise AssertionError(method)
-
-    def download(self, path):
-        self.downloads += 1
-        return JPEG
+def put_store(store: Path, files: dict[str, bytes]) -> dict[str, str]:
+    """Holocene's avatar store with one avatar per agent; returns agent -> file name."""
+    import hashlib
+    (store / "files").mkdir(parents=True, exist_ok=True)
+    names = {}
+    for agent, data in files.items():
+        name = f"{agent}.{hashlib.sha256(data).hexdigest()[:16]}.jpg"
+        (store / "files" / name).write_bytes(data)
+        names[agent] = name
+    (store / "index.json").write_text(json.dumps({"agents": {a: {"file": n, "source": "holocene"} for a, n in names.items()}}))
+    return names
 
 
 class RosterTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(dir=TMP))
-        self.out, self.profiles = self.root / "out", self.root / "profiles"
+        self.out, self.profiles, self.store = self.root / "out", self.root / "profiles", self.root / "store"
         REGISTRY.write_text("agents:\n" + "".join([
             fleet("holocene-pm", "Holocene PM", "holocene_pm_bot"),
             fleet("33god-pm", "Grolf", "Gr0lfBot"),
@@ -101,14 +81,9 @@ class RosterTest(unittest.TestCase):
             ("f", "subagent", None, 8500, [8500]),
         ])
         session_db(self.profiles / "infra-pm", [("g", "slack", "U1", 300, [300])])
-        (self.profiles / "holocene-pm" / "config.yaml").write_text(
-            "secrets:\n  onepassword:\n    env:\n      TELEGRAM_BOT_TOKEN: op://Vault/item/field\n")
 
-    def build(self, tg=None, secret="tok", public=None, now=10_000.0, force=False):
-        tg = tg or FakeTelegram("HolocenePMBot", "UID1")
-        public = public or (lambda url: (_ for _ in ()).throw(urllib.error.HTTPError(url, 404, "nf", {}, None)))
-        return pr.build(self.out, self.profiles, REGISTRY, now, force_avatars=force,
-                        read_secret=lambda ref: secret, telegram=tg, public_get=public)
+    def build(self, now=10_000.0):
+        return pr.build(self.out, self.profiles, REGISTRY, now, store=self.store)
 
     def test_only_routable_agents_are_tiles(self):
         r = self.build()
@@ -138,75 +113,36 @@ class RosterTest(unittest.TestCase):
         self.assertEqual((by["infra-pm"], by["monitoring-pm"]), ("Infra", "Monitoring"))
         self.assertEqual(pr.short_name("Dumply — Carrie's AI Tutor", "dumply"), "Dumply")
 
-    def test_bot_api_avatar_downloaded_once_and_linked(self):
-        tg = FakeTelegram("HolocenePMBot", "UID1")
-        r = self.build(tg=tg)
-        hol = next(a for a in r["agents"] if a["id"] == "holocene-pm")
-        self.assertEqual(hol["avatar"], "/roster/avatars/holocene-pm.UID1.jpg")
-        self.assertEqual((self.out / "avatars/holocene-pm.UID1.jpg").read_bytes(), JPEG)
-        self.build(tg=tg, force=True)
-        self.assertEqual(tg.downloads, 1, "an unchanged photo is not downloaded again")
-        # a new photo on Telegram is a new URL, and the old file goes away
-        tg.uid = "UID2"
-        r = self.build(tg=tg, force=True)
-        self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/holocene-pm.UID2.jpg")
-        self.assertFalse((self.out / "avatars/holocene-pm.UID1.jpg").exists())
-
-    def test_avatar_check_is_cached_for_the_ttl(self):
-        tg = FakeTelegram("HolocenePMBot", "UID1")
-        self.build(tg=tg, now=10_000)
-        tg.uid = "UID2"
-        r = self.build(tg=tg, now=10_000 + pr.AVATAR_TTL_S - 1)
-        self.assertTrue(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"].endswith("UID1.jpg"))
-        r = self.build(tg=tg, now=10_000 + pr.AVATAR_TTL_S + 1)
-        self.assertTrue(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"].endswith("UID2.jpg"))
-
-    def test_public_userpic_when_the_token_is_dead_or_missing(self):
-        asked = []
-
-        def public(url):
-            asked.append(url)
-            if "Gr0lfBot" in url or "holocene_pm_bot" in url:
-                return JPEG
-            raise urllib.error.HTTPError(url, 404, "nf", {}, None)
-
-        r = self.build(secret="dead", public=public)
+    def test_avatars_come_from_holocenes_store(self):
+        names = put_store(self.store, {"holocene-pm": JPEG, "33god-pm": JPEG + b"g"})
+        r = self.build()
         by = {a["id"]: a for a in r["agents"]}
-        self.assertRegex(by["33god-pm"]["avatar"], r"^/roster/avatars/33god-pm\.[0-9a-f]{16}\.jpg$")
-        self.assertRegex(by["holocene-pm"]["avatar"], r"^/roster/avatars/holocene-pm\.[0-9a-f]{16}\.jpg$")
-        self.assertIsNone(by["flume-pm"]["avatar"], "404 means the bot has no photo")
-        self.assertIsNone(by["infra-pm"]["avatar"], "no bot username, no avatar")
-        state = json.loads((self.out / "state.json").read_text())
-        self.assertIn("HTTP 401", state["avatars"]["holocene-pm"]["fallback_reason"])
+        self.assertEqual(by["holocene-pm"]["avatar"], "/roster/avatars/" + names["holocene-pm"])
+        self.assertEqual((self.out / "avatars" / names["holocene-pm"]).read_bytes(), JPEG)
+        self.assertIsNone(by["flume-pm"]["avatar"])
 
-    def test_a_failed_check_keeps_the_last_good_photo(self):
+    def test_a_new_avatar_replaces_the_old_file(self):
+        old = put_store(self.store, {"holocene-pm": JPEG})["holocene-pm"]
         self.build()
-        boom = FakeTelegram("HolocenePMBot", "UID1")
-        boom.call = lambda method, **kw: (_ for _ in ()).throw(RuntimeError(f"{method}: URLError"))
-        r = self.build(tg=boom, force=True)
-        self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/holocene-pm.UID1.jpg")
+        new = put_store(self.store, {"holocene-pm": JPEG + b"new"})["holocene-pm"]
+        r = self.build()
+        self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/" + new)
+        self.assertFalse((self.out / "avatars" / old).exists())
+
+    def test_an_unreadable_store_keeps_the_pictures_the_pad_has(self):
+        name = put_store(self.store, {"holocene-pm": JPEG})["holocene-pm"]
+        self.build()
+        (self.store / "index.json").write_text("{not json")
+        r = self.build()
+        self.assertEqual(next(a for a in r["agents"] if a["id"] == "holocene-pm")["avatar"], "/roster/avatars/" + name)
 
     def test_agents_that_leave_take_their_pictures(self):
+        name = put_store(self.store, {"holocene-pm": JPEG})["holocene-pm"]
         self.build()
-        self.assertTrue((self.out / "avatars/holocene-pm.UID1.jpg").exists())
         REGISTRY.write_text(REGISTRY.read_text().replace("enabled: true, gateway_scope: fleet, target_agent_id: holocene-pm",
                                                          "enabled: false, gateway_scope: fleet, target_agent_id: holocene-pm"))
         self.build()
-        self.assertFalse((self.out / "avatars/holocene-pm.UID1.jpg").exists())
-        self.assertNotIn("holocene-pm", json.loads((self.out / "state.json").read_text())["avatars"])
-
-    def test_an_odd_telegram_payload_costs_one_avatar_not_the_roster(self):
-        odd = FakeTelegram("HolocenePMBot", "UID1")
-        odd.call = lambda method, **kw: {}  # no 'id': KeyError deep in refresh_avatar
-        r = self.build(tg=odd)
-        self.assertEqual(len(r["agents"]), 6)
-        self.assertTrue((self.out / "roster.json").exists())
-
-    def test_token_never_reaches_output(self):
-        secret = "123456:SECRET-TOKEN"
-        self.build(secret=secret, tg=FakeTelegram("HolocenePMBot", "UID1"))
-        for f in self.out.rglob("*.json"):
-            self.assertNotIn(secret, f.read_text())
+        self.assertFalse((self.out / "avatars" / name).exists())
 
 
 if __name__ == "__main__":
