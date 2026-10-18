@@ -1,6 +1,6 @@
 import { verifyInitData } from "../../lib/verify-init-data";
 
-// initData-gated control proxy for the DeloHQ Mini App. The /hq surface is
+// initData-gated control proxy for the Holocene Mini Telegram app. The /hq surface is
 // served through the Traefik carve-out with NO google-auth, so this handler is
 // the sole access control for state-changing fleet actions: it validates the
 // Telegram initData (HMAC + auth_date freshness + operator allowlist) and only
@@ -30,7 +30,7 @@ function notConfigured() {
     {
       ok: false,
       error: "not_configured",
-      message: "TELEGRAM_HQ_BOT_TOKEN is not set on the server yet. Create @DeloHQBot and set the token."
+      message: "TELEGRAM_HQ_BOT_TOKEN is not set on the server yet. Set the @DeLoHQBot token."
     },
     { status: 503 }
   );

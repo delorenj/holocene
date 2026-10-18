@@ -2,8 +2,8 @@ import "./hq.css";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "DeloHQ",
-  description: "Live org chart of the Hermes agent fleet"
+  title: "Holocene Mini",
+  description: "Holocene Mini: the live org chart of the Hermes agent fleet, inside Telegram"
 };
 
 export const viewport = {

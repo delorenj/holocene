@@ -253,6 +253,7 @@ export function WaxApp() {
           <a className="hub-tab" href="/voice">Voice</a>
           <a className="hub-tab" href="/wax" aria-current="page">Wax</a>
           <a className="hub-tab" href="/settings">Settings</a>
+          <a className="hub-tab" href="/mini">Mini</a>
         </nav>
         <div className="hub-header-end">
           <SourceStrip sources={sources} />

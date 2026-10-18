@@ -16,7 +16,16 @@ type LoadState =
   | { kind: "not-configured" }
   | { kind: "no-telegram" }
   | { kind: "unauthorized"; reason?: string }
+  | { kind: "signed-out" }
   | { kind: "error"; message: string };
+
+// Holocene Mini runs two ways over one UI:
+//   telegram  /hq    inside Telegram; every call carries the signed initData and is checked server-side
+//                    (/hq/api/*: HMAC, freshness, operator allowlist). /hq is outside Google auth on purpose.
+//   browser   /mini  in a normal browser, behind holocene.delo.sh's Google auth; calls the same Holocene API
+//                    routes the hub uses (/api/modules/*), so no Telegram secret is involved.
+export type MiniMode = "telegram" | "browser";
+const BRAND = "Holocene Mini";
 
 declare global {
   interface Window {
@@ -109,6 +118,16 @@ function collectAgents(tree: OrgTree): { node: OrgNode; deptName: string }[] {
 }
 
 export default function HqClient() {
+  return <MiniApp mode="telegram" />;
+}
+
+/** In browser mode an expired Google session turns same-origin API calls into a redirect to accounts.google.com. */
+function signedOut(res: Response) {
+  return res.type === "opaqueredirect" || (res.redirected && !res.url.startsWith(window.location.origin));
+}
+
+export function MiniApp({ mode }: { mode: MiniMode }) {
+  const browser = mode === "browser";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const initDataRef = useRef<string>("");
   const fetchOnceRef = useRef<null | (() => void)>(null);
@@ -120,12 +139,16 @@ export default function HqClient() {
     // One org-tree fetch, no rescheduling — safe to call on demand (refresh).
     const fetchOnce = async () => {
       try {
-        const res = await fetch("/hq/api/org-tree", {
-          headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
-          cache: "no-store"
-        });
+        const res = browser
+          ? await fetch("/api/modules/org/tree", { cache: "no-store", redirect: "manual" })
+          : await fetch("/hq/api/org-tree", {
+              headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
+              cache: "no-store"
+            });
         if (cancelled) return;
-        if (res.status === 503) {
+        if (browser && signedOut(res)) {
+          setState({ kind: "signed-out" });
+        } else if (res.status === 503) {
           setState({ kind: "not-configured" });
         } else if (res.status === 401) {
           let reason: string | undefined;
@@ -155,6 +178,10 @@ export default function HqClient() {
     };
 
     (async () => {
+      if (browser) {
+        loop();
+        return;
+      }
       const tg = await loadTelegramSdk();
       if (cancelled) return;
       if (tg) {
@@ -176,18 +203,27 @@ export default function HqClient() {
       fetchOnceRef.current = null;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [browser]);
 
   const postAction = useCallback<PostAction>(async (path, body) => {
-    const res = await fetch("/hq/api/action", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {})
-      },
-      body: JSON.stringify({ path, body: body ?? {} }),
-      cache: "no-store"
-    });
+    const res = browser
+      ? await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body ?? {}),
+          cache: "no-store",
+          redirect: "manual"
+        })
+      : await fetch("/hq/api/action", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {})
+          },
+          body: JSON.stringify({ path, body: body ?? {} }),
+          cache: "no-store"
+        });
+    if (browser && signedOut(res)) return { ok: false, status: 401, data: { error: "Google sign-in expired; reload the page" } };
     let data: any = null;
     try {
       data = await res.json();
@@ -195,13 +231,16 @@ export default function HqClient() {
       /* non-JSON */
     }
     return { ok: res.ok, status: res.status, data };
-  }, []);
+  }, [browser]);
 
   const getAction = useCallback<GetAction>(async (path) => {
-    const res = await fetch(`/hq/api/action?path=${encodeURIComponent(path)}`, {
-      headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
-      cache: "no-store"
-    });
+    const res = browser
+      ? await fetch(path, { cache: "no-store", redirect: "manual" })
+      : await fetch(`/hq/api/action?path=${encodeURIComponent(path)}`, {
+          headers: initDataRef.current ? { authorization: `tma ${initDataRef.current}` } : {},
+          cache: "no-store"
+        });
+    if (browser && signedOut(res)) return { ok: false, status: 401, data: { error: "Google sign-in expired; reload the page" } };
     let data: any = null;
     try {
       data = await res.json();
@@ -209,7 +248,7 @@ export default function HqClient() {
       /* non-JSON */
     }
     return { ok: res.ok, status: res.status, data };
-  }, []);
+  }, [browser]);
 
   const refresh = useCallback(() => fetchOnceRef.current?.(), []);
   const controls: Controls = useMemo(() => ({ postAction, getAction, refresh }), [postAction, getAction, refresh]);
@@ -226,10 +265,11 @@ export default function HqClient() {
     return (
       <main className="hq-shell">
         <div className="hq-banner hq-banner-attention">
-          <strong>DeloHQ isn’t wired up yet.</strong>
+          <strong>{BRAND} isn’t wired up yet.</strong>
           <br />
-          Create the <strong>@DeloHQBot</strong> in BotFather and set <code>TELEGRAM_HQ_BOT_TOKEN</code> on the
-          Holocene web service, then reopen.
+          Set <code>TELEGRAM_HQ_BOT_TOKEN</code> (the <strong>@DeLoHQBot</strong> token) on the Holocene web service,
+          then reopen.{" "}
+          <a href="/mini">Open the browser version</a>.
         </div>
       </main>
     );
@@ -239,11 +279,11 @@ export default function HqClient() {
     return (
       <main className="hq-shell">
         <div className="hq-banner">
-          <strong>Open this from Telegram.</strong>
+          <strong>Open this from Telegram, or use the browser version.</strong>
           <br />
-          DeloHQ is a Telegram Mini App — launch it from the <strong>@DeloHQBot</strong> menu button so it can
-          prove who you are. (The page loads fine here, but the org data stays locked without a valid Telegram
-          session.)
+          This address is {BRAND} inside Telegram: launch it from the <strong>@DeLoHQBot</strong> menu button so
+          Telegram can prove who you are. In a browser, open <a href="/mini">holocene.delo.sh/mini</a> (Google
+          sign-in) for the same view.
         </div>
       </main>
     );
@@ -251,13 +291,13 @@ export default function HqClient() {
 
   if (state.kind === "unauthorized") {
     const reasonCopy: Record<string, string> = {
-      "user not allowed": "This Telegram account isn’t on the DeloHQ operator allowlist.",
-      "bad signature": "The Mini App launch data didn’t verify. Fully close and reopen from @DeLoHQBot’s “Open HQ” menu button; if it persists, the server bot token may be misconfigured.",
-      "expired initData": "This session is stale (>24h). Fully close and reopen the Mini App from @DeLoHQBot.",
+      "user not allowed": `This Telegram account isn’t on the ${BRAND} operator allowlist.`,
+      "bad signature": `The Mini App launch data didn’t verify. Fully close and reopen from @DeLoHQBot’s “${BRAND}” menu button; if it persists, the server bot token may be misconfigured.`,
+      "expired initData": `This session is stale (>24h). Fully close and reopen ${BRAND} from @DeLoHQBot.`,
       "missing user": "Telegram didn’t include your account in the launch data. Reopen from the @DeLoHQBot menu button.",
-      "missing initData": "No Telegram launch data was sent. Open this from the @DeLoHQBot menu button, not a browser."
+      "missing initData": "No Telegram launch data was sent. Open this from the @DeLoHQBot menu button, or use holocene.delo.sh/mini in a browser."
     };
-    const detail = state.reason ? reasonCopy[state.reason] ?? `Verification failed: ${state.reason}.` : "This Telegram account isn’t on the DeloHQ operator allowlist.";
+    const detail = state.reason ? reasonCopy[state.reason] ?? `Verification failed: ${state.reason}.` : `This Telegram account isn’t on the ${BRAND} operator allowlist.`;
     return (
       <main className="hq-shell">
         <div className="hq-banner hq-banner-attention">
@@ -265,6 +305,18 @@ export default function HqClient() {
           <br />
           {detail}
           {state.reason ? <span className="hq-auth-reason"> (reason: {state.reason})</span> : null}
+        </div>
+      </main>
+    );
+  }
+
+  if (state.kind === "signed-out") {
+    return (
+      <main className="hq-shell">
+        <div className="hq-banner hq-banner-attention">
+          <strong>Your Google sign-in expired.</strong>
+          <br />
+          <a href="/mini">Reload {BRAND}</a> to sign in again.
         </div>
       </main>
     );
@@ -282,7 +334,7 @@ export default function HqClient() {
     );
   }
 
-  return <Constellation tree={state.tree} at={state.at} controls={controls} />;
+  return <Constellation tree={state.tree} at={state.at} controls={controls} mode={mode} />;
 }
 
 function Sparkline({ data }: { data?: number[] }) {
@@ -327,7 +379,7 @@ function AgentNode({ node, deptName, onOpen }: { node: OrgNode; deptName: string
   );
 }
 
-function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; controls: Controls }) {
+function Constellation({ tree, at, controls, mode }: { tree: OrgTree; at: number; controls: Controls; mode: MiniMode }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const departments = useMemo(() => [...(tree.root.children ?? [])].sort((a, b) => a.order - b.order), [tree.root.children]);
@@ -352,7 +404,9 @@ function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; cont
     <main className="hq-shell">
       <header className="hq-top">
         <div>
-          <p className="hq-eyebrow">{tree.company?.name || "Company"}</p>
+          <p className="hq-eyebrow">
+            {BRAND} · {tree.company?.name || "Company"}
+          </p>
           <h1>The Org</h1>
         </div>
         <span className="hq-mood" title="Company mood">
@@ -446,6 +500,12 @@ function Constellation({ tree, at, controls }: { tree: OrgTree; at: number; cont
 
       <p className="hq-foot">
         {totals.agents} agents · {departments.length} departments · updated {updated} · refreshes every 5s
+        {mode === "browser" ? (
+          <>
+            {" · "}
+            <a href="/">Holocene</a>
+          </>
+        ) : null}
       </p>
 
       {selected ? <Office entry={selected} onClose={() => setSelectedId(null)} controls={controls} /> : null}

@@ -1,6 +1,6 @@
 import { verifyInitData } from "../../lib/verify-init-data";
 
-// initData-gated proxy for the DeloHQ org chart. Served under the /hq Traefik
+// initData-gated proxy for the Holocene Mini org chart. Served under the /hq Traefik
 // carve-out (no google-auth), so this handler is the sole access control: it
 // validates the Telegram initData (HMAC + auth_date freshness + operator
 // allowlist) before forwarding to the internal Holocene org-tree endpoint.
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       {
         ok: false,
         error: "not_configured",
-        message: "TELEGRAM_HQ_BOT_TOKEN is not set on the server yet. Create @DeloHQBot and set the token."
+        message: "TELEGRAM_HQ_BOT_TOKEN is not set on the server yet. Set the @DeLoHQBot token."
       },
       { status: 503 }
     );

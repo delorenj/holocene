@@ -1,4 +1,4 @@
-/* DeloHQ Mini App — the living org chart (P3 constellation). Reuses the Holocene
+/* Holocene Mini (was DeloHQ) — the living org chart (P3 constellation), at /hq in Telegram and /mini in a browser. Reuses the Holocene
    palette (globals.css :root vars) so it reads as one system. Saturated color is
    spent only on state; depth is 1px borders + background lightness, never shadow. */
 
@@ -632,4 +632,12 @@
   .hq-sheet-backdrop {
     animation: none;
   }
+}
+
+/* Links inside banners and the footer (the browser fallback, the way back to Holocene). */
+.hq-banner a,
+.hq-foot a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

@@ -118,6 +118,10 @@ description = "Build Agent Pad; nginx serves apps/agent-pad/dist so this deploys
 run = "'{{config_root}}/apps/auto/tools/pad_build.sh'"
 
 # --- Voice memo pipeline (services/inbox-watcher) ---------------------------
+[tasks."mini:smoke"]
+description = "Holocene Mini live checks: signed/tampered/missing/stale Telegram initData on /hq, Google auth still on /mini (token from 1Password at run time)"
+run = "node '{{config_root}}/apps/web/tools/mini-smoke.mjs' ${@}"
+
 [tasks."memo:trace"]
 description = "One timeline for a voice memo, hop by hop: memo:trace [<memo_id>|<s3 key>|<file>|latest] [--logs]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' trace"

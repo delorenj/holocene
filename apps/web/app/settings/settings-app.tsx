@@ -266,6 +266,7 @@ export function SettingsApp() {
           <a className="hub-tab" href="/voice">Voice</a>
           <a className="hub-tab" href="/wax">Wax</a>
           <a className="hub-tab" href="/settings" aria-current="page">Settings</a>
+          <a className="hub-tab" href="/mini">Mini</a>
         </nav>
         <div className="hub-header-end">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
