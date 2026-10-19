@@ -895,8 +895,11 @@ class Watcher:
                 return {**out, "state": "failed", "source": "journal", "code": st,
                         "detail": row.get("rejection_reason") or st}
             out.update(state="running", source="journal", detail=f"journal state={st}")
-        # The journal row is the fast truth (a ~1 ms local read). Candystore is the fallback for a turn the journal
-        # never recorded; it costs an HTTP round trip, so it is asked at most every SLOW_PROBE_S per memo.
+            # A running row reaches its terminal state in the journal before Candystore hears of it: asking
+            # Candystore here only adds a ~0.75 s HTTP call that can land right on top of the completion.
+            return out
+        # No row (or an unreadable journal): Candystore is the fallback for a turn the journal never recorded. It
+        # costs an HTTP round trip, so it is asked at most every SLOW_PROBE_S per memo.
         if time.time() - m.get("cs_checked_ts", 0) < SLOW_PROBE_S:
             return out
         m["cs_checked_ts"] = time.time()

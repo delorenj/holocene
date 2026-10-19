@@ -898,6 +898,14 @@ class Pacing(unittest.TestCase):
 class ReviewGuards(unittest.TestCase):
     """d5500f0 review: slow probes are rate-limited per memo, a blocked outbox is not retried every tick."""
 
+    def test_a_running_journal_row_never_asks_candystore(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="guard-"))))
+        row = {"state": "running", "outcome": None, "profile": "holocene-pm"}
+        with unittest.mock.patch.object(iw.mc_, "journal_row", return_value=row), \
+                unittest.mock.patch.object(iw.mc_, "candystore_events", return_value=[]) as cs:
+            self.assertEqual(w.agent_status({"memo_id": "m", "command_id": "c"})["state"], "running")
+        cs.assert_not_called()
+
     @unittest.mock.patch.object(iw, "SLOW_PROBE_S", 5.0)
     def test_candystore_is_asked_at_most_every_slow_probe_interval(self):
         w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="guard-"))))
