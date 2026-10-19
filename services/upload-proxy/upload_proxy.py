@@ -34,6 +34,12 @@ the `X-Holocene-Capture` header on the PUT (JSON). They land in audio.memo.uploa
 memo that arrives silent can be told apart from one that was spoken. A recording whose peak stayed under
 -60 dBFS never reaches the PUT: the pad holds it back and POSTs `record_silent`, which the proxy logs and
 publishes as failed(stage record, error_code silent_capture, retryable false) with `data.capture`.
+
+Earshot (bucket channel that plays on the phone, repo delorenj/earshot): the phone POSTs one beacon per phase
+to /upload/heard {channel, key, phase detected|started|finished|failed|missed, at, last_modified, device,
+app_version, error?}. The proxy validates the shape, logs one JSON line (event "heard", status 200 | 400) and
+publishes bloodbank.audio.earshot.<detected|started|ended|failed|skipped> (finished -> ended, missed -> skipped;
+data.phase keeps the device's own word), fail-open. `earshot trace` reads those log lines.
 """
 import re
 
@@ -249,6 +255,77 @@ def build_client_envelope(ev: dict, user_agent: str):
         "client_user_agent": user_agent[:200], "source": "agent-pad", **({"capture": capture} if capture else {})})
 
 
+# ---------------------------------------------------------------- earshot beacon
+
+EARSHOT_BUCKET = "earshot"
+EARSHOT_PHASES = {"detected": "detected", "started": "started", "finished": "ended", "failed": "failed", "missed": "skipped"}
+EARSHOT_CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$")
+
+
+def earshot_event_id(key: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{EARSHOT_BUCKET}/{key}"))
+
+
+def _rfc3339(v) -> bool:
+    if not isinstance(v, str) or not RFC3339_RE.match(v):
+        return False
+    try:
+        datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def validate_heard(beacon):
+    """(clean beacon, None) for a well-formed earshot beacon, else (None, reason).
+
+    Required: channel, key (under that channel), phase, at, last_modified, device, app_version.
+    Optional: error. Anything else is dropped.
+    """
+    if not isinstance(beacon, dict):
+        return None, "body is not a JSON object"
+    channel, key, phase = beacon.get("channel"), beacon.get("key"), beacon.get("phase")
+    if not isinstance(channel, str) or not EARSHOT_CHANNEL_RE.match(channel):
+        return None, "bad channel"
+    if (not isinstance(key, str) or not 0 < len(key) <= 512 or not key.startswith(channel + "/") or len(key) == len(channel) + 1
+            or ".." in key.split("/") or re.search(r"[\x00-\x1f\x7f]", key)):
+        return None, "bad key"
+    if phase not in EARSHOT_PHASES:
+        return None, "bad phase"
+    for f in ("at", "last_modified"):
+        if not _rfc3339(beacon.get(f)):
+            return None, f"bad {f}"
+    for f in ("device", "app_version"):
+        v = beacon.get(f)
+        if not isinstance(v, str) or not 0 < len(v) <= 80:
+            return None, f"bad {f}"
+    err = beacon.get("error")
+    if err is not None and not isinstance(err, str):
+        return None, "bad error"
+    clean = {k: beacon[k] for k in ("channel", "key", "phase", "at", "last_modified", "device", "app_version")}
+    if err:
+        clean["error"] = re.sub(r"[\x00-\x1f\x7f]", " ", err)[:300]
+    return clean, None
+
+
+def build_heard_envelope(beacon: dict, user_agent: str) -> dict:
+    """bloodbank.audio.earshot.<action> fact for a validated beacon (see validate_heard)."""
+    action = EARSHOT_PHASES[beacon["phase"]]
+    event_id = earshot_event_id(beacon["key"])
+    ce_type = f"bloodbank.audio.earshot.{action}"
+    return {
+        "specversion": "1.0", "id": str(uuid.uuid4()), "source": f"urn:33god:service:{SERVICE}",
+        "type": ce_type, "subject": f"bloodbank.evt.audio.earshot.{action}", "time": now_iso(),
+        "datacontenttype": "application/json", "correlationid": event_id, "causationid": None,
+        "producer": SERVICE, "service": SERVICE, "domain": "audio",
+        "schemaref": f"{ce_type}.v1", "dataschema": f"apicurio://holyfields/{ce_type}/versions/1", "kind": "event",
+        "actor": {"type": "service", "agent_id": f"bloodbank.service.{SERVICE}", "cli": None, "provider": None, "model": None},
+        "ordering_key": f"earshot:{event_id}",
+        "data": {**beacon, "event_id": event_id, "occurred_at": now_iso(), "client_user_agent": user_agent[:200]},
+    }
+
+
 def publish_async(env: dict, key: str) -> None:
     if not EMIT_FACTS:
         return
@@ -256,7 +333,7 @@ def publish_async(env: dict, key: str) -> None:
     def work():
         try:
             nats_publish(env["subject"], json.dumps(env, separators=(",", ":")).encode())
-            log("fact_published", key=key, memo_id=env["correlationid"], fact=f"audio.memo.{env['type'].rsplit('.', 1)[1]}",
+            log("fact_published", key=key, memo_id=env["correlationid"], fact=env["type"][len("bloodbank."):],
                 fact_id=env["id"])
         except Exception as e:  # noqa: BLE001 - fail open
             log("fact_failed", key=key, memo_id=env["correlationid"], error=str(e)[:200], nats=f"{NATS_HOST}:{NATS_PORT}")
@@ -398,6 +475,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if env:
             publish_async(env, key)
 
+    def _heard(self):
+        """Earshot device beacon: POST /upload/heard {channel,key,phase,at,last_modified,device,app_version,error?}."""
+        ua = self.headers.get("User-Agent", "")
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            raw = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            raw = None
+        beacon, why = validate_heard(raw) if raw is not None else (None, "bad json")
+        if beacon is None:
+            log("heard", status=400, reason=why, remote=self.client_address[0], ua=ua[:120])
+            return self.send_error(400, why)
+        env = build_heard_envelope(beacon, ua)
+        log("heard", status=200, event_id=env["correlationid"], remote=self.client_address[0], ua=ua[:120], **beacon)
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        publish_async(env, beacon["key"])
+
     def _wheel_keys(self, ev: dict, ua: str):
         """Steering-wheel key inspector upload from Holocene Auto (Diagnostics, parked): key/scroll/session lines.
 
@@ -419,6 +515,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""
         if self.path == "/upload/client-event":
             return self._client_event()
+        if self.path == "/upload/heard":
+            return self._heard()
         if self.path != "/upload/played":
             return self._reject(404, "not found")
         try:

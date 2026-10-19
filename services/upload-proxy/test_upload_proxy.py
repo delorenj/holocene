@@ -220,8 +220,86 @@ class HttpBehaviour(unittest.TestCase):
                          ("bloodbank.audio.memo.failed", "upload", "short_body", True))
         self.assertEqual(env["correlationid"], mc.memo_id_for(KEY))
 
+    def post(self, body: bytes):
+        head = (f"POST /upload/heard HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\n"
+                f"Content-Type: application/json\r\nConnection: close\r\n\r\n").encode()
+        return self.raw(head + body).split(b"\r\n")[0]
+
+    def test_good_beacon_is_logged_and_published(self):
+        import json
+        n0 = len(self.published)
+        self.assertIn(b" 200 ", self.post(json.dumps(BEACON).encode()))
+        self.assertEqual(len(self.published), n0 + 1)
+        env, key = self.published[-1]
+        self.assertEqual((key, env["type"]), (EKEY, "bloodbank.audio.earshot.detected"))
+
+    def test_bad_beacon_is_400_and_publishes_nothing(self):
+        import json
+        n0 = len(self.published)
+        self.assertIn(b" 400 ", self.post(b"not json"))
+        self.assertIn(b" 400 ", self.post(json.dumps({**BEACON, "phase": "dancing"}).encode()))
+        self.assertEqual(len(self.published), n0)
+
     def test_ogg_key_must_hold_an_ogg(self):
         self.assertIn(b" 400 ", self.put(KEY, b"RIFF" + b"\0" * 100).split(b"\r\n")[0])
+
+
+EKEY = "phone/2026/10/19/120000123Z-hello.ogg"
+BEACON = {"channel": "phone", "key": EKEY, "phase": "detected", "at": "2026-10-19T12:00:02.100Z",
+          "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0"}
+
+
+class EarshotBeacon(unittest.TestCase):
+    def test_valid_shape_is_accepted_and_cleaned(self):
+        clean, why = up.validate_heard({**BEACON, "extra": "dropped", "error": "boom\nline"})
+        self.assertIsNone(why)
+        self.assertNotIn("extra", clean)
+        self.assertEqual(clean["error"], "boom line")
+        clean, _ = up.validate_heard(BEACON)
+        self.assertNotIn("error", clean)
+
+    def test_malformed_beacons_are_refused_with_a_reason(self):
+        bad = [
+            (None, "not a JSON object"), ([], "not a JSON object"),
+            ({**BEACON, "channel": "Phone"}, "bad channel"), ({**BEACON, "channel": 5}, "bad channel"),
+            ({**BEACON, "channel": "tablet"}, "bad key"),            # key not under the channel
+            ({**BEACON, "key": "phone/"}, "bad key"), ({**BEACON, "key": "phone/../x.ogg"}, "bad key"),
+            ({**BEACON, "key": "phone/a\nb.ogg"}, "bad key"),
+            ({**BEACON, "phase": "done"}, "bad phase"), ({k: v for k, v in BEACON.items() if k != "phase"}, "bad phase"),
+            ({**BEACON, "at": "yesterday"}, "bad at"), ({**BEACON, "at": "2026-10-19T12:00:02"}, "bad at"),  # no zone
+            ({**BEACON, "last_modified": 1760875200}, "bad last_modified"),
+            ({**BEACON, "device": ""}, "bad device"), ({k: v for k, v in BEACON.items() if k != "app_version"}, "bad app_version"),
+            ({**BEACON, "error": 7}, "bad error"),
+        ]
+        for beacon, why in bad:
+            clean, got = up.validate_heard(beacon)
+            self.assertIsNone(clean, beacon)
+            self.assertIn(why, got, beacon)
+
+    def test_phases_map_to_contract_actions_and_keep_the_device_word(self):
+        want = {"detected": "detected", "started": "started", "finished": "ended", "failed": "failed", "missed": "skipped"}
+        for phase, action in want.items():
+            env = up.build_heard_envelope({**BEACON, "phase": phase}, "ua")
+            self.assertEqual(env["type"], f"bloodbank.audio.earshot.{action}")
+            self.assertEqual(env["subject"], f"bloodbank.evt.audio.earshot.{action}")
+            self.assertEqual(env["data"]["phase"], phase)
+            self.assertEqual(env["correlationid"], up.earshot_event_id(EKEY))
+            self.assertEqual(env["ordering_key"], "earshot:" + env["correlationid"])
+
+    def test_envelopes_pass_the_bloodbank_contract_and_schema(self):
+        if not BB_HOOKS.is_dir():
+            self.skipTest("bloodbank repo not available")
+        sys.path.insert(0, str(BB_HOOKS))
+        from core import validate
+        for phase in up.EARSHOT_PHASES:
+            env = up.build_heard_envelope({**BEACON, "phase": phase, "error": "x" if phase == "failed" else None}, "S26/0.1.0")
+            if env["data"]["error"] is None:
+                del env["data"]["error"]
+            validate.assert_contract(env)
+            try:
+                validate.validate_envelope(env)
+            except validate.ValidationUnavailable:
+                self.skipTest("jsonschema not installed")
 
 
 class ClientEvents(unittest.TestCase):
