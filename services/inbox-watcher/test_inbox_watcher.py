@@ -159,6 +159,8 @@ import inbox_watcher as iw  # noqa: E402
 
 # backoffs would make the test slow
 iw.BACKOFF = {k: 0 for k in iw.BACKOFF}
+iw.OUTBOX_RETRY_S = 0   # the pipeline tests tick fast; ReviewGuards re-enables the throttles locally
+iw.SLOW_PROBE_S = 0
 
 
 def put(key, content=b"OggS fake audio"):
@@ -864,6 +866,10 @@ class LaneProbes(unittest.TestCase):
         self.assertTrue(mt.verdict([other, up], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript"))
 
 
+def iso_z(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
 class Pacing(unittest.TestCase):
     """The loop wakes for the earliest due memo and at once when a stage finishes, never on a fixed 1 s beat."""
 
@@ -887,6 +893,46 @@ class Pacing(unittest.TestCase):
         w.done_stage({"memo_id": "m", "key": "k", "agent": "a", "stage": "agent"}, "agent", "reply")
         self.assertTrue(iw.WAKE.is_set())
         iw.WAKE.clear()
+
+
+class ReviewGuards(unittest.TestCase):
+    """d5500f0 review: slow probes are rate-limited per memo, a blocked outbox is not retried every tick."""
+
+    @unittest.mock.patch.object(iw, "SLOW_PROBE_S", 5.0)
+    def test_candystore_is_asked_at_most_every_slow_probe_interval(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="guard-"))))
+        m = {"memo_id": "m", "command_id": "c"}
+        with unittest.mock.patch.object(iw.mc_, "journal_row", return_value=None), \
+                unittest.mock.patch.object(iw.mc_, "candystore_events", return_value=[]) as cs:
+            for _ in range(5):
+                self.assertEqual(w.agent_status(m)["state"], "pending")
+            self.assertEqual(cs.call_count, 1)
+            m["cs_checked_ts"] -= iw.SLOW_PROBE_S
+            w.agent_status(m)
+            self.assertEqual(cs.call_count, 2)
+
+    @unittest.mock.patch.object(iw, "OUTBOX_RETRY_S", 5.0)
+    def test_a_blocked_outbox_waits_before_the_next_try(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="guard-"))))
+        w.s.data["outbox"] = [{"memo_id": "m", "action": "received"}]
+        with unittest.mock.patch.object(w, "_emit_raw", side_effect=RuntimeError("nats down")) as emit:
+            w.flush_outbox()
+            w.flush_outbox()
+            self.assertEqual(emit.call_count, 1)
+            w.outbox_blocked_at -= iw.OUTBOX_RETRY_S
+            w.flush_outbox()
+            self.assertEqual(emit.call_count, 2)
+
+    def test_listing_runs_outside_the_lock(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="guard-"))))
+        held = []
+
+        def listing(timeout=60):
+            held.append(w.mu._is_owned())
+            return []
+        with unittest.mock.patch.object(iw.mc_, "s3_list_inbox", side_effect=listing):
+            w.tick()
+        self.assertEqual(held, [False])
 
 
 class EarshotMirror(unittest.TestCase):
@@ -933,6 +979,36 @@ class EarshotMirror(unittest.TestCase):
         self.assertEqual(hops["phone_started"].status, mt.OK)
         self.assertEqual(hops["phone_finished"].status, mt.UNKNOWN)   # not reported yet: annotation, not a stop
         self.assertTrue(hops["phone_finished"].optional)
+
+    def test_a_landed_but_unrecorded_drop_is_recorded_not_dropped_again(self):
+        # A crash (or an mc timeout after commit) left earshot_attempted but no earshot_key: the retry must stat,
+        # find the object, and record it instead of re-uploading (a new LastModified plays the reply twice).
+        key = "inbox/holocene-pm/2026/10/19/redrop.ogg"
+        mid = mc_.memo_id_for(key)
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="redrop-"))))
+        stamp = mc_.parse_iso("2026-10-19T21:00:00.123Z")
+        want = iw.earshot_key_for(stamp, "holocene-pm", mid)
+        m = {"memo_id": mid, "key": key, "agent": "holocene-pm", "reply_text": "Done.", "reply_stamp": iso_z(stamp),
+             "earshot_attempted": want, "attempts": {}, "status": "active", "stage": "speak", "received_ts": time.time()}
+        w.s.memos[key] = m
+        calls = []
+        real_mc = iw.mc_.mc
+
+        def spy(*a, **k):
+            calls.append(a)
+            return real_mc(*a, **k)
+        (BUCKET_DIR / want).parent.mkdir(parents=True, exist_ok=True)
+        (BUCKET_DIR / want).write_bytes(b"OggS-already-there")
+        before = EMITS.read_text() if EMITS.exists() else ""
+        try:
+            with unittest.mock.patch.object(iw.mc_, "mc", side_effect=spy):
+                w.step_speak(m)
+        finally:
+            EMITS.write_text(before)  # the Pipeline tests count every fact in this shared log
+        self.assertEqual(m["earshot_key"], want)
+        dropped = [a for a in calls if a[0] == "cp" and "/earshot/" in a[-1]]
+        self.assertEqual(dropped, [])
+        self.assertEqual((BUCKET_DIR / want).read_bytes(), b"OggS-already-there")
 
     def test_no_mirror_recorded_is_an_optional_annotation(self):
         import memo_trace as mt

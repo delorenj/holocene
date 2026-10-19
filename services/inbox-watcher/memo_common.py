@@ -222,9 +222,9 @@ def s3_url(key: str) -> str:
     return f"{S3_ALIAS}/{BUCKET}/{key}"
 
 
-def s3_list_inbox() -> list[dict]:
+def s3_list_inbox(timeout: int = 60) -> list[dict]:
     """Every audio object under inbox/: {key, size, last_modified(datetime)}."""
-    r = mc("ls", "--recursive", "--json", s3_url(INBOX_PREFIX) + "/", timeout=60)
+    r = mc("ls", "--recursive", "--json", s3_url(INBOX_PREFIX) + "/", timeout=timeout)
     if r.returncode != 0:
         raise RuntimeError(f"mc ls failed rc={r.returncode}: {r.stderr.strip()[:200]}")
     out = []

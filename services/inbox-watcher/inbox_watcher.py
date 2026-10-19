@@ -102,6 +102,11 @@ AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
 # The main loop's longest sleep. It also wakes for the earliest due memo, the next S3 listing, and at once when a
 # stage finishes (WAKE), so a stage never waits for a tick boundary to start the next one.
 TICK_S = float(os.environ.get("MEMO_TICK_S", "1"))
+# The slow fallbacks behind the 0.5 s journal read (a Candystore HTTP query, the NATS monitor) run at most this
+# often per memo: polled every 0.5 s they held the tick lock ~0.75 s per call and stalled every other memo.
+SLOW_PROBE_S = float(os.environ.get("MEMO_SLOW_PROBE_S", "5"))
+LIST_TIMEOUT_S = 10      # a hung MinIO must not hold the loop for a minute
+OUTBOX_RETRY_S = 5       # a blocked outbox is retried this often, not every tick
 WAKE = threading.Event()
 
 # Retry backoff base seconds per failure stage (doubles each attempt, capped).
@@ -223,6 +228,8 @@ def compact(m: dict) -> None:
     for k, n in (("transcript", 300), ("reply_text", 300), ("prompt", 300)):
         if isinstance(m.get(k), str) and len(m[k]) > n:
             m[k] = m[k][:n]
+    for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
+        m.pop(k, None)
 
 
 def transcribe_timeout(audio_s: float | None, timeouts_so_far: int) -> int:
@@ -313,6 +320,8 @@ class Watcher:
     def __init__(self, state: State):
         self.s = state
         self.last_list_err = None
+        self.last_list_s = 0.0          # how long the last inbox listing took (paces the next one)
+        self.outbox_blocked_at = 0.0
         # One lock guards state. The tick thread holds it while it works; slow steps (whisper, vox,
         # bb-emit) run on worker threads and take it only to read inputs and to apply results, so a
         # 45 s (or 20 min) transcription no longer stops discovery, polling and the heartbeat.
@@ -386,14 +395,18 @@ class Watcher:
 
     def flush_outbox(self) -> None:
         box = self.s.data["outbox"]
+        if box and time.time() - self.outbox_blocked_at < OUTBOX_RETRY_S:
+            return  # blocked a moment ago: do not fork bb-emit and log on every tick of an outage
         while box:
             rec = box[0]
             try:
                 self._emit_raw(rec)
             except Exception as e:  # noqa: BLE001
+                self.outbox_blocked_at = time.time()
                 log("outbox_blocked", "warn", memo_id=rec["memo_id"], stage=rec["action"],
                     error=str(e)[:200], outbox=len(box))
                 return
+            self.outbox_blocked_at = 0.0
             box.pop(0)
             log("outbox_flushed", memo_id=rec["memo_id"], stage=rec["action"], outbox=len(box))
             self.s.save()
@@ -413,14 +426,21 @@ class Watcher:
         self.s.save()
         log("baseline", count=len(objs), note="first start: existing inbox objects will never be replayed")
 
-    def discover(self) -> None:
+    def list_inbox(self) -> tuple[list[dict] | None, str | None]:
+        t0 = time.time()
         try:
-            objs = mc_.s3_list_inbox()
+            return mc_.s3_list_inbox(timeout=LIST_TIMEOUT_S), None
         except Exception as e:  # noqa: BLE001
-            msg = str(e)[:300]
-            if msg != self.last_list_err:  # do not spam an outage every tick
-                log("s3_list_failed", "error", stage="receive", error=msg)
-            self.last_list_err = msg
+            return None, str(e)[:300]
+        finally:
+            self.last_list_s = time.time() - t0
+
+    def discover(self, listing: tuple[list[dict] | None, str | None] | None = None) -> None:
+        objs, err = listing if listing is not None else self.list_inbox()
+        if err is not None:
+            if err != self.last_list_err:  # do not spam an outage every tick
+                log("s3_list_failed", "error", stage="receive", error=err)
+            self.last_list_err = err
             return
         self.last_list_err = None
         for o in objs:
@@ -522,11 +542,13 @@ class Watcher:
                       key=lambda m: m["key"])
 
     def tick(self, discover: bool = True) -> None:
+        # The listing is I/O: run it outside the lock so a slow MinIO never stalls workers applying results.
+        listing = self.list_inbox() if discover else None
         with self.mu:
             self.flush_outbox()
             self.process_control()
-            if discover:
-                self.discover()
+            if listing is not None:
+                self.discover(listing)
             self.rescue_late()
             for m in self.active():
                 if STOP:
@@ -579,12 +601,12 @@ class Watcher:
             with self.mu:
                 self.on_error(m, StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True))
         finally:
+            WAKE.set()  # a step ended: let the main loop pick up what it unblocked (first, so a failing save cannot skip it)
             with self.mu:
                 m["last_step_ms"] = int((time.time() - t0) * 1000)
                 m.pop("step_started_ts", None)
                 self.running.discard(m["key"])
                 self.s.save()
-            WAKE.set()  # a worker-pool step ended: let the main loop pick up what it unblocked
 
     def on_error(self, m: dict, e: StageError) -> None:
         n = m["attempts"][e.stage] = m["attempts"].get(e.stage, 0) + 1
@@ -873,6 +895,11 @@ class Watcher:
                 return {**out, "state": "failed", "source": "journal", "code": st,
                         "detail": row.get("rejection_reason") or st}
             out.update(state="running", source="journal", detail=f"journal state={st}")
+        # The journal row is the fast truth (a ~1 ms local read). Candystore is the fallback for a turn the journal
+        # never recorded; it costs an HTTP round trip, so it is asked at most every SLOW_PROBE_S per memo.
+        if time.time() - m.get("cs_checked_ts", 0) < SLOW_PROBE_S:
+            return out
+        m["cs_checked_ts"] = time.time()
         try:
             for ev in mc_.candystore_events(m["memo_id"]):
                 if ev.get("type") not in ("bloodbank.agent.invocation.completed", "bloodbank.agent.invocation.failed"):
@@ -892,6 +919,11 @@ class Watcher:
         except Exception as e:  # noqa: BLE001
             out["candystore_error"] = str(e)[:200]
         return out
+
+    def cached_liveness(self, m: dict, lane: str) -> dict:
+        if time.time() - m.get("live_ts", 0) >= SLOW_PROBE_S or "live" not in m:
+            m["live"], m["live_ts"] = mc_.gateway_liveness(lane), time.time()
+        return m["live"]
 
     def step_await_agent(self, m: dict) -> None:
         st = self.agent_status(m)
@@ -916,8 +948,9 @@ class Watcher:
         if st["state"] == "pending" and "journal_error" not in st:
             # The gateway consumed the command but wrote no execution row and the consumer is empty:
             # it was terminally rejected (unroutable target, bad envelope). Its only trace is a gateway
-            # WARNING, so go and fetch it instead of waiting out the deadline.
-            live = mc_.gateway_liveness(lane)
+            # WARNING, so go and fetch it instead of waiting out the deadline. (Cached per memo: a NATS monitor
+            # request every 0.5 s would hold the tick lock for nothing.)
+            live = self.cached_liveness(m, lane)
             empty = live.get("ok") is not None and not live.get("error") and not (live.get("num_pending") or 0) \
                 and not (live.get("num_ack_pending") or 0)
             if empty and waited >= 20:
@@ -1004,9 +1037,29 @@ class Watcher:
             # The phone copy goes up alongside the car's, not after it: it is the faster path to an ear.
             # Once per memo: re-dropping the same key would give it a new LastModified, and Earshot plays that again.
             mirror = None
-            if not m.get("earshot_key"):
-                mirror = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="earshot")
-                mirrored = mirror.submit(mirror_to_earshot, audio, stamp, agent, mid, key)
+            if EARSHOT_CHANNEL and not m.get("earshot_key"):
+                want = earshot_key_for(stamp, agent, mid)
+                with self.mu:
+                    tried = m.get("earshot_attempted") == want
+                if tried and earshot_exists(want):
+                    # An earlier attempt landed but was never recorded (crash, mc timeout after commit): a second
+                    # drop would get a new LastModified and the phone would say it twice.
+                    with self.mu:
+                        m["earshot_key"] = want
+                        self.s.save()
+                else:
+                    with self.mu:
+                        m["earshot_attempted"] = want
+                        self.s.save()  # persisted before the drop, so a crash mid-drop is caught by the check above
+
+                    def record(f, m=m):
+                        if f.exception() is None and f.result():
+                            with self.mu:
+                                m["earshot_key"] = f.result()
+                                self.s.save()
+                    mirror = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="earshot")
+                    mirrored = mirror.submit(mirror_to_earshot, audio, stamp, agent, mid, key)
+                    mirrored.add_done_callback(record)
             try:
                 r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
                 if r.returncode != 0:
@@ -1051,6 +1104,13 @@ def earshot_key_for(stamp: datetime, agent: str, mid: str, channel: str = "") ->
     beacons for it join back to the memo."""
     ch = channel or EARSHOT_CHANNEL
     return f"{ch}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}{stamp.microsecond // 1000:03d}Z-{agent}-{mid}.ogg"
+
+
+def earshot_exists(ekey: str) -> bool:
+    try:
+        return mc_.mc("stat", f"{mc_.S3_ALIAS}/{EARSHOT_BUCKET}/{ekey}", timeout=20).returncode == 0
+    except Exception:  # noqa: BLE001 - unknown: assume absent, so the reply still reaches the phone
+        return False
 
 
 def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: str) -> str | None:
@@ -1143,8 +1203,7 @@ def main() -> int:
 
     def _stop(*_):
         global STOP
-        STOP = True
-        WAKE.set()
+        STOP = True  # nothing else: WAKE.set() takes a lock the interrupted frame may hold; the loop waits <= TICK_S
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
@@ -1181,16 +1240,23 @@ def main() -> int:
     while not STOP:
         # S3 is listed every --poll seconds; pending steps run every second so a stage
         # never waits a whole poll interval for the next one.
-        do_discover = time.time() - last_discover >= args.poll
-        if do_discover:
-            last_discover = time.time()
+        # A slow or failing MinIO is listed less often: at least twice the last listing's duration apart.
+        period = max(args.poll, 2 * w.last_list_s)
+        do_discover = time.time() - last_discover >= period
+        failed = False
         try:
             w.tick(discover=do_discover)
         except Exception as e:  # noqa: BLE001
+            failed = True
             log("tick_error", "error", error=f"{type(e).__name__}: {e}")
+        if do_discover:
+            last_discover = time.time()  # stamped after the tick, so a slow listing is not followed by another at once
         if args.once and not (args.drain and w.active() and time.time() < deadline):
             break
-        WAKE.wait(w.sleep_for(args.poll - (time.time() - last_discover)))
+        if failed:
+            time.sleep(1)  # a tick that raises before advancing would otherwise spin at the 0.05 s floor
+            continue
+        WAKE.wait(w.sleep_for(period - (time.time() - last_discover)))
         WAKE.clear()
     w.shutdown(wait=args.once)
     log("stopped")
