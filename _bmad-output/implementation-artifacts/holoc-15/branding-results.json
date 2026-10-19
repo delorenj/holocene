@@ -1,0 +1,307 @@
+[
+ {
+  "agent_id": "delonet-director",
+  "kind": "concepts",
+  "source": "No genuine logo: delonet-company (/home/delorenj/code/delonet-company) is a Python CLI + FastAPI read model with no frontend, no inline SVG, no favicon/manifest; git history has never contained any svg/png/jpg/ico/webp; README/docs/_bmad-output have no branding. Holocene avatar API shows avatar=null.",
+  "persona_note": "none. ~/.hermes/profiles/delonet-director/assets/avatar.png is a 160x160 generated green-hexagon-with-eyes default from the 2026-08-21 bulk provisioning batch (same batch as ~22 agents), not mentioned in role.yaml/SOUL.md/registry, no avatar-telegram.json receipt; not an intentional persona and not project branding.",
+  "project_path": "/home/delorenj/code/delonet-company",
+  "concepts": [
+   {
+    "name": "Front Door",
+    "idea": "An arch doorway with three slot dots: the Director is the one front door for company work, with three capacity slots.",
+    "svg": "/tmp/holoc15/delonet-director/concept-1-front-door.svg",
+    "jpeg": "/tmp/holoc15/delonet-director/concept-1-front-door.jpg"
+   },
+   {
+    "name": "Three-Slot Hub",
+    "idea": "A central hub node routing to three satellite nodes: delegation to local PMs across the three physical capacity slots.",
+    "svg": "/tmp/holoc15/delonet-director/concept-2-three-slot-hub.svg",
+    "jpeg": "/tmp/holoc15/delonet-director/concept-2-three-slot-hub.jpg"
+   },
+   {
+    "name": "D Gate",
+    "idea": "A bold D letterform whose counter holds a single orange routed-work dot: Director and gate in one mark.",
+    "svg": "/tmp/holoc15/delonet-director/concept-3-d-gate.svg",
+    "jpeg": "/tmp/holoc15/delonet-director/concept-3-d-gate.jpg"
+   }
+  ],
+  "note": "Evidence at /tmp/holoc15/delonet-director/evidence.md. Montage of all six concepts: /tmp/holoc15/montage.png (viewed, circle-cropped, all legible). Telegram bot delonet_director_bot has provisioning_status disabled and no token, so an upload would be blocked anyway. Nothing uploaded or committed."
+ },
+ {
+  "agent_id": "delonet-company-reporter",
+  "kind": "concepts",
+  "source": "No genuine logo: shares the project delonet-company (no frontend, no logo files ever in git or docs); the reporter's own runtime repo (/home/delorenj/code/agent-hm-delonet-company-reporter) also has no branding. Holocene avatar API shows avatar=null and no Telegram bot. Note this agent has no ~/.hermes/profiles entry.",
+  "persona_note": "none. runtime/assets/avatar.png in /home/delorenj/code/agent-hm-delonet-company-reporter is the same 2026-08-21 generated provisioning default (3 KB), not an intentional persona; no role.yaml/registry mention and no avatar-telegram.json receipt.",
+  "project_path": "/home/delorenj/code/delonet-company",
+  "concepts": [
+   {
+    "name": "Signal Bars",
+    "idea": "Three rising bars with an amber peak on a baseline: the daily company report and key changes, on a dark ground.",
+    "svg": "/tmp/holoc15/delonet-company-reporter/concept-1-signal-bars.svg",
+    "jpeg": "/tmp/holoc15/delonet-company-reporter/concept-1-signal-bars.jpg"
+   },
+   {
+    "name": "Freshness Dial",
+    "idea": "A clock ring with a green freshness arc and amber hands: freshness-aware reporting and delivery monitoring.",
+    "svg": "/tmp/holoc15/delonet-company-reporter/concept-2-freshness-dial.svg",
+    "jpeg": "/tmp/holoc15/delonet-company-reporter/concept-2-freshness-dial.jpg"
+   },
+   {
+    "name": "Daily Sunrise",
+    "idea": "A report page with text lines and a sunrise horizon: the daily report that arrives each morning.",
+    "svg": "/tmp/holoc15/delonet-company-reporter/concept-3-daily-sunrise.svg",
+    "jpeg": "/tmp/holoc15/delonet-company-reporter/concept-3-daily-sunrise.jpg"
+   }
+  ],
+  "note": "Evidence at /tmp/holoc15/delonet-company-reporter/evidence.md. Registry telegram status is blocked-unverified-dedicated-credential with empty bot_username, so no bot exists to receive an avatar yet. Nothing uploaded or committed."
+ },
+ {
+  "agent_id": "keepy-money-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/KeepyMoney",
+  "source": "public/piggy-balloon.svg (last commit 2026-06-14). src/components/layout/brand.tsx BrandMark renders <img src=\"/piggy-balloon.svg\"> and src/app/layout.tsx:19 sets icons.icon to the same file; it is the only brand asset in public/. Nothing serves Keepy locally (port 3000 is an unrelated app), so the proof is component source, not rendered HTML.",
+  "persona_note": "none (no persona fields in role.yaml, no avatar-telegram.json; profile assets/avatar.png is a 160px flume scaffold placeholder)",
+  "avatar_jpeg": "/tmp/holoc15/keepy-money-pm/avatar.jpg",
+  "note": "Converter run on a copy of the SVG, background #f7f2e8 (the app's --paper token), pad 5, hash sha256:36bd6fc4dd2f528f6cd8a961d425a6c316d383fb1ab5ad3c6c0a7df561f53b5e. Viewed; the whole mark sits inside the circle. Evidence: /tmp/holoc15/keepy-money-pm/evidence.md"
+ },
+ {
+  "agent_id": "tonnybox-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/code/TonnyBox",
+  "source": "No logo exists. The repo has zero svg/ico/png/jpg/webp files outside node_modules and deps. The sibling checkouts ~/code/HeyMa and ~/code/TalkyTonny have none either. Project is the Tonny Raspberry Pi household voice satellite (docs/walking-skeleton.md; .project.json names it \"HeyMa Satellite\", \"He's Tonny\").",
+  "persona_note": "none (profile assets/avatar.png is a scaffold placeholder, a pink droplet with eyes; no persona image)",
+  "concepts": [
+   {
+    "name": "Tonny T",
+    "idea": "Rounded cream T with two amber sound arcs on navy: the name plus a voice that is heard.",
+    "svg": "/tmp/holoc15/tonnybox-pm/concept-1-tonny-t.svg",
+    "jpeg": "/tmp/holoc15/tonnybox-pm/concept-1-tonny-t.jpg"
+   },
+   {
+    "name": "Listening Box",
+    "idea": "Amber rounded-square box face with side ear-mics and a smile on cream: Tonny as a friendly box.",
+    "svg": "/tmp/holoc15/tonnybox-pm/concept-2-listening-box.svg",
+    "jpeg": "/tmp/holoc15/tonnybox-pm/concept-2-listening-box.jpg"
+   },
+   {
+    "name": "House Voice",
+    "idea": "Teal house silhouette holding three voice-level bars on deep teal: a household voice assistant.",
+    "svg": "/tmp/holoc15/tonnybox-pm/concept-3-house-voice.svg",
+    "jpeg": "/tmp/holoc15/tonnybox-pm/concept-3-house-voice.jpg"
+   }
+  ],
+  "note": "Contact sheet: /tmp/holoc15/tonnybox-pm/contact.png. I viewed it after fixing a clipped wave arc and a skull-looking mouth in the first draft. The operator picks; none is accepted. Evidence: /tmp/holoc15/tonnybox-pm/evidence.md"
+ },
+ {
+  "agent_id": "nautilus-trader-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/nautilus_trader",
+  "source": "assets/nautilus-trader-logo.png (1300x300 README header lockup, last commit 2026-05-28, upstream Nautech branding that the delorenj fork inherits). I cropped the nautilus shell mark from the left of it (x 8-180, 166x198 px). The repo has no SVG of the mark. Rejected: nautilus-trader.png (architecture diagram), nautilus-art.png (pen drawing), ns-logo.png (Nautech Systems company lockup), nautilus-logo-white.png (white text), and polymarket/dashboard/web/app/icon.svg (generic orange P for the whale-bot sub-experiment).",
+  "persona_note": "Intentional persona NAME: role.yaml telegram.bot_username is DrStonkyBot and SOUL.md says @DrStonkyBot, while the registry row says nautilus_trader_pm_bot. There is no persona IMAGE anywhere (no avatar-telegram.json; assets/avatar.png is a scaffold placeholder). Nothing is replaced, but the operator should decide whether Dr Stonky wears the upstream nautilus shell or its own face.",
+  "avatar_jpeg": "/tmp/holoc15/nautilus-trader-pm/avatar.jpg",
+  "note": "Raster path, centred on #f4f5f7 at 1024px, shell 620px wide. The 166px crop was upscaled 3.1x with Lanczos, so it is a bit soft and shows a faint shadow-halo edge; legible at avatar size. A vector or larger shell would be crisper. Evidence: /tmp/holoc15/nautilus-trader-pm/evidence.md"
+ },
+ {
+  "agent_id": "gruvato-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/gruvato",
+  "source": "Strike mark, owner pick 2026-10-18: src/components/ds/GruvatoMark.tsx (STRIKE_RING, STRIKE_SHAFT, STRIKE_BEAD) generated by scripts/brand/strike.mjs; also brand/strike-icon.svg, brand/strike-tile.svg and public/favicon.svg, which index.html links. Commit 2026-10-19 00:35 \"regenerate every icon from Strike (GRUV-123)\". No local dev server was running; the evidence is the component, index.html and the brand dir, all same-day. Older drum-G and wordmark explorations under _bmad-output/design are superseded.",
+  "persona_note": "none (no persona image; bot is drumjangler_pm_bot, a legacy name only)",
+  "avatar_jpeg": "/tmp/holoc15/gruvato-pm/avatar.jpg",
+  "note": "I extracted the three flat shapes into source-strike-mark.svg and ran the converter with background #111210, --viewbox '8.5 6 49.5 49.5', pad 11, hash sha256:e28f0da8e424a432d221582f5bc5218947f4eb82636893452c8e2ef94bf99dec. Viewed; the stick tip clears the circle. Evidence: /tmp/holoc15/gruvato-pm/evidence.md"
+ },
+ {
+  "agent_id": "navi-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/navi",
+  "source": "assets/icon.png (1024x1024: three buildings on a slab, ink and blue on grey-blue), referenced by app.config.ts `icon: ./assets/icon.png`. adaptive-foreground, adaptive-monochrome and splash-icon carry the same mark. Last commit to assets/ was 2026-10-11 (Epic 1); app.config.ts is 2026-10-19. There is no SVG, web favicon or inline brand component, and design/ holds the IPM Closeout prototypes only. This is the newest in-repo mark but it is the launcher icon from Epic 1 and was never revised.",
+  "persona_note": "none (no persona fields; no avatar-telegram.json; scaffold placeholder only)",
+  "avatar_jpeg": "/tmp/holoc15/navi-pm/avatar.jpg",
+  "note": "Raster path: cropped the mark bbox, scaled 1.25x (flat art, stays crisp), centred on the icon's own background (183,188,194) at 1024. The farthest corner is about 441px from centre, inside the 512px circle. Viewed OK. Evidence: /tmp/holoc15/navi-pm/evidence.md"
+ },
+ {
+  "agent_id": "bloodbank-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/33GOD/bloodbank",
+  "source": "/home/delorenj/code/33GOD/bloodbank/Bloodbank Logo.zip -> bloodbank-logo.png (1024px; zip committed 2026-09-13), same art as repo-root bloodbank-logo.png (640px, commit ef56dfa 2026-08-27, 'brand the Bloodbank node package with the drop mark'). The n8n src/icons/bloodbank.dark.svg is only a crude trace of it, so I used the raster original. Bloodbank has no frontend to curl.",
+  "avatar_jpeg": "/tmp/holoc15/bloodbank-pm/avatar.jpg",
+  "persona_note": "none: no persona in SOUL.md and no avatar-telegram.json receipt. The profile's assets/avatar.png is a generic scaffolded blob face (2026-08-21), and Holocene shows avatar null.",
+  "note": "Rendered with Pillow, not the SVG converter: 0.92x of the 1024 source centred, on #131417 sampled from the source corners. Viewed the JPEG and a circle crop, and the orbit tips stay inside the circle. Evidence is at /tmp/holoc15/bloodbank-pm/evidence.md."
+ },
+ {
+  "agent_id": "candystore-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/33GOD/candystore",
+  "source": "web/src/assets/candystore-logo.png (1003x280 wordmark with the red lollipop as the 'o'), imported by web/src/App.jsx as the header <img>. The built bundle static/assets/candystore-logo-Wz3aLJm_.png is byte-identical (built 2026-10-18; art last committed 2026-06-01). The live site is behind Google OIDC so I could not curl the header, but source and bundle agree. There is no favicon or manifest.",
+  "avatar_jpeg": "/tmp/holoc15/candystore-pm/avatar.jpg",
+  "persona_note": "none: the profile's assets/avatar.png is a generic scaffolded blob face (2026-08-21), there is no receipt, and Holocene shows avatar null.",
+  "note": "The only brand art is the wordmark, whose text would be illegible at 64px. I cropped the lollipop glyph out of it, painted the neighbouring t/r pixels to cream #eeede9 and upscaled it 3.5x with Lanczos, so it is slightly soft. The operator may prefer the full wordmark, though that reads poorly at avatar size. Evidence is at /tmp/holoc15/candystore-pm/evidence.md."
+ },
+ {
+  "agent_id": "heyma-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/HeyMa",
+  "source": "/home/delorenj/HeyMa/components/n8n-nodes-heyma/nodes/HeyMa/heyma.svg (amber microphone, commit aba9c15, 2026-08-21). It is the only project-authored mark. The repo has no favicon, manifest or logo. The wax tray PNGs are status icons and the other SVGs are third-party.",
+  "avatar_jpeg": "/tmp/holoc15/heyma-pm/avatar.jpg",
+  "persona_note": "none: the profile's assets/avatar.png is a generic scaffolded blob face (2026-08-21), there is no receipt, and Holocene shows avatar null.",
+  "note": "Weak evidence: this is an n8n node icon, not a formal logo, so the operator should confirm it. Rendered with the skill converter on #FFF7ED with pad 5, content_hash sha256:238dd492edb128c5d6582435d5ffd012f10a35b2e9d923a58f1f382e1a27a05f. Viewed the JPEG and a circle crop. The project lives at ~/HeyMa, not under ~/code. Evidence is at /tmp/holoc15/heyma-pm/evidence.md."
+ },
+ {
+  "agent_id": "skillex-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/code/skillex",
+  "source": "No logo exists. The repo has no brand, favicon or logo files, and architecture.svg/png (2026-08-26) is an excalidraw diagram, not a mark. The README describes a Node CLI that composes skills through sets and packs of symlinks.",
+  "persona_note": "none: the profile's assets/avatar.png is a generic scaffolded blob face (2026-08-21), and there is no receipt or persona in SOUL.md.",
+  "concepts": [
+   {
+    "name": "a-reference-stack",
+    "idea": "Three stacked skill bars on an amber reference spine with link nodes, meaning skills defined once and composed by reference.",
+    "svg": "/tmp/holoc15/skillex-pm/concepts/a-reference-stack.svg",
+    "jpeg": "/tmp/holoc15/skillex-pm/concepts/a-reference-stack.jpg"
+   },
+   {
+    "name": "b-hub-hex",
+    "idea": "A hexagon hub with an amber core and three spokes to its vertices, meaning one root fanned out to many agents.",
+    "svg": "/tmp/holoc15/skillex-pm/concepts/b-hub-hex.svg",
+    "jpeg": "/tmp/holoc15/skillex-pm/concepts/b-hub-hex.jpg"
+   },
+   {
+    "name": "c-s-chain",
+    "idea": "A violet S letterform with two amber link nodes at its ends, meaning Skillex as a chain of symlinks.",
+    "svg": "/tmp/holoc15/skillex-pm/concepts/c-s-chain.svg",
+    "jpeg": "/tmp/holoc15/skillex-pm/concepts/c-s-chain.jpg"
+   }
+  ],
+  "note": "All three were rendered with the skill converter and viewed on a contact sheet at /tmp/holoc15/concepts-sheet.png. b and c were re-rendered with a larger pad afterward, and I viewed only the b circle preview after that. They are for the operator to pick from; none is accepted. Evidence is at /tmp/holoc15/skillex-pm/evidence.md."
+ },
+ {
+  "agent_id": "sidepiece-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/code/sidepiece",
+  "source": "No logo exists. The repo has no logo, favicon, manifest or svg outside BMAD skill assets, and packages/ holds only bridge and contract with no extension UI. The project is a project-aware Chrome side panel that resolves the active tab to its repo, Hermes PM, Plane board and Bloodbank stream.",
+  "persona_note": "none: the profile's assets/avatar.png is a generic scaffolded blob face (2026-08-21), and there is no receipt or persona in SOUL.md.",
+  "concepts": [
+   {
+    "name": "a-docked-panel",
+    "idea": "A browser window outline with a docked sky-blue side panel carrying three navy rows, meaning the side panel cockpit.",
+    "svg": "/tmp/holoc15/sidepiece-pm/concepts/a-docked-panel.svg",
+    "jpeg": "/tmp/holoc15/sidepiece-pm/concepts/a-docked-panel.jpg"
+   },
+   {
+    "name": "b-pin-and-panel",
+    "idea": "A coral map pin beside a navy side bar, meaning the page resolves to a project pinned next to the browser.",
+    "svg": "/tmp/holoc15/sidepiece-pm/concepts/b-pin-and-panel.svg",
+    "jpeg": "/tmp/holoc15/sidepiece-pm/concepts/b-pin-and-panel.jpg"
+   },
+   {
+    "name": "c-side-slice",
+    "idea": "A green disc with an amber slice pulled out to the side, a literal side piece.",
+    "svg": "/tmp/holoc15/sidepiece-pm/concepts/c-side-slice.svg",
+    "jpeg": "/tmp/holoc15/sidepiece-pm/concepts/c-side-slice.jpg"
+   }
+  ],
+  "note": "All three were rendered with the skill converter and viewed on the contact sheet /tmp/holoc15/concepts-sheet.png. They are for the operator to pick from; none is accepted. Evidence is at /tmp/holoc15/sidepiece-pm/evidence.md."
+ },
+ {
+  "agent_id": "zshyzsh-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/.config/zshyzsh",
+  "source": "No project-owned logo: repo search found only vendored third-party logos (oh-my-tmux/.logo, claude plugin cloudflare logo, htmlcov favicon); README has an emoji heading only. Project = Zsh dotfiles (.project.json id zshyzsh).",
+  "persona_note": "none. profile assets/avatar.png is a 160x160 generated fleet-default blob mascot (Aug 21 2026); no avatar-telegram.json receipt; nothing in role.yaml/registry/SOUL. Note role.yaml lists bot DrZshyZshBot but registry says zshyzsh_pm_bot; flag before any upload.",
+  "concepts": [
+   {
+    "name": "prompt",
+    "idea": "Dark teal disc with mint '>' chevron and amber cursor block (terminal prompt)",
+    "svg": "/tmp/holoc15/zshyzsh-pm/concept-1-prompt.svg",
+    "jpeg": "/tmp/holoc15/zshyzsh-pm/concept-1-prompt.jpg"
+   },
+   {
+    "name": "zbolt",
+    "idea": "Geometric coral Z letterform ending in a dark block cursor",
+    "svg": "/tmp/holoc15/zshyzsh-pm/concept-2-zbolt.svg",
+    "jpeg": "/tmp/holoc15/zshyzsh-pm/concept-2-zbolt.jpg"
+   },
+   {
+    "name": "shell",
+    "idea": "Teal scallop-shell fan on an amber base (the 'shell' pun)",
+    "svg": "/tmp/holoc15/zshyzsh-pm/concept-3-shell.svg",
+    "jpeg": "/tmp/holoc15/zshyzsh-pm/concept-3-shell.jpg"
+   }
+  ],
+  "note": "Evidence at /tmp/holoc15/zshyzsh-pm/evidence.md. Concepts are for the operator to pick; none accepted."
+ },
+ {
+  "agent_id": "deckard-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/deckard",
+  "source": "/home/delorenj/code/deckard/contrib/cheatsheet/src/App.tsx:421-425 (brand-emblem 'D' beside DECKARD) + src/index.css .brand-emblem (~lines 92-105, tokens --ink #242a27 / --paper #e8ddc4 at lines 10-11); rendered proof: contrib/cheatsheet/bundle.html (built 2026-10-11) contains the markup; last commit d4951c2 2026-09-23. Repo has no image files in git at all, so this CSS-built double-ring italic D emblem is the only deliberate brand mark; recreated as SVG at /tmp/holoc15/deckard-pm/deckard-emblem.svg (D glyph outlined from DejaVu Serif Bold Italic since Georgia is not installed, so letterform is close not identical).",
+  "persona_note": "none. profile assets/avatar.png is a 160x160 generated fleet-default blob mascot (Aug 21 2026); no receipt; nothing in role.yaml/registry. Registry bot deckard_pm_bot is provisioning_status=disabled.",
+  "avatar_jpeg": "/tmp/holoc15/deckard-pm/avatar.jpg",
+  "note": "Converter: telegram_avatar.py convert --pad 10 --background #e8ddc4, content_hash sha256:12cb896beb64b8938d49187f255d91a17e50ff389c7d69d94b674cee542ba2d2. Looked at the result; clean. Weakest 'found' case (emblem is only in the cheatsheet); operator may prefer concepts. Evidence: /tmp/holoc15/deckard-pm/evidence.md."
+ },
+ {
+  "agent_id": "ssbnk-pm",
+  "kind": "found",
+  "project_path": "/home/delorenj/code/ssbnk",
+  "source": "/home/delorenj/code/ssbnk/assets/logo/image.png (camera + high-five hand mark, no text; commit 03d604b 2025-07-14; full.png=mark+wordmark, text.png=wordmark). Rendered from the 1024px original /home/delorenj/Pictures/playful-and-cheeky-logo-design-for-ssbnk_fcO94aatRESkLLb6awZwuA_vVhETEk5T1CmsetYSWB1aQ.png (same design, 2025-07-14) to need only ~1.34x enlargement instead of ~2.8x. The web UI favicon ui/public/favicon.svg is the stock Astro starter icon (commit 27934a6 2026-03-19, served at ss.delo.sh) and the live header is text only, so it is NOT the brand; the assets/logo set is the only real ssbnk identity.",
+  "persona_note": "none. profile assets/avatar.png is a 160x160 generated fleet-default blob mascot (Aug 30 2026); no receipt; nothing in role.yaml/registry. Registry bot ssbnk_pm_bot is provisioning_status=disabled.",
+  "avatar_jpeg": "/tmp/holoc15/ssbnk-pm/avatar.jpg",
+  "note": "Raster path: cropped mark from original, flood-filled grey vignette to alpha, trimmed to 534x360, scaled so mark diagonal = 0.84 of 1024 (circle-safe), centered on #f6f3f7 (script /tmp/holoc15/_work/ssbnk.py; transparent mark at ssbnk-pm/ssbnk-mark-extracted.png). Looked at the result; outline crisp, slight softness in thin highlights. Evidence: /tmp/holoc15/ssbnk-pm/evidence.md."
+ },
+ {
+  "agent_id": "monitoring-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/code/33GOD/monitoring",
+  "source": "No logo: repo (compose.yml, prometheus, alertmanager, grafana, loki, otel, alloy, ntfy configs) contains zero svg/png/ico/logo files; only third-party stack logos exist elsewhere. Project = homelab monitoring stack (.project.json id monitoring, MONI).",
+  "persona_note": "none for an image. Agent is a named identity 'Infra' (identity.name infra, bank agent-infra) but no persona image exists; profile assets/avatar.png is a 160x160 generated fleet-default hexagon mascot (Oct 12 2026); no receipt. Registry bot monitoring_pm_bot is provisioning_status=deferred. Concepts are neutral between 'Monitoring' and 'Infra'.",
+  "concepts": [
+   {
+    "name": "heartbeat",
+    "idea": "Navy disc, cyan ring, amber pulse line",
+    "svg": "/tmp/holoc15/monitoring-pm/concept-1-heartbeat.svg",
+    "jpeg": "/tmp/holoc15/monitoring-pm/concept-1-heartbeat.jpg"
+   },
+   {
+    "name": "eye",
+    "idea": "Cyan almond eye with amber iris and navy pupil (watchfulness)",
+    "svg": "/tmp/holoc15/monitoring-pm/concept-2-eye.svg",
+    "jpeg": "/tmp/holoc15/monitoring-pm/concept-2-eye.jpg"
+   },
+   {
+    "name": "gauge",
+    "idea": "Navy disc, cyan dial arc, red alert zone, amber needle",
+    "svg": "/tmp/holoc15/monitoring-pm/concept-3-gauge.svg",
+    "jpeg": "/tmp/holoc15/monitoring-pm/concept-3-gauge.jpg"
+   }
+  ],
+  "note": "Evidence at /tmp/holoc15/monitoring-pm/evidence.md. Concepts are for the operator to pick; none accepted."
+ },
+ {
+  "agent_id": "idealscenario-pm",
+  "kind": "concepts",
+  "project_path": "/home/delorenj/code/IdealScenario",
+  "source": "No logo: repo search (excluding venv/node_modules/agent dirs) found no svg/ico/favicon/manifest/logo; prototype/discovery-demo index.html and styles.css have no svg/logo markup and design/ holds only concept/preview screenshots. Project = managed story discovery (recommendations and guided scenario browsing) for TruthOrDarePics.com (README).",
+  "persona_note": "none. profile assets/avatar.png is a 160x160 generated fleet-default blob mascot (Oct 12 2026); no receipt; nothing in role.yaml/registry. Registry bot idealscenario_pm_bot is provisioning_status=deferred.",
+  "concepts": [
+   {
+    "name": "book-spark",
+    "idea": "Indigo open book with a gold four-point spark (stories + discovery)",
+    "svg": "/tmp/holoc15/idealscenario-pm/concept-1-book-spark.svg",
+    "jpeg": "/tmp/holoc15/idealscenario-pm/concept-1-book-spark.jpg"
+   },
+   {
+    "name": "fork",
+    "idea": "Indigo branching path to three nodes, the gold one being the recommended next story",
+    "svg": "/tmp/holoc15/idealscenario-pm/concept-2-fork.svg",
+    "jpeg": "/tmp/holoc15/idealscenario-pm/concept-2-fork.jpg"
+   },
+   {
+    "name": "bubble",
+    "idea": "Coral speech bubble with a white spark (conversational / truth-or-dare nod)",
+    "svg": "/tmp/holoc15/idealscenario-pm/concept-3-bubble.svg",
+    "jpeg": "/tmp/holoc15/idealscenario-pm/concept-3-bubble.jpg"
+   }
+  ],
+  "note": "Evidence at /tmp/holoc15/idealscenario-pm/evidence.md. Concepts are for the operator to pick; none accepted."
+ }
+]
