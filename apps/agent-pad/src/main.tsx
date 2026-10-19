@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, replyExt, stripDataUrl } from './flight'
-import { type Agent, ROSTER_URL, driveTiles, normRoster, sameRoster, step } from './roster'
+import { type Agent, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, sameRoster, step } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -321,12 +321,23 @@ const rosterSet = (list: Agent[]) => { lsSet(LS_ROSTER, JSON.stringify({ agents:
 
 // The bot's Telegram picture when the roster has one (and it loads), its initial on its colour otherwise.
 function Swatch({ a }: { a: Agent }) {
+  const [failures, setFailures] = useState(0)
   const [broken, setBroken] = useState(false)
-  useEffect(() => setBroken(false), [a.avatar])
+  useEffect(() => { setBroken(false); setFailures(0) }, [a.avatar])
+  // A failed load shows the letter, then retries on a backoff; the failure count keys the <img> so the browser
+  // re-requests instead of reusing the failed element.
+  useEffect(() => {
+    if (!broken) return
+    const wait = avatarRetryDelay(failures)
+    if (wait === null) return
+    const t = setTimeout(() => setBroken(false), wait)
+    return () => clearTimeout(t)
+  }, [broken, failures])
   return (
     <span className={`swatch${a.avatar && !broken ? ' pic' : ''}`}>
       {a.avatar && !broken
-        ? <img src={a.avatar} alt="" draggable={false} decoding="async" onError={() => setBroken(true)} />
+        ? <img key={failures} src={a.avatar} alt="" draggable={false} decoding="async"
+            onError={() => { setFailures((f) => f + 1); setBroken(true) }} />
         : a.name.charAt(0)}
     </span>
   )
@@ -1046,7 +1057,7 @@ const CSS = `
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
-.drive .tile .swatch { width:clamp(44px,9vh,84px); height:clamp(44px,9vh,84px); font-size:clamp(26px,5vh,48px); }
+.drive .tile .swatch { width:clamp(64px,16vh,140px); height:clamp(64px,16vh,140px); font-size:clamp(30px,7vh,64px); }
 .drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
 .drive .bar { flex:1.25 1 0; min-height:0; }
 .drive .rec { flex:1 1 100%; height:100%; min-height:0; border-radius:36px; font-size:clamp(36px,9vh,84px); }

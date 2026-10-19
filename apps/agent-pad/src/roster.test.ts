@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { driveTiles, normRoster, sameRoster, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, avatarRetryDelay, driveTiles, normRoster, sameRoster, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -50,4 +50,10 @@ test('an identical roster is not a change', () => {
   assert.ok(sameRoster(a, a.map((x) => ({ ...x }))))
   assert.ok(!sameRoster(a, [a[1], a[0]]))
   assert.ok(!sameRoster(a, [A('a', '/roster/avatars/a.2.jpg'), A('b')]))
+})
+
+test('a failed avatar retries on a backoff, then keeps the letter', () => {
+  assert.equal(avatarRetryDelay(0), null)
+  assert.deepEqual([1, 2, 3].map(avatarRetryDelay), AVATAR_RETRY_MS)
+  assert.equal(avatarRetryDelay(AVATAR_RETRY_MS.length + 1), null)
 })

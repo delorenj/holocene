@@ -56,3 +56,10 @@ export function step(agents: Agent[], selectedId: string | undefined, dir: 1 | -
   const i = selectedId ? agents.findIndex((a) => a.id === selectedId) : -1
   return agents[i < 0 ? (dir === 1 ? 0 : n - 1) : (i + dir + n) % n]
 }
+
+// A tile whose picture failed to load tries again after these delays (a cold start in the car on a flaky link must
+// not leave letter tiles for the whole drive), then gives up and keeps the letter.
+export const AVATAR_RETRY_MS = [15_000, 60_000, 240_000]
+export function avatarRetryDelay(failures: number): number | null {
+  return failures >= 1 && failures <= AVATAR_RETRY_MS.length ? AVATAR_RETRY_MS[failures - 1] : null
+}

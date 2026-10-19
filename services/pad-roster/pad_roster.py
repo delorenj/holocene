@@ -242,6 +242,10 @@ def build(out: Path, profiles: Path, registry: Path, now: float, store: Path | N
     return roster
 
 
+def missing_avatars(roster: dict) -> list[str]:
+    return [a["id"] for a in roster["agents"] if not a.get("avatar")]
+
+
 def write_json(path: Path, obj: dict) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -256,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
     roster = build(OUT_DIR, PROFILES_DIR, mc_.REGISTRY_PATH, time.time())
     log("roster_written", path=str(OUT_DIR / "roster.json"), agents=len(roster["agents"]),
         with_avatar=sum(1 for a in roster["agents"] if a["avatar"]), skipped=[s["id"] for s in roster["skipped"]])
+    missing = missing_avatars(roster)
+    if missing:
+        # HOLOC-15: every tile wears a picture. A new routable agent with none shows a letter tile on the pad until
+        # one is set at holocene.delo.sh/settings; say so on every pass instead of letting it pass silently.
+        log("avatar_missing", level="warn", agents=missing,
+            fix="set one at https://holocene.delo.sh/settings (or the hermes-project-avatar skill)")
     if args.print:
         for a in roster["agents"]:
             print(f"  {a['id']:<26} {a['name']:<24} {a['interactedAt'] or 'never':<22} {a['via'] or '':<9} {a['avatar'] or '-'}")

@@ -152,5 +152,11 @@ class RosterTest(unittest.TestCase):
         self.assertFalse((self.out / "avatars" / name).exists())
 
 
+class MissingAvatars(unittest.TestCase):
+    def test_agents_without_a_picture_are_named(self):
+        roster = {"agents": [{"id": "a", "avatar": "/roster/avatars/a.0123456789abcdef.jpg"}, {"id": "b", "avatar": None}]}
+        self.assertEqual(pr.missing_avatars(roster), ["b"])
+
+
 if __name__ == "__main__":
     unittest.main()
