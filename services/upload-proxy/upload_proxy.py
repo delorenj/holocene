@@ -37,9 +37,17 @@ publishes as failed(stage record, error_code silent_capture, retryable false) wi
 
 Earshot (bucket channel that plays on the phone, repo delorenj/earshot): the phone POSTs one beacon per phase
 to /upload/heard {channel, key, phase detected|started|finished|failed|missed, at, last_modified, device,
-app_version, error?}. The proxy validates the shape, logs one JSON line (event "heard", status 200 | 400) and
-publishes bloodbank.audio.earshot.<detected|started|ended|failed|skipped> (finished -> ended, missed -> skipped;
-data.phase keeps the device's own word), fail-open. `earshot trace` reads those log lines.
+app_version, error?, clock_skew_ms?}. The proxy validates the shape, logs one JSON line (event "heard",
+status 200 | 400) and publishes bloodbank.audio.earshot.<detected|started|ended|failed|skipped>
+(finished -> ended, missed -> skipped; data.phase keeps the device's own word), fail-open.
+`earshot trace` reads those log lines.
+phase "heartbeat" (about one a minute while the listener is alive) is liveness only: validated, logged and
+persisted, but it publishes NO Bloodbank fact. `earshot status` reads the persisted heartbeats so a dead
+listener is distinguishable from no drops.
+Every accepted beacon is ALSO appended, one JSON object per line, to EARSHOT_BEACON_JSONL (the compose stack
+bind-mounts it at /var/lib/earshot/beacons.jsonl; host side ~/.local/share/earshot/beacons/). The docker log
+rotates and dies with the container; this file survives recreation. Rotated at 64 MB with one .old
+generation. `earshot trace|status` read it first and fall back to docker logs.
 """
 import re
 
@@ -259,8 +267,36 @@ def build_client_envelope(ev: dict, user_agent: str):
 
 EARSHOT_BUCKET = "earshot"
 EARSHOT_PHASES = {"detected": "detected", "started": "started", "finished": "ended", "failed": "failed", "missed": "skipped"}
+HEARTBEAT_PHASE = "heartbeat"   # liveness only: logged + persisted, never published as a fact
 EARSHOT_CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$")
+MAX_SKEW_MS = 86_400_000        # a phone more than a day off its clock has bigger problems
+# Compose bind-mounts this into the container; empty = stdout logging only (dev).
+EARSHOT_JSONL = os.environ.get("EARSHOT_BEACON_JSONL", "")
+EARSHOT_JSONL_MAX_BYTES = 64 * 1024 * 1024
+
+
+def persist_heard(rec: dict) -> None:
+    """Append one accepted beacon to the durable JSONL (host-mounted volume). Fail-open: a mount or
+    disk problem must never cost the phone its 200."""
+    if not EARSHOT_JSONL:
+        return
+    try:
+        p = Path(EARSHOT_JSONL)
+        try:
+            if p.stat().st_size > EARSHOT_JSONL_MAX_BYTES:
+                old = p.with_name(p.name + ".old")
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+                os.replace(p, old)
+        except OSError:
+            pass  # missing file on first write is normal
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, separators=(",", ":"), default=str) + "\n")
+    except OSError as e:
+        log("beacon_jsonl_failed", error=str(e)[:200], path=EARSHOT_JSONL)
 
 
 def earshot_event_id(key: str) -> str:
@@ -277,25 +313,49 @@ def _rfc3339(v) -> bool:
     return True
 
 
+def _clean_skew(v):
+    """(ms, None) for a sane clock_skew_ms, else (None, reason)."""
+    if v is None:
+        return None, None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+        return None, "bad clock_skew_ms"
+    ms = int(round(v))
+    if abs(ms) > MAX_SKEW_MS:
+        return None, "bad clock_skew_ms"
+    return ms, None
+
+
 def validate_heard(beacon):
     """(clean beacon, None) for a well-formed earshot beacon, else (None, reason).
 
-    Required: channel, key (under that channel), phase, at, last_modified, device, app_version.
-    Optional: error. Anything else is dropped.
+    Required: channel, phase, at, device, app_version. For the five playback phases also key (under
+    that channel) and last_modified. phase "heartbeat" is liveness: key and last_modified optional
+    (validated when present). Optional on every beacon: error, clock_skew_ms (phone clock minus
+    server clock, ms). Anything else is dropped.
     """
     if not isinstance(beacon, dict):
         return None, "body is not a JSON object"
     channel, key, phase = beacon.get("channel"), beacon.get("key"), beacon.get("phase")
     if not isinstance(channel, str) or not EARSHOT_CHANNEL_RE.match(channel):
         return None, "bad channel"
-    if (not isinstance(key, str) or not 0 < len(key) <= 512 or not key.startswith(channel + "/") or len(key) == len(channel) + 1
-            or ".." in key.split("/") or re.search(r"[\x00-\x1f\x7f]", key)):
-        return None, "bad key"
-    if phase not in EARSHOT_PHASES:
+    heartbeat = phase == HEARTBEAT_PHASE
+    if phase not in EARSHOT_PHASES and not heartbeat:
         return None, "bad phase"
-    for f in ("at", "last_modified"):
-        if not _rfc3339(beacon.get(f)):
-            return None, f"bad {f}"
+    key_bad = (not isinstance(key, str) or not 0 < len(key) <= 512 or not key.startswith(channel + "/")
+               or len(key) == len(channel) + 1 or ".." in key.split("/") or re.search(r"[\x00-\x1f\x7f]", key))
+    if key is None:
+        if not heartbeat:
+            return None, "bad key"
+    elif key_bad:
+        return None, "bad key"
+    last_modified = beacon.get("last_modified")
+    if last_modified is None:
+        if not heartbeat:
+            return None, "bad last_modified"
+    elif not _rfc3339(last_modified):
+        return None, "bad last_modified"
+    if not _rfc3339(beacon.get("at")):
+        return None, "bad at"
     for f in ("device", "app_version"):
         v = beacon.get(f)
         if not isinstance(v, str) or not 0 < len(v) <= 80:
@@ -303,9 +363,19 @@ def validate_heard(beacon):
     err = beacon.get("error")
     if err is not None and not isinstance(err, str):
         return None, "bad error"
-    clean = {k: beacon[k] for k in ("channel", "key", "phase", "at", "last_modified", "device", "app_version")}
+    skew, why = _clean_skew(beacon.get("clock_skew_ms"))
+    if why:
+        return None, why
+    clean = {"channel": channel, "phase": phase, "at": beacon["at"],
+             "device": beacon["device"], "app_version": beacon["app_version"]}
+    if key is not None:
+        clean["key"] = key
+    if last_modified is not None:
+        clean["last_modified"] = last_modified
     if err:
         clean["error"] = re.sub(r"[\x00-\x1f\x7f]", " ", err)[:300]
+    if skew is not None:
+        clean["clock_skew_ms"] = skew
     return clean, None
 
 
@@ -476,7 +546,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             publish_async(env, key)
 
     def _heard(self):
-        """Earshot device beacon: POST /upload/heard {channel,key,phase,at,last_modified,device,app_version,error?}."""
+        """Earshot device beacon: POST /upload/heard {channel,key?,phase,at,last_modified?,device,
+        app_version,error?,clock_skew_ms?}. Every accepted beacon is logged AND persisted to the
+        mounted JSONL (history survives container recreation). Heartbeats stop there: one a minute
+        per device must not flood the bus, so no Bloodbank fact for them."""
         ua = self.headers.get("User-Agent", "")
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -487,8 +560,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if beacon is None:
             log("heard", status=400, reason=why, remote=self.client_address[0], ua=ua[:120])
             return self.send_error(400, why)
+        rec = {"ts": now_iso(), "svc": SERVICE, "event": "heard", "status": 200,
+               "remote": self.client_address[0], "ua": ua[:120], **beacon}
+        if beacon.get("phase") == HEARTBEAT_PHASE:
+            print(json.dumps(rec, separators=(",", ":"), default=str), flush=True)
+            persist_heard(rec)
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         env = build_heard_envelope(beacon, ua)
-        log("heard", status=200, event_id=env["correlationid"], remote=self.client_address[0], ua=ua[:120], **beacon)
+        rec["event_id"] = env["correlationid"]
+        print(json.dumps(rec, separators=(",", ":"), default=str), flush=True)
+        persist_heard(rec)
         self.send_response(200)
         self.send_header("Content-Length", "0")
         self.end_headers()

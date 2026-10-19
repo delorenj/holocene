@@ -1,5 +1,6 @@
 """The uploaded fact the proxy publishes must satisfy the Bloodbank contract and match the watcher's memo id."""
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -247,6 +248,165 @@ class HttpBehaviour(unittest.TestCase):
 EKEY = "phone/2026/10/19/120000123Z-hello.ogg"
 BEACON = {"channel": "phone", "key": EKEY, "phase": "detected", "at": "2026-10-19T12:00:02.100Z",
           "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0"}
+HEARTBEAT = {"channel": "phone", "phase": "heartbeat", "at": "2026-10-19T12:00:09.000Z",
+             "device": "S26", "app_version": "0.1.0"}
+
+
+class EarshotHeartbeatAndSkew(unittest.TestCase):
+    def test_heartbeat_is_accepted_without_key_or_last_modified(self):
+        clean, why = up.validate_heard(HEARTBEAT)
+        self.assertIsNone(why)
+        self.assertEqual(clean["phase"], "heartbeat")
+        self.assertNotIn("key", clean)
+        self.assertNotIn("last_modified", clean)
+
+    def test_heartbeat_with_a_key_still_validates_the_key(self):
+        clean, why = up.validate_heard({**HEARTBEAT, "key": EKEY, "last_modified": BEACON["last_modified"]})
+        self.assertIsNone(why)
+        self.assertEqual(clean["key"], EKEY)
+        clean, why = up.validate_heard({**HEARTBEAT, "key": "tablet/x.ogg"})
+        self.assertIn("bad key", why)
+        clean, why = up.validate_heard({**HEARTBEAT, "last_modified": "yesterday"})
+        self.assertIn("bad last_modified", why)
+
+    def test_playback_phases_still_require_key_and_last_modified(self):
+        for phase in up.EARSHOT_PHASES:
+            clean, why = up.validate_heard({k: v for k, v in {**BEACON, "phase": phase}.items() if k != "key"})
+            self.assertIn("bad key", why)
+            clean, why = up.validate_heard({k: v for k, v in {**BEACON, "phase": phase}.items() if k != "last_modified"})
+            self.assertIn("bad last_modified", why)
+
+    def test_clock_skew_ms_is_numeric_and_bounded(self):
+        for good in (0, 120, -120, 120.4, -86_400_000, 86_400_000):
+            clean, why = up.validate_heard({**BEACON, "clock_skew_ms": good})
+            self.assertIsNone(why, good)
+            self.assertEqual(clean["clock_skew_ms"], int(round(good)), good)
+        for bad in (True, "120", float("nan"), float("inf"), 86_400_001, -86_400_001, [120]):
+            clean, why = up.validate_heard({**BEACON, "clock_skew_ms": bad})
+            self.assertIsNone(clean, bad)
+            self.assertIn("clock_skew_ms", why)
+        clean, _ = up.validate_heard(BEACON)
+        self.assertNotIn("clock_skew_ms", clean)
+
+    def test_skew_reaches_the_fact_data(self):
+        env = up.build_heard_envelope({**BEACON, "clock_skew_ms": 250}, "ua")
+        self.assertEqual(env["data"]["clock_skew_ms"], 250)
+
+
+class BeaconJsonl(unittest.TestCase):
+    def test_every_accepted_beacon_lands_as_one_json_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "beacons.jsonl"
+            real = up.EARSHOT_JSONL
+            up.EARSHOT_JSONL = str(p)
+            try:
+                up.persist_heard({"ts": "2026-10-19T12:00:09.000Z", "event": "heard", "status": 200,
+                                  "device": "S26", "phase": "heartbeat"})
+                up.persist_heard({"ts": "2026-10-19T12:00:10.000Z", "event": "heard", "status": 200,
+                                  "device": "S26", "phase": "detected", "key": EKEY})
+            finally:
+                up.EARSHOT_JSONL = real
+            lines = p.read_text().splitlines()
+            self.assertEqual(len(lines), 2)
+            import json
+            recs = [json.loads(x) for x in lines]
+            self.assertEqual([r["phase"] for r in recs], ["heartbeat", "detected"])
+
+    def test_unwritable_target_fails_open(self):
+        real = up.EARSHOT_JSONL
+        up.EARSHOT_JSONL = "/proc/definitely/not/writable.jsonl"
+        try:
+            up.persist_heard({"event": "heard", "status": 200, "phase": "heartbeat"})   # must not raise
+        finally:
+            up.EARSHOT_JSONL = real
+
+    def test_oversized_log_rotates_to_one_old_generation(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "beacons.jsonl"
+            p.write_bytes(b"x" * 100)
+            real_max = up.EARSHOT_JSONL_MAX_BYTES
+            up.EARSHOT_JSONL_MAX_BYTES = 50
+            real = up.EARSHOT_JSONL
+            up.EARSHOT_JSONL = str(p)
+            try:
+                up.persist_heard({"event": "heard", "status": 200, "phase": "heartbeat", "device": "S26"})
+            finally:
+                up.EARSHOT_JSONL = real
+                up.EARSHOT_JSONL_MAX_BYTES = real_max
+            self.assertTrue(Path(str(p) + ".old").exists())
+            self.assertEqual(len(p.read_text().splitlines()), 1)
+
+
+class HttpEarshotLifecycle(unittest.TestCase):
+    """Heartbeat and persistence behaviour over the wire on a loopback port."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading, tempfile
+        cls._t = tempfile.TemporaryDirectory()
+        cls.jsonl = Path(cls._t.name) / "beacons.jsonl"
+        cls._real_jsonl = up.EARSHOT_JSONL
+        cls._real_emit = up.EMIT_FACTS
+        up.EARSHOT_JSONL = str(cls.jsonl)
+        up.EMIT_FACTS = False
+        cls.published = []
+        cls._real_publish = up.publish_async
+        up.publish_async = lambda env, key: cls.published.append((env, key))
+        cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        up.EARSHOT_JSONL = cls._real_jsonl
+        up.EMIT_FACTS = cls._real_emit
+        up.publish_async = cls._real_publish
+        cls._t.cleanup()
+
+    def post(self, body: bytes):
+        import socket
+        head = (f"POST /upload/heard HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\n"
+                f"Content-Type: application/json\r\nConnection: close\r\n\r\n").encode()
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        s.sendall(head + body)
+        out = b""
+        while True:
+            d = s.recv(4096)
+            if not d:
+                break
+            out += d
+        s.close()
+        return out.split(b"\r\n")[0]
+
+    def test_heartbeat_is_200_persisted_and_never_published(self):
+        import json
+        n0 = len(self.published)
+        body = json.dumps({**HEARTBEAT, "clock_skew_ms": -42}).encode()
+        self.assertIn(b" 200 ", self.post(body))
+        self.assertEqual(len(self.published), n0)                      # no fact for a heartbeat
+        lines = [json.loads(x) for x in self.jsonl.read_text().splitlines()]
+        mine = [r for r in lines if r.get("phase") == "heartbeat"]
+        self.assertTrue(mine)
+        self.assertEqual(mine[-1]["clock_skew_ms"], -42)
+        self.assertEqual(mine[-1]["event"], "heard")
+        self.assertIn("ts", mine[-1])                                  # server receive time captured
+
+    def test_playback_beacon_is_persisted_and_published(self):
+        import json
+        n0 = len(self.published)
+        self.assertIn(b" 200 ", self.post(json.dumps(BEACON).encode()))
+        self.assertEqual(len(self.published), n0 + 1)
+        lines = [json.loads(x) for x in self.jsonl.read_text().splitlines()]
+        mine = [r for r in lines if r.get("key") == EKEY]
+        self.assertEqual(mine[-1]["last_modified"], BEACON["last_modified"])
+
+    def test_rejected_beacons_persist_nothing(self):
+        import json
+        before = self.jsonl.read_text().splitlines()
+        self.assertIn(b" 400 ", self.post(json.dumps({**BEACON, "phase": "dancing"}).encode()))
+        self.assertIn(b" 400 ", self.post(json.dumps({**HEARTBEAT, "channel": "Phone"}).encode()))
+        self.assertEqual(self.jsonl.read_text().splitlines(), before)
 
 
 class EarshotBeacon(unittest.TestCase):
