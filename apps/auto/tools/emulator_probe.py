@@ -54,9 +54,17 @@ def main():
     try:
         adb("shell", "am", "start", "-W", "-n", ACTIVITY)
         time.sleep(1)
-        if not click("Preview canned input", "before-preview"):
-            raise RuntimeError("Fixture preview button unavailable")
-        hierarchy("fixture-preview")
+        if not click("Diagnostics", "before-diagnostics"):
+            raise RuntimeError("Diagnostics path unavailable")
+        if not click("Allow microphone", "before-permission"):
+            raise RuntimeError("Explicit microphone permission control unavailable")
+        time.sleep(1)
+        permission = hierarchy("mic-permission")
+        if any("Allow" in node.get("text", "") or "While using" in node.get("text", "") for node in permission.iter("node")):
+            granted = click("While using", "permission-choice") or click("Allow", "permission-choice")
+            if not granted:
+                raise RuntimeError("Permission dialog requires human diagnostic review")
+        time.sleep(1)
         if not click("Probe microphone", "before-mic"):
             adb("shell", "input", "swipe", "750", "600", "750", "250", "400")
             if not click("Probe microphone", "before-mic-scrolled"):
@@ -71,13 +79,18 @@ def main():
             click("Probe microphone", "mic-retry")
         time.sleep(4)
         hierarchy("after-mic")
-        if not click("Probe final ASR", "before-asr"):
+        if not click("Check final speech", "before-asr"):
             raise RuntimeError("ASR diagnostic button unavailable")
         time.sleep(16)
         hierarchy("after-asr")
-        if not click("Cancel diagnostic", "before-cancel"):
+        if not click("Cancel capture", "before-cancel"):
             raise RuntimeError("Cancel diagnostic button unavailable")
         hierarchy("after-cancel")
+        if not click("Preview canned input", "before-preview"):
+            adb("shell", "input", "swipe", "750", "600", "750", "250", "400")
+            if not click("Preview canned input", "before-preview-scrolled"):
+                raise RuntimeError("Fixture preview button unavailable")
+        hierarchy("fixture-preview")
         (evidence / "diagnostic-controls.png").write_bytes(adb("exec-out", "screencap", "-p"))
         (evidence / "mic-asr-probe.log").write_bytes(adb("logcat", "-d", "-s", "HoloceneProbe"))
     finally:
