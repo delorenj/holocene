@@ -91,6 +91,10 @@ HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watc
                   "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
 MAX_AGE_S = int(float(os.environ.get("MEMO_MAX_AGE_HOURS", "24")) * 3600)
 SPEAK_CHARS = int(os.environ.get("MEMO_SPEAK_CHARS", "500"))
+# Every spoken reply is also dropped into this Earshot channel (s3://earshot/<channel>/), so it plays on the phone
+# and its last hop (detected / started / finished on the device) shows up in memo:trace. Empty turns it off.
+EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
+EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
 WAIT_LOG_EVERY_S = 30
 AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "3"))
 
@@ -988,10 +992,14 @@ class Watcher:
             stat = mc_.s3_stat(rkey)
             if not stat:
                 raise StageError("reply_upload", "not_visible", f"uploaded {rkey} but mc stat cannot see it")
+            # Once per memo: re-dropping the same key would give it a new LastModified, and Earshot plays that again.
+            ekey = m.get("earshot_key") or mirror_to_earshot(audio, stamp, agent, mid, key)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         with self.mu:
             m["reply_key"] = rkey
+            if ekey:
+                m["earshot_key"] = ekey
             journey = time.time() - m.get("received_ts", m.get("detected_ts", time.time()))
             self.fact("replied", m, {
                 "reply_s3_key": rkey, "reply_text": m["reply_text"], "reply_chars": len(m["reply_text"]),
@@ -999,11 +1007,40 @@ class Watcher:
                 "session_id": m.get("session_id"), "agent_seconds": m.get("agent_seconds"),
                 "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": VOICE,
                 "audio_bytes": stat["size"], "journey_seconds": round(journey, 2),
-                "prompt_match": m.get("prompt_match"), "late": late})
+                "prompt_match": m.get("prompt_match"), "late": late, "earshot_key": ekey})
             m["status"] = "done"
             compact(m)
             self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
                             journey_s=round(journey, 1))
+
+
+# ------------------------------------------------------------------ earshot mirror
+
+def earshot_key_for(stamp: datetime, agent: str, mid: str, channel: str = "") -> str:
+    """The Earshot object for a memo's reply: dated like the reply, carrying agent and memo id so the device's
+    beacons for it join back to the memo."""
+    ch = channel or EARSHOT_CHANNEL
+    return f"{ch}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}{stamp.microsecond // 1000:03d}Z-{agent}-{mid}.ogg"
+
+
+def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: str) -> str | None:
+    """Drop the reply into the Earshot channel. Fail-open: the car's replies/ object is the reply of record, so a
+    mirror failure is logged and never fails the memo."""
+    if not EARSHOT_CHANNEL:
+        return None
+    ekey = earshot_key_for(stamp, agent, mid)
+    t0 = time.time()
+    try:
+        r = mc_.mc("cp", "--quiet", str(audio), f"{mc_.S3_ALIAS}/{EARSHOT_BUCKET}/{ekey}", timeout=60)
+    except Exception as e:  # noqa: BLE001 - fail-open
+        log("earshot_mirror_failed", memo_id=mid, key=key, earshot_key=ekey, error=str(e)[:200])
+        return None
+    if r.returncode != 0:
+        log("earshot_mirror_failed", memo_id=mid, key=key, earshot_key=ekey,
+            error=f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
+        return None
+    log("earshot_mirrored", memo_id=mid, key=key, earshot_key=ekey, ms=int((time.time() - t0) * 1000))
+    return ekey
 
 
 # ------------------------------------------------------------------ text + tts helpers

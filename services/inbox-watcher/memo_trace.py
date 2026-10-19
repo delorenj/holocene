@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -123,6 +124,82 @@ def upload_log_line(key: str, memo_id: str, event: str = "upload", needle: str |
         return None, None
     ts, _, rest = hit.partition(" ")
     return ts, rest.strip()
+
+
+EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
+EARSHOT_JSONL = Path(os.environ.get("EARSHOT_BEACON_JSONL",
+                                    Path.home() / ".local/share/earshot/beacons/beacons.jsonl"))
+PHONE_PHASES = ("detected", "started", "finished", "failed", "missed")
+
+
+def earshot_stat(ekey: str) -> dict | None:
+    r = c.mc("stat", "--json", f"{c.S3_ALIAS}/{EARSHOT_BUCKET}/{ekey}", timeout=20)
+    if r.returncode != 0:
+        return None
+    try:
+        d = json.loads(r.stdout)
+    except ValueError:
+        return None
+    return {"size": d.get("size"), "last_modified": c.parse_iso(d.get("lastModified"))}
+
+
+def earshot_beacons(ekey: str) -> list[dict]:
+    """The phone's beacons for one Earshot object, from the upload proxy's durable JSONL (rotated copy included)."""
+    out = []
+    for path in (EARSHOT_JSONL.with_name(EARSHOT_JSONL.name + ".old"), EARSHOT_JSONL):
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if ekey not in line:
+                continue
+            try:
+                b = json.loads(line)
+            except ValueError:
+                continue
+            if b.get("key") == ekey and b.get("phase") in PHONE_PHASES and b.get("status", 200) == 200:
+                out.append(b)
+    return out
+
+
+def phone_time(b: dict):
+    """Server time of a beacon: the phone's `at` corrected by its reported clock skew, else the proxy receive time."""
+    at, skew = c.parse_iso(b.get("at")), b.get("clock_skew_ms")
+    if at is not None and isinstance(skew, (int, float)):
+        from datetime import timedelta
+        return at - timedelta(milliseconds=skew)
+    return c.parse_iso(b.get("ts")) or at
+
+
+def earshot_hops(ekey: str | None) -> list[Hop]:
+    if not ekey:
+        return [Hop("phone_object", UNKNOWN, detail="no Earshot mirror recorded for this reply (MEMO_EARSHOT_CHANNEL off, "
+                                                  "or the reply predates the mirror)", optional=True)]
+    hops = []
+    st = earshot_stat(ekey)
+    hops.append(Hop("phone_object", OK if st else MISSING, st["last_modified"] if st else None,
+                    f"s3://{EARSHOT_BUCKET}/{ekey}  {st['size']} bytes" if st else f"s3://{EARSHOT_BUCKET}/{ekey} not in bucket",
+                    optional=not st))
+    lm = st["last_modified"] if st else None
+    first: dict[str, dict] = {}
+    for b in sorted(earshot_beacons(ekey), key=lambda b: str(b.get("ts"))):
+        t = phone_time(b)
+        if lm is not None and t is not None and (lm - t).total_seconds() > 2:
+            continue  # a beacon for an earlier generation of this key
+        first.setdefault(b["phase"], b)
+    for phase in PHONE_PHASES:
+        b = first.get(phase)
+        if b is None:
+            if phase in ("detected", "started", "finished") and "failed" not in first and "missed" not in first:
+                hops.append(Hop(f"phone_{phase}", UNKNOWN, detail="no beacon from the phone yet (earshot status: is it listening?)",
+                                optional=True))
+            continue
+        bad = phase in ("failed", "missed")
+        hops.append(Hop(f"phone_{phase}", FAILED if bad else OK, phone_time(b),
+                        f"{b.get('device')} app {b.get('app_version')}" + (f": {b.get('error')}" if b.get("error") else ""),
+                        optional=not bad))
+    return hops
 
 
 def watcher_logs(memo_id: str, lines: int = 40) -> list[str]:
@@ -333,6 +410,15 @@ def build(key: str) -> tuple[list[Hop], dict]:
         hops.append(Hop("played_on_pad", UNKNOWN,
                         detail="no playback report from the pad yet (it polls replies/ every 15s; a parked car reports nothing)", optional=True))
 
+    # 7. the phone: the same reply mirrored into the Earshot channel, and the device's own beacons for it
+    ekey = ((rep or {}).get("data") or {}).get("earshot_key") or (rec or {}).get("earshot_key")
+    ctx["earshot_key"] = ekey
+    if reply_key:
+        try:
+            hops.extend(earshot_hops(ekey))
+        except Exception as e:  # noqa: BLE001
+            hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
+
     # failed facts, positioned by time
     for ev in by_type.get("bloodbank.audio.memo.failed", []):
         d = ev.get("data") or {}
@@ -420,6 +506,12 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         pad = next((h for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None)
         tail = (f"; played on the pad {ctx.get('pad_age_s', (pad.ts - end.ts).total_seconds()):.1f}s after the reply was rendered"
                 if pad else "; playback on the pad not reported")
+        phone = next((h for h in hops if h.name == "phone_started" and h.status == OK and h.ts), None)
+        if phone:
+            tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the reply was rendered "
+                     f"({(phone.ts - s3.ts).total_seconds():.1f}s recording-to-voice)")
+        elif ctx.get("earshot_key"):
+            tail += "; phone playback not reported"
         return f"COMPLETE in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
     return "COMPLETE", True
 

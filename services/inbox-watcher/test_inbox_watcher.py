@@ -264,6 +264,10 @@ class Pipeline(unittest.TestCase):
         self.assertIs(replied["prompt_match"], True)
         # the reply key is deterministic per memo: a retried upload overwrites instead of duplicating
         self.assertEqual(m["reply_key"].split("/")[-1].split("Z-", 1)[1], f"holocene-pm-{mid}.ogg")
+        # the same audio is mirrored into the Earshot phone channel, keyed by agent + memo id, and recorded on the fact
+        self.assertTrue(m["earshot_key"].startswith("phone/") and m["earshot_key"].endswith(f"Z-holocene-pm-{mid}.ogg"))
+        self.assertEqual((BUCKET_DIR / m["earshot_key"]).read_bytes(), (BUCKET_DIR / m["reply_key"]).read_bytes())
+        self.assertEqual(replied["earshot_key"], m["earshot_key"])
 
     def test_03_agent_timeout_emits_failed_not_retryable(self):
         key = "inbox/holocene-pm/2026/10/15/timeout.ogg"
@@ -857,6 +861,57 @@ class LaneProbes(unittest.TestCase):
         # while any other terminal failure still wins over a later upload
         other = mt.Hop("fact:failed[transcribe]", mt.FAILED, t(18), "empty_transcript: x (retryable=False, attempt=1)")
         self.assertTrue(mt.verdict([other, up], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript"))
+
+
+class EarshotMirror(unittest.TestCase):
+    """Agent replies also play on the phone (Earshot); the phone's beacons become memo:trace hops."""
+
+    def test_key_is_dated_and_carries_agent_and_memo(self):
+        from datetime import datetime, timezone
+        k = iw.earshot_key_for(datetime(2026, 10, 19, 20, 1, 2, 345000, tzinfo=timezone.utc), "holocene-pm", "abc")
+        self.assertEqual(k, "phone/2026/10/19/200102345Z-holocene-pm-abc.ogg")
+
+    def test_mirror_failure_is_logged_and_never_fails_the_reply(self):
+        import subprocess
+        from datetime import datetime, timezone
+        from unittest import mock
+        bad = subprocess.CompletedProcess([], 1, "", "S3 down")
+        with mock.patch.object(iw.mc_, "mc", return_value=bad):
+            self.assertIsNone(iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k"))
+        with mock.patch.object(iw.mc_, "mc", side_effect=OSError("no mc")):
+            self.assertIsNone(iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k"))
+        with mock.patch.object(iw, "EARSHOT_CHANNEL", ""):
+            self.assertIsNone(iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k"))
+
+    def test_phone_beacons_become_hops_with_skew_corrected_times(self):
+        import memo_trace as mt
+        from unittest import mock
+        ekey = "phone/2026/10/19/200102345Z-holocene-pm-abc.ogg"
+        jl = ROOT / "beacons.jsonl"
+        rows = [
+            # an earlier generation of the same key: ignored
+            {"key": ekey, "phase": "started", "at": "2026-10-19T19:00:00.000Z", "ts": "2026-10-19T19:00:00.100Z", "status": 200},
+            {"key": ekey, "phase": "detected", "at": "2026-10-19T20:01:04.500Z", "clock_skew_ms": 500, "device": "SM-S948U",
+             "app_version": "0.1.1", "ts": "2026-10-19T20:01:04.100Z", "status": 200},
+            {"key": ekey, "phase": "started", "at": "2026-10-19T20:01:04.600Z", "clock_skew_ms": 500, "device": "SM-S948U",
+             "ts": "2026-10-19T20:01:04.200Z", "status": 200},
+            {"key": "phone/other.ogg", "phase": "finished", "at": "2026-10-19T20:01:09Z", "status": 200},
+        ]
+        jl.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        lm = mc_.parse_iso("2026-10-19T20:01:02.400Z")
+        with mock.patch.object(mt, "EARSHOT_JSONL", jl), \
+                mock.patch.object(mt, "earshot_stat", return_value={"size": 9, "last_modified": lm}):
+            hops = {h.name: h for h in mt.earshot_hops(ekey)}
+        self.assertEqual(hops["phone_object"].status, mt.OK)
+        self.assertEqual(mc_.iso(hops["phone_detected"].ts), mc_.iso(mc_.parse_iso("2026-10-19T20:01:04.000Z")))
+        self.assertEqual(hops["phone_started"].status, mt.OK)
+        self.assertEqual(hops["phone_finished"].status, mt.UNKNOWN)   # not reported yet: annotation, not a stop
+        self.assertTrue(hops["phone_finished"].optional)
+
+    def test_no_mirror_recorded_is_an_optional_annotation(self):
+        import memo_trace as mt
+        (h,) = mt.earshot_hops(None)
+        self.assertTrue(h.optional and h.status == mt.UNKNOWN)
 
 
 if __name__ == "__main__":
