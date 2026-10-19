@@ -96,7 +96,13 @@ SPEAK_CHARS = int(os.environ.get("MEMO_SPEAK_CHARS", "500"))
 EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
 WAIT_LOG_EVERY_S = 30
-AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "3"))
+# How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
+# between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
+AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
+# The main loop's longest sleep. It also wakes for the earliest due memo, the next S3 listing, and at once when a
+# stage finishes (WAKE), so a stage never waits for a tick boundary to start the next one.
+TICK_S = float(os.environ.get("MEMO_TICK_S", "1"))
+WAKE = threading.Event()
 
 # Retry backoff base seconds per failure stage (doubles each attempt, capped).
 BACKOFF = {"download": 10, "transcribe": 20, "dispatch": 10, "agent_reply": 5, "tts": 15, "reply_upload": 10}
@@ -540,6 +546,13 @@ class Watcher:
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
                            for m in self.active()]})
 
+    def sleep_for(self, until_discover: float) -> float:
+        """Seconds the main loop may sleep: until the earliest due memo or the next listing, never above TICK_S."""
+        now = time.time()
+        with self.mu:
+            due = [m.get("next_at", 0) - now for m in self.active() if m["key"] not in self.running]
+        return max(0.05, min([TICK_S, until_discover, *due]))
+
     def advance(self, m: dict) -> None:
         stage = m["stage"]
         pool = SLOW_STAGES.get(stage)
@@ -571,6 +584,7 @@ class Watcher:
                 m.pop("step_started_ts", None)
                 self.running.discard(m["key"])
                 self.s.save()
+            WAKE.set()  # a worker-pool step ended: let the main loop pick up what it unblocked
 
     def on_error(self, m: dict, e: StageError) -> None:
         n = m["attempts"][e.stage] = m["attempts"].get(e.stage, 0) + 1
@@ -607,6 +621,7 @@ class Watcher:
             next=nxt, ms=int(ms) if ms is not None else None, **extra)
         m["stage"] = nxt
         m["next_at"] = 0.0
+        WAKE.set()  # the next stage starts now, not at the next tick
 
     # ---- steps -----------------------------------------------------------
 
@@ -986,20 +1001,35 @@ class Watcher:
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken))
             rkey = f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}.ogg"
             t1 = time.time()
-            r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
-            if r.returncode != 0:
-                raise StageError("reply_upload", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
-            stat = mc_.s3_stat(rkey)
-            if not stat:
-                raise StageError("reply_upload", "not_visible", f"uploaded {rkey} but mc stat cannot see it")
+            # The phone copy goes up alongside the car's, not after it: it is the faster path to an ear.
             # Once per memo: re-dropping the same key would give it a new LastModified, and Earshot plays that again.
-            ekey = m.get("earshot_key") or mirror_to_earshot(audio, stamp, agent, mid, key)
+            mirror = None
+            if not m.get("earshot_key"):
+                mirror = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="earshot")
+                mirrored = mirror.submit(mirror_to_earshot, audio, stamp, agent, mid, key)
+            try:
+                r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
+                if r.returncode != 0:
+                    raise StageError("reply_upload", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
+                stat = mc_.s3_stat(rkey)
+                if not stat:
+                    raise StageError("reply_upload", "not_visible", f"uploaded {rkey} but mc stat cannot see it")
+            finally:
+                # Wait for the mirror before the temp audio is removed, whatever happened to the car copy.
+                ekey = m.get("earshot_key")
+                if mirror is not None:
+                    try:
+                        ekey = mirrored.result(timeout=90)
+                    except Exception:  # noqa: BLE001 - fail-open, already logged inside
+                        ekey = None
+                    mirror.shutdown(wait=False)
+                if ekey:
+                    with self.mu:
+                        m["earshot_key"] = ekey  # recorded even if the car copy failed, so a retry does not re-drop
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         with self.mu:
             m["reply_key"] = rkey
-            if ekey:
-                m["earshot_key"] = ekey
             journey = time.time() - m.get("received_ts", m.get("detected_ts", time.time()))
             self.fact("replied", m, {
                 "reply_s3_key": rkey, "reply_text": m["reply_text"], "reply_chars": len(m["reply_text"]),
@@ -1106,12 +1136,15 @@ def main() -> int:
     ap.add_argument("--drain", action="store_true",
                     help="with --once: keep ticking until no memo is active (or --drain-timeout)")
     ap.add_argument("--drain-timeout", type=int, default=1500)
-    ap.add_argument("--poll", type=int, default=int(os.environ.get("MEMO_POLL_S", "5")))
+    # S3 inbox listing period. A listing of inbox/ is one mc call (~0.2 s for tens of objects), so 1 s is cheap; it
+    # was 5 s, which averaged 2.5 s of pure waiting before a car memo was even noticed.
+    ap.add_argument("--poll", type=float, default=float(os.environ.get("MEMO_POLL_S", "1")))
     args = ap.parse_args()
 
     def _stop(*_):
         global STOP
         STOP = True
+        WAKE.set()
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
@@ -1157,7 +1190,8 @@ def main() -> int:
             log("tick_error", "error", error=f"{type(e).__name__}: {e}")
         if args.once and not (args.drain and w.active() and time.time() < deadline):
             break
-        time.sleep(1)
+        WAKE.wait(w.sleep_for(args.poll - (time.time() - last_discover)))
+        WAKE.clear()
     w.shutdown(wait=args.once)
     log("stopped")
     return 0

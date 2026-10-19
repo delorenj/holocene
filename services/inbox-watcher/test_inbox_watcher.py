@@ -16,6 +16,7 @@ import textwrap
 import threading
 import time
 import unittest
+import unittest.mock
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -861,6 +862,31 @@ class LaneProbes(unittest.TestCase):
         # while any other terminal failure still wins over a later upload
         other = mt.Hop("fact:failed[transcribe]", mt.FAILED, t(18), "empty_transcript: x (retryable=False, attempt=1)")
         self.assertTrue(mt.verdict([other, up], {"watcher_record": {}})[0].startswith("STOPPED AT transcribe: empty_transcript"))
+
+
+class Pacing(unittest.TestCase):
+    """The loop wakes for the earliest due memo and at once when a stage finishes, never on a fixed 1 s beat."""
+
+    def test_defaults_are_tight(self):
+        self.assertLessEqual(iw.AWAIT_POLL_S, 0.5)
+
+    def test_sleep_for_is_capped_by_the_earliest_due_memo_and_the_next_listing(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="pace-"))))
+        self.assertEqual(w.sleep_for(10), iw.TICK_S)
+        self.assertAlmostEqual(w.sleep_for(0.3), 0.3, places=2)
+        w.s.memos["k"] = {"key": "k", "status": "active", "stage": "await_agent", "next_at": time.time() + 0.2}
+        with unittest.mock.patch.object(w, "active", return_value=[w.s.memos["k"]]):
+            self.assertLess(w.sleep_for(10), 0.25)
+            w.running.add("k")  # a step already running on a worker is not "due"
+            self.assertEqual(w.sleep_for(10), iw.TICK_S)
+        self.assertEqual(w.sleep_for(-5), 0.05)
+
+    def test_a_finished_stage_wakes_the_loop(self):
+        w = iw.Watcher(iw.State(Path(tempfile.mkdtemp(prefix="pace-"))))
+        iw.WAKE.clear()
+        w.done_stage({"memo_id": "m", "key": "k", "agent": "a", "stage": "agent"}, "agent", "reply")
+        self.assertTrue(iw.WAKE.is_set())
+        iw.WAKE.clear()
 
 
 class EarshotMirror(unittest.TestCase):
