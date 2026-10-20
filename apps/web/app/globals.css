@@ -1731,8 +1731,12 @@ td small {
   border-left: 3px solid var(--green);
 }
 
-.polr-card-unhealthy {
+.polr-card-dead {
   border-left: 3px solid var(--red);
+}
+
+.polr-card-answering {
+  border-left: 3px solid var(--yellow);
 }
 
 .polr-card-unknown {
@@ -1755,8 +1759,12 @@ td small {
   background: var(--green);
 }
 
-.polr-card-unhealthy .polr-status-dot {
+.polr-card-dead .polr-status-dot {
   background: var(--red);
+}
+
+.polr-card-answering .polr-status-dot {
+  background: var(--yellow);
 }
 
 .polr-card-unknown .polr-status-dot {
@@ -1781,8 +1789,12 @@ td small {
   color: var(--green);
 }
 
-.polr-card-unhealthy .polr-code {
+.polr-card-dead .polr-code {
   color: var(--red);
+}
+
+.polr-card-answering .polr-code {
+  color: var(--yellow);
 }
 
 .polr-card-unknown .polr-code {
@@ -1804,3 +1816,123 @@ td small {
   letter-spacing: 0;
   text-transform: uppercase;
 }
+
+.polr-banner {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--green);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+}
+
+.polr-mood-grumpy {
+  border-left-color: var(--yellow);
+}
+
+.polr-mood-pissed {
+  border-left-color: var(--red);
+}
+
+.polr-mood-asleep {
+  border-left-color: var(--muted);
+}
+
+.polr-face {
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.polr-mood-calm .polr-face {
+  color: var(--green);
+}
+
+.polr-mood-grumpy .polr-face {
+  color: var(--yellow);
+}
+
+.polr-mood-pissed .polr-face {
+  color: var(--red);
+}
+
+.polr-mood-asleep .polr-face {
+  color: var(--muted);
+}
+
+.polr-says {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+}
+
+.polr-run {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.polr-run small {
+  color: var(--muted);
+}
+
+.polr-columns {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin: 14px 0;
+}
+
+.polr-log {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.polr-log h3 {
+  font-size: 0.85rem;
+  margin: 0 0 8px;
+}
+
+.polr-log ul {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.polr-restart {
+  align-items: baseline;
+  display: grid;
+  font-size: 0.8rem;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.polr-restart strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.polr-restart span,
+.polr-restart small {
+  color: var(--muted);
+}
+
+.polr-restart-failed span {
+  color: var(--red);
+}
+
