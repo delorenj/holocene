@@ -29,9 +29,11 @@ else
   fi
   log="$STATE_DIR/emulator.log"
   # Qt on Wayland sessions needs xcb (XWayland); the emulator window is not Wayland-native.
+  # -crash-report-mode never: after a crash the next start otherwise blocks forever on a crash-consent dialog
+  # ("Showing crashdialog to get consent") that never appears on screen, and adb never sees the device.
   QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}" setsid nohup "$EMU_BIN" -avd "$AVD_NAME" -port "$SIM_PORT" \
     -memory 2048 -no-boot-anim -netdelay none -netspeed full \
-    -grpc "$SIM_GRPC_PORT" -grpc-use-token "${headless[@]}" "${cold[@]}" \
+    -grpc "$SIM_GRPC_PORT" -grpc-use-token -crash-report-mode never -no-metrics "${headless[@]}" "${cold[@]}" \
     >>"$log" 2>&1 </dev/null &
   epid=$!
   echo "emulator launched (pid $epid), log: $log"
