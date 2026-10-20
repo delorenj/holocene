@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
-import { InFlight, replyExt, stripDataUrl } from './flight'
-import { type Agent, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, sameRoster, speakNext, step } from './roster'
+import { InFlight, UploadRejected, isPermanentStatus, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl } from './flight'
+import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, speakNext, step, stalenessText } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -157,7 +157,11 @@ async function putObject(key: string, blob: Blob, capture?: Capture): Promise<vo
       headers: { 'Content-Type': blob.type || 'application/octet-stream', ...(capture ? { 'X-Holocene-Capture': JSON.stringify(capture) } : {}) },
       signal: ctl.signal,
     })
-    if (!res.ok) throw new Error(`PUT ${key}: ${res.status}`)
+    if (!res.ok) {
+      // A 4xx the proxy will repeat (agent not routable, bad key) is final: carry its JSON reason so the pad can say why.
+      if (isPermanentStatus(res.status)) throw new UploadRejected(res.status, rejectionReason(await res.text().catch(() => '')))
+      throw new Error(`PUT ${key}: ${res.status}`)
+    }
   } finally {
     clearTimeout(timer)
   }
@@ -168,7 +172,8 @@ async function getBlob(url: string): Promise<Blob> {
 }
 
 // ---- upload outbox (IndexedDB): a recording that could not be sent is KEPT and retried ----
-type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number; capture?: Capture }
+// `rejected`: the proxy refused this PUT for good (4xx). The audio stays here, but the retry timer leaves it alone.
+type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number; capture?: Capture; rejected?: { status: number; reason: string } }
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('agentpad', 1)
@@ -211,8 +216,16 @@ function rosterDb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
     } catch { resolve(null) }
   })
 }
-const rosterDbGet = async () => normRoster(await rosterDb<unknown>('readonly', (s) => s.get('roster')))
-const rosterDbSet = (list: Agent[]) => rosterDb('readwrite', (s) => s.put({ agents: list }, 'roster'))
+const rosterDbGet = async () => {
+  const raw = await rosterDb<unknown>('readonly', (s) => s.get('roster'))
+  const list = normRoster(raw)
+  return list ? { list, generatedAt: rosterGeneratedAt(raw) } : null
+}
+const rosterDbSet = (list: Agent[], generatedAt: number | null) =>
+  rosterDb('readwrite', (s) => s.put({ agents: list, ...(generatedAt !== null ? { generated_at: new Date(generatedAt).toISOString() } : {}) }, 'roster'))
+// The selected agent id, beside the roster: the WebView's localStorage is empty after a cold start, IndexedDB is not.
+const agentDbGet = async () => savedAgentId(await rosterDb<unknown>('readonly', (s) => s.get('agent')))
+const agentDbSet = (id: string) => rosterDb('readwrite', (s) => s.put(id, 'agent'))
 
 // ---- client events: what only the device can see (record start/stop/failure, upload failure) ----
 // The proxy logs each one; failures also become audio.memo.failed(stage record|upload) facts keyed by the
@@ -315,7 +328,7 @@ function blobToBase64(b: Blob): Promise<string> {
     r.readAsDataURL(b)
   })
 }
-type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'silent' | 'cancelled' | 'error'
+type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'rejected' | 'silent' | 'cancelled' | 'error'
 // The hero's state while a reply plays: REPLY, plus the agent's name when it is not the one selected.
 function replyLabel(agentId: string, selectedId: string | undefined, agents: Agent[], label: (n: string) => string): string {
   if (!agentId || agentId === selectedId) return 'REPLY'
@@ -325,7 +338,7 @@ function replyLabel(agentId: string, selectedId: string | undefined, agents: Age
 
 const PHASE_LABEL: Record<PadPhase, string> = {
   idle: 'READY', arming: 'STARTING', recording: 'RECORDING', sending: 'SENDING', sent: 'SENT',
-  queued: 'SAVED, RETRYING', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
+  queued: 'SAVED, RETRYING', rejected: 'NOT SENT, SAVED', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
 }
 const LS_AGENT = 'agentpad.agent'
 const LS_ROSTER = 'agentpad.roster'
@@ -335,7 +348,11 @@ const ROSTER_WAIT_MS = 2500 // how long a start with no cached roster waits for 
 // localStorage answers synchronously (a browser keeps it); in the car a cold start empties it, so the IndexedDB copy
 // (rosterDbGet) is read next, and only a first-ever start with no network waits for the fallback list.
 const rosterGet = () => normRoster(lsGet(LS_ROSTER))
-const rosterSet = (list: Agent[]) => { lsSet(LS_ROSTER, JSON.stringify({ agents: list })); void rosterDbSet(list) }
+const rosterSet = (list: Agent[], generatedAt: number | null) => {
+  lsSet(LS_ROSTER, JSON.stringify({ agents: list, ...(generatedAt !== null ? { generated_at: new Date(generatedAt).toISOString() } : {}) }))
+  void rosterDbSet(list, generatedAt)
+}
+const ROSTER_CLOCK_MS = 60_000 // how often the age of the list is re-read between fetches
 
 // The bot's Telegram picture when the roster has one (and it loads), its initial on its colour otherwise.
 function Swatch({ a }: { a: Agent }) {
@@ -365,9 +382,16 @@ function App() {
   const [cachedRoster] = useState(rosterGet)
   const [agents, setAgents] = useState<Agent[]>(() => cachedRoster || FALLBACK_AGENTS)
   const [rosterReady, setRosterReady] = useState(!!cachedRoster)
+  // How old the list is: the cached copy's own stamp until a fetch answers, then the fetched one. `failed` is the
+  // last fetch not producing a roster; the clock re-reads the age between fetches (a list ages while nothing happens).
+  const [rosterMeta, setRosterMeta] = useState<RosterMeta>(() => ({ generatedAt: rosterGeneratedAt(lsGet(LS_ROSTER)), failed: false }))
+  const [clock, setClock] = useState(Date.now)
+  const fetchedMeta = useRef(false) // a fetch has answered: a late cache read must not overwrite its stamp
   const agentsRef = useRef(agents)
   agentsRef.current = agents
-  const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === lsGet(LS_AGENT)) || null)
+  // The remembered agent id: localStorage, else IndexedDB (read below), restored as a selection only.
+  const savedAgent = useRef(savedAgentId(lsGet(LS_AGENT)))
+  const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === savedAgent.current) || null)
   const [host, setHost] = useState<HostInfo>(readHost)
   const drivingRef = useRef(host.driving) // read when a recording ends: the car may have started moving mid-note
   drivingRef.current = host.driving
@@ -382,6 +406,7 @@ function App() {
   const [status, setStatus] = useState('idle')
   const [memoShort, setMemoShort] = useState<string | null>(null)
   const [outboxCount, setOutboxCount] = useState(0)
+  const [rejectedCount, setRejectedCount] = useState(0) // recordings the proxy refused for good: kept, not retried
   const [soundUnlocked, setSoundUnlocked] = useState(false)
   const [level, setLevel] = useState(0) // live input level 0..1 while recording
   const [meterOn, setMeterOn] = useState(false) // true once the host or the analyser reports levels
@@ -615,10 +640,30 @@ function App() {
   }, [recording])
 
   // ---- upload outbox: retry everything that could not be sent, on a timer and when the network returns ----
+  const countOutbox = useCallback((rows: Pending[]) => {
+    const waiting = retryable(rows).length
+    setOutboxCount(waiting)
+    setRejectedCount(rows.length - waiting)
+  }, [])
+  // The proxy refused this recording for good (a 4xx that will repeat). The audio stays in the outbox, marked, and is
+  // never retried; the hero shows it (static, like every state) and the device event says why. 5xx and network
+  // failures never come here. `live`: the send that owns the pad's phase just ended, so the phase may be set.
+  const holdRejected = useCallback(async (p: Pending, e: UploadRejected, agentId: string | undefined, live: boolean) => {
+    await outboxPut({ ...p, attempts: p.attempts + 1, rejected: { status: e.status, reason: e.reason } })
+    const why = rejectionText(e.status, e.reason)
+    countOutbox(await outboxAll())
+    // A background retry must not overwrite a note being recorded or sent.
+    if (live) setPhase('rejected')
+    else setPhase((cur) => (cur === 'idle' || cur === 'sent' || cur === 'queued' ? 'rejected' : cur))
+    setStatus(`NOT accepted (${why.slice(0, 80)}) - kept on this device, not retrying`)
+    emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: String(e.status) })
+    clientEvent({ event: 'upload_failed', key: p.key, error: why, code: 'upload_rejected', attempts: p.attempts + 1, retryable: false })
+  }, [countOutbox])
   const flushOutbox = useCallback(async () => {
     const all = flight.idle(await outboxAll()) // a recording a live send still owns is not "waiting"
-    setOutboxCount(all.length)
-    for (const p of all) {
+    const waiting = retryable(all)
+    countOutbox(all)
+    for (const p of waiting) {
       if (!flight.begin(p.key)) continue
       try {
         await putObject(p.key, p.blob, p.capture)
@@ -628,15 +673,15 @@ function App() {
         setStatus(`sent → ${p.agentName} (after a retry)`)
         emitHost({ t: 'sent', name: p.agentName })
       } catch (e) {
-        await outboxPut({ ...p, attempts: p.attempts + 1 })
-        void e
+        if (e instanceof UploadRejected) await holdRejected(p, e, undefined, false)
+        else await outboxPut({ ...p, attempts: p.attempts + 1 })
       } finally {
         flight.end(p.key)
       }
     }
-    if (all.length) setOutboxCount(flight.idle(await outboxAll()).length)
+    if (waiting.length) countOutbox(flight.idle(await outboxAll()))
     await flushEvents()
-  }, [flight])
+  }, [flight, countOutbox, holdRejected])
   useEffect(() => {
     void flushOutbox()
     const t = window.setInterval(() => void flushOutbox(), 30000)
@@ -673,11 +718,16 @@ function App() {
           if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
           return
         } catch (e) {
+          if (e instanceof UploadRejected) {
+            // Retrying a refusal only repeats it: keep the audio, stop here.
+            await holdRejected({ key, agentName: agent.name, blob, attempts: i, at: Date.now(), capture }, e, agent.id, true)
+            return
+          }
           lastErr = (e as Error).message || String(e)
         }
       }
       await outboxPut({ key, agentName: agent.name, blob, attempts: delays.length, at: Date.now(), capture })
-      setOutboxCount((await outboxAll()).length)
+      countOutbox(await outboxAll())
       setStatus(`NOT sent (${lastErr.replace(/^PUT \S+: /, 'HTTP ').slice(0, 40)}) - saved, retrying`)
       setPhase('queued')
       emitHost({ t: 'queued', id: agent.id, name: agent.name })
@@ -685,7 +735,7 @@ function App() {
     } finally {
       flight.end(key)
     }
-  }, [flight])
+  }, [flight, countOutbox, holdRejected])
 
   // A finished recording: hold it back if no sound ever reached the mic, else send it with its capture levels.
   const finishRecording = useCallback(async (agent: Agent, key: string, blob: Blob, capture: Capture | undefined, ms: number) => {
@@ -877,7 +927,9 @@ function App() {
     // change what the screen and the host say.
     if (recordingRef.current || arming.current) return
     setSelected(a)
+    savedAgent.current = a.id
     lsSet(LS_AGENT, a.id)
+    void agentDbSet(a.id)
     if (phase !== 'idle') setPhase('idle')
     emitHost({ t: 'selected', id: a.id, name: a.name })
   }, [phase])
@@ -911,46 +963,72 @@ function App() {
 
   // ---- roster: refreshed on start, every 2 minutes and on return to the foreground. A new order is applied only
   // between notes: the memo target is snapshotted at record start and the tiles must not move under a finger mid-note.
-  const pendingRoster = useRef<{ list: Agent[]; cached?: boolean } | null>(null)
+  const pendingRoster = useRef<{ list: Agent[]; cached?: boolean; generatedAt: number | null } | null>(null)
   const rosterSeen = useRef(false) // a fetched roster has been applied: a late cache read must not undo it
+  // Bring the remembered agent back as a selection (never a recording). Only when nothing is selected, so a tap that
+  // beat the IndexedDB read wins; dropped only by a roster the server just answered.
+  const restoreAgent = useCallback((list: Agent[], authoritative: boolean) => {
+    if (selectedRef.current) return
+    const { pick, drop } = restoreSelection(list, savedAgent.current, authoritative)
+    if (pick) setSelected(pick)
+    else if (drop) { savedAgent.current = ''; lsSet(LS_AGENT, ''); void agentDbSet('') }
+  }, [])
   const applyRoster = useCallback(() => {
     const p = pendingRoster.current
     if (!p || recordingRef.current || arming.current) return
     pendingRoster.current = null
     if (p.cached && rosterSeen.current) return
-    if (!p.cached) { rosterSeen.current = true; rosterSet(p.list) }
+    if (!p.cached) { rosterSeen.current = true; rosterSet(p.list, p.generatedAt) }
     setRosterReady(true)
+    restoreAgent(p.list, !p.cached)
     if (sameRoster(agentsRef.current, p.list)) return
     setAgents(p.list)
     // The selected agent keeps its selection with its new name and picture; one that left the roster stays
     // selected (its memos still route until the registry says otherwise), it is just no longer listed.
-    setSelected((s) => (s ? p.list.find((x) => x.id === s.id) ?? s : p.list.find((x) => x.id === lsGet(LS_AGENT)) ?? null))
-  }, [])
+    setSelected((s) => (s ? p.list.find((x) => x.id === s.id) ?? s : null))
+  }, [restoreAgent])
   useEffect(() => {
     let alive = true
     const load = async () => {
       try {
         const r = await fetch(ROSTER_URL, { cache: 'no-cache' })
-        if (!r.ok) return
-        const list = normRoster(await r.text())
-        if (!alive || !list) return
-        pendingRoster.current = { list }
+        if (!r.ok) throw new Error(String(r.status))
+        const text = await r.text()
+        const list = normRoster(text)
+        if (!alive) return
+        if (!list) throw new Error('no roster in the answer')
+        // The stamp is the server's; a roster without one counts as fresh now (it was just served).
+        const generatedAt = rosterGeneratedAt(text) ?? Date.now()
+        fetchedMeta.current = true
+        setRosterMeta({ generatedAt, failed: false })
+        pendingRoster.current = { list, generatedAt }
         applyRoster()
-      } catch { /* offline: keep the cached roster */ }
+      } catch {
+        // offline or a bad answer: keep the cached roster, and say it is not refreshing
+        if (alive) setRosterMeta((m) => (m.failed ? m : { ...m, failed: true }))
+      }
     }
-    void rosterDbGet().then((list) => {
+    void rosterDbGet().then((got) => {
       // A fetched roster that already landed wins over the cached one.
-      if (!alive || !list || pendingRoster.current || rosterSeen.current) return
-      pendingRoster.current = { list, cached: true }
+      if (!alive || !got || pendingRoster.current || rosterSeen.current) return
+      if (!fetchedMeta.current) setRosterMeta((m) => ({ ...m, generatedAt: got.generatedAt }))
+      pendingRoster.current = { list: got.list, cached: true, generatedAt: got.generatedAt }
       applyRoster()
+    })
+    // The remembered agent (IndexedDB), when localStorage came back empty. Restored against whatever list is showing.
+    void agentDbGet().then((id) => {
+      if (!alive || !id || savedAgent.current) return
+      savedAgent.current = id
+      restoreAgent(agentsRef.current, rosterSeen.current)
     })
     void load()
     const wait = window.setTimeout(() => setRosterReady(true), ROSTER_WAIT_MS)
     const t = window.setInterval(load, ROSTER_POLL_MS)
+    const clock = window.setInterval(() => setClock(Date.now()), ROSTER_CLOCK_MS)
     const onVis = () => { if (document.visibilityState === 'visible') void load() }
     document.addEventListener('visibilitychange', onVis)
-    return () => { alive = false; window.clearTimeout(wait); window.clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [applyRoster])
+    return () => { alive = false; window.clearTimeout(wait); window.clearInterval(t); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVis) }
+  }, [applyRoster, restoreAgent])
   useEffect(() => {
     if (!recording && phase !== 'arming') applyRoster()
   }, [recording, phase, applyRoster])
@@ -973,6 +1051,11 @@ function App() {
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
   const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent) : agents
+  const stale = rosterStaleness(rosterMeta, clock)
+  const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
+  // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
+  // note is being recorded. A refused note outranks an old list: it is audio the driver thinks went somewhere.
+  const heroNote = recording ? '' : rejectedCount > 0 ? `${rejectedCount} note${rejectedCount > 1 ? 's' : ''} not sent, saved` : stale ? stalenessText(stale, true) : ''
 
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
@@ -982,6 +1065,7 @@ function App() {
           <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
           <div className="hstate">{speaking && (phase === 'idle' || phase === 'sent') ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
           {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
+          {heroNote && <div className="hsound hnote">{heroNote}</div>}
         </div>
       )}
       {!soundUnlocked && !host.driving && (
@@ -1045,6 +1129,8 @@ function App() {
         <div className="status" aria-live="polite">
           {statusText}
           {outboxCount > 0 && <small className="warn">{outboxCount} recording{outboxCount > 1 ? 's' : ''} waiting to upload</small>}
+          {rejectedCount > 0 && <small className="warn">{rejectedText}</small>}
+          {stale && <small className="warn">{stalenessText(stale)}</small>}
           {memoShort && <small>memo {memoShort} · mise run memo:trace {memoShort}</small>}
           {lastReply && <small>last reply: {lastReply.split('/').pop()}</small>}
         </div>
@@ -1120,9 +1206,10 @@ const CSS = `
 .drive .hname { font-size:clamp(34px,7vh,68px); font-weight:800; line-height:1.05; }
 .drive .hstate { font-size:clamp(34px,7vh,68px); font-weight:900; letter-spacing:.04em; line-height:1.05; }
 .drive .hsound { flex:1 0 100%; font-size:clamp(20px,3.2vh,30px); font-weight:700; color:#b8c2d6; }
+.drive .hsound.hnote { color:#ffb454; }
 .hero[data-phase="recording"] { background:#7a1d16; border-color:#ff5b4d; }
 .hero[data-phase="sent"] { background:#12361f; border-color:#2ecc71; }
-.hero[data-phase="queued"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
+.hero[data-phase="queued"], .hero[data-phase="rejected"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
 .drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; align-content:stretch; max-height:none; overflow:hidden; padding:6px; flex:1 1 0; min-height:0; }
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }

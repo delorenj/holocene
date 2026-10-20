@@ -24,3 +24,34 @@ export function stripDataUrl(dataUrl: string): string {
   const i = dataUrl.indexOf(',')
   return i < 0 ? '' : dataUrl.slice(i + 1)
 }
+
+// A PUT the proxy answers with a 4xx (not routable, bad key, refused) will get the same answer next time: retrying it
+// forever helps nobody. 408 and 429 are the proxy asking to try again later, so they stay retryable, as do 5xx and
+// every network failure. The recording itself is never dropped: it stays in the outbox, marked rejected.
+export function isPermanentStatus(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+export class UploadRejected extends Error {
+  readonly status: number
+  readonly reason: string
+  constructor(status: number, reason: string) {
+    super(`PUT rejected: ${status}${reason ? ` ${reason}` : ''}`)
+    this.status = status
+    this.reason = reason
+  }
+}
+/** The human reason from a JSON error body ({reason|error|detail|message}), or ''. */
+export function rejectionReason(body: string): string {
+  try {
+    const o = JSON.parse(body) as Record<string, unknown> | null
+    for (const k of ['reason', 'error', 'detail', 'message']) {
+      const v = o?.[k]
+      if (typeof v === 'string' && v.trim()) return v.trim().slice(0, 120)
+    }
+  } catch { /* not JSON */ }
+  return ''
+}
+export const rejectionText = (status: number, reason: string) => `HTTP ${status}${reason ? `: ${reason}` : ''}`
+
+/** The outbox rows the retry timer may send: not rejected. (Rejected ones stay on the device, counted apart.) */
+export function retryable<T extends { rejected?: unknown }>(items: T[]): T[] { return items.filter((i) => !i.rejected) }
