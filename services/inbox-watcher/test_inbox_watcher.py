@@ -26,13 +26,22 @@ BUCKET_DIR = ROOT / "bucket"
 (BUCKET_DIR / "inbox").mkdir(parents=True)
 (BUCKET_DIR / "replies").mkdir(parents=True)
 EMITS = ROOT / "emits.jsonl"
+MC_LOG = ROOT / "mc-cp.jsonl"          # every `mc cp` the watcher ran: {src, dst, attr}
+MC_FAIL_TXT = ROOT / "mc-fail-txt"     # while this file exists, uploading a .txt fails (the text sidecar is fail-open)
 
 FAKE_MC = ROOT / "mc"
 FAKE_MC.write_text(textwrap.dedent(f"""\
     #!/usr/bin/env python3
     import json, shutil, sys, os, datetime, hashlib
     B = {str(BUCKET_DIR)!r}
-    a = [x for x in sys.argv[1:] if not x.startswith("--") ]
+    argv, a, attr, i = sys.argv[1:], [], None, 0
+    while i < len(argv):
+        if argv[i] == "--attr":    # mc cp --attr 'Content-Type="text/plain; charset=utf-8"': the value is not a path
+            attr = argv[i + 1]; i += 2
+        elif argv[i].startswith("--"):
+            i += 1
+        else:
+            a.append(argv[i]); i += 1
     def local(p):  # delo/holocene-auto/<key> -> path
         return os.path.join(B, p.split("/", 2)[2]) if p.startswith("delo/") else p
     def info(path, rel):
@@ -53,6 +62,10 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
         print(json.dumps(info(p, a[1])))
     elif a[0] == "cp":
         src, dst = local(a[1]), local(a[2])
+        with open({str(MC_LOG)!r}, "a") as f:
+            f.write(json.dumps({{"src": a[1], "dst": a[2], "attr": attr}}) + "\\n")
+        if a[2].endswith(".txt") and os.path.exists({str(MC_FAIL_TXT)!r}):
+            print("mc: <ERROR> refusing the text upload", file=sys.stderr); sys.exit(1)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
     """))
@@ -133,10 +146,13 @@ GATEWAY_DB = ROOT / "gateway.sqlite3"
 HERMES = ROOT / "profiles"
 (HERMES / "holocene-pm").mkdir(parents=True)
 
+VOX_TEXTS = []   # every text the watcher asked the fake vox to speak, in order
+
+
 class Vox(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
-        self.rfile.read(int(self.headers["Content-Length"]))
+        VOX_TEXTS.append(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["text"])
         body = json.dumps({"audio_url": f"http://127.0.0.1:{self.server.server_port}/a.ogg", "engine": "fakevox"}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
@@ -191,15 +207,38 @@ def journal(command_id, profile, state="completed", outcome="success"):
     db.commit(); db.close()
 
 
-def hermes_session(profile, chat_id, reply, prompt=None):
+def journal_turn_timeout(command_id, lane="interactive", message=None):
+    """The gateway stopped this command's turn at its wall clock: journal completed/failure/failure_code=turn_timeout."""
+    message = message or f"agent turn timed out after 300s on {lane} lane (limit 300s)"
+    journal(command_id, "holocene-pm", outcome="failure")
+    terminal = [{"type": "bloodbank.agent.invocation.failed", "data": {
+        "error_code": "turn_timeout", "error_message": message, "lane": lane, "elapsed_seconds": 300.2,
+        "timeout_seconds": 300.0, "timeout_source": "lane", "turn_stopped": True}}]
+    db = sqlite3.connect(GATEWAY_DB)
+    try:
+        db.execute("ALTER TABLE executions ADD COLUMN failure_code TEXT")
+    except sqlite3.OperationalError:
+        pass
+    db.execute("UPDATE executions SET failure_code='turn_timeout', lane=?, terminal_events=? WHERE command_id=?",
+               (lane, json.dumps(terminal), command_id))
+    db.commit(); db.close()
+
+
+def mc_cps():
+    """Every `mc cp` the watcher has run so far, oldest first: {src, dst, attr}."""
+    return [json.loads(line) for line in MC_LOG.read_text().splitlines()] if MC_LOG.exists() else []
+
+
+def hermes_session(profile, chat_id, reply, prompt=None, ts=2):
+    """A bloodbank session for `chat_id` whose last assistant message is `reply`, written at `ts` (epoch seconds)."""
     p = HERMES / profile / "state.db"
     db = sqlite3.connect(p)
     db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, chat_id TEXT, session_key TEXT)")
     db.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT,"
                " content TEXT, timestamp REAL, active INTEGER DEFAULT 1)")
     db.execute("INSERT INTO sessions VALUES (?,?,?,?,?)", (f"s-{chat_id}", "bloodbank", time.time(), chat_id, f"agent:{profile}:bloodbank:dm:{chat_id}"))
-    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "user", prompt if prompt is not None else iw.VOICE_PREFIX + "Summarize recent work.", 1))
-    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "assistant", reply, 2))
+    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "user", prompt if prompt is not None else iw.VOICE_PREFIX + "Summarize recent work.", ts - 1))
+    db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "assistant", reply, ts))
     db.commit(); db.close()
 
 
@@ -696,7 +735,9 @@ class Pipeline(unittest.TestCase):
 
     def test_26_a_gateway_turn_timeout_is_its_own_final_outcome(self):
         """The gateway stopped the agent's turn at its per-turn wall clock: failed fact stage agent_reply /
-        turn_timeout (not 'agent'), non-retryable, no reply, trace verdict names it, memo:retry sends a fresh command."""
+        turn_timeout (not 'agent'), non-retryable, no reply, trace verdict names it, memo:retry sends a fresh command.
+        (The FIRST timeout of an interactive memo escalates to the batch lane instead: see Escalation. This is the final
+        outcome when that one escalation is already spent.)"""
         key = "inbox/holocene-pm/2026/10/16/slowturn.ogg"
         put(key)
         m = None
@@ -706,6 +747,7 @@ class Pipeline(unittest.TestCase):
             m = self.state.memos.get(key)
             return m and m["stage"] == "await_agent"
         self.tick_until(at_await)
+        m["escalated"] = True  # the memo's one escalation is spent: a second turn timeout is final
         cid = m["command_id"]
         message = "agent turn timed out after 300s on interactive lane (limit 300s)"
         terminal = [{"type": "bloodbank.agent.invocation.failed", "data": {
@@ -1209,6 +1251,763 @@ class PromptIntegrity(unittest.TestCase):
         self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("dispatch", "no_transcript", False))
         self.assertEqual(m["resume_stage"], "receive")
         self.assertEqual(self.sent_prompts(key), [])
+
+
+class MemoHarness:
+    """A private State and Watcher per test; memos are driven one at a time (as PromptIntegrity does). The shared fact
+    log is restored afterwards: the Pipeline tests count every fact in it."""
+
+    def setUp(self):
+        self.before = EMITS.read_text() if EMITS.exists() else ""
+        self.state = iw.State(Path(tempfile.mkdtemp(prefix="memo-h-")))
+        self.w = iw.Watcher(self.state)
+        self.keys = []
+        journal(str(uuid.uuid4()), "holocene-pm")  # the gateway journal exists before any memo has a row in it
+        VOX_TEXTS.clear()
+
+    def tearDown(self):
+        EMITS.write_text(self.before)
+        MC_FAIL_TXT.unlink(missing_ok=True)
+        for k in self.keys:
+            (BUCKET_DIR / k).unlink(missing_ok=True)
+        self.w.shutdown(wait=False)
+
+    def upload(self, name, content=b"OggS fake audio", agent="holocene-pm"):
+        key = f"inbox/{agent}/2026/10/19/{name}.ogg"
+        put(key, content)
+        self.keys.append(key)
+        return key
+
+    def discover(self, key):
+        self.w.discover(([o for o in mc_.s3_list_inbox() if o["key"] == key], None))
+        return self.state.memos[key]
+
+    def tick_until(self, pred, n=200):
+        for _ in range(n):
+            self.w.tick(discover=False)
+            if pred():
+                return
+            time.sleep(0.05)
+        self.fail("condition never met; memos=" + json.dumps(self.state.memos, default=str)[:900])
+
+    def transcribed(self, key, text="Summarize recent work."):
+        """A memo at the dispatch stage holding `text` as its transcript, as _transcribe_apply leaves it."""
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "next_at": 0.0,
+             "status": "active", "stage": "transcribe"}
+        self.state.memos[key] = m
+        self.w._transcribe_apply(m, {"text": text, "meta": {}, "took": 0.1, "audio_s": 5.0, "levels": {}})
+        return m
+
+    def to_await(self, name):
+        """Upload a memo and run it until its command is published and the watcher waits for the agent."""
+        key = self.upload(name)
+        m = self.discover(key)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        return key, m
+
+    @staticmethod
+    def cmds(key):
+        return [(t, r) for t, r in facts() if t.startswith("bloodbank.cmd.") and r["data"]["context"]["memo_key"] == key]
+
+    @staticmethod
+    def of_type(action, key):
+        return [r["data"] for t, r in facts() if t == f"bloodbank.audio.memo.{action}" and r["data"]["s3_key"] == key]
+
+    @staticmethod
+    def control(verb, m):
+        ctl = Path(mc_.STATE_DIR) / "control"
+        ctl.mkdir(parents=True, exist_ok=True)
+        f = ctl / f"{verb}-{m['memo_id']}"
+        f.write_text("")
+        return f
+
+    def ticks(self, n=8):
+        for _ in range(n):
+            self.w.tick(discover=False)
+            time.sleep(0.02)
+
+
+class Escalation(MemoHarness, unittest.TestCase):
+    """An interactive turn the gateway stopped at its wall clock is re-dispatched ONCE on the batch lane, not failed."""
+
+    def escalate(self, name):
+        """A memo whose interactive turn timed out and that has been re-dispatched: (key, memo, first command id, its envelope id)."""
+        key, m = self.to_await(name)
+        cid1, env1 = m["command_id"], m["command_envelope_id"]
+        journal_turn_timeout(cid1)
+        self.tick_until(lambda: m["command_id"] != cid1 and m["stage"] == "await_agent")
+        return key, m, cid1, env1
+
+    def test_a_turn_timeout_escalates_the_same_prompt_to_the_batch_lane_instead_of_failing(self):
+        key, m = self.to_await("esc-basic")
+        cid1, env1, sha = m["command_id"], m["command_envelope_id"], m["prompt_sha256"]
+        seen = []
+        real_run = iw.run
+
+        def spy(cmd, *a, **k):
+            if "--kind" in cmd:  # the command publish: what state.json holds right now
+                seen.append((cmd[cmd.index("--command-id") + 1], json.loads((self.state.dir / "state.json").read_text())["memos"][key]))
+            return real_run(cmd, *a, **k)
+        journal_turn_timeout(cid1)
+        with unittest.mock.patch.object(iw, "run", side_effect=spy):
+            self.tick_until(lambda: m["command_id"] != cid1 and m["stage"] == "await_agent")
+        cid2 = m["command_id"]
+        self.assertEqual(m["status"], "active")
+        self.assertEqual(self.of_type("failed", key), [])  # the timeout is not the memo's outcome
+        # two commands: the interactive one, then the batch one with the SAME prompt on the SAME thread
+        cmds = self.cmds(key)
+        self.assertEqual([t for t, _ in cmds], ["bloodbank.cmd.agent.invocation.invoke", "bloodbank.cmd.agent.invocation.start"])
+        (_, first), (_, second) = cmds
+        self.assertEqual(second["data"]["prompt"], first["data"]["prompt"])
+        self.assertEqual(iw.hashlib.sha256(second["data"]["prompt"].encode()).hexdigest(), sha)
+        self.assertEqual(second["data"]["thread_id"], first["data"]["thread_id"])
+        self.assertEqual(second["data"]["thread_id"], m["memo_id"])  # so the Hermes session keeps its context
+        a = second["argv"]
+        self.assertEqual(a[a.index("--correlation") + 1], m["memo_id"])
+        self.assertNotEqual(cid2, cid1)
+        self.assertEqual(a[a.index("--command-id") + 1], cid2)
+        self.assertEqual(a[a.index("--causation") + 1], env1)  # caused by the command that timed out
+        self.assertEqual(second["data"]["context"]["escalated_from_command_id"], cid1)
+        # the new command id (and the prompt hash) were on disk BEFORE the publish
+        self.assertEqual([c for c, _ in seen], [cid2])
+        self.assertEqual((seen[0][1]["command_id"], seen[0][1]["prompt_sha256"]), (cid2, sha))
+        # the second dispatched fact says what happened
+        d1, d2 = self.of_type("dispatched", key)
+        self.assertEqual((d1["lane"], d1["lane_reason"]), ("interactive", None))
+        self.assertNotIn("escalated_from_command_id", d1)
+        self.assertEqual((d2["lane"], d2["lane_reason"]), ("batch", "turn_timeout_escalated"))
+        self.assertEqual((d2["command_id"], d2["escalated_from_command_id"], d2["thread_id"]), (cid2, cid1, m["memo_id"]))
+        self.assertEqual(d2["prompt_sha256"], sha)
+        # a long deadline for the batch turn, not the interactive memo's AGENT_TIMEOUT_S
+        self.assertEqual(iw.BATCH_TURN_TIMEOUT_S, 7200)
+        self.assertAlmostEqual(m["deadline_ts"] - m["dispatched_ts"], iw.BATCH_TURN_TIMEOUT_S, delta=1)
+        # nothing was said aloud on the way
+        self.assertEqual(VOX_TEXTS, [])
+
+    def test_the_escalated_reply_is_spoken_as_a_late_reply_and_flagged(self):
+        key, m, cid1, _ = self.escalate("esc-reply")
+        cid2 = m["command_id"]
+        journal(cid2, "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "Here is the long answer.", ts=time.time())
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(VOX_TEXTS, ["Holocene PM, late reply. Here is the long answer."])
+        r = self.of_type("replied", key)[-1]
+        self.assertIs(r["late"], True)
+        self.assertIs(r["escalated"], True)
+        self.assertEqual(r["command_id"], cid2)
+
+    def test_an_ordinary_reply_is_neither_late_nor_escalated(self):
+        key, m = self.to_await("esc-plain")
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "Quick answer.", ts=time.time())
+        self.tick_until(lambda: m["status"] == "done")
+        r = self.of_type("replied", key)[-1]
+        self.assertEqual((r["late"], r["escalated"]), (False, False))
+        self.assertEqual(VOX_TEXTS, ["Holocene PM. Quick answer."])
+
+    def test_escalation_happens_at_most_once_per_memo(self):
+        key, m, cid1, _ = self.escalate("esc-once")
+        cid2 = m["command_id"]
+        journal_turn_timeout(cid2, lane="batch")  # the batch turn is stopped too (an envelope deadline, say)
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"], m["resume_stage"]), ("agent_reply", "turn_timeout", "dispatch"))
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"], f["command_id"]), ("agent_reply", "turn_timeout", False, cid2))
+        self.ticks()
+        self.assertEqual(len(self.cmds(key)), 2)  # no third command
+        # an explicit memo:retry sends ONE fresh command on the configured lane; it is not escalated again
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual(m["status"], "active")
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertNotEqual(m["command_id"], cid2)
+        self.assertFalse(mc_.memo_escalated(m))
+        self.assertEqual([t for t, _ in self.cmds(key)][-1], "bloodbank.cmd.agent.invocation.invoke")
+        journal_turn_timeout(m["command_id"])
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual(len(self.cmds(key)), 3)  # the retried command failed final, it did not escalate
+
+    def test_other_failures_do_not_escalate(self):
+        # a turn that failed for another reason
+        key, m = self.to_await("esc-agentfail")
+        journal(m["command_id"], "holocene-pm", outcome="failure")
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent", "agent_failure"))
+        self.assertEqual(len(self.cmds(key)), 1)
+        # the watcher's own agent deadline (the command never finished) is not a gateway turn timeout either
+        key, m = self.to_await("esc-deadline")
+        m["deadline_ts"] = time.time() - 1
+        idle = {"ok": True, "num_pending": 0, "num_ack_pending": 0}
+        with unittest.mock.patch.object(mc_, "gateway_liveness", return_value=idle):
+            self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "timeout"))
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_a_turn_timeout_on_the_batch_lane_is_final(self):
+        old, iw.LANE = iw.LANE, "batch"
+        try:
+            key, m = self.to_await("esc-batchlane")
+        finally:
+            iw.LANE = old
+        self.assertEqual(m["lane"], "batch")
+        journal_turn_timeout(m["command_id"], lane="batch")
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "turn_timeout"))
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_zero_batch_deadline_switches_escalation_off(self):
+        key, m = self.to_await("esc-off")
+        journal_turn_timeout(m["command_id"])
+        with unittest.mock.patch.object(iw, "BATCH_TURN_TIMEOUT_S", 0):
+            self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "turn_timeout"))
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_a_batch_turn_that_wrote_no_text_never_speaks_the_stopped_turns_partial_output(self):
+        key, m, cid1, _ = self.escalate("esc-stale")
+        journal(m["command_id"], "holocene-pm")
+        # the stopped interactive turn left a half sentence in the shared session; the batch turn added nothing
+        hermes_session("holocene-pm", m["memo_id"], "Let me look into that...", ts=m["dispatched_ts"] - 60)
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "no_reply_text"))
+        self.assertEqual(VOX_TEXTS, [])
+        self.assertNotIn("reply_key", m)
+
+    def test_a_turn_timeout_that_lands_after_the_watcher_gave_up_escalates_too(self):
+        key, m = self.to_await("esc-latetimeout")
+        cid1 = m["command_id"]
+        m["deadline_ts"] = time.time() - 1
+        idle = {"ok": True, "num_pending": 0, "num_ack_pending": 0}
+        with unittest.mock.patch.object(mc_, "gateway_liveness", return_value=idle):
+            self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"]), ("agent_reply", "timeout"))
+        journal_turn_timeout(cid1)  # the queued command ran after the deadline, and the gateway stopped it at its wall clock
+        self.w.last_rescue = 0
+        self.tick_until(lambda: m["command_id"] != cid1 and m["stage"] == "await_agent")
+        self.assertEqual((m["status"], m["lane"], m["lane_reason"], m["escalated"]), ("active", "batch", "turn_timeout_escalated", True))
+        self.assertEqual([t for t, _ in self.cmds(key)],
+                         ["bloodbank.cmd.agent.invocation.invoke", "bloodbank.cmd.agent.invocation.start"])
+
+    def test_a_retried_escalated_command_is_waited_for_with_the_batch_deadline(self):
+        key, m, cid1, _ = self.escalate("esc-retry")
+        m["deadline_ts"] = time.time() - 1
+        busy = {"ok": True, "num_pending": 7, "num_ack_pending": 4}  # a queued ordinary memo would be stretched here (test_19)
+        with unittest.mock.patch.object(mc_, "gateway_liveness", return_value=busy):
+            self.tick_until(lambda: m["status"] == "failed")
+        # an escalated turn already has its long deadline: the queue-extension rule does not stretch it further
+        self.assertEqual((m["failed_stage"], m["failed_code"], m["resume_stage"]), ("agent_reply", "timeout", "await_agent"))
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"]), ("active", "await_agent"))
+        self.assertAlmostEqual(m["deadline_ts"] - time.time(), iw.BATCH_TURN_TIMEOUT_S, delta=2)
+
+
+class Cancel(MemoHarness, unittest.TestCase):
+    """`memo:cancel`: before the publish nothing is sent; after it the agent may run on, but its reply is never spoken."""
+
+    def test_the_after_dispatch_rule(self):
+        self.assertFalse(mc_.cancel_after_dispatch({"stage": "receive"}))
+        self.assertFalse(mc_.cancel_after_dispatch({"stage": "transcribe"}))
+        self.assertFalse(mc_.cancel_after_dispatch({"stage": "dispatch"}))
+        self.assertTrue(mc_.cancel_after_dispatch({"stage": "dispatch", "publish_attempted": True}))
+        for stage in ("await_agent", "reply", "speak"):
+            self.assertTrue(mc_.cancel_after_dispatch({"stage": stage}), stage)
+
+    def test_cancel_before_the_receive_stage_has_run(self):
+        key = self.upload("cancel-receive")
+        m = self.discover(key)
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"]), ("cancelled", "receive"))
+        self.ticks()
+        for action in ("received", "transcribed", "dispatched"):
+            self.assertEqual(self.of_type(action, key), [], action)
+        self.assertEqual(self.cmds(key), [])
+        (f,) = self.of_type("failed", key)
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"], f["after_dispatch"]), ("cancelled", "cancelled", False, False))
+        self.assertNotIn("command_id", f)
+        self.assertIn("nothing was sent", f["error_message"])
+
+    def test_cancel_before_the_publish_dispatches_nothing(self):
+        key = self.upload("cancel-dispatch")
+        m = self.transcribed(key)  # at the dispatch stage: the very next tick would publish
+        self.assertEqual(m["stage"], "dispatch")
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"], m["resume_stage"]), ("cancelled", "dispatch", "dispatch"))
+        self.ticks()
+        self.assertEqual(self.cmds(key), [])
+        self.assertEqual(self.of_type("dispatched", key), [])
+        self.assertNotIn("publish_attempted", m)
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"], f["after_dispatch"]), ("cancelled", "cancelled", False, False))
+        self.assertEqual(m["attempts"], {})  # not a failure of any stage
+
+    def test_cancel_while_whisper_runs_drops_the_transcript(self):
+        key = self.upload("cancel-whisper")
+        m = self.discover(key)
+        gate = threading.Event()
+        orig = self.w._transcribe_work
+        self.w._transcribe_work = lambda *a, **k: (gate.wait(5), orig(*a, **k))[1]
+        try:
+            self.tick_until(lambda: m["stage"] == "transcribe" and key in self.w.running)
+            self.control("cancel", m)
+            self.w.tick(discover=False)
+            self.assertEqual(m["status"], "cancelled")  # at once: not after the minutes Whisper may still need
+            gate.set()
+            self.tick_until(lambda: key not in self.w.running)
+        finally:
+            gate.set()
+            self.w._transcribe_work = orig
+        self.ticks()
+        self.assertEqual(m["status"], "cancelled")
+        self.assertNotIn("transcript", m)
+        self.assertEqual(self.of_type("transcribed", key), [])
+        self.assertEqual(self.cmds(key), [])
+
+    def test_a_step_that_was_already_running_cannot_publish_for_a_cancelled_memo(self):
+        key = self.upload("cancel-race-dispatch")
+        m = self.transcribed(key)
+        m["status"] = "cancelled"  # the cancel landed while the dispatch worker was probing the lane
+        self.w.step_dispatch(m)
+        self.assertEqual(self.cmds(key), [])
+        self.assertNotIn("publish_attempted", m)
+
+    def test_cancel_landing_while_the_publish_is_in_flight_is_after_dispatch(self):
+        key = self.upload("cancel-inflight")
+        m = self.transcribed(key)
+        real_run = iw.run
+
+        def spy(cmd, *a, **k):
+            if "--kind" in cmd:  # publish_attempted is already set: the operator cancels right now
+                with self.w.mu:
+                    self.w.cancel_memo(m)
+            return real_run(cmd, *a, **k)
+        with unittest.mock.patch.object(iw, "run", side_effect=spy):
+            self.tick_until(lambda: m["status"] == "cancelled" and key not in self.w.running)
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["after_dispatch"]), ("cancelled", True))
+        self.assertEqual(len(self.cmds(key)), 1)  # it WAS published; the fact says so
+        self.assertEqual(len(self.of_type("dispatched", key)), 1)
+        self.assertEqual((m["status"], m["stage"]), ("cancelled", "dispatch"))  # and the memo did not move on to await
+
+    def test_cancel_after_the_publish_leaves_the_agent_running_and_speaks_nothing(self):
+        key, m = self.to_await("cancel-after")
+        cid = m["command_id"]
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"]), ("cancelled", "await_agent"))
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"], f["after_dispatch"], f["command_id"]),
+                         ("cancelled", "cancelled", False, True, cid))
+        self.assertIn("may still run", f["error_message"])
+        # the agent finishes anyway
+        journal(cid, "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "Done anyway.", ts=time.time())
+        self.w.last_rescue = 0
+        self.ticks(12)
+        self.assertEqual(m["status"], "cancelled")
+        self.assertEqual(VOX_TEXTS, [])  # not even synthesized
+        self.assertEqual(self.of_type("replied", key), [])
+        self.assertNotIn("reply_key", m)
+        self.assertEqual([p for p in BUCKET_DIR.rglob("*") if m["memo_id"] in p.name], [])  # no car copy, no phone copy
+
+    def test_a_reply_that_is_being_spoken_when_the_cancel_lands_is_not_spoken_or_mirrored(self):
+        key = self.upload("cancel-speak")
+        mid = mc_.memo_id_for(key)
+        m = {"memo_id": mid, "key": key, "agent": "holocene-pm", "reply_text": "A reply that must not be heard.",
+             "attempts": {}, "status": "cancelled", "stage": "speak", "received_ts": time.time()}
+        self.state.memos[key] = m
+        n0 = len(mc_cps())
+        self.w.step_speak(m)  # the worker had started; the memo was cancelled under it
+        self.assertEqual(mc_cps()[n0:], [])  # nothing uploaded: not the car's copy, not the phone's
+        self.assertEqual(self.of_type("replied", key), [])
+        self.assertNotIn("reply_key", m)
+
+    def test_a_cancelled_memo_is_skipped_by_the_late_rescue(self):
+        key, m = self.to_await("cancel-rescue")
+        cid = m["command_id"]
+        m["deadline_ts"] = time.time() - 1
+        idle = {"ok": True, "num_pending": 0, "num_ack_pending": 0}
+        with unittest.mock.patch.object(mc_, "gateway_liveness", return_value=idle):
+            self.tick_until(lambda: m["status"] == "failed")
+        self.assertTrue(mc_.rescue_open(m))  # failed agent_reply/timeout: the watcher still waits for a late reply
+        self.control("cancel", m)  # ... and the operator does not want it
+        self.w.tick(discover=False)
+        self.assertEqual(m["status"], "cancelled")
+        self.assertFalse(mc_.rescue_open(m))
+        journal(cid, "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "Late, but wanted by nobody.", ts=time.time())
+        self.w.last_rescue = 0
+        self.ticks()
+        self.assertEqual((m["status"], VOX_TEXTS), ("cancelled", []))
+        self.assertNotIn("late", m)
+
+    def test_a_cancelled_memo_is_never_escalated(self):
+        key, m = self.to_await("cancel-noescalate")
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        journal_turn_timeout(m["command_id"])  # the gateway stops the turn after the cancel
+        self.ticks(12)
+        self.assertEqual(m["status"], "cancelled")
+        self.assertEqual(len(self.cmds(key)), 1)
+        self.assertNotIn("escalated", m)
+
+    def test_cancel_while_the_escalation_is_waiting_to_publish_sends_no_batch_command(self):
+        key, m = self.to_await("cancel-escalating")
+        cid1 = m["command_id"]
+        journal_turn_timeout(cid1)
+        self.w.tick(discover=False)  # the await step escalates: stage is dispatch, the batch command is minted, not sent
+        self.assertEqual((m["stage"], m["lane"], m["lane_reason"]), ("dispatch", "batch", "turn_timeout_escalated"))
+        self.assertTrue(m["escalated"])
+        self.assertNotIn("publish_attempted", m)
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.ticks()
+        self.assertEqual(m["status"], "cancelled")
+        self.assertEqual(len(self.cmds(key)), 1)  # only the interactive one ever went out
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["after_dispatch"]), ("cancelled", False))
+        self.assertIn("batch command was not sent", f["error_message"])
+
+    def test_memo_retry_revives_a_cancelled_memo_and_it_dispatches_once(self):
+        key = self.upload("cancel-retry")
+        m = self.transcribed(key)
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.assertEqual(m["status"], "cancelled")
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"]), ("active", "dispatch"))
+        for k in ("cancelled_ts", "cancelled_stage", "cancelled_after_dispatch", "failed_stage", "failed_code", "resume_stage"):
+            self.assertNotIn(k, m)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_control_files_are_taken_in_the_order_they_were_written(self):
+        t = time.time_ns()
+        # cancel, then retry: the memo ends active
+        key = self.upload("cancel-order-a")
+        m = self.transcribed(key)
+        a, b = self.control("cancel", m), self.control("retry", m)
+        os.utime(a, ns=(t, t))
+        os.utime(b, ns=(t + 10**9, t + 10**9))
+        self.w.process_control()
+        self.assertEqual(m["status"], "active")
+        # retry, then cancel: the retry is refused (the memo is running), the cancel wins
+        key2 = self.upload("cancel-order-b")
+        m2 = self.transcribed(key2)
+        a, b = self.control("retry", m2), self.control("cancel", m2)
+        os.utime(a, ns=(t, t))
+        os.utime(b, ns=(t + 10**9, t + 10**9))
+        self.w.process_control()
+        self.assertEqual(m2["status"], "cancelled")
+
+    def test_cancel_is_refused_for_a_memo_that_is_not_in_flight(self):
+        done = self.transcribed(self.upload("cancel-done"))
+        done["status"] = "done"
+        failed = self.transcribed(self.upload("cancel-failed"))
+        failed.update(status="failed", failed_stage="tts", failed_code="vox_failed")
+        ghost = self.control("cancel", {"memo_id": str(uuid.uuid4())})
+        n0 = len(facts())
+        for m in (done, failed):
+            self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.assertEqual((done["status"], failed["status"]), ("done", "failed"))
+        self.assertEqual(len(facts()), n0)  # no fact for a refusal
+        self.assertFalse(ghost.exists())  # an unknown memo is consumed and logged, never an exception
+        again = self.transcribed(self.upload("cancel-twice"))
+        self.control("cancel", again)
+        self.w.tick(discover=False)
+        n1 = len(facts())
+        self.control("cancel", again)
+        self.w.tick(discover=False)
+        self.assertEqual(len(facts()), n1)  # a second cancel of the same memo says nothing new
+
+    def test_the_cancel_command_writes_the_control_file_and_says_what_it_can_mean(self):
+        import argparse
+        import contextlib
+        import io
+        import memo_trace as mt
+        k1, k2, k3, k4 = (f"inbox/holocene-pm/2026/10/19/cli-{n}.ogg" for n in ("early", "late", "done", "twice"))
+        rec = lambda k, **kw: {"memo_id": mc_.memo_id_for(k), "key": k, "agent": "holocene-pm", "attempts": {}, **kw}  # noqa: E731
+        d = Path(tempfile.mkdtemp(prefix="memo-cancel-cli-"))
+        (d / "state.json").write_text(json.dumps({"memos": {
+            k1: rec(k1, status="active", stage="transcribe"),
+            k2: rec(k2, status="active", stage="await_agent", publish_attempted=True, command_id="c"),
+            k3: rec(k3, status="done", stage="done"),
+            k4: rec(k4, status="cancelled", stage="speak")}}))
+        real = mt.c.STATE_DIR
+        mt.c.STATE_DIR = d
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rcs = [mt.cmd_cancel(argparse.Namespace(target=k)) for k in (k1, k2, k3, k4)]
+        finally:
+            mt.c.STATE_DIR = real
+        self.assertEqual(rcs, [0, 0, 1, 1])
+        text = out.getvalue()
+        self.assertIn(f"cancel requested for {mc_.memo_id_for(k1)} (before dispatch: nothing will be sent to the agent)", text)
+        self.assertIn(f"cancel requested for {mc_.memo_id_for(k2)} (after dispatch: the command is already out, so the agent may "
+                      "still run, but its reply will not be spoken)", text)
+        self.assertIn("only a memo still in flight can be cancelled", text)
+        self.assertIn("is already cancelled", text)
+        self.assertEqual(sorted(p.name for p in (d / "control").iterdir()),
+                         sorted([f"cancel-{mc_.memo_id_for(k1)}", f"cancel-{mc_.memo_id_for(k2)}"]))
+        # the memo:retry command accepts a cancelled memo as well
+        (d / "state.json").write_text(json.dumps({"memos": {k4: rec(k4, status="cancelled", stage="speak", resume_stage="speak")}}))
+        mt.c.STATE_DIR = d
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(mt.cmd_retry(argparse.Namespace(target=k4)), 0)
+        finally:
+            mt.c.STATE_DIR = real
+        self.assertTrue((d / "control" / f"retry-{mc_.memo_id_for(k4)}").exists())
+
+
+class TextSidecar(MemoHarness, unittest.TestCase):
+    """The phone gets the FULL reply text next to its audio: same Earshot key, .txt, uploaded first, fail-open."""
+
+    LONG = "First sentence of a long and detailed answer. " * 40  # about 1800 chars: far over the 500-char spoken digest
+
+    def replied_memo(self, name, reply=None):
+        key, m = self.to_await(name)
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], reply or self.LONG, ts=time.time())
+        return key, m
+
+    def test_the_full_text_goes_up_before_the_audio_as_a_sibling_object(self):
+        key, m = self.replied_memo("txt-basic")
+        n0 = len(mc_cps())
+        self.tick_until(lambda: m["status"] == "done")
+        calls = mc_cps()[n0:]
+        ogg, txt = m["earshot_key"], m["earshot_text_key"]
+        self.assertTrue(ogg.startswith("phone/") and ogg.endswith(f"Z-holocene-pm-{m['memo_id']}.ogg"))
+        self.assertEqual(txt, ogg[:-len(".ogg")] + ".txt")  # the same key, another extension
+        # the whole reply, not the digest the voice speaks
+        self.assertEqual((BUCKET_DIR / txt).read_text(encoding="utf-8"), self.LONG.strip())
+        self.assertGreater(len(self.LONG.strip()), iw.SPEAK_CHARS)
+        self.assertLessEqual(len(VOX_TEXTS[-1]), iw.SPEAK_CHARS + 40)
+        phone = [c["dst"] for c in calls if "/earshot/" in c["dst"]]
+        self.assertEqual([p.split("/earshot/")[1] for p in phone], [txt, ogg])  # text first, then the audio
+        self.assertEqual(next(c for c in calls if c["dst"].endswith(txt))["attr"], 'Content-Type="text/plain; charset=utf-8"')
+        r = self.of_type("replied", key)[-1]
+        self.assertEqual((r["earshot_key"], r["earshot_text_key"]), (ogg, txt))
+        self.assertEqual(r["reply_chars"], len(self.LONG.strip()))
+        # the car's path is unchanged: one audio object under replies/, no text beside it
+        car = [c["dst"] for c in calls if "/holocene-auto/replies/" in c["dst"]]
+        self.assertEqual(len(car), 1)
+        self.assertTrue(car[0].endswith(".ogg"))
+
+    def test_the_text_upload_failing_is_fail_open_and_the_audio_still_reaches_the_phone(self):
+        MC_FAIL_TXT.write_text("x")
+        key, m = self.replied_memo("txt-failopen")
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertIsNone(m.get("earshot_text_key"))
+        self.assertTrue((BUCKET_DIR / m["earshot_key"]).exists())
+        self.assertFalse((BUCKET_DIR / (m["earshot_key"][:-len(".ogg")] + ".txt")).exists())
+        r = self.of_type("replied", key)[-1]
+        self.assertIsNone(r["earshot_text_key"])
+        self.assertEqual(r["earshot_key"], m["earshot_key"])
+
+    def test_the_text_is_not_dropped_again_when_the_audio_is_retried(self):
+        key = self.upload("txt-once")
+        mid = mc_.memo_id_for(key)
+        stamp = mc_.parse_iso("2026-10-20T02:15:30.123Z")
+        tkey = iw.earshot_key_for(stamp, "holocene-pm", mid, ext="txt")
+        m = {"memo_id": mid, "key": key, "agent": "holocene-pm", "reply_text": "A reply.", "reply_stamp": iso_z(stamp),
+             "earshot_text_key": tkey, "attempts": {}, "status": "active", "stage": "speak", "received_ts": time.time()}
+        self.state.memos[key] = m
+        n0 = len(mc_cps())
+        self.w.step_speak(m)  # an earlier attempt left the text on the phone channel; the audio had failed
+        dst = [c["dst"] for c in mc_cps()[n0:] if "/earshot/" in c["dst"]]
+        self.assertEqual([d.split("/earshot/")[1] for d in dst], [iw.earshot_key_for(stamp, "holocene-pm", mid)])
+        self.assertEqual(self.of_type("replied", key)[-1]["earshot_text_key"], tkey)
+
+    def test_keys_follow_the_audio_key_with_a_txt_extension(self):
+        stamp = mc_.parse_iso("2026-10-20T02:15:30.123Z")
+        self.assertEqual(iw.earshot_key_for(stamp, "holocene-pm", "abc"), "phone/2026/10/20/021530123Z-holocene-pm-abc.ogg")
+        self.assertEqual(iw.earshot_key_for(stamp, "holocene-pm", "abc", ext="txt"), "phone/2026/10/20/021530123Z-holocene-pm-abc.txt")
+        self.assertEqual(iw.EARSHOT_TEXT_TYPE, "text/plain; charset=utf-8")
+
+    def test_mirror_uploads_the_text_first_reports_it_at_once_and_survives_its_failure(self):
+        import subprocess
+        stamp = mc_.parse_iso("2026-10-20T02:15:30.123Z")
+        order, recorded = [], []
+
+        def fake(*args, **kw):
+            order.append(args[-1].split("/earshot/")[1])
+            return subprocess.CompletedProcess([], 0, "", "")
+        with unittest.mock.patch.object(iw.mc_, "mc", side_effect=fake):
+            ekey = iw.mirror_to_earshot(Path("/dev/null"), stamp, "holocene-pm", "abc", "k", "full text", recorded.append)
+        self.assertEqual(order, ["phone/2026/10/20/021530123Z-holocene-pm-abc.txt", "phone/2026/10/20/021530123Z-holocene-pm-abc.ogg"])
+        self.assertEqual(ekey, order[1])
+        self.assertEqual(recorded, [order[0]])
+        # the text refused: no text key reported, the audio still goes
+        order.clear(), recorded.clear()
+
+        def refuse_text(*args, **kw):
+            order.append(args[-1].split("/earshot/")[1])
+            return subprocess.CompletedProcess([], 1 if args[-1].endswith(".txt") else 0, "", "S3 said no")
+        with unittest.mock.patch.object(iw.mc_, "mc", side_effect=refuse_text):
+            ekey = iw.mirror_to_earshot(Path("/dev/null"), stamp, "holocene-pm", "abc", "k", "full text", recorded.append)
+        self.assertEqual((ekey, recorded), (order[1], []))
+        # no text given (it is already up): the audio alone
+        order.clear()
+        with unittest.mock.patch.object(iw.mc_, "mc", side_effect=fake):
+            iw.mirror_to_earshot(Path("/dev/null"), stamp, "holocene-pm", "abc", "k")
+        self.assertEqual(order, ["phone/2026/10/20/021530123Z-holocene-pm-abc.ogg"])
+
+
+class TraceEscalationAndCancel(unittest.TestCase):
+    """memo_trace shows an escalated memo's two dispatches and turns, a cancelled memo's verdict, and the phone text key."""
+
+    def hop(self, name, status, **kw):
+        import memo_trace as mt
+        return mt.Hop(name, status, **kw)
+
+    def test_a_cancelled_memos_verdict_says_whether_anything_was_sent(self):
+        import memo_trace as mt
+        before = self.hop("fact:failed[cancelled]", mt.FAILED, detail="cancelled: cancelled at transcribe by memo:cancel before "
+                          "the command was published: nothing was sent to the agent (retryable=False, attempt=1, after_dispatch=False)")
+        after = self.hop("fact:failed[cancelled]", mt.FAILED, detail="cancelled: cancelled at await_agent by memo:cancel after the "
+                         "command was published: the agent may still run, its reply is not spoken (retryable=False, attempt=1, after_dispatch=True)")
+        self.assertEqual(mt.verdict([before], {"watcher_record": {}}), ("CANCELLED before dispatch", False))
+        self.assertEqual(mt.verdict([after], {"watcher_record": {}}), ("CANCELLED after dispatch; reply not spoken", False))
+        # missing hops downstream of the cancel do not outvote it
+        gone = self.hop("fact:dispatched", mt.MISSING, detail="no bloodbank.audio.memo.dispatched")
+        self.assertEqual(mt.verdict([gone, before], {"watcher_record": {}})[0], "CANCELLED before dispatch")
+
+    def test_a_cancel_that_a_later_reply_got_past_is_history(self):
+        import memo_trace as mt
+        t = lambda s: mc_.parse_iso(f"2026-10-20T02:00:{s:02d}Z")  # noqa: E731
+        cancelled = self.hop("fact:failed[cancelled]", mt.FAILED, ts=t(5),
+                             detail="cancelled: x (retryable=False, attempt=1, after_dispatch=True)")
+        replied = self.hop("fact:replied", mt.OK, ts=t(40), detail="300 chars")
+        self.assertTrue(mt.verdict([cancelled, replied], {"watcher_record": {}})[0].startswith("COMPLETE"))
+        self.assertEqual(mt.verdict([replied, self.hop("fact:failed[cancelled]", mt.FAILED, ts=t(50),
+                                                       detail="cancelled: x (retryable=False, attempt=1, after_dispatch=False)")],
+                                    {"watcher_record": {}})[0], "CANCELLED before dispatch")
+
+    def test_list_marks_a_cancelled_memo_until_a_reply_follows(self):
+        import memo_trace as mt
+        ev = lambda typ, **d: {"type": f"bloodbank.{typ}", "time": "t", "data": d}  # noqa: E731
+        cancelled = ev("audio.memo.failed", stage="cancelled", retryable=False)
+        self.assertEqual(mt.furthest([ev("audio.memo.dispatched"), cancelled], None), "CANCELLED")
+        self.assertEqual(mt.furthest([ev("audio.memo.dispatched"), cancelled, ev("audio.memo.replied")], None), "replied")
+        self.assertEqual(mt.furthest([ev("audio.memo.failed", stage="tts", retryable=False)], None), "FAILED@tts")
+
+    def test_the_phone_text_hop_comes_before_the_audio_and_is_optional(self):
+        import memo_trace as mt
+        lm = mc_.parse_iso("2026-10-20T02:15:30.123Z")
+        tkey = "phone/2026/10/20/021530123Z-holocene-pm-abc.txt"
+        ekey = tkey[:-4] + ".ogg"
+        with unittest.mock.patch.object(mt, "earshot_stat", return_value={"size": 1800, "last_modified": lm}), \
+                unittest.mock.patch.object(mt, "earshot_beacons", return_value=[]):
+            names = [h.name for h in mt.earshot_hops(ekey, tkey)]
+            hops = {h.name: h for h in mt.earshot_hops(ekey, tkey)}
+            missing = {h.name: h for h in mt.earshot_hops(ekey, None)}
+        self.assertEqual(names[:2], ["phone_text", "phone_object"])
+        self.assertEqual(hops["phone_text"].status, mt.OK)
+        self.assertIn(f"s3://earshot/{tkey}", hops["phone_text"].detail)
+        self.assertIn("1800 bytes", hops["phone_text"].detail)
+        self.assertEqual((missing["phone_text"].status, missing["phone_text"].optional), (mt.UNKNOWN, True))  # an old reply
+        with unittest.mock.patch.object(mt, "earshot_stat", return_value=None), unittest.mock.patch.object(mt, "earshot_beacons", return_value=[]):
+            gone = {h.name: h for h in mt.earshot_hops(ekey, tkey)}["phone_text"]
+        self.assertEqual((gone.status, gone.optional), (mt.MISSING, True))  # fail-open: never a reason to stop
+
+    CMD1, CMD2 = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+    KEY = "inbox/holocene-pm/2026/10/20/escalated-trace.ogg"
+
+    def _events(self, escalated_dispatch=True, replied=True):
+        mid = mc_.memo_id_for(self.KEY)
+
+        def ev(typ, at, **data):
+            return {"type": f"bloodbank.{typ}", "time": at, "data": {"memo_id": mid, "occurred_at": at, **data}}
+        out = [
+            ev("audio.memo.received", "2026-10-20T02:00:00.100Z", detect_lag_ms=5),
+            ev("audio.memo.transcribed", "2026-10-20T02:00:01.000Z", transcript_chars=20, processing_seconds=1, model="m", transcript_text="hi"),
+            ev("audio.memo.dispatched", "2026-10-20T02:00:02.000Z", command_id=self.CMD1, command_subject="x", lane="interactive", lane_reason=None),
+            ev("agent.invocation.started", "2026-10-20T02:00:03.000Z", command_id=self.CMD1),
+            ev("agent.invocation.failed", "2026-10-20T02:05:03.000Z", command_id=self.CMD1, error_code="turn_timeout",
+               error_message="agent turn timed out after 300s on interactive lane (limit 300s)"),
+        ]
+        if escalated_dispatch:
+            out += [ev("audio.memo.dispatched", "2026-10-20T02:05:04.000Z", command_id=self.CMD2, command_subject="x", lane="batch",
+                       lane_reason="turn_timeout_escalated", escalated_from_command_id=self.CMD1),
+                    ev("agent.invocation.started", "2026-10-20T02:05:05.000Z", command_id=self.CMD2),
+                    ev("agent.invocation.completed", "2026-10-20T02:12:00.000Z", command_id=self.CMD2)]
+        if replied:
+            out.append(ev("audio.memo.replied", "2026-10-20T02:12:05.000Z", reply_chars=300, tts_seconds=1.0, tts_engine="fakevox",
+                          reply_s3_key="replies/x.ogg", late=True, escalated=True, earshot_key="phone/a.ogg", earshot_text_key="phone/a.txt"))
+        return out
+
+    def _build(self, events, rec):
+        import contextlib
+        import memo_trace as mt
+        rows = {
+            self.CMD1: {"state": "completed", "outcome": "failure", "profile": "holocene-pm", "created_at": "2026-10-20T02:00:02Z",
+                        "updated_at": "2026-10-20T02:05:03Z", "lane": "interactive", "failure_code": "turn_timeout", "terminal": []},
+            self.CMD2: {"state": "completed", "outcome": "success", "profile": "holocene-pm", "created_at": "2026-10-20T02:05:04Z",
+                        "updated_at": "2026-10-20T02:12:00Z", "lane": "batch", "failure_code": None, "terminal": []}}
+        lm = lambda k: {"size": 9, "last_modified": mc_.parse_iso("2026-10-20T02:00:00Z" if k == self.KEY else "2026-10-20T02:12:05Z")}  # noqa: E731
+        with contextlib.ExitStack() as st:
+            for target, name, kw in ((mt.c, "candystore_events", {"return_value": events}), (mt.c, "s3_stat", {"side_effect": lm}),
+                                     (mt.c, "journal_row", {"side_effect": rows.get}),
+                                     (mt.c, "find_reply", {"return_value": {"prompt": "hi", "text": "x"}}),
+                                     (mt, "upload_log_line", {"return_value": (None, None)}),
+                                     (mt, "watcher_record", {"return_value": rec}),
+                                     (mt, "watcher_heartbeat", {"return_value": {"age_s": 1.0}}),
+                                     (mt, "watcher_unit_active", {"return_value": "active"}),
+                                     (mt, "earshot_stat", {"return_value": {"size": 5, "last_modified": mc_.parse_iso("2026-10-20T02:12:05Z")}}),
+                                     (mt, "earshot_beacons", {"return_value": []})):
+                st.enter_context(unittest.mock.patch.object(target, name, **kw))
+            hops, ctx = mt.build(self.KEY)
+            return hops, ctx, mt.verdict(hops, ctx)
+
+    def test_an_escalated_memo_shows_both_dispatches_and_both_turns_and_completes(self):
+        import memo_trace as mt
+        rec = {"status": "done", "escalated": True, "lane": "batch", "lane_reason": "turn_timeout_escalated",
+               "command_id": self.CMD2, "escalated_from_command_id": self.CMD1}
+        hops, ctx, (text, complete) = self._build(self._events(), rec)
+        by = {h.name: h for h in hops}
+        # both dispatches, the second one saying why
+        self.assertIn(self.CMD1, by["fact:dispatched(1)"].detail)
+        self.assertIn("lane=interactive", by["fact:dispatched(1)"].detail)
+        self.assertIn("ESCALATED", by["fact:dispatched"].detail)
+        self.assertIn(self.CMD1, by["fact:dispatched"].detail)
+        self.assertIn("lane=batch", by["fact:dispatched"].detail)
+        # both turns: the timed-out one is history, the batch one is current
+        for name in ("turn1:gateway_journal", "turn1:agent:invocation.started", "turn1:agent:invocation.done"):
+            self.assertTrue(by[name].superseded, name)
+        self.assertEqual(by["turn1:agent:invocation.done"].status, mt.FAILED)
+        self.assertIn("turn_timeout", by["turn1:agent:invocation.done"].detail)
+        self.assertEqual(by["turn1:gateway_journal"].status, mt.FAILED)
+        for name in ("gateway_journal", "agent:invocation.started", "agent:invocation.done"):
+            self.assertEqual((by[name].status, by[name].superseded), (mt.OK, False), name)
+        self.assertEqual((ctx["command_id"], ctx["escalated_from"], ctx["lane"]), (self.CMD2, self.CMD1, "batch"))
+        self.assertIn("late reply", by["fact:replied"].detail)
+        # the phone text sits next to the phone hops
+        self.assertEqual(ctx["earshot_text_key"], "phone/a.txt")
+        self.assertIn("phone/a.txt", by["phone_text"].detail)
+        # the superseded failure never decides the verdict
+        self.assertTrue(complete, text)
+        self.assertTrue(text.startswith("COMPLETE in"), text)
+        self.assertIn("escalated to the batch lane", text)
+
+    def test_a_memo_between_the_timeout_and_the_batch_dispatch_is_in_progress_not_stopped(self):
+        import memo_trace as mt
+        rec = {"status": "active", "stage": "dispatch", "escalated": True, "lane": "batch", "lane_reason": "turn_timeout_escalated",
+               "command_id": self.CMD2, "escalated_from_command_id": self.CMD1, "step_started_ts": time.time()}
+        hops, ctx, (text, complete) = self._build(self._events(escalated_dispatch=False, replied=False), rec)
+        by = {h.name: h for h in hops}
+        self.assertEqual(by["fact:dispatched"].status, mt.MISSING)
+        self.assertIn("escalating", by["fact:dispatched"].detail)
+        self.assertTrue(by["turn1:agent:invocation.done"].superseded)
+        self.assertEqual(ctx["command_id"], self.CMD2)
+        self.assertFalse(complete)
+        self.assertTrue(text.startswith("IN PROGRESS at dispatch"), text)
+        self.assertNotIn("turn1", text)  # the timed-out turn is not the reason the memo is waiting
 
 
 class EarshotMirror(unittest.TestCase):

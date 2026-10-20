@@ -127,8 +127,12 @@ description = "One timeline for a voice memo, hop by hop: memo:trace [<memo_id>|
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' trace"
 
 [tasks."memo:retry"]
-description = "Revive a failed or skipped voice memo at the stage it died in: memo:retry <memo_id|key>"
+description = "Revive a failed, skipped or cancelled voice memo at the stage it stopped in: memo:retry <memo_id|key>"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' retry"
+
+[tasks."memo:cancel"]
+description = "Cancel a voice memo: before dispatch nothing is sent; after dispatch the agent may still run but its reply is not spoken: memo:cancel <memo_id|key|latest>"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' cancel"
 
 [tasks."memo:list"]
 description = "Last N voice memos with the furthest stage each reached: memo:list [-n 15]"

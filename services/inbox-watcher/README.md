@@ -66,6 +66,8 @@ mise run memo:trace 20261015T192554Z.ogg   # file name or full inbox key
 mise run memo:trace latest --logs     # + the watcher's log lines for it
 mise run memo:list                    # last 15 memos and the furthest stage each reached
 mise run memo:list -n 40
+mise run memo:cancel latest           # stop a memo: <memo_id> | s3 key | latest (see "memo:cancel" below)
+mise run memo:retry <memo_id>         # revive a failed, skipped or cancelled memo
 ```
 
 Each hop prints OK / MISSING / FAILED / UNKNOWN with its timestamp and the
@@ -74,9 +76,19 @@ latency since the previous hop, and the run ends with one verdict line:
 ```
 VERDICT  STOPPED AT gateway_journal: gateway never created an execution row for <command_id> (lane=batch); batch: pulling (busy: 4/4 in flight, 22 queued ahead) ...
 VERDICT  COMPLETE in 71.4s
+VERDICT  CANCELLED before dispatch
+VERDICT  CANCELLED after dispatch; reply not spoken
 ```
 
 Exit code is 0 only for COMPLETE.
+
+A memo whose interactive turn timed out and was escalated to the batch lane shows BOTH dispatches
+(`fact:dispatched(1)` interactive, `fact:dispatched` batch with `ESCALATED: ...`) and both turns: the first turn's hops
+are named `turn1:gateway_journal`, `turn1:agent:invocation.done`, ... and marked superseded (printed as FAILED, never the
+reason the memo is reported stopped). The header gains `escalated from <command_id>`, the verdict of a finished one
+says `escalated to the batch lane after the interactive turn timed out (spoken as a late reply)`, and `memo:list` shows
+the lane as `batch (esc.)`. The phone hops start with `phone_text` (the full-text sidecar, `earshot_text_key`) before
+`phone_object`.
 
 ## Every hop, its evidence, and the command that shows it
 
@@ -94,6 +106,7 @@ Exit code is 0 only for COMPLETE.
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
 | reply_object | the TTS audio | `mc stat delo/holocene-auto/<reply_s3_key>` |
+| phone_text / phone_object | the full reply text (`earshot_text_key`, uploaded first) and the phone audio (`earshot_key`) in the Earshot channel | `mc stat delo/earshot/<earshot_text_key>`, `mc stat delo/earshot/<earshot_key>` |
 | audio level | loudest/mean sample in dBFS, measured before transcribing (`audio_max_dbfs`, `audio_mean_dbfs` on `transcribed` and on every transcribe-stage `failed`); `audio_level` hop in `memo:trace`; `device heard peak ...` from the pad when it sends `data.capture` | `ffmpeg -i <file> -af volumedetect -f null -` |
 | device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |
 | played | the pad's beacon (`started`/`ended`/`blocked`/`error`/`skipped`) | `docker logs agent-pad-upload \| grep '"event":"playback"'`, `audio.memo.played` |
@@ -136,8 +149,8 @@ Behaviour worth knowing:
   exponential backoff (`MEMO_RETRY_BUDGET_S` overrides all), so a minute of vox
   or NATS trouble after the agent already ran cannot strand its work. Each
   failure publishes `failed(retryable=true)`, the last `failed(retryable=false)`.
-- **`mise run memo:retry <memo_id>`** revives a failed or skipped memo at the
-  stage it died in (the watcher owns state.json, so the command drops a file in
+- **`mise run memo:retry <memo_id>`** revives a failed, skipped or cancelled memo at the
+  stage it stopped in (the watcher owns state.json, so the command drops a file in
   `<state>/control/`). `memo_failed` log lines print the exact command.
 - **Memos ride the interactive lane.** The watcher publishes
   `bloodbank.cmd.agent.invocation.invoke`, delivered through its own durable
@@ -171,18 +184,50 @@ Behaviour worth knowing:
   `agent_reply/timeout`, but keeps watching the command for
   `MEMO_RESCUE_WINDOW_S` (2 h): when the agent finishes late the reply is
   spoken anyway ("<agent>, late reply. ...").
-- **A turn the gateway timed out is its own final outcome.** The interactive lane
+- **A turn the gateway timed out escalates to the batch lane, once.** The interactive lane
   stops any Hermes turn that outlives its wall clock
   (`extra.interactive.turn_timeout_seconds`, default 300 s; bloodbank
   `services/hermes-gateway/README.md`, "Per-turn wall clock"). The gateway closes the journal row
   `completed / failure / failure_code=turn_timeout` and publishes
-  `agent.invocation.failed` with `error_code=turn_timeout`. The watcher reads either, and fails the memo
-  `failed(stage=agent_reply, error_code=turn_timeout, retryable=false)` with the gateway's own text
-  (`agent turn timed out after 300s on interactive lane (limit 300s)`) plus `lane`, `elapsed_seconds`,
-  `timeout_seconds`, `timeout_source` (`lane` | `envelope`) and `turn_stopped` (false = Hermes did not confirm the
-  stop). It is not `agent/agent_failure`, it is not retried and nothing waits out the 600 s deadline. `memo:retry`
-  sends a FRESH command (a new command id, possibly a new lane); the old one is dead and its slot is already free.
-  `bloodbank-ntfy-router` pushes the `failed` fact like any terminal memo failure.
+  `agent.invocation.failed` with `error_code=turn_timeout`. A long ask is not a failed one, so on either signal the
+  watcher does NOT fail the memo. It re-dispatches the SAME prompt (its persisted `prompt_sha256` is re-checked at send)
+  on the batch lane (`bloodbank.cmd.agent.invocation.start`, which has no gateway wall clock) as a new command:
+  - a NEW command id, saved to state.json before the publish (a crash cannot mint a second one);
+  - the same correlationid (`memo_id`) and the same `thread_id`, so the Hermes session keeps its context;
+  - `causation` = the timed-out command (its envelope id), and `context.escalated_from_command_id`;
+  - a second `audio.memo.dispatched` fact with `lane=batch`, `lane_reason=turn_timeout_escalated` and
+    `escalated_from_command_id` (the first one stays: `memo:trace` shows both dispatches and both turns).
+
+  The watcher waits `MEMO_BATCH_TURN_TIMEOUT_S` (default 7200) for that turn (it is not stretched by the queue
+  rule above). When it completes, the reply is spoken as a late reply (`<agent>, late reply.`) and
+  `audio.memo.replied` carries `late=true` and `escalated=true`. Nothing is said while it runs (no interim notice). A
+  reply older than the escalated command is the stopped turn's partial output, never an answer: it is refused
+  (`no_reply_text`). The escalation happens at most once per memo and only for a turn that was on the interactive lane.
+  The timeout is final otherwise, as `failed(stage=agent_reply, error_code=turn_timeout, retryable=false)` with the
+  gateway's own text (`agent turn timed out after 300s on interactive lane (limit 300s)`) plus `lane`,
+  `elapsed_seconds`, `timeout_seconds`, `timeout_source` (`lane` | `envelope`) and `turn_stopped` (false = Hermes did
+  not confirm the stop): when the batch turn is stopped too, when the memo rides the batch lane, after an explicit
+  `memo:retry` of an escalated memo (its fresh command does not escalate again), or with
+  `MEMO_BATCH_TURN_TIMEOUT_S=0` (the off switch). It is not `agent/agent_failure`, it is not retried, nothing waits
+  out the 600 s deadline. `memo:retry` of that failure sends a FRESH command (a new command id, possibly a new lane);
+  the old one is dead and its slot is already free. `bloodbank-ntfy-router` pushes the `failed` fact like any terminal
+  memo failure.
+- **`mise run memo:cancel <memo_id|key|latest>`** stops a memo, honestly. It drops `cancel-<memo_id>` in
+  `<state>/control/` (the same mechanism as `memo:retry`; files are taken in the order they were written) and the
+  watcher honours it at every stage, a transcription in flight included:
+  - **before the command is published** (stage receive / transcribe / dispatch, i.e. before `publish_attempted`):
+    the memo ends `cancelled` and nothing is ever dispatched, `data.after_dispatch=false`. A memo waiting to publish
+    its escalation is the same: the batch command is not sent.
+  - **after it** (await_agent / reply / speak): a published command cannot be recalled, so the agent may still run.
+    The watcher ends the memo `cancelled` and does NOT synthesize, speak or mirror the reply, `data.after_dispatch=true`.
+    A failed memo still watched for a late reply (`agent_reply/timeout`) can be cancelled too, so that reply is never
+    spoken. A cancel that lands in the instant a worker is mid-upload cannot stop objects already in flight.
+
+  Either way one fact is published: `audio.memo.failed` with `data.stage="cancelled"`, `error_code="cancelled"`,
+  `retryable=false`, `data.after_dispatch=true|false` (and `command_id` when one was out). A cancelled memo is never
+  revived by escalation, the late rescue or a retry loop; only `memo:retry` revives it, at the stage it was cancelled
+  in. `memo:trace` ends `CANCELLED before dispatch` or `CANCELLED after dispatch; reply not spoken`, `memo:list` shows
+  `CANCELLED`. There is deliberately no pad or car button for it: nothing to press while driving.
 - **A command the gateway consumed and dropped is detected.** No journal row
   while the memo's lane consumer is empty (`pending=0 ack_pending=0`) for 15 s after 20 s
   means it was rejected before starting (unroutable target): the memo fails
@@ -251,11 +296,19 @@ Behaviour worth knowing:
   `MEMO_SPEAK_CHARS` (500) at a sentence boundary. The `replied` fact carries
   the full reply text and `tts_engine` (watch for `elevenlabs`: it means the
   cloned voice engines were down).
+- **The phone also gets the FULL reply text.** The 500-character digest is what is spoken; the whole reply is uploaded
+  to Earshot as a sibling object of the phone audio, same key with a `.txt` extension
+  (`phone/2026/10/20/021530123Z-holocene-pm-<memo_id>.txt`, `Content-Type: text/plain; charset=utf-8`), BEFORE the
+  audio object, so the phone already has it when the audio arrives. It is fail-open like the audio mirror (a refused
+  upload is logged `earshot_text_failed` and the audio still goes), uploaded once per memo, and its key is recorded as
+  `earshot_text_key` on `audio.memo.replied` (`memo:trace` shows it as the `phone_text` hop, before `phone_object`).
+  The car path (`replies/` audio, the 500-character digest) is unchanged.
 
 Configuration is env only (see the unit file): `MEMO_AGENT_TIMEOUT_S`,
 `MEMO_TRANSCRIBE_TIMEOUT_S`, `MEMO_MAX_ATTEMPTS`, `MEMO_POLL_S`,
 `MEMO_MAX_AGE_HOURS`, `MEMO_SPEAK_CHARS`, `MEMO_VOX_VOICE`, `TRANSCRIBE_DIR`,
-`MEMO_LANE` (`interactive` default | `batch`), `MEMO_LANE_PROBE_GAP_S`.
+`MEMO_LANE` (`interactive` default | `batch`), `MEMO_LANE_PROBE_GAP_S`,
+`MEMO_BATCH_TURN_TIMEOUT_S` (7200: how long an escalated batch turn is waited for; 0 turns escalation off).
 The heartbeat (`heartbeat.json`) carries `lane` and `lanes.{interactive,batch}`
 (`ok`, `waiting`, `ack_pending`, `pending`, `max_ack_pending`, probed every 5 s
 off the tick thread); `/voice` reads it.
@@ -274,6 +327,12 @@ echo '{"memo_id":"...","s3_key":"...","target_agent_id":"holocene-pm","transcrip
 
 `bb-emit` gained `--command-id` (persist the id before publishing) and
 `--print-ids` (JSON line with id, command_id, idempotency_key on stdout).
+
+Additive fields the watcher puts on these facts (the schemas allow extra properties): `dispatched`:
+`escalated_from_command_id` (with `lane=batch`, `lane_reason=turn_timeout_escalated`); `replied`: `escalated`,
+`earshot_text_key` (next to `late` and `earshot_key`); `failed` for a cancelled memo: `stage=cancelled`,
+`error_code=cancelled`, `after_dispatch`. Publishing is not schema-checked, but the `stage` enum in
+`schemas/bloodbank/audio/memo.failed.json` still needs `cancelled` for validators that enforce it.
 
 ## Upload proxy
 
@@ -310,8 +369,11 @@ retryable=false)` with that queue state in the message.
   interactive consumer is down but batch is up the memo is answered late on
   the batch lane, not failed; if the whole gateway is down it waits on the
   interactive lane. A turn that never completes no longer holds its slot forever: the gateway stops it
-  after `turn_timeout_seconds` (300 s) and the memo fails `agent_reply/turn_timeout`. Memos are the only
-  producer on `invoke`; n8n, PMs and `hookd_bridge` stay on `start`.
+  after `turn_timeout_seconds` (300 s) and the watcher re-dispatches the same prompt once on the batch lane (answered
+  as a late reply); only a second stop, or an escalation that is switched off, fails the memo
+  `agent_reply/turn_timeout`. Memos are the only producer on `invoke`; n8n, PMs and `hookd_bridge` stay on `start`.
+  A published command cannot be recalled: `memo:cancel` after dispatch keeps the reply from being spoken but the
+  agent may still run (and spend its tokens) to the end of its turn.
 - Playback is reported by the page's audio element, not by capturing the
   audible output; a car switched off mid-reply never reports `ended`.
 - The gateway publishes lifecycle facts only, not the reply text, so the
