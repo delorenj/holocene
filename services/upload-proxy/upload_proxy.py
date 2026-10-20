@@ -26,6 +26,11 @@ things only it can see: record started/stopped (bytes, duration), recording fail
 capture), upload failed after retries. The proxy logs each one (event "client"); the failures also
 publish bloodbank.audio.memo.failed (stage record | upload) keyed by the key the memo WOULD have had,
 so a memo that never reached S3 still has a memo_id and a place in memo:trace and /voice.
+A PUT under inbox/<agent>/ for an agent the gateway cannot route (not in the registry, bloodbank disabled) is
+rejected 422 "unroutable agent <id>" and not stored, so the pad shows "NOT sent" instead of SENT for a memo the
+watcher would only hold; it also publishes failed(stage upload, unknown_agent, retryable false), at most once an hour
+per key. The check reuses memo_common.registry_route and fails OPEN (the PUT is accepted, one log line) when the
+registry or memo_common cannot be read here.
 A PUT whose body is shorter than its Content-Length (cell drop mid-upload) is rejected 400 and
 published as failed(stage upload) instead of being stored as a complete memo.
 
@@ -97,6 +102,43 @@ def memo_id_for(key: str) -> str:
 def agent_from_key(key: str):
     parts = key.split("/")
     return parts[1] if len(parts) >= 6 and parts[0] == "inbox" and parts[1] else None
+
+
+# ---------------------------------------------------------------- agent routing (shared with the inbox watcher)
+
+_memo_common = None
+
+
+def _load_memo_common():
+    """services/inbox-watcher/memo_common.py: next to this file in the container, or in the sibling checkout."""
+    global _memo_common
+    if _memo_common is None:
+        import importlib.util
+        here = Path(__file__).resolve().parent
+        for d in (os.environ.get("MEMO_COMMON_DIR"), here, here.parent / "inbox-watcher"):
+            f = Path(d) / "memo_common.py" if d else None
+            if f and f.is_file():
+                spec = importlib.util.spec_from_file_location("memo_common", f)
+                _memo_common = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(_memo_common)
+                break
+        else:
+            raise ImportError("memo_common.py not found")
+    return _memo_common
+
+
+def agent_route(agent: str) -> dict:
+    """{ok: True|False|None, reason}. None = could not tell (memo_common, PyYAML or the registry is missing here):
+    the caller accepts the upload, so a broken check never blocks a memo."""
+    try:
+        r = _load_memo_common().registry_route(agent)
+    except Exception as e:  # noqa: BLE001 - fail open
+        return {"ok": None, "reason": f"route check unavailable: {type(e).__name__}: {e}"[:200]}
+    return {"ok": r["ok"], "reason": r["reason"]}
+
+
+_UNROUTABLE_PUBLISHED: dict = {}   # key -> time of the last failed fact: the pad re-PUTs a rejected memo every 30 s
+UNROUTABLE_FACT_EVERY_S = 3600
 
 
 # ---------------------------------------------------------------- bloodbank fact
@@ -452,6 +494,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             remote=self.client_address[0], ua=self.headers.get("User-Agent"), **extra)
         self.send_error(code, reason)
 
+    def _reject_unroutable(self, key: str, agent: str, reason: str, ua: str):
+        """422 for a memo no agent will ever answer. Not stored (the watcher would only hold it); the body was already
+        read, so the pad sees the status instead of a reset connection."""
+        shown = re.sub(r"[^A-Za-z0-9_.-]", "?", agent)[:40]
+        log("upload", key=key, memo_id=memo_id_for(key), agent=agent, status=422, reason="unroutable_agent", detail=reason,
+            remote=self.client_address[0], ua=ua)
+        now = time.time()
+        if len(_UNROUTABLE_PUBLISHED) > 1000:
+            _UNROUTABLE_PUBLISHED.clear()
+        if now - _UNROUTABLE_PUBLISHED.get(key, 0) >= UNROUTABLE_FACT_EVERY_S:
+            _UNROUTABLE_PUBLISHED[key] = now
+            publish_async(_envelope("failed", memo_id_for(key), {
+                "target_agent_id": agent, "s3_key": key, "stage": "upload", "error_code": "unknown_agent",
+                "error_message": reason[:300], "retryable": False, "attempt": 1, "client_user_agent": ua[:200],
+                "source": "agent-pad"}), key)
+        try:
+            self.send_error(422, f"unroutable agent {shown}")
+        except OSError:
+            pass
+
     def do_PUT(self):
         t0 = time.time()
         # Parse the path: /upload/<key>
@@ -489,6 +551,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if key.endswith(".ogg") and not body.startswith(b"OggS"):
             return self._reject(400, "not_ogg", key=key, bytes=len(body))
+        agent = agent_from_key(key) if key.startswith("inbox/") else None
+        if agent:
+            route = agent_route(agent)
+            if route["ok"] is False:
+                return self._reject_unroutable(key, agent, route["reason"], ua)
+            if route["ok"] is None:
+                log("route_check_skipped", key=key, memo_id=memo_id_for(key), agent=agent, reason=route["reason"],
+                    note="accepted: the route check fails open")
 
         # Write to temp file, then mc cp
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(key).suffix) as f:

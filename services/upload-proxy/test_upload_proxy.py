@@ -152,6 +152,10 @@ class HttpBehaviour(unittest.TestCase):
         up.EMIT_FACTS = False
         cls.published = []
         up.publish_async = lambda env, key: cls.published.append((env, key))
+        # the route check is its own test (RoutableAgents); here every agent answers per `routes`, default routable
+        cls.routes = {}
+        cls.real_agent_route = up.agent_route
+        up.agent_route = lambda agent: cls.routes.get(agent, {"ok": True, "reason": None})
         cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
         cls.port = cls.srv.server_address[1]
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
@@ -159,6 +163,7 @@ class HttpBehaviour(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        up.agent_route = cls.real_agent_route
 
     def raw(self, request: bytes, read=True) -> bytes:
         import socket
@@ -243,6 +248,108 @@ class HttpBehaviour(unittest.TestCase):
 
     def test_ogg_key_must_hold_an_ogg(self):
         self.assertIn(b" 400 ", self.put(KEY, b"RIFF" + b"\0" * 100).split(b"\r\n")[0])
+
+    # ---- an unroutable agent is refused, not shown as SENT ----
+
+    GONE = "inbox/zz-gone/2026/10/18/20261018T101500Z.ogg"
+    BODY = b"OggS" + b"\0" * 100
+
+    def _unroutable(self, agent="zz-gone"):
+        type(self).routes[agent] = {"ok": False, "reason": f"{agent!r} is not in agents-registry.yaml"}
+
+    def test_a_put_for_an_unroutable_agent_is_422_with_the_reason_and_not_stored(self):
+        self._unroutable()
+        captured = []
+        real = up.emit_uploaded_async
+        up.emit_uploaded_async = lambda *a, **k: captured.append(a)
+        try:
+            head = self.put(self.GONE, self.BODY).split(b"\r\n")[0]
+        finally:
+            up.emit_uploaded_async = real
+        self.assertIn(b" 422 unroutable agent zz-gone", head)
+        self.assertEqual(captured, [])  # nothing was stored, so no uploaded fact either
+
+    def test_the_rejection_is_published_as_a_terminal_upload_failure_once(self):
+        self._unroutable("zz-once")
+        key = "inbox/zz-once/2026/10/18/20261018T101501Z.ogg"
+        n0 = len(self.published)
+        for _ in range(3):  # the pad re-PUTs a rejected memo; one fact is enough
+            self.assertIn(b" 422 ", self.put(key, self.BODY).split(b"\r\n")[0])
+        self.assertEqual(len(self.published), n0 + 1)
+        env, k = self.published[-1]
+        d = env["data"]
+        self.assertEqual((k, env["type"], d["stage"], d["error_code"], d["retryable"], d["target_agent_id"]),
+                         (key, "bloodbank.audio.memo.failed", "upload", "unknown_agent", False, "zz-once"))
+        self.assertIn("not in agents-registry.yaml", d["error_message"])
+        self.assertEqual(env["correlationid"], mc.memo_id_for(key))
+
+    def test_an_unreadable_registry_fails_open_and_the_upload_is_accepted(self):
+        type(self).routes["zz-blind"] = {"ok": None, "reason": "registry unreadable: FileNotFoundError"}
+        n0 = len(self.published)
+        out = self.put("inbox/zz-blind/2026/10/18/20261018T101502Z.ogg", self.BODY)
+        self.assertIn(b" 200 ", out.split(b"\r\n")[0])
+        self.assertEqual(len(self.published), n0)
+
+    def test_a_routable_agent_and_non_inbox_keys_are_unaffected(self):
+        self._unroutable("zz-reply")
+        self.assertIn(b" 200 ", self.put(KEY, self.BODY).split(b"\r\n")[0])
+        # a reply object is the watcher's own write path: the agent segment there is never checked
+        self.assertIn(b" 200 ", self.put("replies/2026/10/18/101500Z-zz-reply-x.ogg", self.BODY).split(b"\r\n")[0])
+
+    def test_a_non_ascii_agent_segment_cannot_break_the_status_line(self):
+        self._unroutable("zz-\u00e9x")
+        head = self.put("inbox/zz-%C3%A9x/2026/10/18/20261018T101503Z.ogg", self.BODY).split(b"\r\n")[0]
+        self.assertIn(b" 422 unroutable agent zz-?x", head)
+
+
+class RoutableAgents(unittest.TestCase):
+    """agent_route reuses the watcher's registry_route and never blocks on a broken check."""
+
+    def setUp(self):
+        self.mc = up._load_memo_common()
+        self.saved = self.mc.REGISTRY_PATH
+        self.reg = Path(tempfile.mkdtemp(prefix="up-reg-")) / "agents-registry.yaml"
+        self.reg.write_text("agents:\n"
+                            "  holocene-pm:\n    display_name: Holocene PM\n    profile_name: holocene-pm\n"
+                            "    bloodbank: {enabled: true, gateway_scope: fleet, target_agent_id: holocene-pm}\n"
+                            "  off-pm:\n    profile_name: off-pm\n"
+                            "    bloodbank: {enabled: false, gateway_scope: fleet, target_agent_id: off-pm}\n")
+        self.mc.REGISTRY_PATH = self.reg
+
+    def tearDown(self):
+        self.mc.REGISTRY_PATH = self.saved
+
+    def test_it_is_the_watchers_own_function(self):
+        self.assertTrue(up._load_memo_common().__file__.endswith("inbox-watcher/memo_common.py"))
+
+    def test_routable_unknown_and_disabled_agents(self):
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            self.skipTest("PyYAML not installed")
+        self.assertIs(up.agent_route("holocene-pm")["ok"], True)
+        r = up.agent_route("zz-nonexistent")
+        self.assertIs(r["ok"], False)
+        self.assertIn("not in", r["reason"])
+        self.assertIs(up.agent_route("off-pm")["ok"], False)
+
+    def test_an_unreadable_registry_is_unknown_not_unroutable(self):
+        self.mc.REGISTRY_PATH = self.reg.with_name("missing.yaml")
+        r = up.agent_route("holocene-pm")
+        self.assertIsNone(r["ok"])
+        self.assertIn("unreadable", r["reason"])
+
+    def test_a_missing_memo_common_is_unknown_not_unroutable(self):
+        def boom():
+            raise ImportError("memo_common.py not found")
+        real = up._load_memo_common
+        up._load_memo_common = boom
+        try:
+            r = up.agent_route("holocene-pm")
+        finally:
+            up._load_memo_common = real
+        self.assertIsNone(r["ok"])
+        self.assertIn("route check unavailable", r["reason"])
 
 
 EKEY = "phone/2026/10/19/120000123Z-hello.ogg"
