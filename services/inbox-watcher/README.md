@@ -87,6 +87,8 @@ progress line by one writer thread (newest document per memo wins, a failed writ
  "error_code": "silent_audio", "error": "..."}
 ```
 
+Both prefixes expire after 7 days (bucket lifecycle rules on `status/` and `progress/`, set 2026-10-20: `mc ilm rule ls delo/holocene-auto`).
+
 `progress_seq` is the gateway's seq (it restarts at 1 on an escalated memo's batch command); `spoken_seq` is the newest
 clip number, 1..n per memo, the one the pad plays up to. `error`/`error_code` only on `failed` (a `memo:cancel` is
 `failed` with `error_code: cancelled`).
@@ -442,6 +444,14 @@ in the log). After editing it:
 ```bash
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
+
+## Verified live: progress (2026-10-20)
+
+One memo through the proxy (`inbox/holocene-pm/2026/10/20/20261020T192012Z.ogg`, memo `f753985b`), as the status
+object showed it: `transcribing` +0.9 s, `heard` +7.2 s, `working` +7.4 s, progress #1 "I'll check the current date."
++17.4 s (9.9 s into the turn), #2 +23 s, narration #1 (of #2, 3.1 s voxcpm) uploaded +27.4 s, `replying` +28.9 s,
+`done` +32.4 s; the sim's pad played the reply 9.2 s after it was rendered and reported it as `audio.memo.notified`.
+`mise run memo:trace f753985b` shows every one of those hops and the timing line.
 
 ## Verified live (2026-10-15)
 
