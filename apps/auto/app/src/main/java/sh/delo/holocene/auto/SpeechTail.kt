@@ -1,32 +1,35 @@
 package sh.delo.holocene.auto
 
 /**
- * When a sound the app made has really left the speakers. Pure, so the rules are unit-tested.
+ * When a sound the app made has really left the speakers, and so when a mic may open. Pure, so the rules are tested.
  *
  * Measured on the Honda sim (2026-10-20, tools/sim_audio_tap.py against logcat): the output path is ~0.3 s long. An
  * earcon whose end was timed from `play()` (its length + 40 ms) was therefore still fully audible when the mic opened:
- * the START tone played 214-231 ms into every recording. Ending it when AudioTrack reported its last frame presented
- * was not enough either: that report ran 65-171 ms ahead of the speakers (7 recordings), so 4 of 7 still caught
- * 35-95 ms of the beep (and with a 200 ms settle, 2 of 6 still caught 32-44 ms). A tone now ends [TONE_SETTLE_MS]
- * after its last frame was reported presented, and a halted sound gets [DRAIN_MS] before a mic opens with no prompt
- * to cover it.
+ * the START beep played 214-231 ms into every recording. AudioTrack's presentation timestamps are the better clock, but
+ * on the sim they ran 65-263 ms ahead of the speakers (the emulator's host audio path adds latency the HAL does not
+ * report; it grew over a 90-minute session), so 4 of 7 recordings still caught 35-95 ms of the beep.
+ *
+ * So: a tone is over when its last frame is reported presented ([ToneEnd]); that is enough between two sounds, which
+ * leave one mixer in order. Only a mic waits longer: [micSettleMs] after the arming prompt ended, or, with no prompt,
+ * until the speakers have been quiet for [DRAIN_MS] ([SpeechArbiter.quietLeftMs]).
  */
 object SpeechTail {
     /** Re-check a playing tone this often. */
     const val POLL_MS = 20L
-    /**
-     * After the platform reports a tone's last frame presented, it may still be on its way to the speakers: on the sim
-     * 65-263 ms (13 recordings; the emulator's host audio path adds latency the HAL does not report, and it grew over a
-     * 90-minute session). The mic opens 20-190 ms after the tone is declared over. 300 ms covers the worst measured
-     * case with margin; on hardware whose timestamps are true it opens the mic ~0.3 s after the beep is heard.
-     */
-    const val TONE_SETTLE_MS = 300L
-    /** No presentation timestamps on this device: how long after its own length a tone may still be coming out. */
+    /** No usable presentation timestamps: how long after its own length a tone may still be coming out. */
     const val TONE_TAIL_MS = 600L
-    /** Timestamps that stop advancing: give up waiting this long after the tone's own length. */
-    const val TONE_MAX_TAIL_MS = 1_500L
-    /** A sound halted for a recording drains this long before a prompt-less mic opens. */
+    /** Without a prompt, the mic waits until nothing has sounded for this long (a halted clip drains its whole path). */
     const val DRAIN_MS = 450L
+    /** Emulator: its host audio path adds up to 263 ms the HAL does not report (300 covers it with margin). */
+    const val MIC_SETTLE_EMULATOR_MS = 300L
+    /**
+     * Hardware: timestamps should be close to the truth, but an amplifier or DSP after the HAL is not in them. Kept
+     * short because the driver starts talking after the beep: the mic must not open much later than it is heard.
+     */
+    const val MIC_SETTLE_MS = 150L
+
+    /** How long the mic waits after the arming prompt (ending in the START beep) reported its end. */
+    fun micSettleMs(emulator: Boolean): Long = if (emulator) MIC_SETTLE_EMULATOR_MS else MIC_SETTLE_MS
 
     /**
      * When one playing tone is over. [over] is called every [POLL_MS] with the time since `play()` and the frames the
@@ -34,7 +37,6 @@ object SpeechTail {
      */
     class ToneEnd(private val durationMs: Long, private val frames: Int) {
         private var sawTimestamp = false
-        private var allPresentedAt = -1L
 
         /** presented | no_timestamp | stalled, once [over] returned true. */
         var reason = ""
@@ -42,11 +44,11 @@ object SpeechTail {
 
         fun over(elapsedMs: Long, presented: Long?): Boolean {
             if (presented != null) sawTimestamp = true
-            if (presented != null && presented >= frames && allPresentedAt < 0) allPresentedAt = elapsedMs
             reason = when {
-                allPresentedAt >= 0 && elapsedMs >= allPresentedAt + TONE_SETTLE_MS -> "presented"
-                elapsedMs >= durationMs + (if (sawTimestamp) TONE_MAX_TAIL_MS else TONE_TAIL_MS) ->
-                    if (sawTimestamp) "stalled" else "no_timestamp"
+                presented != null && presented >= frames -> "presented"
+                // Timestamps that stop short of the last frame (a HAL that retires a finished static track early) get
+                // the same fallback as none at all, never a longer one: a late mic loses the driver's first words.
+                elapsedMs >= durationMs + TONE_TAIL_MS -> if (sawTimestamp) "stalled" else "no_timestamp"
                 else -> ""
             }
             return reason.isNotEmpty()
@@ -57,8 +59,11 @@ object SpeechTail {
     const val SPEECH_CHECK_MS = 4_000L
     /** Then look again this often while the engine still speaks. */
     const val SPEECH_RECHECK_MS = 250L
-    /** A phrase still being spoken after this long is cut (nothing in the app is that long; the engine is stuck). */
-    const val SPEECH_MAX_MS = 30_000L
+    /**
+     * A phrase still being spoken after this long is cut (nothing the app says is that long; the engine is stuck). Under
+     * the 15 s arming watchdog, so a prompt whose end was lost still reaches the open mic instead of being disarmed.
+     */
+    const val SPEECH_MAX_MS = 10_000L
 
     enum class Guard { WAIT, DONE, CUT }
 
@@ -66,7 +71,7 @@ object SpeechTail {
      * A phrase whose end the TTS engine did not report. A silent or broken engine must never hold the queue (or a mic
      * start) hostage: DONE. One that is still speaking must never have the next sound started over it: WAIT, and past
      * [SPEECH_MAX_MS] CUT it (stop the engine first, then go on). The old rule moved on after 4 s whatever the engine
-     * did, so a long echo ("Tower-Of-Lost-Things heard: ...") could still be talking when a progress clip started.
+     * did; on the sim a 4.45 s echo ("Holocene heard: Driving timing test, check the date with a") outlived it.
      */
     fun speechGuard(elapsedMs: Long, speaking: Boolean): Guard = when {
         !speaking -> Guard.DONE

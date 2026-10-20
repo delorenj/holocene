@@ -7,7 +7,8 @@ microsecond it was produced, so the result can be lined up with logcat (device c
         --seconds 1800 --out /tmp/tap
 
 writes /tmp/tap.wav (16 kHz mono, packets back to back, no gaps filled) and /tmp/tap.jsonl, one line per packet:
-{"t": <epoch s the packet starts>, "n": <samples>, "rms": .., "peak": ..}. speech_overlap.py reads the jsonl.
+{"t": <epoch s the packet starts>, "n": <samples>, "r": <sample rate>, "rms": .., "peak": ..}.
+speech_overlap.py reads the jsonl.
 Read-only for the guest: it never touches the microphone.
 """
 import argparse
@@ -50,7 +51,7 @@ def main(argv=None):
             for pk in call:
                 rms, peak = level(pk.audio)
                 w.writeframes(pk.audio)
-                j.write(json.dumps({"t": round(pk.timestamp / 1e6, 4), "n": len(pk.audio) // 2,
+                j.write(json.dumps({"t": round(pk.timestamp / 1e6, 4), "n": len(pk.audio) // 2, "r": ea.RATE,
                                     "rms": round(rms, 1), "peak": peak}) + "\n")
                 packets += 1
                 if packets % 250 == 0:

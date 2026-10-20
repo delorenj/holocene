@@ -16,6 +16,7 @@ package sh.delo.holocene.auto
  *   clip for the same memo is cut.
  * - Progress is newest-wins per memo: an older or equal seq is dropped, a newer one replaces the queued one.
  * - The echo is said at most once per memo.
+ * - A sound cut off mid-play (halted) is let drain from the speakers for [HALT_DRAIN_MS] before anything else starts.
  * - Every queued item has a deadline ([Utterance.maxWaitMs]); an ack that could not be said within seconds is
  *   dropped instead of said late.
  * - A chunked reply ([offerChunk]: the watcher uploads the reply sentence by sentence while it renders the rest) is ONE
@@ -81,6 +82,8 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         fun streamDone(u: Utterance, reason: String) {}
         /** [u] now waits for chunk [index]: call [tick] after [CHUNK_WAIT_MS] so a chunk that never comes ends it. */
         fun waitChunk(u: Utterance, index: Int) {}
+        /** Call [tick] after [ms]: the queue waits for a halted sound to drain out of the speakers ([HALT_DRAIN_MS]). */
+        fun wakeAfter(ms: Long) {}
         /** Stop [u] now, silently. [reason]: recording | after_reply | stopped | reset. */
         fun halt(u: Utterance, reason: String)
         fun decision(d: SpeechDecision)
@@ -110,8 +113,26 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
 
     val queued: List<Utterance> get() = queue.map { it.u }
 
-    private fun log(action: String, u: Utterance, reason: String = "", seq: Int = u.seq) =
+    /** When the last utterance ended or was halted (its sound may still be on its way to the speakers). */
+    private var lastSoundEndedAt = Long.MIN_VALUE / 2
+    /** When the last utterance was cut off mid-sound: what it had already sent out still plays for a while. */
+    private var lastHaltAt = Long.MIN_VALUE / 2
+    /** The arming prompt, waiting for a sound it cut to drain ([arm]). */
+    private var pendingPrompt: Utterance? = null
+
+    private fun drainLeft(): Long = HALT_DRAIN_MS - (now() - lastHaltAt)
+
+    /**
+     * How much longer a mic must wait so that the speakers have been quiet for [needMs]: all of it while something is
+     * current, the rest of it after a sound that just ended or was halted, 0 when nothing sounded for that long.
+     */
+    fun quietLeftMs(needMs: Long): Long = if (current != null) needMs else maxOf(0L, needMs - (now() - lastSoundEndedAt))
+
+    private fun log(action: String, u: Utterance, reason: String = "", seq: Int = u.seq): Unit {
+        if (action == "end" || action == "halt") lastSoundEndedAt = now()
+        if (action == "halt") lastHaltAt = now()
         out.decision(SpeechDecision(action, u.id, u.kind.wire, u.memoId, seq, reason, now(), mic.name.lowercase()))
+    }
 
     private fun drop(u: Utterance, reason: String): Boolean { log("drop", u, reason); return false }
 
@@ -198,7 +219,11 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
 
     /** A chunked reply that has waited longer than [CHUNK_WAIT_MS] for its next chunk is given up (and the queue moves on). */
     fun tick() {
-        val c = current ?: return
+        val c = current
+        if (c == null) {
+            if (pendingPrompt != null) startPrompt() else pump()
+            return
+        }
         val s = streams[c.id] ?: return
         if (s.waitingSince < 0 || now() - s.waitingSince < CHUNK_WAIT_MS) return
         abandon(c.id, "chunk_timeout")
@@ -295,13 +320,33 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
      * and [ready] runs when it ended, so the prompt is never recorded. With no prompt [ready] runs at once.
      */
     fun arm(prompt: Utterance?, ready: () -> Unit) {
+        val cut = current != null
         preempt("recording")
         mic = Mic.ARMING
         onArmed = null
+        pendingPrompt = null
         out.decision(SpeechDecision("mic", prompt?.id ?: "", "", null, 0, "arming", now(), mic.name.lowercase()))
         if (prompt == null) { ready(); return }
         val p = prompt.copy(kind = SpeechKind.ARMING)
         onArmed = ready
+        if (cut) {
+            // What was cut is still coming out of the speakers: the prompt starts once that has drained.
+            pendingPrompt = p
+            log("deferred", p, "drain")
+            out.wakeAfter(HALT_DRAIN_MS)
+            return
+        }
+        current = p
+        log("start", p, "arming")
+        out.play(p)
+    }
+
+    private fun startPrompt() {
+        val p = pendingPrompt ?: return
+        if (mic != Mic.ARMING || current != null) return
+        val left = drainLeft()
+        if (left > 0) { out.wakeAfter(left); return }
+        pendingPrompt = null
         current = p
         log("start", p, "arming")
         out.play(p)
@@ -311,6 +356,7 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     fun recordingStarted() {
         preempt("recording")
         onArmed = null
+        pendingPrompt = null
         mic = Mic.RECORDING
         out.decision(SpeechDecision("mic", "", "", null, 0, "recording", now(), mic.name.lowercase()))
     }
@@ -324,6 +370,8 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
             log("halt", c, "disarmed")
             out.halt(c, "disarmed")
         }
+        pendingPrompt?.let { log("drop", it, "disarmed") }
+        pendingPrompt = null
         onArmed = null
         mic = Mic.IDLE
         out.decision(SpeechDecision("mic", "", "", null, 0, "idle", now(), mic.name.lowercase()))
@@ -348,6 +396,7 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         current = null
         streams.clear()
         onArmed = null
+        pendingPrompt = null
         if (c != null) { log("halt", c, "reset"); out.halt(c, "reset") }
         removeQueued("reset") { true }
         mic = Mic.IDLE
@@ -372,6 +421,10 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         val t = now()
         val expired = queue.filter { t - it.at > it.u.maxWaitMs }
         for (e in expired) { queue.remove(e); log("drop", e.u, "expired") }
+        if (queue.isEmpty()) return
+        // A sound that was just cut off is still coming out of the speakers: nothing starts over its tail.
+        val left = drainLeft()
+        if (left > 0) { out.wakeAfter(left); return }
         val next = queue.withIndex().maxWithOrNull(compareBy<IndexedValue<Entry>> { it.value.u.kind.rank }.thenByDescending { it.index })
             ?: return
         queue.removeAt(next.index)
@@ -406,6 +459,12 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         /** How long a chunked reply waits for its next chunk before it is given up (the watcher renders one in ~3-7 s). */
         const val CHUNK_WAIT_MS = 45_000L
         const val MAX_CHUNKS = 99
+        /**
+         * After a sound is cut off mid-play, the next one waits this long: what it had already sent out keeps playing
+         * (the sim: a halted ack still sounded 319-327 ms into the arming prompt that cut it, 20-50 ms before the
+         * prompt's own speech). A sound that ends by itself needs no wait: it was played out.
+         */
+        const val HALT_DRAIN_MS = 350L
 
         private val REPLY_MEMO = Regex("""([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+$""")
 

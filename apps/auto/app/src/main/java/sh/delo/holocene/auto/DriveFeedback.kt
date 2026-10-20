@@ -132,24 +132,29 @@ class DriveFeedback(context: Context) {
         cb()
     }
 
-    /** Play an earcon; [then] runs after it ends. */
+    /** Play an earcon; [then] runs after it ends (its last frame reported presented; see SpeechTail). */
     fun tone(tone: DriveSpeech.Tone, then: () -> Unit = {}) {
         Log.i(TAG, "tone ${tone.name}")
         val pcm = Earcons.pcm(tone)
+        var made: AudioTrack? = null
+        var focused = false
         try {
             track?.release()
+            track = null
             val format = AudioFormat.Builder().setSampleRate(Earcons.RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
             val t = AudioTrack(
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
                 format, pcm.size * 2, AudioTrack.MODE_STATIC, AudioManager.AUDIO_SESSION_ID_GENERATE,
             )
+            made = t
             t.write(pcm, 0, pcm.size)
             requestFocus()
+            focused = true
             t.play()
             track = t
-            // Over once its last frame reached the speaker, not when play() + its length has passed: the output path is
-            // ~0.3 s long, and the START tone used to sound into the first 0.2 s of the recording (SpeechTail.ToneEnd).
+            // Over once its last frame was reported presented, not when play() + its length has passed: the output path
+            // is ~0.3 s long. (A mic waits a little more on top: SpeechHost.arm.)
             val began = SystemClock.uptimeMillis()
             val duration = Earcons.durationMs(pcm)
             val stamp = AudioTimestamp()
@@ -162,7 +167,8 @@ class DriveFeedback(context: Context) {
                         main.postDelayed(this, SpeechTail.POLL_MS)
                         return
                     }
-                    Log.i(TAG, "tone ${tone.name} out after $elapsed ms (${duration} ms long, ${end.reason}, presented=${presented ?: "n/a"}/${pcm.size})")
+                    val line = "tone ${tone.name} out after $elapsed ms (${duration} ms long, ${end.reason}, presented=${presented ?: "n/a"}/${pcm.size})"
+                    if (end.reason == "presented") Log.i(TAG, line) else Log.w(TAG, line)
                     if (track === t) { t.release(); track = null }
                     releaseFocus()
                     then()
@@ -171,6 +177,10 @@ class DriveFeedback(context: Context) {
             main.postDelayed(check, duration)
         } catch (e: Exception) {
             Log.w(TAG, "tone failed: ${e.javaClass.simpleName}")
+            // Nothing is playing: give the track and the focus back (the radio must not stay ducked).
+            made?.let { try { it.release() } catch (_: RuntimeException) {} }
+            if (track === made) track = null
+            if (focused) releaseFocus()
             then()
         }
     }

@@ -1,6 +1,7 @@
 package sh.delo.holocene.auto
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -22,6 +23,10 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     private var streamSeconds = 0.0
     /** A chunk of the current chunked reply actually started (all of them failing is a failure, not "played"). */
     private var streamStarted = false
+    /** Which arm() is the live one: a delayed mic open or watchdog from an earlier one does nothing. */
+    private var armSeq = 0
+    /** The emulator's host audio path adds latency its HAL does not report (SpeechTail.micSettleMs). */
+    private val emulator = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
 
     /** Reply playback phases for the page (started | ended | error | deferred), keyed by the page's reply id. */
     var onReplyPhase: ((id: String, phase: String, detail: String) -> Unit)? = null
@@ -90,6 +95,10 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         main.postDelayed({ arbiter.tick() }, SpeechArbiter.CHUNK_WAIT_MS + 100)
     }
 
+    override fun wakeAfter(ms: Long) {
+        main.postDelayed({ arbiter.tick() }, ms + 5)
+    }
+
     override fun halt(u: Utterance, reason: String) {
         step++
         if (u.chunks > 0 || u.parts.any { it is SpeechPart.Clip }) player.stop() else feedback.stop()
@@ -142,16 +151,21 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     fun memoFinal(memoId: String) = arbiter.memoFinal(memoId, "memo_final")
 
-    /** Stop what plays, say [prompt] (if any), then [ready]: the mic opens after the last sound ended. */
+    /** Stop what plays, say [prompt] (if any), then [ready]: the mic opens once the speakers are quiet (SpeechTail). */
     fun arm(prompt: List<SpeechPart>?, ready: () -> Unit) {
         val id = "arm:${SystemClock.elapsedRealtime()}"
-        // Halting a sound does not unplay what is already in the output path (~0.3 s on the sim). A prompt covers that
-        // (its own speech starts later still); with no prompt the mic waits it out, so the cut sound is not in the note.
-        val drain = prompt == null && arbiter.current != null
-        val go: () -> Unit = if (drain) ({ main.postDelayed({ ready() }, SpeechTail.DRAIN_MS) }) else ready
+        val seq = ++armSeq
+        // What ended or was halted is still on its way to the speakers (~0.3 s on the sim), and must not be in the note.
+        // After the prompt: its START beep was reported presented, so only the part the platform does not report is
+        // left (micSettleMs). With no prompt: until nothing has sounded for DRAIN_MS, a clip just halted or just ended.
+        val go: () -> Unit = {
+            val wait = if (prompt == null) arbiter.quietLeftMs(SpeechTail.DRAIN_MS) else SpeechTail.micSettleMs(emulator)
+            if (wait <= 0) ready()
+            else main.postDelayed({ if (seq == armSeq && arbiter.mic == SpeechArbiter.Mic.ARMING) ready() }, wait)
+        }
         arbiter.arm(prompt?.let { Utterance(id, SpeechKind.ARMING, it) }, go)
         // A prompt that never reports its end must not leave the queue frozen in "arming" forever.
-        main.postDelayed({ if (arbiter.mic == SpeechArbiter.Mic.ARMING && (arbiter.current == null || arbiter.current?.id == id)) {
+        main.postDelayed({ if (seq == armSeq && arbiter.mic == SpeechArbiter.Mic.ARMING && (arbiter.current == null || arbiter.current?.id == id)) {
             Log.w(TAG, "arming never finished; releasing the queue")
             arbiter.recordingEnded()
         } }, ARM_MAX_MS)

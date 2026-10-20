@@ -11,6 +11,7 @@ class SpeechArbiterTest {
     private val decisions = ArrayList<SpeechDecision>()
     private val done = ArrayList<Pair<String, String>>()
     private val waits = ArrayList<Int>()
+    private val wakes = ArrayList<Long>()
     private lateinit var a: SpeechArbiter
 
     /** What is audible at any moment: at most one id, and never while the mic is armed or open (except the prompt). */
@@ -42,8 +43,17 @@ class SpeechArbiterTest {
                 done += u.id to reason
             }
             override fun waitChunk(u: Utterance, index: Int) { waits += index }
+            override fun wakeAfter(ms: Long) { wakes += ms }
             override fun decision(d: SpeechDecision) { decisions += d }
         })
+    }
+
+    /** A sound was just cut: nothing may start over its tail; once it drained from the speakers the queue moves on. */
+    private fun drain() {
+        assertNull("started over the tail of a sound that was just cut", audible)
+        assertTrue("the host was not asked to come back after the drain", wakes.isNotEmpty())
+        t += SpeechArbiter.HALT_DRAIN_MS
+        a.tick()
     }
 
     private fun end(id: String) {
@@ -85,6 +95,7 @@ class SpeechArbiterTest {
         var ready = false
         a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording for Holocene.")), { ready = true })
         assertEquals(r.id to "recording", halted.single())
+        drain() // the prompt waits for the cut reply to leave the speakers
         assertEquals("arm", audible)
         assertFalse(ready) // the mic does not open over the prompt
         end("arm")
@@ -110,6 +121,68 @@ class SpeechArbiterTest {
         assertEquals("ack", audible)
     }
 
+    @Test fun aMicWaitsUntilTheSpeakersHaveBeenQuiet() {
+        // Nothing ever sounded: no wait.
+        assertEquals(0L, a.quietLeftMs(450))
+        a.offer(ack())
+        assertEquals(450L, a.quietLeftMs(450)) // something is current: all of it
+        t += 1_000
+        end("ack")
+        assertEquals(450L, a.quietLeftMs(450)) // it just ended: its tail is still on its way to the speakers
+        t += 300
+        assertEquals(150L, a.quietLeftMs(450))
+        t += 200
+        assertEquals(0L, a.quietLeftMs(450))
+    }
+
+    @Test fun aSoundHaltedByArmingCountsAsJustEnded() {
+        a.offer(reply(memo1))
+        t += 2_000
+        var waited = -1L
+        a.arm(null) { waited = a.quietLeftMs(450) }
+        assertEquals("the halted reply drains in full before a prompt-less mic opens", 450L, waited)
+    }
+
+    @Test fun aPromptThatCutsASoundStartsOnlyOnceItDrained() {
+        a.offer(echo(memo1))
+        var ready = false
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording for Holocene.")), { ready = true })
+        assertNull(audible)
+        assertEquals(listOf(SpeechArbiter.HALT_DRAIN_MS), wakes)
+        t += SpeechArbiter.HALT_DRAIN_MS - 1
+        a.tick()
+        assertNull("the prompt started over the cut echo's tail", audible)
+        t += 1
+        a.tick()
+        assertEquals("arm", audible)
+        end("arm")
+        assertTrue(ready)
+    }
+
+    @Test fun aPromptWithNothingToCutStartsAtOnce() {
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording.")), {})
+        assertEquals("arm", audible)
+        assertTrue(wakes.isEmpty())
+    }
+
+    @Test fun aWaitingPromptThatIsDisarmedNeverPlays() {
+        a.offer(echo(memo1))
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording.")), { fail("the mic opened") })
+        a.recordingEnded()
+        t += SpeechArbiter.HALT_DRAIN_MS
+        a.tick()
+        assertFalse(played.contains("arm"))
+        assertEquals("echo:$memo1", audible) // the cut echo comes back once the speakers are clear
+    }
+
+    @Test fun aSoundThatEndsByItselfNeedsNoDrain() {
+        a.offer(ack("a1"))
+        a.offer(ack("a2"))
+        end("a1")
+        assertEquals("a2", audible)
+        assertTrue(wakes.isEmpty())
+    }
+
     @Test fun progressArrivesDuringReply_otherMemoWaitsSameMemoIsDropped() {
         val r = reply(memo1)
         a.offer(r)
@@ -126,6 +199,7 @@ class SpeechArbiterTest {
         val r = reply(memo1)
         a.offer(r)
         assertEquals("progress:$memo1:1" to "after_reply", halted.single())
+        drain()
         assertEquals(r.id, audible)
     }
 
@@ -211,6 +285,7 @@ class SpeechArbiterTest {
         a.recordingStarted()
         assertNull(audible)
         a.recordingEnded()
+        drain()
         assertEquals("echo:$memo1", audible)
         assertEquals(listOf("echo:$memo1", "echo:$memo1"), played)
     }
@@ -263,6 +338,7 @@ class SpeechArbiterTest {
         a.recordingEnded() // backgrounded mid-announcement
         assertEquals("arm" to "disarmed", halted.single())
         assertFalse(ready)
+        drain()
         assertEquals("ack", audible)
     }
 
@@ -334,6 +410,7 @@ class SpeechArbiterTest {
         a.recordingEnded()
         assertNull(audible) // the reply went back to the page whole; the queue does not resume it mid-way
         assertNull(a.current)
+        t += SpeechArbiter.HALT_DRAIN_MS // the cut reply has left the speakers by the time the page offers it again
         played.clear()
         // the page's replay offers it again from the first chunk
         chunk(1); chunk(2); chunk(3)
@@ -366,6 +443,7 @@ class SpeechArbiterTest {
         t += 2
         a.tick()
         assertEquals(listOf(streamId to "chunk_timeout"), done)
+        drain()
         assertEquals("echo:$memo2", audible)
     }
 
@@ -373,6 +451,7 @@ class SpeechArbiterTest {
         a.offer(progress(memo1, 1))
         chunk(1)
         assertEquals("progress:$memo1:1" to "after_reply", halted.single())
+        drain()
         assertEquals("$streamId#1", audible)
         assertFalse(a.offer(progress(memo1, 2)))
         assertFalse(a.offer(echo(memo1)))
@@ -418,6 +497,7 @@ class SpeechArbiterTest {
         audible = null // the player stopped itself when the focus went
         a.abandon(streamId, "focus_lost")
         assertEquals(listOf(streamId to "focus_lost"), done)
+        drain()
         assertEquals("echo:$memo2", audible)
         a.abandon("not-current", "x") // ignored
         assertEquals(1, done.size)

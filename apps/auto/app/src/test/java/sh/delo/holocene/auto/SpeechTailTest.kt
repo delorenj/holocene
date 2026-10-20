@@ -17,20 +17,11 @@ class SpeechTailTest {
         assertFalse(end().over(ms + 40, null))
     }
 
-    @Test fun toneIsOverOnlyASettleAfterItsLastFrameWasReportedPresented() {
+    @Test fun toneIsOverWhenItsLastFrameWasReportedPresented() {
         val e = end()
         assertFalse(e.over(400, frames - 1L))
-        assertFalse(e.over(420, frames.toLong())) // reported presented: still on its way to the speakers (sim: up to 263 ms)
-        assertFalse(e.over(420 + SpeechTail.TONE_SETTLE_MS - 1, frames.toLong()))
-        assertTrue(e.over(420 + SpeechTail.TONE_SETTLE_MS, frames.toLong()))
+        assertTrue(e.over(420, frames.toLong()))
         assertEquals("presented", e.reason)
-    }
-
-    @Test fun theSettleCountsFromTheFirstReportOfTheLastFrame() {
-        val e = end()
-        assertFalse(e.over(420, frames.toLong()))
-        // A later poll without a timestamp does not restart the settle.
-        assertTrue(e.over(420 + SpeechTail.TONE_SETTLE_MS, null))
     }
 
     @Test fun withoutTimestampsAToneWaitsOutTheOutputPath() {
@@ -38,16 +29,23 @@ class SpeechTailTest {
         assertFalse(e.over(ms + SpeechTail.TONE_TAIL_MS - 1, null))
         assertTrue(e.over(ms + SpeechTail.TONE_TAIL_MS, null))
         assertEquals("no_timestamp", e.reason)
-        // Without timestamps the beep's last sound on the sim came 570-657 ms after play(): the fallback waits past it.
+        // On the sim the beep's last sound came 566-657 ms after play(): the fallback waits past it.
         assertTrue(ms + SpeechTail.TONE_TAIL_MS >= 657 + 100)
     }
 
-    @Test fun stalledTimestampsCannotHoldTheQueueForever() {
+    @Test fun stalledTimestampsGetTheSameFallbackNeverALongerOne() {
         val e = end()
-        assertFalse(e.over(ms + SpeechTail.TONE_TAIL_MS, 1_000L))
-        assertFalse(e.over(ms + SpeechTail.TONE_MAX_TAIL_MS - 1, null)) // a timestamp seen once: this device has them
-        assertTrue(e.over(ms + SpeechTail.TONE_MAX_TAIL_MS, 1_000L))
+        assertFalse(e.over(ms + SpeechTail.TONE_TAIL_MS - 1, 1_000L))
+        assertTrue(e.over(ms + SpeechTail.TONE_TAIL_MS, 1_000L))
         assertEquals("stalled", e.reason)
+    }
+
+    @Test fun theMicWaitsForWhatThePlatformDoesNotReport() {
+        // Sim: presented ran up to 263 ms ahead of the speakers and the mic opens >= ~20 ms after; hardware stays short so
+        // the beep is not followed by a deaf mic while the driver starts to talk.
+        assertTrue(SpeechTail.micSettleMs(emulator = true) + 20 >= 263 + 30)
+        assertTrue(SpeechTail.micSettleMs(emulator = false) <= 200)
+        assertTrue(SpeechTail.DRAIN_MS >= SpeechTail.micSettleMs(emulator = true))
     }
 
     @Test fun anIdleEngineNeverHoldsTheQueue() {
@@ -59,8 +57,9 @@ class SpeechTailTest {
         assertEquals(SpeechTail.Guard.WAIT, SpeechTail.speechGuard(SpeechTail.SPEECH_MAX_MS - 1, speaking = true))
     }
 
-    @Test fun aStuckEngineIsCutBeforeAnythingElsePlays() {
+    @Test fun aStuckEngineIsCutBeforeTheArmingWatchdogGivesUp() {
         assertEquals(SpeechTail.Guard.CUT, SpeechTail.speechGuard(SpeechTail.SPEECH_MAX_MS, speaking = true))
+        assertTrue(SpeechTail.SPEECH_MAX_MS < 15_000L) // SpeechHost.ARM_MAX_MS: a lost prompt end still opens the mic
     }
 
     @Test fun startToneFrameCountMatchesTheEarcon() {

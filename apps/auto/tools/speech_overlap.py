@@ -20,6 +20,10 @@ Checks (each prints PASS or FAIL with the offending intervals):
   3 HAL mix x OS mic     the audio HAL mixing our assistant source while the OS had a capture running
   4 audio x mic open     sound on the speakers while the app or the OS had the mic open (needs --tap)
   5 audio with no owner  sound that no utterance started within --latency-ms before it (speech that outlived its end)
+  6 tail into next       a sound still on the speakers when the next utterance starts must fall silent (one packet at
+                         least) within --tail-window-ms and before the next sound; the margins are printed as info
+Checks 2-4 forgive --tol-ms at each END of a recording window only (two processes log one moment a few ms apart, and
+the tap is lined up by a measured clock offset); anything inside the window, however short, fails.
 Exit status 1 when any check fails.
 """
 import argparse
@@ -118,8 +122,10 @@ def short(uid):
 
 
 def parse_tap(path, offset_s, lo, hi, threshold, merge_gap):
-    """Sound on the speakers as device-clock spans: packets with rms over threshold, merged across short gaps."""
+    """Sound on the speakers as device-clock spans (packets with rms over threshold, merged across short gaps), and the
+    raw packets as (start, end, rms)."""
     spans = []
+    packets = []
     cur = None
     with open(path) as f:
         for line in f:
@@ -130,7 +136,8 @@ def parse_tap(path, offset_s, lo, hi, threshold, merge_gap):
             t = p["t"] + offset_s
             if t < lo or t > hi:
                 continue
-            e = t + p["n"] / 16000.0
+            e = t + p["n"] / float(p.get("r", 16000))
+            packets.append((t, e, p["rms"]))
             if p["rms"] < threshold:
                 continue
             if cur and t - cur.end <= merge_gap:
@@ -142,13 +149,20 @@ def parse_tap(path, offset_s, lo, hi, threshold, merge_gap):
                 cur = Span("audio", "speaker output", t, e, p["rms"])
     if cur:
         spans.append(cur)
-    return spans
+    return spans, packets
 
 
-def intersect(a, b, horizon, tol=0.0):
+def intersect(a, b, horizon):
     s = max(a.start, b.start)
     e = min(a.closed(horizon), b.closed(horizon))
-    return (e - s) if e - s > tol else 0.0
+    return (e - s) if e > s else 0.0
+
+
+def inside(x, rec, horizon, tol):
+    """How long x lies inside the recording window rec, its two ends each moved in by tol (log jitter, clock offset)."""
+    s = max(x.start, rec.start + tol)
+    e = min(x.closed(horizon), rec.closed(horizon) - tol)
+    return (e - s) if e > s else 0.0
 
 
 def report(name, pairs):
@@ -170,12 +184,16 @@ def main(argv=None):
     p.add_argument("--to", dest="hi", type=float, default=float("inf"))
     p.add_argument("--threshold", type=float, default=30.0, help="tap rms that counts as sound (silence is 0-3)")
     p.add_argument("--latency-ms", type=float, default=700.0, help="check 5: how late sound may trail an utterance")
-    p.add_argument("--tol-ms", type=float, default=30.0, help="boundary tolerance for checks 2-4: two processes log one moment a few ms apart, and the tap is lined up by a measured clock offset")
+    p.add_argument("--tol-ms", type=float, default=30.0,
+                   help="checks 2-4: forgiven at each end of a recording window only (log jitter, clock offset)")
+    p.add_argument("--tail-window-ms", type=float, default=700.0,
+                   help="check 6: how long a previous sound may keep draining into the next utterance's start (a halted "
+                        "sound drains the whole output path, ~0.3 s on the sim) before it counts as running into it")
     p.add_argument("--quiet", action="store_true", help="no interval listing")
     a = p.parse_args(argv)
     speech, rec_app, os_mic, amp, last = parse_logcat(a.logcat, a.lo, a.hi)
     horizon = min(a.hi, last + 1.0)
-    audio = parse_tap(a.tap, a.offset_ms / 1000.0, a.lo, a.hi, a.threshold, 0.12) if a.tap else None
+    audio, packets = parse_tap(a.tap, a.offset_ms / 1000.0, a.lo, a.hi, a.threshold, 0.12) if a.tap else (None, None)
 
     if not a.quiet:
         print("intervals (device clock, epoch s):")
@@ -199,19 +217,19 @@ def main(argv=None):
     pairs = []
     for r in rec_app + os_mic:
         for s in speech:
-            ms = intersect(s, r, horizon, tol)
+            ms = inside(s, r, horizon, tol)
             if ms:
                 pairs.append((s, r, ms))
     ok &= report("2 speech x recording (queue vs app mic + OS capture, tolerance %d ms)" % a.tol_ms, pairs)
 
-    pairs = [(h, r, intersect(h, r, horizon, tol)) for h in amp for r in os_mic if intersect(h, r, horizon, tol)]
+    pairs = [(h, r, inside(h, r, horizon, tol)) for h in amp for r in os_mic if inside(h, r, horizon, tol)]
     ok &= report("3 HAL assistant mix x OS capture (tolerance %d ms)" % a.tol_ms, pairs)
 
     if audio is not None:
         pairs = []
         for r in os_mic + rec_app:
             for s in audio:
-                ms = intersect(s, r, horizon, tol)
+                ms = inside(s, r, horizon, tol)
                 if ms:
                     pairs.append((s, r, ms))
         ok &= report("4 speaker output x mic open (tap, tolerance %d ms)" % a.tol_ms, pairs)
@@ -228,6 +246,28 @@ def main(argv=None):
                     break
                 t += 0.05
         ok &= report("5 speaker output with no owning utterance (latency %d ms)" % a.latency_ms, orphans)
+
+        window = a.tail_window_ms / 1000.0
+        tails, margins = [], []
+        for x, y in zip(speech, speech[1:]):
+            if y.start - x.closed(horizon) > 2.0:
+                continue
+            after = [p for p in packets if p[1] > y.start and p[0] < y.start + window + 1.0]
+            if not after or after[0][2] < a.threshold:
+                continue  # silent when y started: nothing of x is left to run into it
+            # x is still sounding when y starts (a halted sound drains its whole output path). It must fall silent before
+            # y's own sound begins; one sound running into the other leaves no silence at all.
+            gap = next((p for p in after if p[2] < a.threshold), None)
+            if gap is None or gap[0] > y.start + window:
+                tails.append((x, y, (gap[0] if gap else after[-1][1]) - y.start))
+                continue
+            nxt = next((p for p in after if p[0] > gap[0] and p[2] >= a.threshold), None)
+            margins.append((x, y, gap[0] - y.start, (nxt[0] - gap[0]) if nxt else None))
+        ok &= report("6 a sound running into the next utterance (no silence within %d ms of its start)"
+                     % a.tail_window_ms, tails)
+        for x, y, tail, quiet in margins:
+            print("        info: %s -> %s: the first still sounded %.0f ms into the next, then %s of silence before it"
+                  % (x.label[:30], y.label[:30], tail * 1000, "%.0f ms" % (quiet * 1000) if quiet is not None else "the end"))
         on = sum(s.end - s.start for s in audio)
         print("      speaker output: %d spans, %.1f s of sound in the window" % (len(audio), on))
     print("RESULT %s  (%d utterances, %d app recordings, %d OS capture windows, %d HAL mix windows)"
