@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AVATAR_RETRY_MS, ROSTER_FAIL_GRACE_MS, ROSTER_STALE_MS, ageText, restoreSelection, rosterGeneratedAt, rosterStaleness, savedAgentId, serverClockOffset, stalenessText, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, ROSTER_FAIL_GRACE_MS, ROSTER_STALE_MS, ageText, restoreSelection, rosterGeneratedAt, rosterStaleness, savedAgentId, serverClockOffset, stalenessText, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, REPLY_POLL_PUSHED_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -69,6 +69,10 @@ test('replies are polled fast while one is due, slowly otherwise', () => {
   assert.equal(replyPollMs(0, now), REPLY_POLL_IDLE_MS)
   assert.equal(replyPollMs(now - 30_000, now), REPLY_POLL_FAST_MS)
   assert.equal(replyPollMs(now - REPLY_DUE_WINDOW_MS - 1, now), REPLY_POLL_IDLE_MS)
+  // the push channel makes the fast poll a safety net: slower, never slower than idle
+  assert.equal(replyPollMs(now - 30_000, now, true), REPLY_POLL_PUSHED_MS)
+  assert.ok(REPLY_POLL_PUSHED_MS > REPLY_POLL_FAST_MS && REPLY_POLL_PUSHED_MS < REPLY_POLL_IDLE_MS)
+  assert.equal(replyPollMs(0, now, true), REPLY_POLL_IDLE_MS)
 })
 
 test('driving always shows the selected agent and the one replying', () => {

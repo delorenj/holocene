@@ -303,8 +303,23 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     rel("first progress", min((h.ts for h in hops if "agent:progress#" in h.name and h.ts), default=None))
     rel("first narration", min((h.ts for h in hops if "car:narrated#" in h.name and h.ts), default=None))
     rel("progress played", first_at(sp, "progress"))
-    rel("reply played", first_at(sp, "reply") or next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK), None))
-    return "since upload: " + " | ".join(bits) if bits else None
+    first_chunk = ctx.get("first_chunk_ts")
+    replied = next((h.ts for h in hops if h.name == "fact:replied" and h.status == OK and h.ts), None)
+    rel("first chunk up", first_chunk)
+    rel("reply up", replied)
+    played = first_at(sp, "reply") or next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK), None)
+    rel("reply played", played)
+    line = "since upload: " + " | ".join(bits) if bits else None
+    # Time to first response once the agent is done: what chunked speech and the push channel are for.
+    done = next((h.ts for h in hops if h.name == "agent:invocation.done" and h.status == OK and h.ts), None)
+    if line and done:
+        after = []
+        for label, ts in (("first chunk up", first_chunk), ("reply up", replied), ("car speaking", played)):
+            if ts is not None:
+                after.append(f"{label} {(ts - done).total_seconds():+.1f}s")
+        if after:
+            line += "\n         after the agent finished: " + " | ".join(after)
+    return line
 
 
 def status_hop(key: str, memo_id: str) -> Hop:
@@ -538,9 +553,26 @@ def build(key: str) -> tuple[list[Hop], dict]:
         (rec or {}).get("escalated_from_command_id") if c.memo_escalated(rec or {}) else None)
     turn_hops(command_id, disp)
 
-    # 6. reply
+    # 6. reply: chunk by chunk (audio.memo.voiced: the car can start on chunk 1), then the full file (replied)
+    voiced = sorted(by_type.get("bloodbank.audio.memo.voiced", []), key=lambda e: e.get("time") or "")
+    firsts: dict = {}
+    for e in voiced:  # a stage retry re-uploads a chunk under the same key; its first announcement counts
+        firsts.setdefault((e.get("data") or {}).get("chunk"), e)
+    chunks = [firsts[k] for k in sorted(k for k in firsts if isinstance(k, int))]
+    ctx["first_chunk_ts"] = evt_ts(chunks[0]) if chunks else None
+    for e in (chunks[:1] + chunks[-1:] if len(chunks) > 1 else chunks):
+        d = e.get("data") or {}
+        since = d.get("since_agent_done_seconds")
+        hops.append(Hop(f"car:chunk#{d.get('chunk')}of{d.get('chunks')}", OK, evt_ts(e),
+                        f"{d.get('spoken_chars')} chars, tts {d.get('tts_seconds')}s"
+                        + (f", {since}s after the agent finished" if since is not None else "")
+                        + f" -> {d.get('chunk_s3_key')}"
+                        + (f" ({len(chunks) - 2} chunks between)" if len(chunks) > 2 and d.get("chunk") == 1 else ""),
+                        optional=True))
     add_fact_hop("fact:replied", "replied",
                  lambda d: f"{d.get('reply_chars')} chars, tts {d.get('tts_seconds')}s ({d.get('tts_engine')}) -> {d.get('reply_s3_key')}"
+                           + (f", {d.get('reply_chunks')} chunks (first up {d.get('first_chunk_seconds')}s, last "
+                              f"{d.get('last_chunk_seconds')}s after the reply text)" if d.get("reply_chunks") else "")
                            + (", spoken as a late reply" if d.get("late") else "")
                            + (" (after escalating to the batch lane)" if d.get("escalated") else ""))
     rep = fact("replied")
@@ -566,10 +598,18 @@ def build(key: str) -> tuple[list[Hop], dict]:
     p_end = next((e for e in played if (e.get("data") or {}).get("phase") == "ended"), None)
     if p_start:
         d0 = p_start.get("data") or {}
-        ctx["pad_age_s"] = (d0.get("reply_age_ms") or 0) / 1000.0
+        # The honest car lag: from the moment there was audio to play (the first chunk, else the full reply's replied
+        # fact) to the pad's "started". reply_age_ms counts from the reply key's stamp, which is taken BEFORE the voice
+        # is rendered, so it also contains the whole TTS time (the 10-22 s "car lag" of 2026-10-19/20 was mostly that).
+        avail = ctx.get("first_chunk_ts") or (evt_ts(rep) if rep else None)
+        lag = (evt_ts(p_start) - avail).total_seconds() if avail and evt_ts(p_start) else None
+        ctx["pad_lag_s"] = lag
+        ctx["pad_from"] = "the first chunk" if ctx.get("first_chunk_ts") else "the reply"
         extra = f", ended after {(p_end.get('data') or {}).get('played_seconds')}s" if p_end else ", end not reported"
         hops.append(Hop("played_on_pad", OK, evt_ts(p_start),
-                        f"reply started {d0.get('reply_age_ms')} ms after it was rendered{extra} ({str(d0.get('client_user_agent'))[:40]})", optional=True))
+                        (f"reply started {lag:.1f}s after {ctx['pad_from']} was up" if lag is not None else "reply started")
+                        + f" ({d0.get('reply_age_ms')} ms after the key stamp, TTS included){extra} "
+                        f"({str(d0.get('client_user_agent'))[:40]})", optional=True))
     else:
         hops.append(Hop("played_on_pad", UNKNOWN,
                         detail="no playback report from the pad yet (it polls replies/ every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)", optional=True))
@@ -715,13 +755,14 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     end = next((h for h in hops if h.name == "reply_object" and h.ts), None)
     if s3 and s3.ts and end and end.ts:
         pad = next((h for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None)
-        tail = (f"; played on the pad {ctx.get('pad_age_s', (pad.ts - end.ts).total_seconds()):.1f}s after the reply was rendered"
-                if pad else "; playback on the pad not reported")
+        lag = ctx.get("pad_lag_s")
+        tail = ((f"; played on the pad {lag:.1f}s after {ctx.get('pad_from')} was up" if lag is not None
+                 else "; played on the pad") if pad else "; playback on the pad not reported")
         if ctx.get("escalated_from"):
             tail = "; escalated to the batch lane after the interactive turn timed out (spoken as a late reply)" + tail
         phone = next((h for h in hops if h.name == "phone_started" and h.status == OK and h.ts), None)
         if phone:
-            tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the reply was rendered "
+            tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the full reply was up "
                      f"({(phone.ts - s3.ts).total_seconds():.1f}s recording-to-voice)")
         elif ctx.get("earshot_key"):
             tail += "; phone playback not reported"

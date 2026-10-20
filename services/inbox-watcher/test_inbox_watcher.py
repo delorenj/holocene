@@ -7,6 +7,7 @@ for every stage, no 'latest row' correlation, retry then failed fact, timeout.
 Run: python3 -m unittest services/inbox-watcher/test_inbox_watcher.py
 """
 import json
+import re
 import os
 import sqlite3
 import stat
@@ -139,6 +140,14 @@ FAKE_FFMPEG.write_text(textwrap.dedent("""\
     #!/usr/bin/env python3
     import sys
     args = sys.argv[1:]
+    if "concat" in args:  # joining reply chunks: the output is the inputs back to back
+        names = [l.split("'")[1] for l in open(args[args.index("-i") + 1]).read().splitlines() if l.startswith("file ")]
+        if any("NOJOIN" in open(n, "rb").read().decode("latin1") for n in names):
+            print("concat failed", file=sys.stderr); sys.exit(1)
+        with open(args[-1], "wb") as out:
+            for n in names:
+                out.write(open(n, "rb").read())
+        sys.exit(0)
     data = open(args[args.index("-i") + 1], "rb").read().decode("latin1")
     if "NOFFMPEGOUT" in data:
         print("Output file #0 does not contain any stream", file=sys.stderr); sys.exit(1)
@@ -1977,7 +1986,7 @@ class DecisionReviewFixes(MemoHarness, unittest.TestCase):
                     self.w.cancel_memo(m)
             return r
         n_rm = len(mc_rms())
-        with unittest.mock.patch.object(mc_, "mc", side_effect=spy):
+        with unittest.mock.patch.object(mc_, "mc", side_effect=spy), unittest.mock.patch.object(iw, "REPLY_CHUNKS", False):
             self.tick_until(lambda: m["status"] == "cancelled" and key not in self.w.running and len(mc_rms()) > n_rm)
             self.ticks(6)
         self.assertTrue(fired)
@@ -2060,10 +2069,11 @@ class TextSidecar(MemoHarness, unittest.TestCase):
         r = self.of_type("replied", key)[-1]
         self.assertEqual((r["earshot_key"], r["earshot_text_key"]), (ogg, txt))
         self.assertEqual(r["reply_chars"], len(self.LONG.strip()))
-        # the car's path is unchanged: one audio object under replies/, no text beside it
+        # the car's path: the reply's chunks (.opus), then one full audio object under replies/, no text beside it
         car = [c["dst"] for c in calls if "/holocene-auto/replies/" in c["dst"]]
-        self.assertEqual(len(car), 1)
-        self.assertTrue(car[0].endswith(".ogg"))
+        self.assertEqual(len(car), r["reply_chunks"] + 1)
+        self.assertTrue(all(c.endswith(".opus") for c in car[:-1]))
+        self.assertTrue(car[-1].endswith(".ogg"))
 
     def test_the_text_upload_failing_is_fail_open_and_the_audio_still_reaches_the_phone(self):
         MC_FAIL_TXT.write_text("x")
@@ -2705,6 +2715,140 @@ class EarshotMirror(unittest.TestCase):
         import memo_trace as mt
         (h,) = mt.earshot_hops(None)
         self.assertTrue(h.optional and h.status == mt.UNKNOWN)
+
+
+class ChunkedSpeech(MemoHarness, unittest.TestCase):
+    """A long reply is voiced chunk by chunk (the car starts on the first sentence), then joined into the full file."""
+
+    LONG = ("The board has three tickets waiting. The first is the speech queue fix, which is ready to merge today. "
+            "The second is progress narration, which still needs a drive test in the real car before it ships. "
+            "The third is chunked replies, which I am starting now, and it should land by the end of the evening. "
+            "Nothing else is blocked.")
+
+    def replied_memo(self, name, reply=None):
+        key, m = self.to_await(name)
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], reply or self.LONG, ts=time.time())
+        return key, m
+
+    # ---- the split ----
+
+    def test_a_short_reply_is_one_piece_and_a_long_one_grows_by_sentences(self):
+        self.assertEqual(iw.split_for_speech("Holocene PM. Quick answer."), ["Holocene PM. Quick answer."])
+        self.assertEqual(iw.split_for_speech("   "), [])
+        spoken = "Holocene PM. " + self.LONG
+        parts = iw.split_for_speech(spoken)
+        self.assertGreater(len(parts), 2)
+        self.assertEqual(" ".join(parts), re.sub(r"\s+", " ", spoken).strip())  # nothing lost, nothing added
+        self.assertTrue(parts[0].startswith("Holocene PM. "))            # the name rides in the first chunk
+        for i, p in enumerate(parts[:-1]):
+            self.assertLessEqual(len(p), iw.CHUNK_CHARS[min(i, len(iw.CHUNK_CHARS) - 1)], p)
+            self.assertTrue(p.endswith((".", "!", "?", ",", ";", ":")) or " " not in p[-3:], p)
+        self.assertLessEqual(len(parts[0]), iw.CHUNK_CHARS[0])
+        self.assertGreaterEqual(len(parts[-1]), iw.CHUNK_TAIL_CHARS)
+
+    def test_one_endless_sentence_is_cut_at_a_clause_or_a_word_never_mid_word(self):
+        spoken = "Holocene PM. " + ", ".join(f"item number {i} is fine" for i in range(40))
+        parts = iw.split_for_speech(spoken)
+        self.assertEqual(" ".join(parts), spoken)
+        words = set(spoken.replace(",", " ").split())
+        for p in parts:
+            self.assertIn(p.split()[0].strip(","), words)
+            self.assertIn(p.split()[-1].strip(","), words)
+
+    def test_chunking_off_keeps_one_piece(self):
+        with unittest.mock.patch.object(iw, "REPLY_CHUNKS", False):
+            self.assertEqual(len(iw.split_for_speech("Holocene PM. " + self.LONG)), 1)
+
+    # ---- the pipeline ----
+
+    def test_each_chunk_goes_up_and_is_announced_before_the_full_reply(self):
+        key, m = self.replied_memo("chunk-basic")
+        n0 = len(mc_cps())
+        self.tick_until(lambda: m["status"] == "done")
+        voiced = self.of_type("voiced", key)
+        replied = self.of_type("replied", key)[-1]
+        n = replied["reply_chunks"]
+        self.assertGreater(n, 1)
+        self.assertEqual([v["chunk"] for v in voiced], list(range(1, n + 1)))
+        self.assertTrue(all(v["chunks"] == n and v["reply_s3_key"] == replied["reply_s3_key"] for v in voiced))
+        stem = replied["reply_s3_key"][:-len(".ogg")]
+        self.assertEqual([v["chunk_s3_key"] for v in voiced], [f"{stem}-c{i:02d}of{n:02d}.opus" for i in range(1, n + 1)])
+        # every chunk is a real object, uploaded as Ogg audio, before the full file; the full file is the chunks joined
+        calls = [c for c in mc_cps()[n0:] if "/holocene-auto/replies/" in c["dst"]]
+        self.assertEqual([c["dst"].split("/holocene-auto/")[1] for c in calls], [v["chunk_s3_key"] for v in voiced] + [replied["reply_s3_key"]])
+        self.assertTrue(all(c["attr"] == "Content-Type=audio/ogg" for c in calls[:-1]))
+        full = (BUCKET_DIR / replied["reply_s3_key"]).read_bytes()
+        self.assertEqual(full, b"".join((BUCKET_DIR / v["chunk_s3_key"]).read_bytes() for v in voiced))
+        # the fact order: every voiced before replied; timing on both
+        order = [t.split(".")[-1] for t, r in facts() if r["data"].get("s3_key") == key and t.endswith(("voiced", "replied"))]
+        self.assertEqual(order, ["voiced"] * n + ["replied"])
+        self.assertIsNotNone(replied["first_chunk_seconds"])
+        self.assertLessEqual(replied["first_chunk_seconds"], replied["last_chunk_seconds"])
+        self.assertTrue(all(v["since_reply_seconds"] is not None and v["since_agent_done_seconds"] is not None for v in voiced))
+        # vox heard the chunks, in order, and nothing else (the full file was joined, not rendered again)
+        self.assertEqual(VOX_TEXTS, [v["spoken_text"] for v in voiced])
+        self.assertTrue(VOX_TEXTS[0].startswith("Holocene PM. "))
+        # the phone still gets one full file
+        self.assertTrue(replied["earshot_key"].endswith(".ogg"))
+        self.assertNotIn("voiced_keys", m)  # compacted once done
+        doc = iw.status_doc(m)
+        self.assertEqual(doc["reply_chunks"], {"n": n, "voiced": n})
+
+    def test_a_join_that_fails_renders_the_full_reply_whole(self):
+        key, m = self.replied_memo("chunk-nojoin")
+        real = iw.synthesize
+
+        def first_chunk_unjoinable(text, tmp, voice=None, steps=None):
+            p, e = real(text, tmp, voice, steps)
+            if tmp.name == "c01":
+                p.write_bytes(p.read_bytes() + b"NOJOIN")
+            return p, e
+        with unittest.mock.patch.object(iw, "synthesize", side_effect=first_chunk_unjoinable):
+            self.tick_until(lambda: m["status"] == "done")
+        n = self.of_type("replied", key)[-1]["reply_chunks"]
+        self.assertEqual(len(VOX_TEXTS), n + 1)
+        self.assertEqual(VOX_TEXTS[-1], " ".join(VOX_TEXTS[:-1]))  # the whole reply, in one render
+
+    def test_a_retry_after_a_failed_chunk_upload_does_not_announce_a_chunk_twice(self):
+        key, m = self.replied_memo("chunk-retry")
+        real = mc_.mc
+        failed = []
+
+        def flaky(*a, **k):
+            if a[0] == "cp" and a[-1].endswith("of03.opus") and "-c02" in a[-1] and not failed:
+                failed.append(1)
+                return iw.subprocess.CompletedProcess(a, 1, "", "mc: <ERROR> network down")
+            return real(*a, **k)
+        with unittest.mock.patch.object(mc_, "mc", side_effect=flaky):
+            self.tick_until(lambda: m["status"] == "done")
+        voiced = self.of_type("voiced", key)
+        n = self.of_type("replied", key)[-1]["reply_chunks"]
+        self.assertTrue(failed, "the test reply must have three chunks")
+        self.assertEqual(sorted(v["chunk"] for v in voiced), list(range(1, n + 1)))  # once each
+
+    def test_a_cancel_between_chunks_takes_every_uploaded_chunk_back(self):
+        key, m = self.replied_memo("chunk-cancel")
+        real = mc_.mc
+        fired = []
+
+        def spy(*a, **k):
+            r = real(*a, **k)
+            if a[0] == "cp" and "-c01of" in a[-1] and not fired:  # the car may already be speaking chunk 1
+                fired.append(1)
+                with self.w.mu:
+                    self.w.cancel_memo(m)
+            return r
+        n_rm = len(mc_rms())
+        with unittest.mock.patch.object(mc_, "mc", side_effect=spy):
+            self.tick_until(lambda: m["status"] == "cancelled" and key not in self.w.running and len(mc_rms()) > n_rm)
+            self.ticks(4)
+        self.assertTrue(fired)
+        self.assertEqual(self.of_type("replied", key), [])
+        gone = mc_rms()[n_rm:]
+        self.assertTrue(gone and all(g.endswith(".opus") for g in gone), gone)
+        self.assertEqual([p for p in BUCKET_DIR.rglob("*") if m["memo_id"] in p.name], [])
+        self.assertNotIn("earshot_key", m)  # the phone never got anything
 
 
 if __name__ == "__main__":

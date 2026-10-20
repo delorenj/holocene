@@ -293,7 +293,17 @@ const TIMING: { key: keyof MemoTiming; label: string; title: string }[] = [
   { key: "firstProgressSeconds", label: "first progress", title: "the agent wrote its first line while working" },
   { key: "firstNarrationSeconds", label: "first narration", title: "the watcher spoke a progress line for the car" },
   { key: "progressPlayedSeconds", label: "progress played", title: "the car started playing a progress update" },
+  { key: "firstChunkSeconds", label: "first chunk up", title: "the reply's first sentence-chunk was uploaded (chunked speech)" },
+  { key: "replyUpSeconds", label: "reply up", title: "the full reply file was uploaded (the replied fact; the phone plays this one)" },
   { key: "replyPlayedSeconds", label: "reply played", title: "the car started playing the reply" }
+];
+
+/** Time to first response once the agent finished, and the car's own lag behind the audio it could play. */
+const AFTER_AGENT: { key: keyof MemoTiming; label: string; title: string }[] = [
+  { key: "agentToFirstChunkSeconds", label: "first chunk up", title: "agent finished -> the first chunk was uploaded" },
+  { key: "agentToReplySeconds", label: "reply up", title: "agent finished -> the full reply file was uploaded" },
+  { key: "agentToCarSeconds", label: "car speaking", title: "agent finished -> the car started the reply" },
+  { key: "carLagSeconds", label: "car lag", title: "first audio available (first chunk, else the full reply) -> the pad's started beacon, both server clocks" }
 ];
 
 /** "+0.6 s" / "−0.4 s": seconds relative to the upload (the ack can start before the upload lands). */
@@ -307,8 +317,10 @@ function WhileWaiting({ memo }: { memo: MemoDetail }) {
   const progress = memo.progress ?? [];
   const narrations = memo.narrations ?? [];
   const speech = memo.speech ?? [];
+  const chunks = memo.chunks ?? [];
   const timing = TIMING.filter((t) => memo.timing?.[t.key] !== undefined);
-  if (!progress.length && !narrations.length && !speech.length) return null;
+  const after = AFTER_AGENT.filter((t) => memo.timing?.[t.key] !== undefined);
+  if (!progress.length && !narrations.length && !speech.length && !chunks.length && !after.length) return null;
   const spoken = new Map(narrations.filter((n) => n.seq !== undefined).map((n) => [n.seq!, n]));
   const current = progress.filter((p) => !p.superseded);
   return (
@@ -318,6 +330,24 @@ function WhileWaiting({ memo }: { memo: MemoDetail }) {
           <span className="hub-label">Since upload</span>
           {timing.map((t) => (
             <span key={t.key} className="voice-timing-item" title={t.title}>{t.label} <strong>{signed(memo.timing![t.key]!)}</strong></span>
+          ))}
+        </p>
+      ) : null}
+      {after.length ? (
+        <p className="voice-timing">
+          <span className="hub-label">After the agent finished</span>
+          {after.map((t) => (
+            <span key={t.key} className="voice-timing-item" title={t.title}>{t.label} <strong>{signed(memo.timing![t.key]!)}</strong></span>
+          ))}
+        </p>
+      ) : null}
+      {chunks.length ? (
+        <p className="voice-timing">
+          <span className="hub-label">Reply in {chunks[0].of} chunk{chunks[0].of === 1 ? "" : "s"}</span>
+          {chunks.map((c) => (
+            <span key={c.eventId} className="voice-timing-item" title={`${c.key ?? ""}${c.text ? `: ${c.text}` : ""}`}>
+              #{c.n} <strong>{clockTime(c.at)}</strong>{c.ttsSeconds !== undefined ? ` · tts ${c.ttsSeconds}s` : ""}
+            </span>
           ))}
         </p>
       ) : null}

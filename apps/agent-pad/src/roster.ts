@@ -147,8 +147,12 @@ export function replyAgent(key: string): string | null {
 export const REPLY_POLL_FAST_MS = 2000
 export const REPLY_POLL_IDLE_MS = 15000
 export const REPLY_DUE_WINDOW_MS = 10 * 60 * 1000
-export function replyPollMs(lastSentAt: number, now: number): number {
-  return lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS ? REPLY_POLL_FAST_MS : REPLY_POLL_IDLE_MS
+// With the push channel live (/upload/events, see push.ts) a new reply or chunk arrives by push the moment it is up, so
+// the fast poll is only the safety net and can run slower. A stale or absent push channel keeps the 2 s cadence.
+export const REPLY_POLL_PUSHED_MS = 6000
+export function replyPollMs(lastSentAt: number, now: number, pushLive = false): number {
+  if (!(lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS)) return REPLY_POLL_IDLE_MS
+  return pushLive ? REPLY_POLL_PUSHED_MS : REPLY_POLL_FAST_MS
 }
 
 // The reply now playing, for the tile cue and the hero. One small state machine so every path that ends a reply

@@ -633,6 +633,30 @@ test("progress lines, narrations and car speech ride on the detail and time the 
   assert.deepEqual([plain.progress, plain.narrations, plain.speech, plain.timing], [[], [], [], {}]);
 });
 
+const voiced = (n: number, of: number, s: number) =>
+  fact("audio.memo.voiced", s, { occurred_at: iso(s), command_id: CMD, chunk: n, chunks: of, reply_s3_key: "replies/x.ogg",
+    chunk_s3_key: `replies/x-c0${n}of0${of}.opus`, spoken_text: `chunk ${n}`, tts_seconds: 2.7, since_agent_done_seconds: Math.round((s - 55) * 10) / 10 });
+
+test("a chunked reply lists its chunks once each and times the first response from the agent's finish", () => {
+  const journey = [uploaded(), received(), transcribed(), dispatched(), started(), completed(),
+    voiced(1, 3, 58.2), voiced(2, 3, 61.5), voiced(2, 3, 63), voiced(3, 3, 66), replied(66.4), played("started", 59.1)];
+  const d = buildMemoDetail(MEMO, journey, now(120))!;
+  assert.equal(d.status, "complete");
+  assert.deepEqual(d.chunks.map(c => [c.n, c.of, c.at]), [[1, 3, iso(58.2)], [2, 3, iso(61.5)], [3, 3, iso(66)]]);
+  assert.equal(d.chunks[0].sinceAgentDoneSeconds, 3.2);
+  assert.equal(d.timing.firstChunkSeconds, 58.2);
+  assert.equal(d.timing.replyUpSeconds, 66.4);
+  assert.equal(d.timing.agentToFirstChunkSeconds, 3.2);
+  assert.equal(d.timing.agentToReplySeconds, 11.4);
+  assert.equal(d.timing.agentToCarSeconds, 4.1);   // the pad's beacon: no arbiter decision in this journey
+  assert.equal(d.timing.carLagSeconds, 0.9);       // from the first chunk, not from the full file
+  // a reply spoken as one file: the car's lag runs from the replied fact
+  const one = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied(), played("started", 62.5)], now(120))!;
+  assert.deepEqual(one.chunks, []);
+  assert.equal(one.timing.carLagSeconds, 2.5);
+  assert.equal(one.timing.firstChunkSeconds, undefined);
+});
+
 test("an escalated memo keeps its first turn's progress as history and reports the batch turn's newest line", () => {
   const d = buildMemoDetail(MEMO, [...upToEscalation(), progressed(1, 60, "first turn"), progressed(1, 80, "batch turn", CMD_B), progressed(2, 90, "batch turn, step two", CMD_B)], now(100))!;
   assert.deepEqual(d.progress.map(p => [p.commandId, p.seq, p.superseded]), [[CMD, 1, true], [CMD_B, 1, false], [CMD_B, 2, false]]);

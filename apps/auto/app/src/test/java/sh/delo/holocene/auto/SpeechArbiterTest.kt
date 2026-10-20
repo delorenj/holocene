@@ -9,6 +9,8 @@ class SpeechArbiterTest {
     private val played = ArrayList<String>()
     private val halted = ArrayList<Pair<String, String>>()
     private val decisions = ArrayList<SpeechDecision>()
+    private val done = ArrayList<Pair<String, String>>()
+    private val waits = ArrayList<Int>()
     private lateinit var a: SpeechArbiter
 
     /** What is audible at any moment: at most one id, and never while the mic is armed or open (except the prompt). */
@@ -23,10 +25,23 @@ class SpeechArbiterTest {
                 played += u.id
             }
             override fun halt(u: Utterance, reason: String) {
-                assertEquals(u.id, audible)
+                // a chunked reply waiting between two chunks is current but silent
+                if (u.chunks == 0 || audible != null) assertEquals(u.id, audible?.substringBefore('#'))
                 audible = null
                 halted += u.id to reason
             }
+            override fun playChunk(u: Utterance, index: Int, clip: SpeechPart.Clip) {
+                assertNull("overlap: chunk $index of ${u.id} started while $audible plays", audible)
+                assertEquals("spoke while the mic was busy", SpeechArbiter.Mic.IDLE, a.mic)
+                assertEquals(u.id, a.current?.id)
+                audible = "${u.id}#$index"
+                played += "${u.id}#$index"
+            }
+            override fun streamDone(u: Utterance, reason: String) {
+                assertNull("the reply ended while a chunk still plays", audible)
+                done += u.id to reason
+            }
+            override fun waitChunk(u: Utterance, index: Int) { waits += index }
             override fun decision(d: SpeechDecision) { decisions += d }
         })
     }
@@ -270,5 +285,130 @@ class SpeechArbiterTest {
         a.offer(ack())
         end("ack")
         assertEquals(listOf("queued", "start", "end"), decisions.map { it.action })
+    }
+
+    // ---- chunked replies: one reply, chunk after chunk, nothing between ----
+
+    private val streamId = "replies/2026/10/20/120000Z-holocene-pm-$memo1.ogg"
+    private fun chunk(i: Int, n: Int = 3, id: String = streamId) =
+        a.offerChunk(id, SpeechArbiter.memoOfReply(id), i, n, SpeechPart.Clip(ByteArray(4), "opus"))
+    private fun endChunk(i: Int, id: String = streamId) {
+        assertEquals("$id#$i", audible)
+        audible = null
+        a.chunkEnded(id, i)
+    }
+
+    @Test fun chunksPlayInOrderAsOneReply_andNothingElseIsSaidBetweenThem() {
+        assertTrue(chunk(1))
+        assertEquals(listOf("$streamId#1"), played)
+        a.offer(progress(memo2, 1))
+        a.offer(ack())
+        a.offer(echo(memo2))
+        endChunk(1)
+        // chunk 2 is still rendering: the reply holds the queue, silent, and nothing of lower rank slips in
+        assertEquals(listOf(2), waits)
+        assertNull(audible)
+        assertEquals(streamId, a.current?.id)
+        assertEquals(listOf("$streamId#1"), played)
+        assertTrue(chunk(3)) // early: buffered
+        assertTrue(chunk(2)) // the one it waits for: plays at once
+        assertEquals("$streamId#2", audible)
+        endChunk(2)
+        assertEquals("$streamId#3", audible) // already there: straight on
+        endChunk(3)
+        assertEquals(listOf(streamId to ""), done)
+        assertEquals("end", decisions.last { it.id == streamId }.action)
+        // only now the rest of the queue: the echo outranks progress; the ack expired meanwhile or follows
+        assertEquals("echo:$memo2", played[3])
+    }
+
+    @Test fun aRecordingStopsTheWholeChunkedReply_andThePageOffersItAgainFromChunkOne() {
+        chunk(1); chunk(2)
+        endChunk(1)
+        assertEquals("$streamId#2", audible)
+        var ready = false
+        a.arm(null) { ready = true }
+        assertTrue(ready)
+        assertEquals(streamId to "recording", halted.single())
+        a.recordingStarted()
+        a.recordingEnded()
+        assertNull(audible) // the reply went back to the page whole; the queue does not resume it mid-way
+        assertNull(a.current)
+        played.clear()
+        // the page's replay offers it again from the first chunk
+        chunk(1); chunk(2); chunk(3)
+        assertEquals(listOf("$streamId#1"), played)
+        endChunk(1); endChunk(2); endChunk(3)
+        assertEquals(listOf("$streamId#1", "$streamId#2", "$streamId#3"), played)
+        assertEquals(listOf(streamId to ""), done)
+    }
+
+    @Test fun aChunkOfferedWhileRecordingWaitsAndPlaysAfterTheNote() {
+        a.arm(null) {}
+        a.recordingStarted()
+        assertTrue(chunk(1))
+        chunk(2)
+        assertNull(audible)
+        assertEquals("recording", decisions.first { it.id == streamId && it.action == "deferred" }.reason)
+        a.recordingEnded()
+        assertEquals("$streamId#1", audible)
+        endChunk(1)
+        assertEquals("$streamId#2", audible)
+    }
+
+    @Test fun aChunkThatNeverComesEndsTheReplyAfterTheWait_andTheQueueMovesOn() {
+        chunk(1)
+        endChunk(1)
+        a.offer(echo(memo2))
+        t += SpeechArbiter.CHUNK_WAIT_MS - 1
+        a.tick()
+        assertTrue(done.isEmpty())
+        t += 2
+        a.tick()
+        assertEquals(listOf(streamId to "chunk_timeout"), done)
+        assertEquals("echo:$memo2", audible)
+    }
+
+    @Test fun aChunkedReplyMakesItsMemoFinal() {
+        a.offer(progress(memo1, 1))
+        chunk(1)
+        assertEquals("progress:$memo1:1" to "after_reply", halted.single())
+        assertEquals("$streamId#1", audible)
+        assertFalse(a.offer(progress(memo1, 2)))
+        assertFalse(a.offer(echo(memo1)))
+    }
+
+    @Test fun badDuplicateAndChangedChunksAreDropped() {
+        assertFalse(chunk(0))
+        assertFalse(chunk(4, 3))
+        assertFalse(chunk(1, 1)) // one chunk is not a stream: a single reply goes through playReply
+        assertTrue(chunk(1))
+        assertFalse(chunk(1))    // playing already
+        assertTrue(chunk(2))
+        assertFalse(chunk(2))    // buffered already
+        assertFalse(chunk(3, 4)) // a different count for the same reply
+        assertEquals(listOf("bad_chunk", "bad_chunk", "bad_chunk", "duplicate_chunk", "duplicate_chunk", "chunk_count_changed"),
+            decisions.filter { it.id == streamId && it.action == "drop" }.map { it.reason })
+    }
+
+    @Test fun chunksOfferedOutOfOrderStillPlayInOrder() {
+        chunk(2)
+        assertEquals(listOf(1), waits) // started, waiting for chunk 1
+        assertNull(audible)
+        chunk(1)
+        assertEquals("$streamId#1", audible)
+        endChunk(1)
+        assertEquals("$streamId#2", audible)
+    }
+
+    @Test fun aReplyQueuedBehindAChunkedReplyWaitsForItsLastChunk() {
+        chunk(1, 2)
+        val r = reply(memo2)
+        a.offer(r)
+        endChunk(1)
+        assertNull(audible) // waiting for chunk 2: the other reply does not jump in
+        chunk(2, 2)
+        endChunk(2)
+        assertEquals(r.id, audible)
     }
 }

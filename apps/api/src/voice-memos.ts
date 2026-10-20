@@ -19,9 +19,10 @@ export const MEMO_STAGE_TYPES = [
 /**
  * What the driver heard while waiting: narrated = the watcher spoke a progress line for the car, notified = one
  * decision of the car's speech queue (ack, heard echo, progress, reply: start / end / halt / drop / deferred).
+ * voiced = one sentence-chunk of the reply went up before the full file, so the car could start speaking it.
  * Many per memo, so they are read by correlation id for the memos on screen, never scanned.
  */
-export const MEMO_ANNOTATION_TYPES = ["bloodbank.audio.memo.narrated", "bloodbank.audio.memo.notified"] as const;
+export const MEMO_ANNOTATION_TYPES = ["bloodbank.audio.memo.narrated", "bloodbank.audio.memo.notified", "bloodbank.audio.memo.voiced"] as const;
 
 export const MEMO_TYPES = [...MEMO_STAGE_TYPES, ...MEMO_ANNOTATION_TYPES] as const;
 
@@ -296,6 +297,20 @@ export type SpeechDecision = {
   mic?: string;
 };
 
+/** One sentence-chunk of the reply, uploaded before the full file (audio.memo.voiced). */
+export type ReplyChunk = {
+  eventId: string;
+  at: string;
+  /** 1..of: replies/<day>/<stamp>Z-<agent>-<memo_id>-c<n>of<of>.opus. */
+  n: number;
+  of: number;
+  key?: string;
+  text?: string;
+  ttsSeconds?: number;
+  /** Seconds after the agent finished (the watcher's own clock). */
+  sinceAgentDoneSeconds?: number;
+};
+
 /** Seconds from the memo's start (its upload) to the first time the driver heard each kind of thing. */
 export type MemoTiming = {
   ackSeconds?: number;
@@ -303,7 +318,16 @@ export type MemoTiming = {
   firstProgressSeconds?: number;
   firstNarrationSeconds?: number;
   progressPlayedSeconds?: number;
+  /** The reply's first chunk was up (chunked speech), and the full reply file was up (the replied fact). */
+  firstChunkSeconds?: number;
+  replyUpSeconds?: number;
   replyPlayedSeconds?: number;
+  /** Time to first response once the agent finished: first chunk up, full reply up, the car speaking. */
+  agentToFirstChunkSeconds?: number;
+  agentToReplySeconds?: number;
+  agentToCarSeconds?: number;
+  /** The car's own lag: from the first audio it could play (first chunk, else the full reply) to its "started" beacon. */
+  carLagSeconds?: number;
 };
 
 export type MemoSummary = {
@@ -353,6 +377,7 @@ export type MemoDetail = MemoSummary & {
   progress: ProgressLine[];
   narrations: Narration[];
   speech: SpeechDecision[];
+  chunks: ReplyChunk[];
   timing: MemoTiming;
 };
 
@@ -833,7 +858,21 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       decision: str(e.data.decision) ?? "unknown", reason: str(e.data.reason),
       recording: typeof e.data.recording === "boolean" ? e.data.recording : undefined, mic: str(e.data.mic)
     }));
-  const timing = memoTiming(startedAt, progress, narrations, speech);
+  // The reply chunk by chunk (first announcement per chunk: a stage retry re-uploads under the same key).
+  const chunks: ReplyChunk[] = [];
+  for (const e of memoFacts.filter((x) => x.type === "bloodbank.audio.memo.voiced")) {
+    const n = num(e.data.chunk);
+    if (n === undefined || chunks.some((c) => c.n === n)) continue;
+    chunks.push({
+      eventId: e.id, at: e.at, n, of: num(e.data.chunks) ?? n, key: str(e.data.chunk_s3_key), text: str(e.data.spoken_text),
+      ttsSeconds: num(e.data.tts_seconds), sinceAgentDoneSeconds: num(e.data.since_agent_done_seconds)
+    });
+  }
+  chunks.sort((a, b) => a.n - b.n);
+  const agentDone = [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
+  const playedStarted = memoFacts.find((e) => e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")?.at;
+  const timing = memoTiming(startedAt, progress, narrations, speech,
+    { firstChunkAt: chunks[0]?.at, repliedAt: repliedEvent?.at, agentDoneAt: agentDone, playedAt: playedStarted });
   const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
 
   const summary: MemoSummary = {
@@ -860,7 +899,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   };
   return {
     ...summary, commandId, ...(escalation && firstCommandId ? { escalatedFromCommandId: firstCommandId } : {}), transcript, replyText,
-    hops, events: relevant, progress, narrations, speech, timing
+    hops, events: relevant, progress, narrations, speech, chunks, timing
   };
 }
 
@@ -869,7 +908,8 @@ const SPOKEN: Record<string, string[]> = { ack: ["ack"], heard: ["echo", "heard"
 const STARTED = ["start", "started"];
 
 /** Seconds from the memo's start to the first ack, heard echo, progress line, narration and playback the driver got. */
-export function memoTiming(startedAt: string, progress: ProgressLine[], narrations: Narration[], speech: SpeechDecision[]): MemoTiming {
+export type ReplyTimes = { firstChunkAt?: string; repliedAt?: string; agentDoneAt?: string; playedAt?: string };
+export function memoTiming(startedAt: string, progress: ProgressLine[], narrations: Narration[], speech: SpeechDecision[], reply: ReplyTimes = {}): MemoTiming {
   const t0 = ms(startedAt);
   const since = (iso: string | undefined) => {
     const t = ms(iso);
@@ -878,13 +918,26 @@ export function memoTiming(startedAt: string, progress: ProgressLine[], narratio
   const firstOf = (isos: (string | undefined)[]) => isos.filter((x): x is string => ms(x) !== undefined).sort((a, b) => ms(a)! - ms(b)!)[0];
   const started = (what: keyof typeof SPOKEN) =>
     firstOf(speech.filter((d) => SPOKEN[what].includes(d.utterance) && STARTED.includes(d.decision)).map((d) => d.deviceAt ?? d.at));
+  const between = (from: string | undefined, to: string | undefined) => {
+    const a = ms(from), b = ms(to);
+    return a !== undefined && b !== undefined ? Math.round((b - a) / 100) / 10 : undefined;
+  };
+  // The car speaking: its arbiter's own start (device clock), else the pad's "started" beacon (server clock).
+  const carAt = started("reply") ?? reply.playedAt;
   const out: MemoTiming = {
     ackSeconds: since(started("ack")),
     heardEchoSeconds: since(started("heard")),
     firstProgressSeconds: since(firstOf(progress.map((p) => p.at))),
     firstNarrationSeconds: since(firstOf(narrations.map((n) => n.at))),
     progressPlayedSeconds: since(started("progress")),
-    replyPlayedSeconds: since(started("reply"))
+    firstChunkSeconds: since(reply.firstChunkAt),
+    replyUpSeconds: since(reply.repliedAt),
+    replyPlayedSeconds: since(started("reply")) ?? since(reply.playedAt),
+    agentToFirstChunkSeconds: between(reply.agentDoneAt, reply.firstChunkAt),
+    agentToReplySeconds: between(reply.agentDoneAt, reply.repliedAt),
+    agentToCarSeconds: between(reply.agentDoneAt, carAt),
+    // both server clocks: the beacon arrival against the fact that made the audio available
+    carLagSeconds: between(reply.firstChunkAt ?? reply.repliedAt, reply.playedAt)
   };
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as MemoTiming;
 }

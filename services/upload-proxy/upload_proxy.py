@@ -56,11 +56,17 @@ Every accepted beacon is ALSO appended, one JSON object per line, to EARSHOT_BEA
 bind-mounts it at /var/lib/earshot/beacons.jsonl; host side ~/.local/share/earshot/beacons/). The docker log
 rotates and dies with the container; this file survives recreation. Rotated at 64 MB with one .old
 generation. `earshot trace|status` read it first and fall back to docker logs.
+
+Push channel for the car: GET /upload/events is a Server-Sent Events stream of the memo facts the pad can act on
+(received, transcribed, dispatched, narrated, voiced, replied, failed, and agent.invocation.progressed of a memo turn),
+read from one core NATS subscription and reduced to ids and keys. See PushHub below and the inbox-watcher README,
+"The reply, sentence by sentence, pushed to the car".
 """
 import re
 
 import json
 import os
+import queue
 import socket
 import threading
 import time
@@ -272,10 +278,13 @@ def build_playback_envelope(beacon: dict, user_agent: str):
     age_ms = int((datetime.now(timezone.utc) - rendered).total_seconds() * 1000) if rendered else None
     if phase in ("started", "ended"):
         secs = beacon.get("seconds")
+        chunks = beacon.get("chunks")
         return _envelope("played", memo_id, {
             "target_agent_id": agent, "reply_s3_key": key, "phase": phase,
             "played_seconds": round(float(secs), 2) if isinstance(secs, (int, float)) and secs >= 0 else None,
-            "client_user_agent": user_agent[:200], "reply_age_ms": age_ms if age_ms is None or age_ms >= 0 else 0})
+            "client_user_agent": user_agent[:200], "reply_age_ms": age_ms if age_ms is None or age_ms >= 0 else 0,
+            # the car spoke this reply from its chunks (replies/...-cNNofMM.opus) rather than the full file
+            **({"chunks": chunks} if isinstance(chunks, int) and not isinstance(chunks, bool) and 1 < chunks <= 99 else {})})
     code = {"blocked": "autoplay_blocked", "skipped": "not_played"}.get(phase, "playback_error")
     default_msg = {"blocked": "sound is locked: tap the pad once",
                    "skipped": "the pad chose not to play this reply"}.get(phase, "audio element error")
@@ -301,7 +310,7 @@ CLIENT_EVENTS = ("record_started", "record_stopped", "record_failed", "record_si
 KEY_RE = re.compile(r"^inbox/[^/]+/\d{4}/\d{2}/\d{2}/[^/]+\.(ogg|webm|m4a|mp3|wav|opus|mp4)$")
 
 
-SPEECH_ACTIONS = ("queued", "deferred", "start", "end", "halt", "drop", "ignored", "mic")
+SPEECH_ACTIONS = ("queued", "deferred", "start", "end", "halt", "drop", "ignored", "mic", "chunk", "wait")
 SPEECH_MEMO_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
@@ -323,7 +332,8 @@ def speech_decision(raw):
 
 
 # Published as facts: what was said (or refused) for a memo. "queued" is the arbiter's bookkeeping (the start that
-# follows carries waited_ms), "ignored" names no utterance and "mic" no memo: those stay in the log.
+# follows carries waited_ms), "ignored" names no utterance and "mic" no memo, "chunk" / "wait" are the steps inside one
+# chunked reply (seq = the chunk): those stay in the log.
 SPEECH_FACT_ACTIONS = ("start", "end", "halt", "drop", "deferred")
 
 
@@ -550,6 +560,190 @@ def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str,
                 nats=f"{NATS_HOST}:{NATS_PORT}")
 
     threading.Thread(target=work, daemon=True).start()
+
+
+# ---------------------------------------------------------------- push channel for the car (SSE)
+#
+# GET /upload/events is a Server-Sent Events stream: one `memo` event per voice-memo fact the car can act on, read from
+# NATS (core subscription, stdlib) and reduced to the ids and keys the pad needs, so a new reply, reply chunk, progress
+# clip or stage change reaches the car the moment it is published instead of on the pad's next 2 s poll. The pad keeps
+# polling as the fallback; this only makes it early. A `beat` event every PUSH_HEARTBEAT_S keeps Cloudflare and Traefik
+# from closing an idle stream and tells the pad whether NATS is behind it; every event has an id (<boot>-<n>) so a
+# reconnect with Last-Event-ID replays what it missed from a short ring (a new boot replays nothing: the pad re-polls).
+
+PUSH_SUBJECTS = ("bloodbank.evt.audio.memo.>", "bloodbank.evt.agent.invocation.progressed")
+# What the car can act on. uploaded / notified / played are the pad's own doing: never echoed back to it.
+PUSH_FACTS = ("received", "transcribed", "dispatched", "narrated", "voiced", "replied", "failed")
+PUSH_HEARTBEAT_S = float(os.environ.get("PUSH_HEARTBEAT_S", "15"))
+PUSH_MAX_CLIENTS = int(os.environ.get("PUSH_MAX_CLIENTS", "32"))
+PUSH_MAX_AGE_S = float(os.environ.get("PUSH_MAX_AGE_S", "900"))   # a stream is recycled (the client reconnects at once)
+PUSH_RING = 200
+PUSH_NATS_IDLE_S = 150.0   # the server PINGs every 2 min: silence longer than this is a dead connection
+MEMO_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+PUSH_KEY_PREFIX = {"reply_s3_key": "replies/", "chunk_s3_key": "replies/", "progress_s3_key": "progress/"}
+
+
+def push_event(env) -> dict | None:
+    """The compact event the car gets for one NATS envelope, or None when it is nothing the car acts on."""
+    if not isinstance(env, dict):
+        return None
+    ce_type = env.get("type") if isinstance(env.get("type"), str) else ""
+    data = env.get("data") if isinstance(env.get("data"), dict) else {}
+    at = env.get("time") if isinstance(env.get("time"), str) else None
+    if ce_type == "bloodbank.agent.invocation.progressed":
+        ctx = data.get("context") if isinstance(data.get("context"), dict) else {}
+        memo = ctx.get("memo_id")
+        if not isinstance(memo, str) or not MEMO_UUID_RE.match(memo):
+            return None  # a turn that is not a voice memo's
+        seq = data.get("seq")
+        return {"fact": "progressed", "memo_id": memo, "at": at,
+                **({"seq": seq} if isinstance(seq, int) and not isinstance(seq, bool) else {})}
+    if not ce_type.startswith("bloodbank.audio.memo."):
+        return None
+    action = ce_type.rsplit(".", 1)[1]
+    if action not in PUSH_FACTS:
+        return None
+    memo = data.get("memo_id") or env.get("correlationid")
+    if not isinstance(memo, str) or not MEMO_UUID_RE.match(memo):
+        return None
+    out = {"fact": action, "memo_id": memo, "at": at}
+    agent = data.get("target_agent_id")
+    if isinstance(agent, str) and agent:
+        out["agent"] = agent[:80]
+    for k, prefix in PUSH_KEY_PREFIX.items():
+        v = data.get(k)
+        if isinstance(v, str) and v.startswith(prefix) and ".." not in v.split("/") and len(v) <= 300:
+            out[k] = v
+    for k in ("chunk", "chunks", "narration", "seq"):
+        v = data.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+            out[k] = v
+    for k in ("stage", "error_code"):
+        v = data.get(k)
+        if action == "failed" and isinstance(v, str):
+            out[k] = v[:60]
+    return out
+
+
+class PushClient:
+    def __init__(self):
+        self.q = queue.Queue(maxsize=256)
+        self.overflow = False   # events were dropped: the client is told to re-poll
+
+
+class PushHub:
+    """Fan-out of push events to every open stream, plus a short replay ring."""
+
+    def __init__(self, ring: int = PUSH_RING, max_clients: int = PUSH_MAX_CLIENTS):
+        self._lock = threading.Lock()
+        self._clients: set = set()
+        self._ring: list = []
+        self._ring_max = ring
+        self._max = max_clients
+        self._n = 0
+        self.boot = uuid.uuid4().hex[:8]
+        self.nats_up = False
+        self.published = 0
+
+    def publish(self, ev: dict) -> str:
+        with self._lock:
+            self._n += 1
+            ev_id = f"{self.boot}-{self._n}"
+            self._ring.append((self._n, ev_id, ev))
+            del self._ring[:-self._ring_max]
+            self.published += 1
+            for c in self._clients:
+                try:
+                    c.q.put_nowait((ev_id, ev))
+                except Exception:  # noqa: BLE001 - full: drop, the client re-polls
+                    c.overflow = True
+        return ev_id
+
+    def subscribe(self, last_id: str | None):
+        """(client, backlog) or None when the hub is full. The backlog is what a reconnect with Last-Event-ID missed."""
+        with self._lock:
+            if len(self._clients) >= self._max:
+                return None
+            c = PushClient()
+            self._clients.add(c)
+            backlog = []
+            if isinstance(last_id, str) and "-" in last_id:
+                boot, _, n = last_id.rpartition("-")
+                if boot == self.boot and n.isdigit():
+                    backlog = [(i, e) for k, i, e in self._ring if k > int(n)]
+            return c, backlog
+
+    def unsubscribe(self, c) -> None:
+        with self._lock:
+            self._clients.discard(c)
+
+    def clients(self) -> int:
+        with self._lock:
+            return len(self._clients)
+
+
+PUSH = PushHub()
+
+
+def sse_frame(event: str, data: dict, ev_id: str | None = None) -> bytes:
+    head = f"id: {ev_id}\n" if ev_id else ""
+    return f"{head}event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()
+
+
+def handle_nats_msg(subject: str, payload: bytes, hub: PushHub = PUSH) -> dict | None:
+    try:
+        env = json.loads(payload)
+    except ValueError:
+        return None
+    ev = push_event(env)
+    if ev:
+        hub.publish(ev)
+    return ev
+
+
+def nats_read_loop(rf, write, hub: PushHub = PUSH) -> None:
+    """Read NATS protocol lines until the connection ends: MSG -> handle, PING -> PONG, -ERR -> raise."""
+    while True:
+        line = rf.readline()
+        if not line:
+            raise IOError("NATS closed the connection")
+        if line.startswith(b"MSG "):
+            parts = line.split()
+            size = int(parts[-1])
+            payload = rf.read(size + 2)[:size]
+            handle_nats_msg(parts[1].decode(errors="replace"), payload, hub)
+        elif line.startswith(b"PING"):
+            write(b"PONG\r\n")
+        elif line.startswith(b"-ERR"):
+            raise IOError(line.decode(errors="replace").strip())
+
+
+def nats_subscribe_forever(hub: PushHub = PUSH) -> None:
+    """Keep one core NATS subscription to the memo facts alive for the push channel (reconnect with backoff)."""
+    backoff, last_err = 1.0, None
+    while True:
+        try:
+            with socket.create_connection((NATS_HOST, NATS_PORT), timeout=10) as s:
+                s.settimeout(PUSH_NATS_IDLE_S)
+                rf = s.makefile("rb")
+                rf.readline()  # INFO
+                subs = "".join(f"SUB {subj} {i}\r\n" for i, subj in enumerate(PUSH_SUBJECTS, 1))
+                s.sendall(b'CONNECT {"verbose":false,"pedantic":false,"name":"agent-pad-push","lang":"py-stdlib"}\r\n'
+                          + subs.encode() + b"PING\r\n")
+                hub.nats_up = True
+                backoff = 1.0
+                if last_err is not None:
+                    log("push_nats_up", nats=f"{NATS_HOST}:{NATS_PORT}", subjects=list(PUSH_SUBJECTS))
+                    last_err = None
+                nats_read_loop(rf, s.sendall, hub)
+        except Exception as e:  # noqa: BLE001 - the pad keeps polling; this only makes it early
+            hub.nats_up = False
+            err = f"{type(e).__name__}: {e}"[:200]
+            if err != last_err:
+                log("push_nats_down", error=err, nats=f"{NATS_HOST}:{NATS_PORT}", retry_s=backoff)
+            last_err = err
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 15.0)
 
 
 # ---------------------------------------------------------------- http
@@ -798,6 +992,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             threading.Thread(target=work, daemon=True).start()
 
     def do_GET(self):
+        if self.path == "/upload/events" or self.path.startswith("/upload/events?"):
+            return self._events()
         if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -806,6 +1002,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404, "not found")
+
+    def _events(self):
+        """GET /upload/events: the car's push channel (Server-Sent Events). See PushHub."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        last = self.headers.get("Last-Event-ID") or (q.get("last") or [None])[0]
+        ua = (self.headers.get("User-Agent") or "")[:120]
+        sub = PUSH.subscribe(last)
+        if sub is None:
+            log("push", status=503, reason="too many streams", remote=self.client_address[0], ua=ua)
+            return self.send_error(503, "too many streams")
+        client, backlog = sub
+        t0 = time.time()
+        sent = 0
+        why = "closed"
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            # retry: the browser's reconnect delay. The comment line pushes the first bytes through any buffering hop.
+            self.wfile.write(b"retry: 3000\n: " + b" " * 2048 + b"\n\n")
+            self.wfile.write(sse_frame("hello", {"boot": PUSH.boot, "nats": PUSH.nats_up, "replayed": len(backlog),
+                                                 "beat_s": PUSH_HEARTBEAT_S}))
+            for ev_id, ev in backlog:
+                self.wfile.write(sse_frame("memo", ev, ev_id))
+                sent += 1
+            log("push", status=200, phase="open", replayed=len(backlog), streams=PUSH.clients(), nats=PUSH.nats_up,
+                remote=self.client_address[0], ua=ua)
+            while time.time() - t0 < PUSH_MAX_AGE_S:
+                try:
+                    ev_id, ev = client.q.get(timeout=PUSH_HEARTBEAT_S)
+                    self.wfile.write(sse_frame("memo", ev, ev_id))
+                    sent += 1
+                except queue.Empty:
+                    self.wfile.write(sse_frame("beat", {"nats": PUSH.nats_up, "t": now_iso()}))
+                if client.overflow:
+                    client.overflow = False
+                    self.wfile.write(sse_frame("resync", {"reason": "overflow"}))
+            why = "max_age"
+        except OSError:
+            why = "client_gone"
+        finally:
+            PUSH.unsubscribe(client)
+            log("push", status=200, phase="close", reason=why, sent=sent, s=int(time.time() - t0),
+                remote=self.client_address[0])
 
     def log_message(self, format, *args):
         pass  # structured logging above replaces the default access log
@@ -817,6 +1059,7 @@ class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 if __name__ == "__main__":
-    log("starting", port=PORT, nats=f"{NATS_HOST}:{NATS_PORT}", emit_facts=EMIT_FACTS)
+    log("starting", port=PORT, nats=f"{NATS_HOST}:{NATS_PORT}", emit_facts=EMIT_FACTS, push_boot=PUSH.boot)
+    threading.Thread(target=nats_subscribe_forever, name="push-nats", daemon=True).start()
     with ThreadedServer(("", PORT), Handler) as srv:
         srv.serve_forever()

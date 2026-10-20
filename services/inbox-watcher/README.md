@@ -112,6 +112,48 @@ relative to the upload) and one timing line: `since upload: ack -0.4s | heard-ec
 first narration +31.2s | progress played +32.0s | reply played +128.5s`. Holocene `/voice` shows the same under the
 memo's summary, and the newest progress line on a running memo's row.
 
+## The reply, sentence by sentence, pushed to the car
+
+**Chunked speech.** vox renders a 500-character reply in 8-19 s, and the car used to hear nothing until all of it was
+done. A spoken reply longer than `MEMO_CHUNK_MIN_CHARS` (160) is now split at sentence ends into chunks that grow
+(`MEMO_CHUNK_CHARS` 110,170,300: the first renders in about 3 s, the second is ready before the first finished
+playing). Each chunk is rendered, uploaded as `replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>-c<ii>of<nn>.opus`
+(Ogg/Opus, `Content-Type: audio/ogg`) on a publisher thread while vox renders the next one (vox serves one request at a
+time: two at once each take twice as long), and announced as `audio.memo.voiced` {chunk, chunks, chunk_s3_key,
+reply_s3_key, spoken_text, tts_seconds, since_reply_seconds, since_agent_done_seconds}. Then ffmpeg joins the chunks
+into the full reply `replies/...-<memo_id>.ogg` (re-encoded; a failed join falls back to rendering it whole), which is
+the reply of record: the `replied` fact (now with `reply_chunks`, `first_chunk_seconds`, `last_chunk_seconds`,
+`full_seconds`), the Earshot mirror and older pads use it. The `.opus` extension is deliberate: a pad page from before
+chunking only plays `.ogg/.webm/.m4a/.mp3`, so it never plays a chunk as a separate reply. A chunk key sorts just before
+its full key and names its count, so a pad that only lists still knows when it has them all. A cancel between chunks
+takes every uploaded chunk back; a speak-stage retry re-uploads the same keys and announces each chunk once.
+`MEMO_REPLY_CHUNKS=0` turns it off. The status object carries `reply_chunks {n, voiced}` while it happens.
+
+**Push channel.** The upload proxy keeps one core NATS subscription to `bloodbank.evt.audio.memo.>` and
+`bloodbank.evt.agent.invocation.progressed` and serves `GET /upload/events` on the pad's own host (Server-Sent Events,
+through Cloudflare and Traefik): one `memo` event per received / transcribed / dispatched / narrated / voiced / replied /
+failed fact and per memo-turn progress line, reduced to the ids and keys the car needs, a `beat` every 15 s (with
+whether NATS is up), a `hello` on connect, ids `<boot>-<n>` with a 200-event replay ring for `Last-Event-ID`, and each
+stream recycled after 15 min. The pad subscribes for as long as it runs: a `voiced` or `replied` event queues the
+chunk or reply at once (no listing), `narrated` fetches that progress clip, anything else re-reads the memo's status
+object. Polling stays the fallback; with the stream live the fast reply poll relaxes from 2 s to 6 s, and a stream
+that is silent for 45 s is dropped and reopened. `docker logs agent-pad-upload | grep '"event":"push'` shows streams
+opening and closing and NATS going up or down.
+
+**On the car.** With a host that has the chunk player (`HoloceneNative.speechVersion() >= 2`, `playReplyChunk`) the pad
+hands the chunks over in order as they download; the speech arbiter plays them back to back as ONE reply (audio focus
+kept from chunk to chunk, nothing of lower rank between them, a missing chunk ends it after 45 s, a recording start
+stops all of it and the pad offers it again from chunk 1, or the full file if it is up by then). An older host or a
+plain browser waits for the full file. The played beacon says `chunks: n`. Measured on the sim, 2026-10-20: the car
+started 0.3-0.4 s after the first audio was up, against 2-5 s for the phone; chunk 2 and 3 were buffered before the
+chunk before them ended.
+
+Why the old "car started 10-22 s after the reply was rendered" number was wrong: `reply_age_ms` counts from the reply
+key's stamp, which the watcher takes BEFORE vox renders, so it contained the whole TTS time. Against the replied fact
+the car's real lag on 2026-10-19/20 was 0.9-8.4 s (median 2.6 s), the 2 s poll plus a listing, a download and the
+native prepare. memo:trace and /voice now measure the car from the first audio it could play (first chunk, else the
+replied fact) and add an "after the agent finished" line: first chunk up, reply up, car speaking.
+
 One id ties it together: **memo_id**. It is the Bloodbank `correlationid` of
 every `audio.memo.*` fact, of the invocation command, and (inherited from the
 command) of the gateway's `agent.invocation.*` / `conversation.turn.*` facts.
@@ -407,8 +449,8 @@ S3 access is the `delo` alias in `~/.mc/config.json`; the unit holds no secrets.
 
 Defined in the bloodbank repo (`schemas/bloodbank/audio/memo.*.json`, entity
 `memo`, actions `uploaded|received|transcribed|dispatched|replied|played|failed`, plus the annotations `narrated`
-(watcher: a progress line spoken for the car) and `notified` (upload proxy: a memo-tied decision of the car's speech
-queue), ordering key `memo:<memo_id>`). The gateway's `agent.invocation.progressed` carries the memo id in
+(watcher: a progress line spoken for the car), `voiced` (watcher: one sentence-chunk of the reply is up) and `notified`
+(upload proxy: a memo-tied decision of the car's speech queue), ordering key `memo:<memo_id>`). The gateway's `agent.invocation.progressed` carries the memo id in
 `data.context.memo_id` and the memo's correlationid. ntfy-router mutes all three. Validate a sample without publishing:
 
 ```bash
@@ -444,6 +486,16 @@ in the log). After editing it:
 ```bash
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
+
+## Verified live: chunked reply over the push channel (2026-10-20)
+
+Memo `1ac175ad` from the sim ("reply with a long paragraph", 1063-character reply, 3 chunks): the agent finished at
++12.6 s into its turn; chunk 1 (105 chars, 4.4 s on vox) was up 4.8 s later and the car started it 0.4 s after that
+(4.9 s after the agent finished); chunks 2 and 3 were buffered before the one before them ended and played back to
+back; the full file was up 16.5 s after the agent finished and the phone started it 2.3 s later. Memo `2508b667`: a
+recording started 2 s into chunk 1 stopped the reply before the mic armed; after the note the reply played again from
+chunk 1, then the queued "not sent" cue. `mise run memo:trace 1ac175ad` shows `car:chunk#1of3`, `car:chunk#3of3` and the
+"after the agent finished" line.
 
 ## Verified live: progress (2026-10-20)
 

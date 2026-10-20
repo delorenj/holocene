@@ -70,8 +70,12 @@ class ReplyPlayer(context: Context) {
 
     val playing: Boolean get() = tracker.current != null
 
-    fun play(id: String, bytes: ByteArray, ext: String) {
-        release()
+    /**
+     * [keepFocus]: the next chunk of the same reply. The transient focus the previous chunk held is kept (if it still
+     * holds it), so the radio is not un-ducked and ducked again between two sentences.
+     */
+    fun play(id: String, bytes: ByteArray, ext: String, keepFocus: Boolean = false) {
+        release(keepFocus = keepFocus)
         tracker.begin(id)
         val f = try {
             File.createTempFile("reply-", "." + ReplyFocus.ext(ext), app.cacheDir).also { it.writeBytes(bytes) }
@@ -80,17 +84,19 @@ class ReplyPlayer(context: Context) {
             return
         }
         file = f
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-            .setAudioAttributes(attrs)
-            .setOnAudioFocusChangeListener { change -> onFocus(id, change) }
-            .build()
-        val granted = audio.requestAudioFocus(request)
-        Log.i(TAG, "reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=$granted")
-        if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            fail(id, "focus_denied")
-            return
+        if (focus == null) {
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(attrs)
+                .setOnAudioFocusChangeListener { change -> onFocus(change) }
+                .build()
+            val granted = audio.requestAudioFocus(request)
+            Log.i(TAG, "reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=$granted")
+            if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                fail(id, "focus_denied")
+                return
+            }
+            focus = request
         }
-        focus = request
         try {
             val p = MediaPlayer()
             player = p
@@ -109,8 +115,9 @@ class ReplyPlayer(context: Context) {
         }
     }
 
-    private fun onFocus(id: String, change: Int) {
-        if (!tracker.owns(id)) return
+    // The focus listener outlives one chunk (keepFocus), so it acts on whichever clip is current, never on a stale id.
+    private fun onFocus(change: Int) {
+        val id = tracker.current ?: return
         Log.i(TAG, "reply focus change=$change")
         when (ReplyFocus.onChange(change, pausedByFocus)) {
             ReplyFocus.Act.PAUSE -> { pausedByFocus = true; try { player?.pause() } catch (_: RuntimeException) {} }
@@ -124,8 +131,11 @@ class ReplyPlayer(context: Context) {
 
     private fun finish(id: String, phase: String, detail: String) {
         if (!tracker.end(id)) return
-        release()
+        // A clip that played out keeps the focus through its callback: the next chunk of the same reply starts from
+        // inside it (keepFocus) without un-ducking the radio. If nothing started, the focus goes back right after.
+        release(keepFocus = phase == "ended")
         onPhase?.invoke(id, phase, detail)
+        if (tracker.current == null) abandonFocus()
     }
 
     /** End the current reply silently (the page decides what that means); no callback. */
@@ -134,16 +144,22 @@ class ReplyPlayer(context: Context) {
         release()
     }
 
-    private fun release() {
+    private fun release(keepFocus: Boolean = false) {
+        // A chunk paused by a call keeps no focus worth keeping: the next one asks again.
+        val keep = keepFocus && !pausedByFocus
         pausedByFocus = false
         player?.let {
             try { it.setOnCompletionListener(null); it.setOnErrorListener(null); it.setOnPreparedListener(null); it.reset(); it.release() } catch (_: RuntimeException) {}
         }
         player = null
-        focus?.let { audio.abandonAudioFocusRequest(it) }
-        focus = null
+        if (!keep) abandonFocus()
         file?.delete()
         file = null
+    }
+
+    private fun abandonFocus() {
+        focus?.let { audio.abandonAudioFocusRequest(it) }
+        focus = null
     }
 
     private companion object { const val TAG = "HoloceneReply" }

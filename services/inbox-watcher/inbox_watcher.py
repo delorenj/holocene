@@ -142,6 +142,21 @@ NARRATE_CHARS = int(os.environ.get("MEMO_NARRATE_CHARS", "140"))
 # characters, 2.1 s at 6 steps, 2.6 s at 10), so progress keeps the reply's voice at fewer steps.
 PROGRESS_VOICE = os.environ.get("MEMO_PROGRESS_VOICE") or VOICE
 PROGRESS_TTS_STEPS = int(os.environ.get("MEMO_PROGRESS_TTS_STEPS", "6"))
+# ---- chunked reply speech: the car starts speaking the first sentence while the rest renders
+# vox renders a whole 500-character reply in 8-19 s before a single word plays. A reply longer than CHUNK_MIN_CHARS is
+# split at sentence boundaries into chunks that grow (CHUNK_CHARS: the first is short, so it renders in about 2.7 s; the
+# second is small enough to be ready before the first finished playing; the rest are larger), each rendered, uploaded
+# as replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>-cNNofMM.opus and announced as audio.memo.voiced while the
+# next one renders. vox serves one request at a time (two concurrent renders each take twice as long, measured
+# 2026-10-20), so the chunks render back to back. The full reply (the chunks joined by ffmpeg) still goes up as
+# replies/...-<memo_id>.ogg afterwards: the reply of record for the replied fact, Earshot, /voice and older pads.
+# The chunk extension is .opus (Ogg/Opus, Content-Type audio/ogg) on purpose: a pad page from before chunking only
+# plays .ogg/.webm/.m4a/.mp3 keys, so it never mistakes a chunk for a reply and speaks the reply twice.
+REPLY_CHUNKS = os.environ.get("MEMO_REPLY_CHUNKS", "1") != "0"
+CHUNK_MIN_CHARS = int(os.environ.get("MEMO_CHUNK_MIN_CHARS", "160"))
+CHUNK_CHARS = tuple(int(x) for x in os.environ.get("MEMO_CHUNK_CHARS", "110,170,300").split(",") if x.strip()) or (110, 170, 300)
+CHUNK_TAIL_CHARS = 40     # a last chunk shorter than this joins the one before it
+CHUNK_MAX = 20
 # How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
 # between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
 AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
@@ -280,6 +295,7 @@ def compact(m: dict) -> None:
             if isinstance(m.get(k), str) and len(m[k]) > n:
                 m[k] = m[k][:n]
         m.pop("progress_full", None)  # the status object keeps the short line; the full one is in Candystore
+        m.pop("voiced_keys", None)    # the chunk keys only matter while a cancel could still retract them
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
 
@@ -493,6 +509,9 @@ def status_doc(m: dict) -> dict:
         "late": bool(m.get("late")), "escalated": bool(m.get("escalated")),
         "reply_key": m.get("reply_key"),
     }
+    if m.get("reply_chunks"):
+        # the reply is being spoken chunk by chunk: how many it has and how many are up (replies/...-cNNofMM.opus)
+        doc["reply_chunks"] = {"n": m["reply_chunks"], "voiced": m.get("voiced_n", 0)}
     if stage == "failed":
         code = m.get("failed_code") or m.get("status")
         doc["error_code"] = code
@@ -1380,6 +1399,7 @@ class Watcher:
         if st["state"] == "done":
             m["profile"] = st.get("profile") or m["agent"]
             m["agent_seconds"] = round(waited, 2)
+            m["agent_done_ts"] = time.time()
             if memo_escalated(m):
                 m["late"] = True  # the answer to a long ask comes back on the batch lane: it is spoken as a late reply
             return self.done_stage(m, "agent", "reply", ms=waited * 1000, command_id=m["command_id"],
@@ -1483,7 +1503,10 @@ class Watcher:
         Earshot audio and its text), best effort and logged, so the pad and the phone do not speak a cancelled reply. A
         removed Earshot object is forgotten, so a later `memo:retry` drops a fresh one; one that could not be removed stays
         recorded and is not dropped again."""
-        targets = [("reply", mc_.s3_url(rkey), None)]
+        targets = [("reply", mc_.s3_url(rkey), None)] if rkey else []
+        # the chunks the car may already be speaking from (replies/...-cNNofMM.opus)
+        for ckey in (m.get("voiced_keys") or {}).values():
+            targets.append(("reply_chunk", mc_.s3_url(ckey), None))
         if ekey:
             targets.append(("earshot_audio", f"{mc_.S3_ALIAS}/{EARSHOT_BUCKET}/{ekey}", "earshot_key"))
         tkey = m.get("earshot_text_key")
@@ -1501,6 +1524,7 @@ class Watcher:
                 m.pop(field, None)
                 if field == "earshot_key":
                     m.pop("earshot_attempted", None)
+        m.pop("voiced_keys", None)
         self.s.save()
 
     def step_speak(self, m: dict) -> None:
@@ -1512,24 +1536,40 @@ class Watcher:
             # One reply key per memo: a retry after a half-finished upload overwrites instead of
             # leaving a second object that the pad would play as a second reply.
             stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
+        t_speak = time.time()
         body = clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
             raise StageError("tts", "nothing_to_speak", "reply has no speakable text after cleaning", retryable=False)
         spoken = f"{name}, late reply. {body}" if late else f"{name}. {body}"
+        parts = split_for_speech(spoken)
         tmp = Path(tempfile.mkdtemp(prefix="memo-tts-"))
         try:
             t0 = time.time()
-            audio, engine = synthesize(spoken, tmp)
+            if len(parts) > 1:
+                # The car hears the first sentence while the rest renders; the full file below is joined from the chunks.
+                voiced = self._voice_chunks(m, parts, stamp, tmp, t_speak)
+                if voiced is None:
+                    with self.mu:
+                        log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
+                            note="cancelled while the reply was being voiced chunk by chunk; the chunks are taken back")
+                        self.retract_reply(m, None, None)
+                    return
+                audio, engine = voiced
+            else:
+                audio, engine = synthesize(spoken, tmp)
             tts_s = time.time() - t0
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
-                ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken))
+                ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken),
+                chunks=len(parts))
             with self.mu:
                 if self._cancelled(m):
                     # Cancelled while the voice was being made: nothing has been uploaded yet, so nothing is spoken.
                     log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
                         note="the reply is neither spoken nor mirrored")
+                    if m.get("voiced_keys"):
+                        self.retract_reply(m, None, None)
                     return
-            rkey = f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}.ogg"
+            rkey = reply_key_for(stamp, agent, mid)
             t1 = time.time()
             # The phone copy goes up alongside the car's, not after it: it is the faster path to an ear.
             # Once per memo: re-dropping the same key would give it a new LastModified, and Earshot plays that again.
@@ -1607,11 +1647,97 @@ class Watcher:
                 "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": VOICE,
                 "audio_bytes": stat["size"], "journey_seconds": round(journey, 2),
                 "prompt_match": m.get("prompt_match"), "late": late, "escalated": escalated,
-                "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key")})
+                "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
+                # chunked speech: how many chunks the car could start from, and when the first and the last went up
+                # (seconds after the reply text was found); null for a reply spoken as one file
+                "reply_chunks": len(parts) if len(parts) > 1 else None,
+                "first_chunk_seconds": m.get("voiced_first_s") if len(parts) > 1 else None,
+                "last_chunk_seconds": m.get("voiced_last_s") if len(parts) > 1 else None,
+                "full_seconds": round(time.time() - t_speak, 2)})
             m["status"] = "done"
             compact(m)
             self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
                             journey_s=round(journey, 1))
+
+    # -- chunked reply speech (worker thread, inside step_speak) --
+
+    def _voice_chunks(self, m: dict, parts: list[str], stamp: datetime, tmp: Path, t_speak: float) -> tuple[Path, str] | None:
+        """Render the reply chunk by chunk, upload each one as soon as it is rendered (on a publisher thread, so the next
+        chunk's render starts at once) and announce it (audio.memo.voiced). Then join them into the full reply file.
+        (full audio, engine), or None when the memo was cancelled meanwhile (the caller takes the chunks back).
+        A failed render or upload raises StageError: the speak stage is retried, re-rendering the same chunk keys."""
+        with self.mu:
+            agent, mid, key = m["agent"], m["memo_id"], m["key"]
+            m["reply_chunks"] = len(parts)
+        n = len(parts)
+        rkey = reply_key_for(stamp, agent, mid)
+        pub = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="voiced")
+        futures, files, engine = [], [], "unknown"
+        try:
+            for i, text in enumerate(parts, 1):
+                with self.mu:
+                    if self._cancelled(m):
+                        return None
+                d = tmp / f"c{i:02d}"
+                d.mkdir()
+                t0 = time.time()
+                audio, engine = synthesize(text, d)
+                files.append(audio)
+                job = {"i": i, "n": n, "text": text, "audio": audio, "ckey": chunk_key_for(stamp, agent, mid, i, n),
+                       "rkey": rkey, "tts_s": time.time() - t0, "engine": engine, "t_speak": t_speak}
+                futures.append(pub.submit(self._publish_chunk, m, job))
+            for f in futures:
+                f.result(timeout=120)  # a failed upload raises here and the stage is retried
+        finally:
+            pub.shutdown(wait=True)
+        with self.mu:
+            if self._cancelled(m):
+                return None
+        full = tmp / "reply.ogg"
+        t0 = time.time()
+        if concat_ogg(files, full):
+            log("reply_joined", memo_id=mid, key=key, agent=agent, chunks=n, bytes=full.stat().st_size,
+                ms=int((time.time() - t0) * 1000))
+            return full, engine
+        # ffmpeg could not join them: the full file is rendered whole, as before chunking (slower, never lost)
+        log("reply_join_failed", "warn", memo_id=mid, key=key, agent=agent, chunks=n,
+            note="rendering the full reply in one piece instead")
+        return synthesize(" ".join(parts), tmp)
+
+    def _publish_chunk(self, m: dict, job: dict) -> None:
+        """Upload one rendered chunk and publish audio.memo.voiced for it (once per chunk, also across stage retries)."""
+        mid, key, agent = m["memo_id"], m["key"], m["agent"]
+        r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(job["audio"]), mc_.s3_url(job["ckey"]), timeout=60)
+        if r.returncode != 0:
+            raise StageError("reply_upload", "mc_cp_failed", f"chunk {job['i']}/{job['n']}: mc cp rc={r.returncode}: "
+                             f"{r.stderr.strip()[-300:]}")
+        size = job["audio"].stat().st_size
+        with self.mu:
+            done = m.setdefault("voiced_keys", {})
+            first = str(job["i"]) not in done
+            done[str(job["i"])] = job["ckey"]
+            if self._cancelled(m):
+                return  # the caller sees the cancel and takes every uploaded chunk back
+            since = round(time.time() - job["t_speak"], 2)
+            m["voiced_n"] = len(done)
+            if job["i"] == 1:
+                m["voiced_first_s"] = since
+            if job["i"] == job["n"]:
+                m["voiced_last_s"] = since
+            log("chunk_voiced", memo_id=mid, key=key, agent=agent, stage="tts", chunk=job["i"], chunks=job["n"],
+                chunk_key=job["ckey"], tts_ms=int(job["tts_s"] * 1000), since_reply_s=since, bytes=size,
+                chars=len(job["text"]))
+            if first:
+                done_ts = m.get("agent_done_ts")
+                self.fact("voiced", m, {
+                    "reply_s3_key": job["rkey"], "chunk_s3_key": job["ckey"], "chunk": job["i"], "chunks": job["n"],
+                    "spoken_text": job["text"], "spoken_chars": len(job["text"]), "command_id": m.get("command_id"),
+                    "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], "voice": VOICE, "audio_bytes": size,
+                    "since_reply_seconds": since,
+                    "since_agent_done_seconds": round(time.time() - done_ts, 2) if done_ts else None,
+                    "late": bool(m.get("late"))})
+            self.status(m)
+            self.s.save()
 
     # ---- progress: what the agent says it is doing, while the driver waits --------------------------------------
     #
@@ -1890,6 +2016,98 @@ def clean_for_speech(text: str, limit: int) -> str:
         end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
         t = cut[: end + 1] if end > limit // 2 else cut.rsplit(" ", 1)[0] + "..."
     return t
+
+
+def reply_key_for(stamp: datetime, agent: str, mid: str) -> str:
+    """replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg: the reply of record (one per memo)."""
+    return f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}.ogg"
+
+
+def chunk_key_for(stamp: datetime, agent: str, mid: str, i: int, n: int) -> str:
+    """replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>-c<ii>of<nn>.opus: chunk i of n of the same reply. It sorts
+    just before the full file (a '-' sorts before '.'), so a listing shows a reply's chunks first and its full file last;
+    the count in the name lets a pad that only lists (no push) know when it has them all."""
+    return f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}-c{i:02d}of{n:02d}.opus"
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s+(?=\S)")
+
+
+def _cut_at(text: str, room: int) -> tuple[str, str]:
+    """Split one over-long sentence: the head (at most `room` characters) ends at a clause mark when there is one past
+    40% of the room, else at a word boundary, else hard."""
+    if len(text) <= room:
+        return text, ""
+    window = text[:room]
+    cut = max(window.rfind(", "), window.rfind("; "), window.rfind(": "), window.rfind(" - "))
+    if cut < room * 0.4:
+        cut = window.rfind(" ")
+        head = text[:cut] if cut > 0 else window
+    else:
+        head = text[:cut + 1]
+    return head.strip(), text[len(head):].strip()
+
+
+def split_for_speech(spoken: str, limits: tuple[int, ...] | None = None, min_chars: int | None = None) -> list[str]:
+    """The spoken reply as the chunks it is voiced in: [spoken] when chunking is off or the reply is short, else
+    sentence-packed chunks whose size limit grows (limits[i] for chunk i, the last limit for the rest). A chunk ends at a
+    sentence end where it can; a sentence that does not fit is cut at a clause mark or a word. The name prefix always
+    stays in the first chunk, and a tiny last chunk joins the one before it."""
+    limits = limits or CHUNK_CHARS
+    min_chars = CHUNK_MIN_CHARS if min_chars is None else min_chars
+    s = re.sub(r"\s+", " ", spoken or "").strip()
+    if not s:
+        return []
+    if not REPLY_CHUNKS or len(s) <= min_chars:
+        return [s]
+    queue = [x for x in _SENTENCE_END.split(s) if x]
+    chunks: list[str] = []
+    cur = ""
+    while queue:
+        sent = queue.pop(0)
+        lim = limits[min(len(chunks), len(limits) - 1)]
+        room = lim - (len(cur) + 1 if cur else 0)
+        if len(sent) <= room:
+            cur = f"{cur} {sent}" if cur else sent
+            continue
+        if cur and len(cur) >= lim * 0.4:
+            chunks.append(cur)  # a sentence end is a better place to stop than mid-sentence
+            cur = ""
+            queue.insert(0, sent)
+            continue
+        head, tail = _cut_at(sent, max(room, 1))
+        cur = f"{cur} {head}" if cur else head
+        chunks.append(cur)
+        cur = ""
+        if tail:
+            queue.insert(0, tail)
+    if cur:
+        chunks.append(cur)
+    if len(chunks) > 1 and len(chunks[-1]) < CHUNK_TAIL_CHARS:
+        tail = chunks.pop()
+        chunks[-1] = f"{chunks[-1]} {tail}"
+    if len(chunks) > CHUNK_MAX:
+        chunks = chunks[:CHUNK_MAX - 1] + [" ".join(chunks[CHUNK_MAX - 1:])]
+    return chunks
+
+
+def concat_ogg(files: list[Path], out: Path) -> bool:
+    """Join the chunk files into one Ogg/Opus reply (re-encoded, so the joined stream has clean timestamps)."""
+    if not files:
+        return False
+    lst = out.with_suffix(".txt")
+    lst.write_text("".join(f"file '{str(f)}'\n" for f in files), encoding="utf-8")
+    try:
+        r = subprocess.run([mc_.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
+                            "-i", str(lst), "-c:a", "libopus", "-b:a", "40k", "-vn", str(out)],
+                           capture_output=True, text=True, timeout=60)
+    except Exception as e:  # noqa: BLE001
+        log("reply_join_error", "warn", error=f"{type(e).__name__}: {e}"[:200])
+        return False
+    if r.returncode != 0:
+        log("reply_join_error", "warn", rc=r.returncode, error=r.stderr.strip()[-200:])
+        return False
+    return out.exists() and out.stat().st_size >= 200
 
 
 def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None) -> tuple[Path, str]:

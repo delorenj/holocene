@@ -704,3 +704,146 @@ class SpeechDecisions(unittest.TestCase):
         self.assertIsNone(up.speech_decision("start"))
         self.assertNotIn("memo_id", up.speech_decision({"action": "drop", "memo_id": "../etc"}))
         self.assertNotIn("seq", up.speech_decision({"action": "drop", "seq": True}))
+
+
+PUSH_MEMO = "f753985b-d3fb-5836-9db4-f9fb8e7dbe6b"
+
+
+def memo_env(action, **data):
+    return {"type": f"bloodbank.audio.memo.{action}", "correlationid": PUSH_MEMO, "time": "2026-10-20T19:20:45Z",
+            "data": {"memo_id": PUSH_MEMO, "target_agent_id": "holocene-pm", **data}}
+
+
+class PushEvents(unittest.TestCase):
+    """The car's push channel: which facts become events, and what they carry."""
+
+    def test_reply_chunk_and_progress_facts_carry_their_keys(self):
+        ck = f"replies/2026/10/20/192041Z-holocene-pm-{PUSH_MEMO}-c01of03.opus"
+        ev = up.push_event(memo_env("voiced", chunk=1, chunks=3, chunk_s3_key=ck,
+                                    reply_s3_key=f"replies/2026/10/20/192041Z-holocene-pm-{PUSH_MEMO}.ogg", spoken_text="x" * 400))
+        self.assertEqual(ev["fact"], "voiced")
+        self.assertEqual((ev["chunk"], ev["chunks"], ev["chunk_s3_key"]), (1, 3, ck))
+        self.assertNotIn("spoken_text", ev)  # the car needs the key, not the words
+        self.assertEqual(up.push_event(memo_env("narrated", narration=2, progress_s3_key=f"progress/2026/10/20/{PUSH_MEMO}-2.ogg"))["narration"], 2)
+        self.assertEqual(up.push_event(memo_env("replied", reply_s3_key="replies/2026/10/20/a.ogg"))["reply_s3_key"], "replies/2026/10/20/a.ogg")
+
+    def test_the_pads_own_facts_and_foreign_keys_are_not_pushed(self):
+        for action in ("uploaded", "notified", "played"):
+            self.assertIsNone(up.push_event(memo_env(action)), action)
+        ev = up.push_event(memo_env("replied", reply_s3_key="inbox/../x.ogg"))
+        self.assertNotIn("reply_s3_key", ev)
+        self.assertIsNone(up.push_event({"type": "bloodbank.audio.memo.replied", "data": {"memo_id": "nope"}}))
+        self.assertIsNone(up.push_event("not a dict"))
+
+    def test_agent_progress_only_for_a_memo_turn(self):
+        env = {"type": "bloodbank.agent.invocation.progressed", "time": "t", "data": {"seq": 3, "text": "Reading", "context": {"memo_id": PUSH_MEMO}}}
+        self.assertEqual(up.push_event(env), {"fact": "progressed", "memo_id": PUSH_MEMO, "at": "t", "seq": 3})
+        self.assertIsNone(up.push_event({"type": "bloodbank.agent.invocation.progressed", "data": {"seq": 1, "context": {}}}))
+
+    def test_a_failure_says_where(self):
+        ev = up.push_event(memo_env("failed", stage="tts", error_code="vox_failed"))
+        self.assertEqual((ev["stage"], ev["error_code"]), ("tts", "vox_failed"))
+
+
+class PushHubBehaviour(unittest.TestCase):
+    def test_fanout_replay_by_last_event_id_and_overflow(self):
+        hub = up.PushHub(ring=5, max_clients=3)
+        a, back = hub.subscribe(None)
+        self.assertEqual(back, [])
+        ids = [hub.publish({"n": i}) for i in range(7)]
+        self.assertEqual(a.q.get_nowait(), (ids[0], {"n": 0}))
+        # a reconnect replays only what came after its last id, from the ring (the oldest fell out of it)
+        b, back = hub.subscribe(ids[3])
+        self.assertEqual([e["n"] for _, e in back], [4, 5, 6])
+        _, back = hub.subscribe(f"other-{3}")  # another boot: nothing to replay (and the hub is now full)
+        self.assertEqual(back, [])
+        self.assertIsNone(hub.subscribe(None))
+        hub.unsubscribe(b)
+        self.assertIsNotNone(hub.subscribe(None))
+        # a client that does not read loses events and is flagged to re-poll
+        for i in range(300):
+            hub.publish({"n": i})
+        self.assertTrue(a.overflow)
+
+    def test_nats_protocol_loop_answers_ping_and_publishes_msgs(self):
+        import io
+        hub = up.PushHub()
+        c, _ = hub.subscribe(None)
+        body = json.dumps(memo_env("replied", reply_s3_key="replies/2026/10/20/a.ogg")).encode()
+        noise = json.dumps({"type": "bloodbank.audio.memo.played", "data": {"memo_id": PUSH_MEMO}}).encode()
+        stream = (b"PING\r\n" + f"MSG bloodbank.evt.audio.memo.replied 1 {len(body)}\r\n".encode() + body + b"\r\n"
+                  + f"MSG bloodbank.evt.audio.memo.played 1 {len(noise)}\r\n".encode() + noise + b"\r\n")
+        sent = []
+        with self.assertRaises(IOError):
+            up.nats_read_loop(io.BytesIO(stream), sent.append, hub)
+        self.assertEqual(sent, [b"PONG\r\n"])
+        _, ev = c.q.get_nowait()
+        self.assertEqual((ev["fact"], ev["reply_s3_key"]), ("replied", "replies/2026/10/20/a.ogg"))
+        self.assertTrue(c.q.empty())  # the pad's own played fact is not echoed
+
+
+class PushStream(unittest.TestCase):
+    """GET /upload/events on the real Handler: headers, hello, events, heartbeat, Last-Event-ID replay."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        cls.old = (up.PUSH, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S)
+        up.PUSH = up.PushHub()
+        up.PUSH_HEARTBEAT_S = 0.3
+        up.PUSH_MAX_AGE_S = 1.2
+        cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        up.PUSH, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S = cls.old
+
+    def stream(self, headers="", publish=()):
+        import socket, threading, time as t
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        s.sendall(f"GET /upload/events HTTP/1.1\r\nHost: x\r\n{headers}\r\n".encode())
+
+        def later():
+            t.sleep(0.2)
+            for ev in publish:
+                up.PUSH.publish(ev)
+        threading.Thread(target=later, daemon=True).start()
+        out = b""
+        while True:  # the stream ends at PUSH_MAX_AGE_S
+            d = s.recv(65536)
+            if not d:
+                break
+            out += d
+        s.close()
+        return out.decode()
+
+    def test_a_stream_says_hello_then_events_then_beats_and_ends_at_its_max_age(self):
+        out = self.stream(publish=[{"fact": "replied", "memo_id": PUSH_MEMO}])
+        head, _, body = out.partition("\r\n\r\n")
+        self.assertIn("200", head.splitlines()[0])
+        self.assertIn("Content-Type: text/event-stream", head)
+        self.assertIn("Cache-Control: no-cache, no-transform", head)
+        self.assertTrue(body.startswith("retry: 3000\n"))
+        self.assertIn("event: hello\n", body)
+        self.assertRegex(body, r"id: [0-9a-f]{8}-\d+\nevent: memo\ndata: \{\"fact\":\"replied\"")
+        self.assertIn("event: beat\n", body)
+        self.assertLess(body.index("event: hello"), body.index("event: memo"))
+
+    def test_a_reconnect_with_last_event_id_gets_what_it_missed(self):
+        first = up.PUSH.publish({"fact": "received", "memo_id": PUSH_MEMO})
+        up.PUSH.publish({"fact": "transcribed", "memo_id": PUSH_MEMO})
+        out = self.stream(headers=f"Last-Event-ID: {first}\r\n")
+        self.assertIn('"fact":"transcribed"', out)
+        self.assertNotIn('"fact":"received"', out)
+        self.assertIn('"replayed":1', out)
+
+
+class PlayedChunks(unittest.TestCase):
+    def test_a_chunked_playback_says_so_on_the_played_fact(self):
+        key = f"replies/2026/10/20/192041Z-holocene-pm-{PUSH_MEMO}.ogg"
+        env = up.build_playback_envelope({"reply_key": key, "phase": "started", "chunks": 3}, "ua")
+        self.assertEqual(env["data"]["chunks"], 3)
+        self.assertNotIn("chunks", up.build_playback_envelope({"reply_key": key, "phase": "started", "chunks": True}, "ua")["data"])

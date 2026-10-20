@@ -18,6 +18,10 @@ package sh.delo.holocene.auto
  * - The echo is said at most once per memo.
  * - Every queued item has a deadline ([Utterance.maxWaitMs]); an ack that could not be said within seconds is
  *   dropped instead of said late.
+ * - A chunked reply ([offerChunk]: the watcher uploads the reply sentence by sentence while it renders the rest) is ONE
+ *   reply: its chunks play in order, back to back, and while it waits for its next chunk it still holds the queue, so
+ *   nothing of lower rank is said between two chunks. A recording start stops the whole reply (the page offers it again
+ *   from chunk 1 after the note); a chunk that never comes ends it after [CHUNK_WAIT_MS].
  *
  * Every decision goes to [Output.decision] (the host logs it to logcat tag HoloceneSpeech and as a client event,
  * so overlap can be audited from the server).
@@ -52,6 +56,8 @@ data class Utterance(
     val maxWaitMs: Long = Long.MAX_VALUE,
     /** False: offered while the mic is busy, it is dropped instead of deferred (a "Stop first" refusal). */
     val deferrable: Boolean = true,
+    /** > 0: a chunked reply of this many chunks; its clips arrive through [SpeechArbiter.offerChunk], not [parts]. */
+    val chunks: Int = 0,
 )
 
 data class SpeechDecision(
@@ -69,6 +75,12 @@ data class SpeechDecision(
 class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     interface Output {
         fun play(u: Utterance)
+        /** Play chunk [index] (1-based) of the chunked reply [u]; report its end through [chunkEnded]. */
+        fun playChunk(u: Utterance, index: Int, clip: SpeechPart.Clip) {}
+        /** The chunked reply [u] is over: [reason] "" = its last chunk ended, else why it was given up (chunk_timeout). */
+        fun streamDone(u: Utterance, reason: String) {}
+        /** [u] now waits for chunk [index]: call [tick] after [CHUNK_WAIT_MS] so a chunk that never comes ends it. */
+        fun waitChunk(u: Utterance, index: Int) {}
         /** Stop [u] now, silently. [reason]: recording | after_reply | stopped | reset. */
         fun halt(u: Utterance, reason: String)
         fun decision(d: SpeechDecision)
@@ -77,6 +89,13 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     enum class Mic { IDLE, ARMING, RECORDING }
 
     private class Entry(val u: Utterance, val at: Long)
+
+    /** A chunked reply's clips by index, which one plays, and since when it waits for the next one (-1: not waiting). */
+    private class Stream(val total: Int) {
+        val clips = HashMap<Int, SpeechPart.Clip>()
+        var playing = 0
+        var waitingSince = -1L
+    }
 
     var mic = Mic.IDLE
         private set
@@ -87,11 +106,12 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     private val finalMemos = LinkedHashSet<String>()
     private val echoed = LinkedHashSet<String>()
     private val progressSeq = LinkedHashMap<String, Int>()
+    private val streams = HashMap<String, Stream>()
 
     val queued: List<Utterance> get() = queue.map { it.u }
 
-    private fun log(action: String, u: Utterance, reason: String = "") =
-        out.decision(SpeechDecision(action, u.id, u.kind.wire, u.memoId, u.seq, reason, now(), mic.name.lowercase()))
+    private fun log(action: String, u: Utterance, reason: String = "", seq: Int = u.seq) =
+        out.decision(SpeechDecision(action, u.id, u.kind.wire, u.memoId, seq, reason, now(), mic.name.lowercase()))
 
     private fun drop(u: Utterance, reason: String): Boolean { log("drop", u, reason); return false }
 
@@ -122,6 +142,92 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         else log("queued", u, current?.let { "behind_${it.kind.wire}" } ?: "")
         pump()
         return true
+    }
+
+    /**
+     * Chunk [index] of [total] of the chunked reply [id]. The first chunk offered queues the reply like any reply (it
+     * makes the memo final); later ones are buffered, or played at once when the reply is waiting for exactly that one.
+     * Returns false when the chunk was dropped (bad numbers, a duplicate, a count that changed).
+     */
+    fun offerChunk(id: String, memoId: String?, index: Int, total: Int, clip: SpeechPart.Clip): Boolean {
+        val s = streams[id]
+        val known = s != null && (current?.id == id || queue.any { it.u.id == id })
+        if (total < 2 || total > MAX_CHUNKS || index < 1 || index > total) {
+            out.decision(SpeechDecision("drop", id, SpeechKind.REPLY.wire, memoId, index, "bad_chunk", now(), mic.name.lowercase()))
+            return false
+        }
+        if (s != null && known) {
+            val u = current?.takeIf { it.id == id } ?: queue.first { it.u.id == id }.u
+            if (s.total != total) { log("drop", u, "chunk_count_changed", index); return false }
+            if (index in s.clips || index <= s.playing) { log("drop", u, "duplicate_chunk", index); return false }
+            s.clips[index] = clip
+            if (current?.id == id && s.waitingSince >= 0 && index == s.playing + 1) {
+                val waited = now() - s.waitingSince
+                s.waitingSince = -1
+                s.playing = index
+                log("chunk", u, "waited_ms=$waited", index)
+                out.playChunk(u, index, clip)
+            } else log("chunk", u, "buffered", index)
+            return true
+        }
+        streams[id] = Stream(total).also { it.clips[index] = clip }
+        val ok = offer(Utterance(id, SpeechKind.REPLY, emptyList(), memoId = memoId, chunks = total))
+        if (!ok) streams.remove(id)
+        return ok
+    }
+
+    /** Chunk [index] of the playing chunked reply [id] ended (or failed: it is skipped). The next one plays, or the reply waits. */
+    fun chunkEnded(id: String, index: Int, detail: String = "") {
+        val c = current
+        val s = streams[id]
+        if (c == null || c.id != id || s == null || s.playing != index) {
+            out.decision(SpeechDecision("ignored", id, "", null, index, "not_current", now(), mic.name.lowercase()))
+            return
+        }
+        if (detail.isNotEmpty()) log("chunk", c, "skipped:$detail".take(80), index)
+        if (index >= s.total) {
+            streams.remove(id)
+            current = null
+            log("end", c, "chunks=${s.total}")
+            out.streamDone(c, "")
+            pump()
+            return
+        }
+        playNextChunk(c, s)
+    }
+
+    /** A chunked reply that has waited longer than [CHUNK_WAIT_MS] for its next chunk is given up (and the queue moves on). */
+    fun tick() {
+        val c = current ?: return
+        val s = streams[c.id] ?: return
+        if (s.waitingSince < 0 || now() - s.waitingSince < CHUNK_WAIT_MS) return
+        streams.remove(c.id)
+        current = null
+        log("halt", c, "chunk_timeout", s.playing + 1)
+        out.streamDone(c, "chunk_timeout")
+        pump()
+    }
+
+    private fun playNextChunk(u: Utterance, s: Stream) {
+        val next = s.playing + 1
+        val clip = s.clips[next]
+        if (clip != null) {
+            s.playing = next
+            s.waitingSince = -1
+            log("chunk", u, if (next == 1) "first" else "next", next)
+            out.playChunk(u, next, clip)
+        } else {
+            s.waitingSince = now()
+            log("wait", u, "chunk_$next", next)
+            out.waitChunk(u, next)
+        }
+    }
+
+    private fun begin(u: Utterance) {
+        val s = if (u.chunks > 0) streams[u.id] else null
+        if (s == null) { out.play(u); return }
+        s.playing = 0
+        playNextChunk(u, s)
     }
 
     /**
@@ -163,6 +269,7 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         val c = current
         if (c != null && c.id == id) {
             current = null
+            streams.remove(id)
             log("halt", c, reason)
             out.halt(c, reason)
             pump()
@@ -228,6 +335,7 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     fun reset() {
         val c = current
         current = null
+        streams.clear()
         onArmed = null
         if (c != null) { log("halt", c, "reset"); out.halt(c, "reset") }
         removeQueued("reset") { true }
@@ -237,6 +345,7 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     private fun preempt(reason: String) {
         val c = current ?: return
         current = null
+        streams.remove(c.id) // a chunked reply goes back to the page whole: it offers it again from chunk 1
         log("halt", c, reason)
         out.halt(c, reason)
         // A short echo or a progress line that was cut is still news after the note; a reply goes back to its owner
@@ -258,12 +367,12 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         val u = next.value.u
         current = u
         log("start", u, "waited_ms=${t - next.value.at}")
-        out.play(u)
+        begin(u)
     }
 
     private fun removeQueued(reason: String, match: (Utterance) -> Boolean) {
         val gone = queue.filter { match(it.u) }
-        for (e in gone) { queue.remove(e); log("drop", e.u, reason) }
+        for (e in gone) { queue.remove(e); streams.remove(e.u.id); log("drop", e.u, reason) }
     }
 
     private fun remember(set: LinkedHashSet<String>, v: String) {
@@ -283,6 +392,9 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         const val CUE_WAIT_MS = 30_000L
         const val ECHO_WAIT_MS = 90_000L
         const val PROGRESS_WAIT_MS = 30_000L
+        /** How long a chunked reply waits for its next chunk before it is given up (the watcher renders one in ~3-7 s). */
+        const val CHUNK_WAIT_MS = 45_000L
+        const val MAX_CHUNKS = 99
 
         private val REPLY_MEMO = Regex("""([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+$""")
 

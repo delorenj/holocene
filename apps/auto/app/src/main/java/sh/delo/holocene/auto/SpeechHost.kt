@@ -18,6 +18,8 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     private val player = ReplyPlayer(context)
     val arbiter = SpeechArbiter({ SystemClock.elapsedRealtime() }, this)
     private var step = 0
+    /** Seconds of the chunked reply played so far (its chunks' durations), reported with its end. */
+    private var streamSeconds = 0.0
 
     /** Reply playback phases for the page (started | ended | error | deferred), keyed by the page's reply id. */
     var onReplyPhase: ((id: String, phase: String, detail: String) -> Unit)? = null
@@ -31,6 +33,20 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     private fun onClip(id: String, phase: String, detail: String) {
         val u = arbiter.current
+        if (u != null && u.chunks > 0) {
+            // A chunk's player id is "<reply id>#<index>": only the chunk that is playing now counts.
+            val cut = id.lastIndexOf('#')
+            val index = id.substring(cut + 1).toIntOrNull() ?: return
+            if (cut <= 0 || id.substring(0, cut) != u.id) return
+            when (phase) {
+                "started" -> if (index == 1) { streamSeconds = 0.0; onReplyPhase?.invoke(u.id, "started", "") }
+                "ended" -> { streamSeconds += detail.toDoubleOrNull() ?: 0.0; arbiter.chunkEnded(u.id, index) }
+                // Another app took the focus for good: the whole reply stops (the page plays it again later); any other
+                // error skips that one chunk.
+                "error" -> if (detail == "focus_lost") arbiter.cancel(u.id, "focus_lost") else arbiter.chunkEnded(u.id, index, "error:$detail")
+            }
+            return
+        }
         if (u == null || u.id != id) return
         if (u.kind == SpeechKind.REPLY) onReplyPhase?.invoke(id, phase, detail)
         if (phase == "ended" || phase == "error") arbiter.finished(id, if (phase == "error") "error:$detail" else "")
@@ -52,9 +68,25 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         }
     }
 
+    override fun playChunk(u: Utterance, index: Int, clip: SpeechPart.Clip) {
+        step++
+        // The reply keeps its audio focus from one chunk to the next: the radio stays ducked, no dip between sentences.
+        player.play("${u.id}#$index", clip.bytes, clip.ext, keepFocus = index > 1)
+    }
+
+    override fun streamDone(u: Utterance, reason: String) {
+        player.stop()
+        if (reason.isEmpty()) onReplyPhase?.invoke(u.id, "ended", streamSeconds.toString())
+        else onReplyPhase?.invoke(u.id, "error", reason)
+    }
+
+    override fun waitChunk(u: Utterance, index: Int) {
+        main.postDelayed({ arbiter.tick() }, SpeechArbiter.CHUNK_WAIT_MS + 100)
+    }
+
     override fun halt(u: Utterance, reason: String) {
         step++
-        if (u.parts.any { it is SpeechPart.Clip }) player.stop() else feedback.stop()
+        if (u.chunks > 0 || u.parts.any { it is SpeechPart.Clip }) player.stop() else feedback.stop()
         if (u.kind == SpeechKind.REPLY) onReplyPhase?.invoke(u.id, "deferred", reason)
     }
 
@@ -77,6 +109,11 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     fun reply(id: String, bytes: ByteArray, ext: String) {
         arbiter.offer(Utterance(id, SpeechKind.REPLY, listOf(SpeechPart.Clip(bytes, ext)), memoId = SpeechArbiter.memoOfReply(id)))
+    }
+
+    /** Chunk [index] of [total] of the reply [id] (the page sends them in order as they arrive). */
+    fun replyChunk(id: String, index: Int, total: Int, bytes: ByteArray, ext: String) {
+        arbiter.offerChunk(id, SpeechArbiter.memoOfReply(id), index, total, SpeechPart.Clip(bytes, ext))
     }
 
     fun stopReply(id: String?) {

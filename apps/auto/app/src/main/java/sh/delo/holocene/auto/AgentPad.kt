@@ -376,12 +376,24 @@ class AgentPadHost(
             }
         }
 
+        /**
+         * Chunk [index] of [total] of the reply [id] (its full key): the watcher uploads a long reply sentence by sentence
+         * while it renders the rest. The chunks play back to back as one reply through the speech queue; the page sends
+         * them in order as they arrive, and again from chunk 1 after a recording stopped the reply.
+         */
+        @JavascriptInterface fun playReplyChunk(id: String, index: Int, total: Int, b64: String, ext: String) {
+            val bytes = try { Base64.decode(b64, Base64.DEFAULT) } catch (e: IllegalArgumentException) { null }
+            if (bytes == null || bytes.isEmpty()) return
+            activity.runOnUiThread { if (web != null) speech.replyChunk(id, index, total, bytes, ReplyFocus.ext(ext)) }
+        }
+
         @JavascriptInterface fun stopReply() {
             activity.runOnUiThread { speech.stopReply(null) }
         }
 
         /** Speech queue protocol version; the page feature-detects the calls below with it. */
-        @JavascriptInterface fun speechVersion(): Int = 1
+        /** 2: playReplyChunk (chunked replies). */
+        @JavascriptInterface fun speechVersion(): Int = 2
 
         /** The transcript is back: "<Agent> heard: <first words>", once per memo, through the speech queue. */
         @JavascriptInterface fun speechEcho(memoId: String, name: String, heard: String) {

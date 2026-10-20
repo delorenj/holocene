@@ -59,7 +59,13 @@ export type SpeechDecision = { eventId: string; at: string; deviceAt?: string; u
 export type MemoTiming = {
   ackSeconds?: number; heardEchoSeconds?: number; firstProgressSeconds?: number; firstNarrationSeconds?: number;
   progressPlayedSeconds?: number; replyPlayedSeconds?: number;
+  /** Chunked speech: the reply's first chunk up, and the full reply file up (since the upload). */
+  firstChunkSeconds?: number; replyUpSeconds?: number;
+  /** Since the agent finished: first chunk up, full reply up, the car speaking; and the car's lag behind its first audio. */
+  agentToFirstChunkSeconds?: number; agentToReplySeconds?: number; agentToCarSeconds?: number; carLagSeconds?: number;
 };
+/** One sentence-chunk of the reply, uploaded before the full file (audio.memo.voiced). */
+export type ReplyChunk = { eventId: string; at: string; n: number; of: number; key?: string; text?: string; ttsSeconds?: number; sinceAgentDoneSeconds?: number };
 
 export type MemoSummary = {
   memoId: string;
@@ -89,7 +95,7 @@ export type MemoSummary = {
 
 export type MemoDetail = MemoSummary & {
   commandId?: string; escalatedFromCommandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[];
-  progress?: ProgressLine[]; narrations?: Narration[]; speech?: SpeechDecision[]; timing?: MemoTiming;
+  progress?: ProgressLine[]; narrations?: Narration[]; speech?: SpeechDecision[]; chunks?: ReplyChunk[]; timing?: MemoTiming;
 };
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };

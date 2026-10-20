@@ -5,6 +5,8 @@ import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from 
 import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
+import { type ReplyRef, type Unit, addRef, newUnit, parseReplyKey, planUnit, readyChunks } from './replies'
+import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -276,7 +278,7 @@ function speechEvent(key: string, d: unknown) {
 // The upload proxy logs it and publishes bloodbank.audio.memo.played / failed(stage=playback).
 // Fire and forget: a failed beacon must never affect playback.
 type Phase = 'started' | 'ended' | 'blocked' | 'error' | 'skipped'
-function beacon(replyKey: string, phase: Phase, extra: { seconds?: number; error?: string } = {}) {
+function beacon(replyKey: string, phase: Phase, extra: { seconds?: number; error?: string; chunks?: number } = {}) {
   try {
     fetch('/upload/played', {
       method: 'POST',
@@ -332,6 +334,13 @@ type NativeReply = { playReply(id: string, b64: string, ext: string): void; stop
 function nativeReply(): NativeReply | null {
   const n = (window as any).HoloceneNative
   return n && typeof n.playReply === 'function' ? (n as NativeReply) : null
+}
+// speechVersion 2: the host's speech queue plays a chunked reply (chunk after chunk, one reply, nothing between them).
+// Without it the pad waits for the reply's full file, as before chunking.
+type NativeChunks = { playReplyChunk(id: string, index: number, total: number, b64: string, ext: string): void }
+function nativeChunks(): NativeChunks | null {
+  const n = (window as any).HoloceneNative
+  return n && typeof n.playReplyChunk === 'function' ? (n as NativeChunks) : null
 }
 // The host's one speech queue (SpeechArbiter): heard echo, progress narration, and "this memo is final". Absent on an
 // older host; then progress plays through the page's own single audio element (no echo, no overlap either way).
@@ -483,6 +492,12 @@ function App() {
   const flights = useRef<Map<string, Flight>>(new Map())
   const [flightView, setFlightView] = useState<Record<string, FlightView>>({})
   const progressQ = useRef<{ memoId: string; seq: number; key: string; blob: Blob }[]>([])
+  // ---- replies as units (replies.ts): the full file, or its chunks first (a long reply, voiced sentence by sentence) ----
+  const units = useRef<Map<string, Unit>>(new Map())
+  const chunkBlobs = useRef<Map<string, Blob>>(new Map()) // downloaded chunks, kept until the reply is done (a replay after a note)
+  // The unit the host is playing chunk by chunk, and which chunks it has been handed.
+  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean } | null>(null)
+  const push = useRef({ heardAt: 0, nats: false })
   const playingProgress = useRef(false) // the audio element is on a progress clip, not a reply
   const refreshFlights = () => {
     const now = Date.now()
@@ -542,19 +557,24 @@ function App() {
       f.listedAt = Date.now()
       try {
         const pick = newestProgress((await listPage(progressPrefix(f.day, f.memoId), '', null)).keys, f.day, f.memoId, f.progressSeq)
-        if (!pick) continue
-        f.progressSeq = pick.seq
-        const blob = await getBlob(`${BUCKET_BASE}/${pick.key}`)
-        if (f.finalAt) continue // the reply landed while the clip downloaded
-        if (n) n.speechProgress(f.memoId, pick.seq, await blobToBase64(blob), replyExt(pick.key))
-        else {
-          // Newest wins: an older clip for the same memo that has not played yet is dropped.
-          progressQ.current = [...progressQ.current.filter((p) => p.memoId !== f.memoId), { memoId: f.memoId, seq: pick.seq, key: pick.key, blob }]
-          pump.current()
-        }
+        if (pick) await sayProgress(f, pick)
       } catch { /* next poll */ }
     }
     refreshFlights()
+  }
+  // One progress clip for a memo in flight (from the listing above, or straight from the push channel's narrated event).
+  const sayProgress = async (f: Flight, pick: { key: string; seq: number }) => {
+    if (pick.seq <= f.progressSeq) return
+    f.progressSeq = pick.seq
+    const blob = await getBlob(`${BUCKET_BASE}/${pick.key}`)
+    if (f.finalAt) return // the reply landed while the clip downloaded
+    const n = nativeSpeech()
+    if (n) n.speechProgress(f.memoId, pick.seq, await blobToBase64(blob), replyExt(pick.key))
+    else {
+      // Newest wins: an older clip for the same memo that has not played yet is dropped.
+      progressQ.current = [...progressQ.current.filter((p) => p.memoId !== f.memoId), { memoId: f.memoId, seq: pick.seq, key: pick.key, blob }]
+      pump.current()
+    }
   }
   const pollFlightsRef = useRef(pollFlights)
   pollFlightsRef.current = pollFlights
@@ -564,7 +584,8 @@ function App() {
     if (key && phase === 'started') speak({ t: 'started', key }) // before the dedupe: a replay after a note bounces again
     if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
     beaconsSent.current.add(`${key}:${phase}`)
-    beacon(key, phase, extra)
+    const st = streaming.current
+    beacon(key, phase, st && st.unit === key ? { ...extra, chunks: units.current.get(key)?.n } : extra)
   }, [])
 
   const finish = useCallback((key: string) => {
@@ -574,9 +595,74 @@ function App() {
     }
     queue.current = queue.current.filter((k) => k !== key)
     playingKey.current = ''
+    const u = units.current.get(key)
+    if (u) for (const ck of Object.values(u.chunks)) chunkBlobs.current.delete(ck)
+    units.current.delete(key)
+    if (streaming.current?.unit === key) streaming.current = null
     speak({ t: 'ended', key })
     pump.current()
   }, [])
+
+  // One reply key from the listing or the push channel: it joins its unit (a new unit is queued in key order). A unit the
+  // pad already finished, or one older than lastDone, is ignored; a stale one is skipped as before. True: news.
+  const ingestReply = (key: string, firstRun = false): boolean => {
+    const ref: ReplyRef | null = parseReplyKey(key)
+    if (!ref || ref.unit <= lastDone.current) return false
+    let u = units.current.get(ref.unit)
+    if (!u) {
+      if (enqueued.current.has(ref.unit)) return false // played (or skipped) already
+      enqueued.current.add(ref.unit)
+      const age = Date.now() - renderedAt(ref.unit)
+      if (age > MAX_REPLY_AGE_MS) {
+        if (!firstRun && age < 6 * 3600 * 1000) {
+          beacon(ref.unit, 'skipped', { error: `stale: rendered ${Math.round(age / 60000)} min before the pad saw it` })
+        }
+        if (ref.unit > lastDone.current) { lastDone.current = ref.unit; markerSet(ref.unit) }
+        return false
+      }
+      u = newUnit(ref.unit, Date.now())
+      units.current.set(ref.unit, u)
+      queue.current = [...queue.current, ref.unit].sort()
+      const memo = REPLY_MEMO.exec(ref.unit)?.[1]
+      if (memo && flights.current.has(memo)) flightFinal(memo)
+    }
+    const news = addRef(u, ref)
+    if (news && streaming.current?.unit === ref.unit) void feedStream()
+    return news
+  }
+
+  // Hand the playing unit's chunks to the host in order, each as soon as it is downloaded. A download that fails is
+  // retried by the next poll tick or push; the host holds the reply (and the queue) while it waits for a chunk.
+  const feedStream = async () => {
+    const st = streaming.current
+    if (!st) return
+    if (st.busy) { st.again = true; return }
+    st.busy = true
+    try {
+      do {
+        st.again = false
+        const u = units.current.get(st.unit)
+        const host = nativeChunks()
+        if (!u || !host) return
+        let from = 1
+        while (st.offered.has(from)) from++
+        for (const i of readyChunks(u, from)) {
+          const ck = u.chunks[i]
+          let blob = chunkBlobs.current.get(ck)
+          if (!blob) {
+            blob = await getBlob(`${BUCKET_BASE}/${ck}`)
+            chunkBlobs.current.set(ck, blob)
+          }
+          if (streaming.current !== st || recordingRef.current || arming.current) return // stopped meanwhile
+          host.playReplyChunk(st.unit, i, u.n, await blobToBase64(blob), 'opus')
+          st.offered.add(i)
+          replyBytes.current += blob.size
+        }
+      } while (st.again && streaming.current === st)
+    } catch { /* next tick or push */ } finally {
+      st.busy = false
+    }
+  }
 
   pump.current = async () => {
     const el = audioRef.current
@@ -585,6 +671,15 @@ function App() {
     if (recordingRef.current || arming.current) return
     if (queue.current.length === 0) { playProgress(el); return }
     const key = queue.current[0]
+    const unit = units.current.get(key)
+    const plan = unit ? planUnit(unit, !!nativeChunks(), Date.now()) : 'full'
+    if (plan === 'wait') return // its first chunk or its full file is on the way: the next tick or push brings it
+    if (plan === 'give_up') {
+      // A chunked reply that never completed (cancelled: the watcher took its chunks back) must not hold the queue.
+      beacon(key, 'skipped', { error: 'the reply never completed: no full file, and this host cannot play its chunks' })
+      finish(key)
+      return
+    }
     if (!unlockedRef.current) {
       if (!beaconsSent.current.has(`${key}:blocked`)) {
         beaconsSent.current.add(`${key}:blocked`)
@@ -594,6 +689,15 @@ function App() {
       return
     }
     playingKey.current = key // claim before any await so a second pump cannot start another reply
+    if (plan === 'chunks') {
+      // The host plays chunk after chunk as ONE reply and answers through __hnPlayback (started on chunk 1, ended
+      // after the last). Recording stops all of it; the next pump offers it again, the full file if it is up by then.
+      replyBytes.current = 0
+      setLastReply(key)
+      streaming.current = { unit: key, offered: new Set(), busy: false, again: false }
+      void feedStream()
+      return
+    }
     try {
       const blob = await getBlob(`${BUCKET_BASE}/${key}`)
       replyBytes.current = blob.size
@@ -648,6 +752,8 @@ function App() {
   useEffect(() => {
     ;(window as any).__hnPlayback = (key: string, phase: string, detail: string) => {
       if (key !== playingKey.current) return // a reply we already moved on from
+      // (a chunked reply's stream state is cleared by finish(), after the ended beacon has said how many chunks it had)
+      if ((phase === 'deferred' || phase === 'error') && streaming.current?.unit === key) streaming.current = null
       if (phase === 'deferred') {
         // The host's speech queue stopped it (a note is starting): it stays at the head of the queue, not a failure.
         playingKey.current = ''
@@ -677,7 +783,10 @@ function App() {
     const el = audioRef.current
     const known = el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration * 1000 : 0
     const bySize = (replyBytes.current * 8) / 12000 * 1000
-    const limit = Math.max(known || bySize, 30000) + 60000
+    // A chunked reply's size is not known when it starts (its chunks are still rendering): give it the host's own
+    // chunk wait on top, since the host ends it itself when a chunk never comes.
+    const floor = streaming.current?.unit === speaking.key ? 120000 : 30000
+    const limit = Math.max(known || bySize, floor) + 60000
     const t = window.setTimeout(() => {
       if (playingKey.current !== speaking.key) return
       try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
@@ -701,6 +810,7 @@ function App() {
     try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
     try { audioRef.current?.pause() } catch { /* nothing playing */ }
     playingKey.current = ''
+    streaming.current = null
     speak({ t: 'interrupted' })
   }
 
@@ -741,23 +851,11 @@ function App() {
         const after = lastDone.current || `${REPLIES_PREFIX}/${dayPrefix(-1)}/`
         // Only dated reply keys count: legacy flat keys (replies/2026101...) sort AFTER every dated key and would
         // otherwise pin lastDone past all future replies.
-        const keys = (await listRepliesAfter(after)).filter((k) => /^replies\/\d{4}\/\d{2}\/\d{2}\//.test(k) && ['.ogg', '.webm', '.m4a', '.mp3'].some((x) => k.endsWith(x)))
-        for (const key of keys.sort()) {
-          if (key <= lastDone.current || enqueued.current.has(key)) continue
-          enqueued.current.add(key)
-          const age = Date.now() - renderedAt(key)
-          if (age > MAX_REPLY_AGE_MS) {
-            if (!firstRun && age < 6 * 3600 * 1000) {
-              beacon(key, 'skipped', { error: `stale: rendered ${Math.round(age / 60000)} min before the pad saw it` })
-            }
-            if (key > lastDone.current) { lastDone.current = key; markerSet(key) }
-            continue
-          }
-          queue.current.push(key)
-          const memo = REPLY_MEMO.exec(key)?.[1]
-          if (memo && flights.current.has(memo)) flightFinal(memo)
-        }
+        // A reply's chunks (replies/...-cNNofMM.opus) join its unit; parseReplyKey keeps only dated keys.
+        const keys = (await listRepliesAfter(after)).filter((k) => parseReplyKey(k))
+        for (const key of keys.sort()) ingestReply(key, firstRun)
         pump.current()
+        void feedStream()
       } catch {
         // network blip, next poll
       }
@@ -774,11 +872,72 @@ function App() {
       try { await tick() } finally { busy = false }
       if (stopped) return
       if (again) { again = false; void loop(); return }
-      t = window.setTimeout(loop, replyPollMs(lastSentAt.current, Date.now()))
+      t = window.setTimeout(loop, replyPollMs(lastSentAt.current, Date.now(), pushLive(push.current.heardAt, push.current.nats, Date.now())))
     }
     pollNow.current = () => { if (!stopped) void loop() } // a note just went out: switch to the fast cadence now
     void loop()
     return () => { stopped = true; window.clearTimeout(t); pollNow.current = () => {} }
+  }, [])
+
+  // ---- push channel: the upload proxy streams the memo facts (/upload/events, push.ts) so a reply, a reply chunk, a
+  // progress clip or a stage change reaches the pad the moment it is up. Polling above stays the fallback: a dead or
+  // stale stream only makes the pad slower, never wrong. Reconnects on its own (EventSource), and from scratch when the
+  // stream was closed for good or went quiet for PUSH_STALE_MS (a half-open edge connection).
+  const onPushRef = useRef<(ev: PushEvent) => void>(() => {})
+  onPushRef.current = (ev) => {
+    const f = flights.current.get(ev.memo_id)
+    if (ev.fact === 'voiced' || ev.fact === 'replied') {
+      const key = ev.fact === 'voiced' ? ev.chunk_s3_key : ev.reply_s3_key
+      if (f) flightFinal(ev.memo_id)
+      if (key && ingestReply(key)) pump.current()
+      return
+    }
+    if (ev.fact === 'narrated' && f && !f.finalAt && ev.progress_s3_key && ev.narration) {
+      const pick = newestProgress([ev.progress_s3_key], f.day, f.memoId, f.progressSeq)
+      if (pick) void sayProgress(f, pick).catch(() => { /* the poll lists it again */ })
+    }
+    // Any other step of a memo in flight (heard, working, a progress line, a failure): re-read its status object now.
+    if (f && !f.finalAt) pollNow.current()
+  }
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return
+    let es: EventSource | null = null
+    let stopped = false
+    let failures = 0
+    let retry = 0
+    let openedAt = 0
+    const heard = (nats?: unknown) => {
+      push.current.heardAt = Date.now()
+      if (typeof nats === 'boolean') push.current.nats = nats
+    }
+    const data = (e: Event) => { try { return JSON.parse((e as MessageEvent).data) } catch { return null } }
+    const close = () => { try { es?.close() } catch { /* already closed */ } es = null; push.current.heardAt = 0 }
+    const open = () => {
+      if (stopped || es) return
+      try { es = new EventSource('/upload/events') } catch { schedule(); return }
+      openedAt = Date.now()
+      es.addEventListener('hello', (e) => { failures = 0; heard(data(e)?.nats); pollNow.current() }) // catch up on what a gap missed
+      es.addEventListener('beat', (e) => heard(data(e)?.nats))
+      es.addEventListener('resync', () => { heard(); pollNow.current() })
+      es.addEventListener('memo', (e) => {
+        heard()
+        const ev = parsePush((e as MessageEvent).data)
+        if (ev) { try { onPushRef.current(ev) } catch { /* never let one event stop the stream */ } }
+      })
+      // CONNECTING: the browser retries by itself (retry: 3000). CLOSED: an error status, start again with a backoff.
+      es.onerror = () => { if (es && es.readyState === EventSource.CLOSED) { close(); schedule() } }
+    }
+    const schedule = () => {
+      window.clearTimeout(retry)
+      if (!stopped) retry = window.setTimeout(open, pushBackoff(failures++))
+    }
+    open()
+    // A stream that stopped speaking is dropped and opened again (the proxy beats every 15 s).
+    const watch = window.setInterval(() => {
+      const last = push.current.heardAt || openedAt
+      if (es && es.readyState !== EventSource.CLOSED && last && Date.now() - last > PUSH_STALE_MS) { close(); schedule() }
+    }, 10_000)
+    return () => { stopped = true; window.clearTimeout(retry); window.clearInterval(watch); close() }
   }, [])
 
   // Live level from whichever capture source is active (native host callback or browser analyser).
