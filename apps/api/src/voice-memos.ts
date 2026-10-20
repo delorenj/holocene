@@ -471,6 +471,8 @@ function hopEvents(events: JourneyEvent[], split?: Split): Record<HopId, Journey
 }
 
 const AGENT_FAILED = ["bloodbank.agent.invocation.failed", "bloodbank.agent.invocation.skipped", "bloodbank.conversation.turn.failed"];
+/** Facts that show the watcher moving a memo along (see `movedPast`); the `received` ones include its revive marker. */
+const STAGE_FACTS = ["received", "transcribed", "dispatched", "replied"].map((t) => `bloodbank.audio.memo.${t}`);
 
 const preview = (text: string | undefined, max: number) => {
   if (!text) return undefined;
@@ -528,6 +530,12 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     ? { eventId: cancelEvent.id, at: cancelEvent.at, afterDispatch: cancelAfterDispatch, message: str(cancelEvent.data.error_message) }
     : undefined;
 
+  // A failure the memo has moved past is history, not its verdict: any stage fact after it (a retry's received, transcribed
+  // or dispatched, a late reply) says the watcher took the memo up again. The watcher marks a revive that produces no stage
+  // fact for a while (a retry at await_agent, a revived cancel) with a `received` fact carrying revived: true.
+  const stageFacts = memoFacts.filter((e) => STAGE_FACTS.includes(e.type));
+  const movedPast = (f: HopFailure) => stageFacts.some((e) => (ms(e.at) ?? 0) > (ms(f.at) ?? 0));
+
   const failureSide = new Map<string, Side>();
   const failedFacts: HopFailure[] = [];
   for (const e of relevant) {
@@ -569,7 +577,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     const timedOut = escalation && spec.id === "agent_done" && !happened?.type.endsWith(".completed")
       ? agentBad ? (str(agentBad.data.error_code) === TURN_TIMEOUT ? agentFailure(agentBad) : undefined) : failures.find((f) => f.code === TURN_TIMEOUT)
       : undefined;
-    const terminal = failures.filter((f) => !f.retryable && !supersededByUpload(f) && f !== timedOut).at(-1);
+    const terminal = failures.filter((f) => !f.retryable && !supersededByUpload(f) && f !== timedOut && !movedPast(f)).at(-1);
     const out: Hop = {
       id: spec.id, label: spec.label, status: "pending", budgetSeconds: spec.budgetSeconds,
       at: happened?.at,
@@ -612,7 +620,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   if (unplaced.length) {
     const target = hops.find((h) => h.status !== "ok") ?? hops.at(-1)!;
     target.failures = [...target.failures, ...unplaced];
-    const terminal = unplaced.filter((f) => !f.retryable).at(-1);
+    const terminal = unplaced.filter((f) => !f.retryable && !movedPast(f)).at(-1);
     if (terminal && target.status !== "failed") {
       target.status = "failed";
       target.error = terminal;

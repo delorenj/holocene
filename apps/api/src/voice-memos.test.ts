@@ -559,3 +559,38 @@ test("an escalated memo that is then cancelled is cancelled after dispatch", () 
   assert.equal(d.hops.find(h => h.status === "cancelled")!.id, "batch_done");
   assert.equal(d.hops.find(h => h.id === "agent_done")!.status, "timed_out");
 });
+
+// ---- a failure the memo moved past is history ---------------------------------------------------------------------
+
+const reviveMarker = (s: number, to = "await_agent") => fact("audio.memo.received", s, { occurred_at: iso(s), revived: true, revived_to: to, revive_why: "memo:retry" });
+const timeoutFact = (s: number) => fact("audio.memo.failed", s, { stage: "agent_reply", error_code: "timeout", error_message: "no completed turn after 600s", retryable: false, attempt: 1, command_id: CMD });
+
+test("a memo revived by memo:retry is running again once the watcher's revive marker follows its failure", () => {
+  const events = [uploaded(), received(), transcribed(), dispatched(), started(), timeoutFact(650)];
+  assert.equal(buildMemoDetail(MEMO, events, now(660))!.status, "failed");
+  const d = buildMemoDetail(MEMO, [...events, reviveMarker(700)], now(710))!;
+  assert.notEqual(d.status, "failed");
+  assert.equal(d.error, undefined);
+  assert.ok(d.events.some(e => e.type === "bloodbank.audio.memo.failed"), "the failure is still in the memo's record");
+  assert.equal(d.hops.find(h => h.id === "received")!.detail, "watcher lag 250 ms", "the marker never replaces the real detection");
+});
+
+test("a revive marker after a cancel at await_agent un-cancels the memo before any reply exists", () => {
+  const events = [uploaded(), received(), transcribed(), dispatched(), started(), cancelFact(52, true)];
+  assert.equal(buildMemoDetail(MEMO, events, now(60))!.status, "cancelled");
+  const d = buildMemoDetail(MEMO, [...events, reviveMarker(100)], now(110))!;
+  assert.notEqual(d.status, "cancelled");
+  assert.equal(d.cancelled, undefined);
+});
+
+test("a late reply after the watcher gave up completes the memo instead of leaving it failed", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), timeoutFact(650), reviveMarker(900, "reply"), completed(880), replied(910)], now(1000))!;
+  assert.equal(d.status, "complete");
+});
+
+test("a failure with nothing after it still decides, and a retry's fresh dispatch supersedes an earlier failure", () => {
+  const stale = fact("audio.memo.failed", 100, { stage: "agent_reply", error_code: "turn_timeout", error_message: "stopped", retryable: false, attempt: 1, command_id: CMD });
+  assert.equal(buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), stale], now(120))!.status, "failed");
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), stale, transcribed(150), dispatched(151)], now(160))!;
+  assert.notEqual(d.status, "failed");
+});
