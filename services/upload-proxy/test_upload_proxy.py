@@ -1,4 +1,5 @@
 """The uploaded fact the proxy publishes must satisfy the Bloodbank contract and match the watcher's memo id."""
+import json
 import sys
 import tempfile
 import unittest
@@ -263,10 +264,13 @@ class HttpBehaviour(unittest.TestCase):
         real = up.emit_uploaded_async
         up.emit_uploaded_async = lambda *a, **k: captured.append(a)
         try:
-            head = self.put(self.GONE, self.BODY).split(b"\r\n")[0]
+            resp = self.put(self.GONE, self.BODY)
+            head = resp.split(b"\r\n")[0]
         finally:
             up.emit_uploaded_async = real
         self.assertIn(b" 422 unroutable agent zz-gone", head)
+        # the pad reads the reason from a JSON body (HTTP/2 drops the reason phrase)
+        self.assertEqual(json.loads(resp.split(b"\r\n\r\n", 1)[1])["reason"], "unroutable agent zz-gone")
         self.assertEqual(captured, [])  # nothing was stored, so no uploaded fact either
 
     def test_the_rejection_is_published_as_a_terminal_upload_failure_once(self):

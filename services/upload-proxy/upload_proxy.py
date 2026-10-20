@@ -510,7 +510,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "error_message": reason[:300], "retryable": False, "attempt": 1, "client_user_agent": ua[:200],
                 "source": "agent-pad"}), key)
         try:
-            self.send_error(422, f"unroutable agent {shown}")
+            # JSON body: over HTTP/2 (Cloudflare, Traefik) the status line's reason phrase does not reach the pad.
+            body = json.dumps({"error": "unroutable_agent", "reason": f"unroutable agent {shown}"}).encode()
+            self.send_response(422, f"unroutable agent {shown}")
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         except OSError:
             pass
 
