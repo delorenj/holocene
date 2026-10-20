@@ -261,6 +261,9 @@ class DriveSpeechTest {
         assertEquals("Recording for Holocene.", DriveSpeech.recordingStart("Holocene"))
         assertEquals("Recording.", DriveSpeech.recordingStart(""))
         assertEquals("Sent to Holocene", DriveSpeech.forEvent(PadEvent("sent", name = "Holocene")))
+        assertEquals("Not sent. Saved, will retry.", DriveSpeech.forEvent(PadEvent("queued", name = "Holocene")))
+        assertEquals("Not sent. Holocene can't be reached.", DriveSpeech.forEvent(PadEvent("rejected", name = "Holocene", reason = "422")))
+        assertEquals("Not sent. The agent can't be reached.", DriveSpeech.forEvent(PadEvent("rejected", reason = "422")))
         assertEquals("Nothing heard, not sent.", DriveSpeech.forEvent(PadEvent("silent")))
         assertEquals("Recording. Stop first.", DriveSpeech.forEvent(PadEvent("refused", reason = "recording")))
         assertNull(DriveSpeech.forEvent(PadEvent("recording")))
@@ -270,6 +273,8 @@ class DriveSpeechTest {
     @Test fun tonesMarkStopAndOutcome() {
         assertEquals(DriveSpeech.Tone.STOP, DriveSpeech.toneFor(PadEvent("stopped")))
         assertEquals(DriveSpeech.Tone.SENT, DriveSpeech.toneFor(PadEvent("sent")))
+        assertEquals(DriveSpeech.Tone.ERROR, DriveSpeech.toneFor(PadEvent("queued")))
+        assertEquals(DriveSpeech.Tone.ERROR, DriveSpeech.toneFor(PadEvent("rejected")))
         assertEquals(DriveSpeech.Tone.ERROR, DriveSpeech.toneFor(PadEvent("silent")))
         assertNull(DriveSpeech.toneFor(PadEvent("selected")))
         assertNull(DriveSpeech.toneFor(PadEvent("recording"))) // played by the host before the mic opens
