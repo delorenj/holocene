@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AVATAR_RETRY_MS, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -69,4 +69,24 @@ test('replies are polled fast while one is due, slowly otherwise', () => {
   assert.equal(replyPollMs(0, now), REPLY_POLL_IDLE_MS)
   assert.equal(replyPollMs(now - 30_000, now), REPLY_POLL_FAST_MS)
   assert.equal(replyPollMs(now - REPLY_DUE_WINDOW_MS - 1, now), REPLY_POLL_IDLE_MS)
+})
+
+test('driving always shows the selected agent and the one replying', () => {
+  const list = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => A(x))
+  assert.deepEqual(driveTiles(list, 'g', 3, 'f').map((a) => a.id), ['a', 'f', 'g'])
+  assert.deepEqual(driveTiles(list, 'b', 3, 'g').map((a) => a.id), ['a', 'b', 'g'])
+  assert.deepEqual(driveTiles(list, 'a', 3, 'a').map((a) => a.id), ['a', 'b', 'c'])
+  assert.deepEqual(driveTiles(list, undefined, 3).map((a) => a.id), ['a', 'b', 'c'])
+})
+
+test('the reply cue: set on start, cleared by every ending, set again on a replay', () => {
+  const k = 'replies/2026/10/19/213608Z-holocene-pm-620cf87f-5a03-53e2-acff-c3bbf2af82c8.ogg'
+  let s = speakNext(null, { t: 'started', key: k })
+  assert.deepEqual(s, { key: k, agent: 'holocene-pm' })
+  assert.equal(speakNext(s, { t: 'interrupted' }), null)
+  s = speakNext(null, { t: 'started', key: k }) // the replay after the note
+  assert.equal(speakNext(s, { t: 'ended', key: 'replies/other.ogg' }), s, 'another reply ending leaves this one')
+  assert.equal(speakNext(s, { t: 'ended', key: k }), null)
+  assert.equal(speakNext(s, { t: 'failed', key: k }), null)
+  assert.equal(speakNext(s, { t: 'watchdog' }), null)
 })

@@ -42,11 +42,17 @@ export function sameRoster(a: Agent[], b: Agent[]): boolean {
  * The tiles the driving layout shows: the `n` most recent agents, with the selected one always on screen (it takes
  * the last slot when it is further down the list), so the hero, the spoken name and a lit tile always agree.
  */
-export function driveTiles(agents: Agent[], selectedId: string | undefined, n: number): Agent[] {
-  const top = agents.slice(0, Math.max(1, n))
-  if (!selectedId || top.some((a) => a.id === selectedId)) return top
-  const sel = agents.find((a) => a.id === selectedId)
-  return sel ? [...top.slice(0, top.length - 1), sel] : top
+export function driveTiles(agents: Agent[], selectedId: string | undefined, n: number, alsoId?: string): Agent[] {
+  // The most recent n, always including the selected agent and the one whose reply is playing (it must be on
+  // screen to show the cue); they take the last slots so the order of the rest is kept.
+  const size = Math.max(1, n)
+  const musts = [selectedId, alsoId].filter((id, i, arr): id is string => !!id && arr.indexOf(id) === i)
+    .map((id) => agents.find((a) => a.id === id)).filter((a): a is Agent => !!a).slice(0, size)
+  const rest = agents.filter((a) => !musts.includes(a))
+  const out = agents.slice(0, size)
+  if (musts.every((m) => out.includes(m))) return out
+  const keep = rest.slice(0, size - musts.length)
+  return agents.filter((a) => keep.includes(a) || musts.includes(a)).slice(0, size)
 }
 
 /** Wheel next/prev over the whole list (wrapping); with nothing selected, next starts at the top. */
@@ -78,4 +84,16 @@ export const REPLY_POLL_IDLE_MS = 15000
 export const REPLY_DUE_WINDOW_MS = 10 * 60 * 1000
 export function replyPollMs(lastSentAt: number, now: number): number {
   return lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS ? REPLY_POLL_FAST_MS : REPLY_POLL_IDLE_MS
+}
+
+// The reply now playing, for the tile cue and the hero. One small state machine so every path that ends a reply
+// (finished, failed, cut off by a note, a host that went silent) clears it, and a replay sets it again.
+export type Speaking = { key: string; agent: string } | null
+export type SpeakEvent = { t: 'started'; key: string } | { t: 'ended' | 'failed'; key: string } | { t: 'interrupted' | 'watchdog' }
+export function speakNext(cur: Speaking, ev: SpeakEvent): Speaking {
+  switch (ev.t) {
+    case 'started': return { key: ev.key, agent: replyAgent(ev.key) || '' }
+    case 'ended': case 'failed': return cur && cur.key !== ev.key ? cur : null
+    default: return null
+  }
 }

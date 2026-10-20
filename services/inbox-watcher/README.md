@@ -41,7 +41,7 @@ tools to see every hop of it.
         |-- mc cp -> replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg    HOP 10 reply object
         |-- replied     fact: audio.memo.replied
         v
-   Agent Pad polls replies/<today>/ every 15s and plays the newest new key   HOP 11 playback
+   Agent Pad polls replies/ every 2 s for 10 min after a send (else 15 s), plays in order   HOP 11 playback
         |-- POST /upload/played {reply_key, phase}  -> upload proxy log line "playback"
         |-- played      fact: audio.memo.played (phase started|ended)  or  failed(stage=playback, retryable)
 

@@ -408,7 +408,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                         f"reply started {d0.get('reply_age_ms')} ms after it was rendered{extra} ({str(d0.get('client_user_agent'))[:40]})", optional=True))
     else:
         hops.append(Hop("played_on_pad", UNKNOWN,
-                        detail="no playback report from the pad yet (it polls replies/ every 15s; a parked car reports nothing)", optional=True))
+                        detail="no playback report from the pad yet (it polls replies/ every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)", optional=True))
 
     # 7. the phone: the same reply mirrored into the Earshot channel, and the device's own beacons for it
     ekey = ((rep or {}).get("data") or {}).get("earshot_key") or (rec or {}).get("earshot_key")

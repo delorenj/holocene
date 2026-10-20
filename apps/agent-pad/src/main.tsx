@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, replyExt, stripDataUrl } from './flight'
-import { type Agent, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, step } from './roster'
+import { type Agent, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, sameRoster, speakNext, step } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -106,11 +106,18 @@ async function memoIdFor(key: string): Promise<string | null> {
 }
 
 type ListPage = { keys: string[]; next: string | null }
+// A request that hangs on a flaky car link must fail, so the next poll runs instead of waiting minutes for it.
+async function fetchWithin(url: string, ms: number): Promise<Response> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), ms)
+  try { return await fetch(url, { signal: ctl.signal }) } finally { clearTimeout(timer) }
+}
+
 async function listPage(prefix: string, startAfter: string, token: string | null): Promise<ListPage> {
   let url = `${BUCKET_BASE}?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=1000`
   if (token) url += `&continuation-token=${encodeURIComponent(token)}`
   else if (startAfter) url += `&start-after=${encodeURIComponent(startAfter)}`
-  const res = await fetch(url)
+  const res = await fetchWithin(url, 10000)
   if (!res.ok) throw new Error(`LIST ${res.status}`)
   const doc = new DOMParser().parseFromString(await res.text(), 'application/xml')
   const keys = Array.from(doc.querySelectorAll('Contents > Key')).map((k) => k.textContent || '')
@@ -151,7 +158,7 @@ async function putObject(key: string, blob: Blob, capture?: Capture): Promise<vo
 }
 
 async function getBlob(url: string): Promise<Blob> {
-  const res = await fetch(url)
+  const res = await fetchWithin(url, 30000)
   if (!res.ok) throw new Error(`GET ${url}: ${res.status}`)
   return res.blob()
 }
@@ -305,6 +312,13 @@ function blobToBase64(b: Blob): Promise<string> {
   })
 }
 type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'silent' | 'cancelled' | 'error'
+// The hero's state while a reply plays: REPLY, plus the agent's name when it is not the one selected.
+function replyLabel(agentId: string, selectedId: string | undefined, agents: Agent[], label: (n: string) => string): string {
+  if (!agentId || agentId === selectedId) return 'REPLY'
+  const a = agents.find((x) => x.id === agentId)
+  return a ? `REPLY · ${label(a.name)}` : 'REPLY'
+}
+
 const PHASE_LABEL: Record<PadPhase, string> = {
   idle: 'READY', arming: 'STARTING', recording: 'RECORDING', sending: 'SENDING', sent: 'SENT',
   queued: 'SAVED, RETRYING', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
@@ -390,14 +404,17 @@ function App() {
   const playingKey = useRef<string>('') // reply loaded in the audio element ('' while the silent unlock clip plays)
   const beaconsSent = useRef<Set<string>>(new Set())
   const pump = useRef<() => void>(() => {})
-  const [speaking, setSpeaking] = useState('') // agent whose reply is playing: its tile bounces
+  const [speaking, setSpeakingState] = useState<Speaking>(null) // the reply playing: its agent's tile shows it
+  const speak = useCallback((ev: SpeakEvent) => setSpeakingState((cur) => speakNext(cur, ev)), [])
   const lastSentAt = useRef(0) // last successful upload: replies are polled fast for a while after it
+  const pollNow = useRef<() => void>(() => {})
+  const noteSent = () => { lastSentAt.current = Date.now(); pollNow.current() }
 
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
     const key = playingKey.current
+    if (key && phase === 'started') speak({ t: 'started', key }) // before the dedupe: a replay after a note bounces again
     if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
     beaconsSent.current.add(`${key}:${phase}`)
-    if (phase === 'started') setSpeaking(replyAgent(key) || '')
     beacon(key, phase, extra)
   }, [])
 
@@ -408,7 +425,7 @@ function App() {
     }
     queue.current = queue.current.filter((k) => k !== key)
     playingKey.current = ''
-    setSpeaking('')
+    speak({ t: 'ended', key })
     pump.current()
   }, [])
 
@@ -453,7 +470,7 @@ function App() {
       finish(key)
     } else {
       playingKey.current = ''
-      setSpeaking('')
+      speak({ t: 'failed', key })
       setStatus(msg)
       window.setTimeout(() => pump.current(), 5000)
     }
@@ -470,6 +487,18 @@ function App() {
     return () => { delete (window as any).__hnPlayback }
   })
 
+  // A player that never reports the end (native host died, focus lost with no event) must not hold the queue or
+  // keep a tile saying a reply is playing.
+  useEffect(() => {
+    if (!speaking) return
+    const t = window.setTimeout(() => {
+      if (playingKey.current !== speaking.key) return
+      speak({ t: 'watchdog' })
+      playFailed(speaking.key, 'play failed: no end reported in 3 min')
+    }, 180000)
+    return () => window.clearTimeout(t)
+  }, [speaking])
+
   // Stop whatever reply is playing (a note is about to be recorded): it stays at the head of the queue and plays
   // again when the note is done.
   const interruptReply = () => {
@@ -477,7 +506,7 @@ function App() {
     try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
     try { audioRef.current?.pause() } catch { /* nothing playing */ }
     playingKey.current = ''
-    setSpeaking('')
+    speak({ t: 'interrupted' })
   }
 
   // Unlock audio on first user gesture (browser autoplay policy)
@@ -538,12 +567,20 @@ function App() {
     }
     let t = 0
     let stopped = false
+    let busy = false
+    let again = false
     const loop = async () => {
-      await tick()
-      if (!stopped) t = window.setTimeout(loop, replyPollMs(lastSentAt.current, Date.now()))
+      window.clearTimeout(t)
+      if (busy) { again = true; return } // one chain only: a wake during a tick runs one more tick after it
+      busy = true
+      try { await tick() } finally { busy = false }
+      if (stopped) return
+      if (again) { again = false; void loop(); return }
+      t = window.setTimeout(loop, replyPollMs(lastSentAt.current, Date.now()))
     }
+    pollNow.current = () => { if (!stopped) void loop() } // a note just went out: switch to the fast cadence now
     void loop()
-    return () => { stopped = true; window.clearTimeout(t) }
+    return () => { stopped = true; window.clearTimeout(t); pollNow.current = () => {} }
   }, [])
 
   // Live level from whichever capture source is active (native host callback or browser analyser).
@@ -571,7 +608,7 @@ function App() {
       if (!flight.begin(p.key)) continue
       try {
         await putObject(p.key, p.blob, p.capture)
-        lastSentAt.current = Date.now()
+        noteSent()
         await outboxDel(p.key)
         clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
         setStatus(`sent → ${p.agentName} (after a retry)`)
@@ -614,7 +651,7 @@ function App() {
         }
         try {
           await putObject(key, blob, capture)
-          lastSentAt.current = Date.now()
+          noteSent()
           await outboxDel(key)
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
@@ -921,7 +958,7 @@ function App() {
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
-  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES) : agents
+  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent) : agents
 
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
@@ -929,7 +966,7 @@ function App() {
       {host.driving && (
         <div className="hero" data-phase={phase} style={{ ['--c' as string]: selected?.color ?? '#5a6275' }} aria-live="polite">
           <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
-          <div className="hstate">{PHASE_LABEL[phase]}</div>
+          <div className="hstate">{speaking && !recording ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
           {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
         </div>
       )}
@@ -947,7 +984,7 @@ function App() {
               data-agent={a.id}
               role="radio"
               aria-checked={on}
-              className={`tile${on ? ' on' : ''}${speaking === a.id ? ' speaking' : ''}`}
+              className={`tile${on ? ' on' : ''}${speaking?.agent === a.id ? ' speaking' : ''}`}
               disabled={(recording || phase === 'arming') && !on}
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
@@ -1027,7 +1064,7 @@ const CSS = `
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 .pad { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:clamp(10px,2vw,20px); gap:clamp(10px,2vw,18px); overflow:auto; }
 .unlock { min-height:64px; padding:0 24px; border-radius:16px; border:3px solid #4f8cff; background:#141a24; color:#4f8cff; font-weight:700; font-size:clamp(18px,2.2vw,26px); cursor:pointer; }
-.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overscroll-behavior:contain; padding:2px; }
+.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overscroll-behavior:contain; padding:12px; }
 @media (min-width:600px) { .tiles { grid-template-columns:repeat(3,1fr); } }
 @media (min-width:900px) { .tiles { grid-template-columns:repeat(5,1fr); } }
 .tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(8px,1.6vw,18px); min-height:120px; padding:8px; border-radius:20px; border:2px solid #2a3140; background:#141a24; color:#e6e6e6; cursor:pointer; transition:background .12s, border-color .12s, transform .08s; }
@@ -1076,6 +1113,9 @@ const CSS = `
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
+/* Driving is motion-free (.still): the replying agent's tile is filled with its colour instead of bouncing. */
+.drive .tile.speaking, .drive .tile.on.speaking { background:var(--c); border-color:#fff; }
+.drive .tile.speaking .name { color:#0b1020; }
 .drive .tile .swatch { width:clamp(64px,16vh,140px); height:clamp(64px,16vh,140px); font-size:clamp(30px,7vh,64px); }
 .drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
 .drive .bar { flex:1.25 1 0; min-height:0; }
