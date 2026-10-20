@@ -63,3 +63,19 @@ export const AVATAR_RETRY_MS = [15_000, 60_000, 240_000]
 export function avatarRetryDelay(failures: number): number | null {
   return failures >= 1 && failures <= AVATAR_RETRY_MS.length ? AVATAR_RETRY_MS[failures - 1] : null
 }
+
+// Which agent a reply belongs to: the watcher names reply objects replies/YYYY/MM/DD/HHMMSSZ-<agent>-<memo uuid>.ogg.
+const REPLY_NAME = /^\d{6}Z-(.+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/
+export function replyAgent(key: string): string | null {
+  const m = REPLY_NAME.exec(key.split('/').pop() || '')
+  return m ? m[1] : null
+}
+
+// How often to look for replies: fast while one is due (a note went out in the last few minutes), slow otherwise.
+// The listing is one small anonymous S3 request, so 2 s costs little and takes up to 13 s off every round trip.
+export const REPLY_POLL_FAST_MS = 2000
+export const REPLY_POLL_IDLE_MS = 15000
+export const REPLY_DUE_WINDOW_MS = 10 * 60 * 1000
+export function replyPollMs(lastSentAt: number, now: number): number {
+  return lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS ? REPLY_POLL_FAST_MS : REPLY_POLL_IDLE_MS
+}

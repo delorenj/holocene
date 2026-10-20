@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, replyExt, stripDataUrl } from './flight'
-import { type Agent, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, sameRoster, step } from './roster'
+import { type Agent, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, step } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -390,11 +390,14 @@ function App() {
   const playingKey = useRef<string>('') // reply loaded in the audio element ('' while the silent unlock clip plays)
   const beaconsSent = useRef<Set<string>>(new Set())
   const pump = useRef<() => void>(() => {})
+  const [speaking, setSpeaking] = useState('') // agent whose reply is playing: its tile bounces
+  const lastSentAt = useRef(0) // last successful upload: replies are polled fast for a while after it
 
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
     const key = playingKey.current
     if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
     beaconsSent.current.add(`${key}:${phase}`)
+    if (phase === 'started') setSpeaking(replyAgent(key) || '')
     beacon(key, phase, extra)
   }, [])
 
@@ -405,6 +408,7 @@ function App() {
     }
     queue.current = queue.current.filter((k) => k !== key)
     playingKey.current = ''
+    setSpeaking('')
     pump.current()
   }, [])
 
@@ -449,6 +453,7 @@ function App() {
       finish(key)
     } else {
       playingKey.current = ''
+      setSpeaking('')
       setStatus(msg)
       window.setTimeout(() => pump.current(), 5000)
     }
@@ -472,6 +477,7 @@ function App() {
     try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
     try { audioRef.current?.pause() } catch { /* nothing playing */ }
     playingKey.current = ''
+    setSpeaking('')
   }
 
   // Unlock audio on first user gesture (browser autoplay policy)
@@ -530,9 +536,14 @@ function App() {
         // network blip, next poll
       }
     }
-    const t = window.setInterval(tick, 15000)
-    tick()
-    return () => window.clearInterval(t)
+    let t = 0
+    let stopped = false
+    const loop = async () => {
+      await tick()
+      if (!stopped) t = window.setTimeout(loop, replyPollMs(lastSentAt.current, Date.now()))
+    }
+    void loop()
+    return () => { stopped = true; window.clearTimeout(t) }
   }, [])
 
   // Live level from whichever capture source is active (native host callback or browser analyser).
@@ -560,6 +571,7 @@ function App() {
       if (!flight.begin(p.key)) continue
       try {
         await putObject(p.key, p.blob, p.capture)
+        lastSentAt.current = Date.now()
         await outboxDel(p.key)
         clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
         setStatus(`sent → ${p.agentName} (after a retry)`)
@@ -602,6 +614,7 @@ function App() {
         }
         try {
           await putObject(key, blob, capture)
+          lastSentAt.current = Date.now()
           await outboxDel(key)
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
@@ -934,7 +947,7 @@ function App() {
               data-agent={a.id}
               role="radio"
               aria-checked={on}
-              className={`tile${on ? ' on' : ''}`}
+              className={`tile${on ? ' on' : ''}${speaking === a.id ? ' speaking' : ''}`}
               disabled={(recording || phase === 'arming') && !on}
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
@@ -1026,6 +1039,12 @@ const CSS = `
 .tile .swatch.pic { padding:0; overflow:hidden; border-radius:50%; background:#0b1020; text-shadow:none; }
 .tile .swatch.pic img { width:100%; height:100%; object-fit:cover; display:block; }
 .tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
+/* The agent whose reply is playing: a bouncy border in its colour (HOLOC-14). */
+.tile.speaking { border:5px solid var(--c); padding:5px; animation:speak-bounce .9s ease-in-out infinite; }
+.tile.speaking .swatch { animation:speak-pop .9s ease-in-out infinite; }
+@keyframes speak-bounce { 0%,100% { box-shadow:0 0 0 0 color-mix(in srgb, var(--c) 70%, transparent); transform:translateY(0); } 40% { box-shadow:0 0 0 10px color-mix(in srgb, var(--c) 0%, transparent); transform:translateY(-6px); } 60% { transform:translateY(0); } }
+@keyframes speak-pop { 0%,100% { transform:scale(1); } 40% { transform:scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .tile.speaking, .tile.speaking .swatch { animation:none; } .tile.speaking { box-shadow:0 0 0 6px color-mix(in srgb, var(--c) 45%, transparent); } }
 .bar { display:flex; align-items:center; gap:clamp(12px,2vw,24px); flex-wrap:wrap; flex:0 0 auto; }
 .rec { display:flex; align-items:center; justify-content:center; gap:14px; flex:1 1 320px; min-height:88px; padding:0 28px; border-radius:44px; border:none; background:var(--c); color:#fff; font-size:clamp(24px,3vw,36px); font-weight:800; cursor:pointer; }
 .rec:disabled { background:#3a3f4b; color:#9aa0ab; cursor:not-allowed; }

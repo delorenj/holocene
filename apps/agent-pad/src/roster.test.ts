@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AVATAR_RETRY_MS, avatarRetryDelay, driveTiles, normRoster, sameRoster, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -56,4 +56,17 @@ test('a failed avatar retries on a backoff, then keeps the letter', () => {
   assert.equal(avatarRetryDelay(0), null)
   assert.deepEqual([1, 2, 3].map(avatarRetryDelay), AVATAR_RETRY_MS)
   assert.equal(avatarRetryDelay(AVATAR_RETRY_MS.length + 1), null)
+})
+
+test('a reply names its agent', () => {
+  assert.equal(replyAgent('replies/2026/10/19/213608Z-holocene-pm-620cf87f-5a03-53e2-acff-c3bbf2af82c8.ogg'), 'holocene-pm')
+  assert.equal(replyAgent('replies/2026/10/19/215631Z-green-in-between-pm-441bce90-c87c-5f8a-85f3-250e189e8351.ogg'), 'green-in-between-pm')
+  assert.equal(replyAgent('replies/2026101-legacy.ogg'), null)
+})
+
+test('replies are polled fast while one is due, slowly otherwise', () => {
+  const now = 1_000_000_000
+  assert.equal(replyPollMs(0, now), REPLY_POLL_IDLE_MS)
+  assert.equal(replyPollMs(now - 30_000, now), REPLY_POLL_FAST_MS)
+  assert.equal(replyPollMs(now - REPLY_DUE_WINDOW_MS - 1, now), REPLY_POLL_IDLE_MS)
 })
