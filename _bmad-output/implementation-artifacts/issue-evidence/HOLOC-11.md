@@ -113,3 +113,19 @@ The API 35 target follows Google Play's current Android Automotive OS new-app re
 ## Remaining external gates
 
 Tester grant on the Internal testing track (up to 100 testers), Civic head-unit install via the head unit's Google Play path (actual-vehicle ADB unavailable per Honda), device-catalog check, and launch/verification on the vehicle. AAOS store screenshots (optional) and the AAOS quality-policy agreement remain open for dedicated-track opt-in later.
+
+## Closure (2026-10-20)
+
+Closed as answered by operator decision, on the same reasoning as HOLOC-10.
+
+| AC | Outcome |
+| --- | --- |
+| 1. HOLOC-10 reviewed and merged without closing its partial ACs | PASS: `f7b364a` on `main`; HOLOC-10 closed separately as answered (2026-10-19). |
+| 2. Vault-backed release signing | PASS: `a00b71a`; signing reads DeLoSecrets references (`mise run auto:release-bundle`). |
+| 3. Signed AAOS AAB with versionCode and SHA256 | PASS: v2 `9a49b657...`, v7 `bde4e6d9...`, v8 `f04dc636...`. |
+| 4. AAOS form factor opted in; AAB on internal testing | PASS: Internal track live, AAOS included, Honda variant supported (2026-10-05/06). |
+| 5. Civic Play Store installs and launches it, or the exact blocker | PASS: operator Taildrop photograph (2026-10-07, recorded 2026-10-10) shows Holocene Auto launched on the physical Civic. |
+| 6. One parked local mic/ASR/TTS acknowledgement | NOT RUN, superseded. The on-device ASR/TTS acknowledgement path was retired: the shipped app records through the Agent Pad's `NativeRecorder`, and replies are rendered server-side (vox) and played in the car and through Earshot. The real in-car voice round trip is HOLOC-19's real drive. |
+| 7. Failures recorded without substituting another device | PASS: no emulator or phone result is claimed for the Civic. |
+
+The ticket's outcome (get a diagnostic build visibly onto the factory Civic head unit through Play internal testing) is met. Remaining in-car verification is carried by HOLOC-19 (and HOLOC-14/HOLOC-9 E2E QA).
