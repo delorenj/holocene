@@ -170,7 +170,7 @@ def main(argv=None):
     p.add_argument("--to", dest="hi", type=float, default=float("inf"))
     p.add_argument("--threshold", type=float, default=30.0, help="tap rms that counts as sound (silence is 0-3)")
     p.add_argument("--latency-ms", type=float, default=700.0, help="check 5: how late sound may trail an utterance")
-    p.add_argument("--tol-ms", type=float, default=30.0, help="boundary tolerance for the tap checks (clock alignment)")
+    p.add_argument("--tol-ms", type=float, default=30.0, help="boundary tolerance for checks 2-4: two processes log one moment a few ms apart, and the tap is lined up by a measured clock offset")
     p.add_argument("--quiet", action="store_true", help="no interval listing")
     a = p.parse_args(argv)
     speech, rec_app, os_mic, amp, last = parse_logcat(a.logcat, a.lo, a.hi)
@@ -195,19 +195,19 @@ def main(argv=None):
                 pairs.append((x, y, ms))
     ok &= report("1 speech x speech (queue)", pairs)
 
+    tol = a.tol_ms / 1000.0
     pairs = []
     for r in rec_app + os_mic:
         for s in speech:
-            ms = intersect(s, r, horizon)
+            ms = intersect(s, r, horizon, tol)
             if ms:
                 pairs.append((s, r, ms))
-    ok &= report("2 speech x recording (queue vs app mic + OS capture)", pairs)
+    ok &= report("2 speech x recording (queue vs app mic + OS capture, tolerance %d ms)" % a.tol_ms, pairs)
 
-    pairs = [(h, r, intersect(h, r, horizon)) for h in amp for r in os_mic if intersect(h, r, horizon)]
-    ok &= report("3 HAL assistant mix x OS capture", pairs)
+    pairs = [(h, r, intersect(h, r, horizon, tol)) for h in amp for r in os_mic if intersect(h, r, horizon, tol)]
+    ok &= report("3 HAL assistant mix x OS capture (tolerance %d ms)" % a.tol_ms, pairs)
 
     if audio is not None:
-        tol = a.tol_ms / 1000.0
         pairs = []
         for r in os_mic + rec_app:
             for s in audio:

@@ -9,27 +9,45 @@ class SpeechTailTest {
     private val frames = 5_401 // START: 244 ms at 22050 Hz
     private val ms = 244L
 
+    private fun end() = SpeechTail.ToneEnd(ms, frames)
+
     @Test fun toneIsNotOverWhenItsLengthHasPassed() {
         // The old rule (length + 40 ms) ended it here, while ~0.3 s of it was still on its way to the speaker.
-        assertFalse(SpeechTail.toneDone(ms + 40, ms, frames, presented = 0, sawTimestamp = true))
-        assertFalse(SpeechTail.toneDone(ms + 40, ms, frames, presented = null, sawTimestamp = false))
+        assertFalse(end().over(ms + 40, 0))
+        assertFalse(end().over(ms + 40, null))
     }
 
-    @Test fun toneIsOverWhenItsLastFrameWasPresented() {
-        assertFalse(SpeechTail.toneDone(400, ms, frames, presented = frames - 1L, sawTimestamp = true))
-        assertTrue(SpeechTail.toneDone(400, ms, frames, presented = frames.toLong(), sawTimestamp = true))
+    @Test fun toneIsOverOnlyASettleAfterItsLastFrameWasReportedPresented() {
+        val e = end()
+        assertFalse(e.over(400, frames - 1L))
+        assertFalse(e.over(420, frames.toLong())) // reported presented: still on its way to the speakers (sim: up to 263 ms)
+        assertFalse(e.over(420 + SpeechTail.TONE_SETTLE_MS - 1, frames.toLong()))
+        assertTrue(e.over(420 + SpeechTail.TONE_SETTLE_MS, frames.toLong()))
+        assertEquals("presented", e.reason)
+    }
+
+    @Test fun theSettleCountsFromTheFirstReportOfTheLastFrame() {
+        val e = end()
+        assertFalse(e.over(420, frames.toLong()))
+        // A later poll without a timestamp does not restart the settle.
+        assertTrue(e.over(420 + SpeechTail.TONE_SETTLE_MS, null))
     }
 
     @Test fun withoutTimestampsAToneWaitsOutTheOutputPath() {
-        assertFalse(SpeechTail.toneDone(ms + SpeechTail.TONE_TAIL_MS - 1, ms, frames, null, sawTimestamp = false))
-        assertTrue(SpeechTail.toneDone(ms + SpeechTail.TONE_TAIL_MS, ms, frames, null, sawTimestamp = false))
+        val e = end()
+        assertFalse(e.over(ms + SpeechTail.TONE_TAIL_MS - 1, null))
+        assertTrue(e.over(ms + SpeechTail.TONE_TAIL_MS, null))
+        assertEquals("no_timestamp", e.reason)
+        // Without timestamps the beep's last sound on the sim came 570-657 ms after play(): the fallback waits past it.
+        assertTrue(ms + SpeechTail.TONE_TAIL_MS >= 657 + 100)
     }
 
     @Test fun stalledTimestampsCannotHoldTheQueueForever() {
-        assertFalse(SpeechTail.toneDone(ms + SpeechTail.TONE_TAIL_MS, ms, frames, 1_000L, sawTimestamp = true))
-        assertTrue(SpeechTail.toneDone(ms + SpeechTail.TONE_MAX_TAIL_MS, ms, frames, 1_000L, sawTimestamp = true))
-        // A timestamp seen once and then not again still counts as "this device has them".
-        assertTrue(SpeechTail.toneDone(ms + SpeechTail.TONE_MAX_TAIL_MS, ms, frames, null, sawTimestamp = true))
+        val e = end()
+        assertFalse(e.over(ms + SpeechTail.TONE_TAIL_MS, 1_000L))
+        assertFalse(e.over(ms + SpeechTail.TONE_MAX_TAIL_MS - 1, null)) // a timestamp seen once: this device has them
+        assertTrue(e.over(ms + SpeechTail.TONE_MAX_TAIL_MS, 1_000L))
+        assertEquals("stalled", e.reason)
     }
 
     @Test fun anIdleEngineNeverHoldsTheQueue() {

@@ -148,22 +148,21 @@ class DriveFeedback(context: Context) {
             requestFocus()
             t.play()
             track = t
-            // Over when its last frame reached the speaker, not when play() + its length has passed: the output path is
-            // ~0.3 s long, and the START tone used to sound into the first 0.2 s of the recording (SpeechTail).
+            // Over once its last frame reached the speaker, not when play() + its length has passed: the output path is
+            // ~0.3 s long, and the START tone used to sound into the first 0.2 s of the recording (SpeechTail.ToneEnd).
             val began = SystemClock.uptimeMillis()
             val duration = Earcons.durationMs(pcm)
             val stamp = AudioTimestamp()
-            var sawStamp = false
+            val end = SpeechTail.ToneEnd(duration, pcm.size)
             val check = object : Runnable {
                 override fun run() {
                     val presented = try { if (t.getTimestamp(stamp)) stamp.framePosition else null } catch (e: RuntimeException) { null }
-                    if (presented != null) sawStamp = true
                     val elapsed = SystemClock.uptimeMillis() - began
-                    if (!SpeechTail.toneDone(elapsed, duration, pcm.size, presented, sawStamp)) {
+                    if (!end.over(elapsed, presented)) {
                         main.postDelayed(this, SpeechTail.POLL_MS)
                         return
                     }
-                    Log.i(TAG, "tone ${tone.name} out after $elapsed ms (${duration} ms long, presented=${presented ?: "n/a"}/${pcm.size})")
+                    Log.i(TAG, "tone ${tone.name} out after $elapsed ms (${duration} ms long, ${end.reason}, presented=${presented ?: "n/a"}/${pcm.size})")
                     if (track === t) { t.release(); track = null }
                     releaseFocus()
                     then()
