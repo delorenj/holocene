@@ -64,10 +64,12 @@ export function step(agents: Agent[], selectedId: string | undefined, dir: 1 | -
 }
 
 // How old the list is. The pad keeps the last good roster across cold starts, so without this a roster of any age was
-// shown as if it were current. generated_at is the server's own stamp; "failed" is the last fetch not producing a roster.
-// This is the age of the LIST, never a claim that any agent is up: the roster says who a memo can be routed to.
+// shown as if it were current. generated_at is the server's own stamp; "failures" counts consecutive fetches that did
+// not produce a roster. This is the age of the LIST, never a claim that any agent is up: the roster says who a memo
+// can be routed to.
 export const ROSTER_STALE_MS = 15 * 60 * 1000
-export type RosterMeta = { generatedAt: number | null; failed: boolean }
+export const ROSTER_FAIL_GRACE_MS = 5 * 60 * 1000 // one failed refresh of a list younger than this is a blip
+export type RosterMeta = { generatedAt: number | null; failures: number; clockOffset: number }
 export type Staleness = { why: 'failed' | 'old'; ageMs: number | null }
 
 /** roster.json's generated_at as epoch ms (parsed or raw JSON), or null when absent or unreadable. */
@@ -81,13 +83,22 @@ export function rosterGeneratedAt(raw: unknown): number | null {
   return Number.isFinite(t) ? t : null
 }
 
+/** The server-clock offset from a response's Date header, so a fast head-unit clock never flags a fresh list. */
+export function serverClockOffset(dateHeader: string | null, deviceNow: number): number {
+  const t = dateHeader ? Date.parse(dateHeader) : NaN
+  return Number.isFinite(t) ? t - deviceNow : 0
+}
+
 /**
- * Null while the list can be trusted, else why not. A list with no stamp that has not failed is not flagged: it is
- * either still loading or from before the stamp was kept, and a fresh fetch replaces it within two minutes.
+ * Null while the list can be trusted, else why not. One failed fetch of a young list is a blip (a cellular dead
+ * spot): 'not refreshing' needs two consecutive failures, or one failure against a list already past the grace age.
+ * `now` should be on the server's clock (device now + clockOffset). A list with no stamp that has not failed is not
+ * flagged: it is either still loading or from before the stamp was kept, and a fresh fetch replaces it within two
+ * minutes.
  */
 export function rosterStaleness(m: RosterMeta, now: number): Staleness | null {
   const ageMs = m.generatedAt === null ? null : Math.max(0, now - m.generatedAt)
-  if (m.failed) return { why: 'failed', ageMs }
+  if (m.failures >= 2 || (m.failures > 0 && (ageMs === null || ageMs > ROSTER_FAIL_GRACE_MS))) return { why: 'failed', ageMs }
   return ageMs !== null && ageMs > ROSTER_STALE_MS ? { why: 'old', ageMs } : null
 }
 

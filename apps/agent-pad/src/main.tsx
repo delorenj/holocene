@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
-import { InFlight, UploadRejected, isPermanentStatus, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl } from './flight'
-import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, speakNext, step, stalenessText } from './roster'
+import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
+import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -158,8 +158,12 @@ async function putObject(key: string, blob: Blob, capture?: Capture): Promise<vo
       signal: ctl.signal,
     })
     if (!res.ok) {
-      // A 4xx the proxy will repeat (agent not routable, bad key) is final: carry its JSON reason so the pad can say why.
-      if (isPermanentStatus(res.status)) throw new UploadRejected(res.status, rejectionReason(await res.text().catch(() => '')))
+      // Only a refusal the proxy itself authored (422/413 with a JSON error body) is final: carry its reason and
+      // code so the pad can say why. Anything else may be an edge answering while the proxy is down and stays retryable.
+      const body = await res.text().catch(() => '')
+      if (isFinalRefusal(res.status, res.headers.get('content-type') || '', body)) {
+        throw new UploadRejected(res.status, rejectionReason(body), rejectionCode(body))
+      }
       throw new Error(`PUT ${key}: ${res.status}`)
     }
   } finally {
@@ -172,8 +176,10 @@ async function getBlob(url: string): Promise<Blob> {
 }
 
 // ---- upload outbox (IndexedDB): a recording that could not be sent is KEPT and retried ----
-// `rejected`: the proxy refused this PUT for good (4xx). The audio stays here, but the retry timer leaves it alone.
-type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number; capture?: Capture; rejected?: { status: number; reason: string } }
+// `rejected`: the proxy refused this PUT for good (a final refusal). The audio stays here; the 30 s retry timer
+// leaves it alone, but a slow timer (hourly, and once at pad start) tries it again so a wrong classification or an
+// agent that became routable clears itself. `at` stamps the first rejection: the driving hero note fades after it.
+type Pending = { key: string; agentName: string; blob: Blob; attempts: number; at: number; capture?: Capture; rejected?: { status: number; reason: string; at?: number } }
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('agentpad', 1)
@@ -382,9 +388,10 @@ function App() {
   const [cachedRoster] = useState(rosterGet)
   const [agents, setAgents] = useState<Agent[]>(() => cachedRoster || FALLBACK_AGENTS)
   const [rosterReady, setRosterReady] = useState(!!cachedRoster)
-  // How old the list is: the cached copy's own stamp until a fetch answers, then the fetched one. `failed` is the
-  // last fetch not producing a roster; the clock re-reads the age between fetches (a list ages while nothing happens).
-  const [rosterMeta, setRosterMeta] = useState<RosterMeta>(() => ({ generatedAt: rosterGeneratedAt(lsGet(LS_ROSTER)), failed: false }))
+  // How old the list is: the cached copy's own stamp until a fetch answers, then the fetched one. `failures` counts
+  // consecutive fetches that did not produce a roster (one blip on a young list is not flagged); `clockOffset` is the
+  // server clock minus the device clock from the last fetch's Date header. The clock re-reads the age between fetches.
+  const [rosterMeta, setRosterMeta] = useState<RosterMeta>(() => ({ generatedAt: rosterGeneratedAt(lsGet(LS_ROSTER)), failures: 0, clockOffset: 0 }))
   const [clock, setClock] = useState(Date.now)
   const fetchedMeta = useRef(false) // a fetch has answered: a late cache read must not overwrite its stamp
   const agentsRef = useRef(agents)
@@ -406,7 +413,8 @@ function App() {
   const [status, setStatus] = useState('idle')
   const [memoShort, setMemoShort] = useState<string | null>(null)
   const [outboxCount, setOutboxCount] = useState(0)
-  const [rejectedCount, setRejectedCount] = useState(0) // recordings the proxy refused for good: kept, not retried
+  const [rejectedCount, setRejectedCount] = useState(0) // recordings the proxy refused for good: kept, retried hourly
+  const [rejectedAt, setRejectedAt] = useState(0) // newest rejection stamp: the driving hero note fades ~30 min after it
   const [soundUnlocked, setSoundUnlocked] = useState(false)
   const [level, setLevel] = useState(0) // live input level 0..1 while recording
   const [meterOn, setMeterOn] = useState(false) // true once the host or the analyser reports levels
@@ -644,51 +652,69 @@ function App() {
     const waiting = retryable(rows).length
     setOutboxCount(waiting)
     setRejectedCount(rows.length - waiting)
+    setRejectedAt(newestRejectedAt(rows))
   }, [])
-  // The proxy refused this recording for good (a 4xx that will repeat). The audio stays in the outbox, marked, and is
-  // never retried; the hero shows it (static, like every state) and the device event says why. 5xx and network
-  // failures never come here. `live`: the send that owns the pad's phase just ended, so the phase may be set.
+  // The proxy refused this recording for good (a final refusal it authored). The audio stays in the outbox, marked,
+  // and the slow timer tries it again about hourly; the hero shows it while the refusal is fresh and the device event
+  // says why. 5xx and network failures never come here. `live`: the send that owns the pad's phase just ended, so the
+  // phase may be set.
   const holdRejected = useCallback(async (p: Pending, e: UploadRejected, agentId: string | undefined, live: boolean) => {
-    await outboxPut({ ...p, attempts: p.attempts + 1, rejected: { status: e.status, reason: e.reason } })
+    await outboxPut({ ...p, attempts: p.attempts + 1, rejected: { status: e.status, reason: e.reason, at: p.rejected?.at ?? Date.now() } })
     const why = rejectionText(e.status, e.reason)
     countOutbox(await outboxAll())
     // A background retry must not overwrite a note being recorded or sent.
     if (live) setPhase('rejected')
     else setPhase((cur) => (cur === 'idle' || cur === 'sent' || cur === 'queued' ? 'rejected' : cur))
-    setStatus(`NOT accepted (${why.slice(0, 80)}) - kept on this device, not retrying`)
+    setStatus(`NOT accepted (${why.slice(0, 80)}) - kept on this device, retrying hourly`)
     emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: String(e.status) })
-    clientEvent({ event: 'upload_failed', key: p.key, error: why, code: 'upload_rejected', attempts: p.attempts + 1, retryable: false })
+    // An 'unroutable_agent' refusal already published its terminal failed fact at the proxy: a second one here
+    // would show the same memo failing twice in /voice. Other final refusals are only visible from the device.
+    if (e.code !== 'unroutable_agent') {
+      clientEvent({ event: 'upload_failed', key: p.key, error: why, code: 'upload_rejected', attempts: p.attempts + 1, retryable: false })
+    }
   }, [countOutbox])
+  // One outbox row's turn at a send: delete it on success, mark it on a final refusal, keep it otherwise.
+  const sendPending = useCallback(async (p: Pending) => {
+    if (!flight.begin(p.key)) return
+    try {
+      await putObject(p.key, p.blob, p.capture)
+      noteSent()
+      await outboxDel(p.key)
+      clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
+      setStatus(`sent → ${p.agentName} (after a retry)`)
+      emitHost({ t: 'sent', name: p.agentName })
+    } catch (e) {
+      if (e instanceof UploadRejected) await holdRejected(p, e, undefined, false)
+      else await outboxPut({ ...p, attempts: p.attempts + 1 })
+    } finally {
+      flight.end(p.key)
+    }
+  }, [flight, holdRejected])
   const flushOutbox = useCallback(async () => {
     const all = flight.idle(await outboxAll()) // a recording a live send still owns is not "waiting"
     const waiting = retryable(all)
     countOutbox(all)
-    for (const p of waiting) {
-      if (!flight.begin(p.key)) continue
-      try {
-        await putObject(p.key, p.blob, p.capture)
-        noteSent()
-        await outboxDel(p.key)
-        clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
-        setStatus(`sent → ${p.agentName} (after a retry)`)
-        emitHost({ t: 'sent', name: p.agentName })
-      } catch (e) {
-        if (e instanceof UploadRejected) await holdRejected(p, e, undefined, false)
-        else await outboxPut({ ...p, attempts: p.attempts + 1 })
-      } finally {
-        flight.end(p.key)
-      }
-    }
+    for (const p of waiting) await sendPending(p)
     if (waiting.length) countOutbox(flight.idle(await outboxAll()))
     await flushEvents()
-  }, [flight, countOutbox, holdRejected])
+  }, [flight, countOutbox, sendPending])
+  // The rejected rows' slow self-heal: once at pad start and about hourly, so a refusal that no longer holds
+  // (agent routable again, an edge answered in the proxy's place) clears itself instead of nagging forever.
+  const retryRejected = useCallback(async () => {
+    const all = flight.idle(await outboxAll())
+    const held = all.filter((p) => p.rejected)
+    for (const p of held) await sendPending(p)
+    if (held.length) countOutbox(flight.idle(await outboxAll()))
+  }, [flight, countOutbox, sendPending])
   useEffect(() => {
     void flushOutbox()
+    void retryRejected()
     const t = window.setInterval(() => void flushOutbox(), 30000)
+    const slow = window.setInterval(() => void retryRejected(), REJECTED_RETRY_MS)
     const on = () => void flushOutbox()
     window.addEventListener('online', on)
-    return () => { window.clearInterval(t); window.removeEventListener('online', on) }
-  }, [flushOutbox])
+    return () => { window.clearInterval(t); window.clearInterval(slow); window.removeEventListener('online', on) }
+  }, [flushOutbox, retryRejected])
 
   // Send a finished recording: a few quick retries holding the blob; if the network is really gone, keep it
   // in the outbox (IndexedDB) and say so, so nothing recorded in the car is ever thrown away silently.
@@ -993,19 +1019,21 @@ function App() {
       try {
         const r = await fetch(ROSTER_URL, { cache: 'no-cache' })
         if (!r.ok) throw new Error(String(r.status))
+        // Age is measured on the server's clock: a fast head-unit clock must not flag a fresh list.
+        const clockOffset = serverClockOffset(r.headers.get('date'), Date.now())
         const text = await r.text()
         const list = normRoster(text)
         if (!alive) return
         if (!list) throw new Error('no roster in the answer')
         // The stamp is the server's; a roster without one counts as fresh now (it was just served).
-        const generatedAt = rosterGeneratedAt(text) ?? Date.now()
+        const generatedAt = rosterGeneratedAt(text) ?? Date.now() + clockOffset
         fetchedMeta.current = true
-        setRosterMeta({ generatedAt, failed: false })
+        setRosterMeta({ generatedAt, failures: 0, clockOffset })
         pendingRoster.current = { list, generatedAt }
         applyRoster()
       } catch {
-        // offline or a bad answer: keep the cached roster, and say it is not refreshing
-        if (alive) setRosterMeta((m) => (m.failed ? m : { ...m, failed: true }))
+        // offline or a bad answer: keep the cached roster; only consecutive failures say it is not refreshing
+        if (alive) setRosterMeta((m) => ({ ...m, failures: m.failures + 1 }))
       }
     }
     void rosterDbGet().then((got) => {
@@ -1051,11 +1079,12 @@ function App() {
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
   const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent) : agents
-  const stale = rosterStaleness(rosterMeta, clock)
+  const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
   // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
-  // note is being recorded. A refused note outranks an old list: it is audio the driver thinks went somewhere.
-  const heroNote = recording ? '' : rejectedCount > 0 ? `${rejectedCount} note${rejectedCount > 1 ? 's' : ''} not sent, saved` : stale ? stalenessText(stale, true) : ''
+  // note is being recorded. A fresh refusal outranks an old list: it is audio the driver thinks went somewhere. It
+  // fades ~30 min after the newest rejection (or on the next successful send); the parked status keeps the count.
+  const heroNote = recording ? '' : nagRejected(rejectedCount, rejectedAt, lastSentAt.current, clock) ? `${rejectedCount} note${rejectedCount > 1 ? 's' : ''} not sent, saved` : stale ? stalenessText(stale, true) : ''
 
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
