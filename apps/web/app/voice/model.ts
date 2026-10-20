@@ -2,12 +2,18 @@ import type { Signal } from "../hub/types";
 import type { AudioLevel, CaptureLevel, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary } from "./types";
 
 export const HOP_SIGNAL: Record<HopStatus, Signal> = {
-  ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown"
+  ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown",
+  // Neither is an error: the hourglass is the turn that ran out of time, the dash is a memo someone stopped.
+  timed_out: "stuck", cancelled: "quiet"
 };
-export const MEMO_SIGNAL: Record<MemoStatus, Signal> = { complete: "cleared", failed: "broken", running: "working", stuck: "stuck" };
+export const MEMO_SIGNAL: Record<MemoStatus, Signal> = { complete: "cleared", failed: "broken", running: "working", stuck: "stuck", cancelled: "quiet" };
 export const HOP_WORD: Record<HopStatus, string> = {
-  ok: "Done", failed: "Failed", waiting: "Waiting", stuck: "Stuck", pending: "Not reached", missing: "Not recorded"
+  ok: "Done", failed: "Failed", waiting: "Waiting", stuck: "Stuck", pending: "Not reached", missing: "Not recorded",
+  timed_out: "Timed out", cancelled: "Cancelled"
 };
+
+/** dispatched fact lane_reason of a memo re-dispatched on the batch lane after its interactive turn timed out. */
+export const ESCALATED_REASON = "turn_timeout_escalated";
 
 /** "max -73 dBFS · silent" · "max -8 dBFS · audible": the recording's loudest sample, as the watcher measured it. */
 export function audioChip(a: AudioLevel): string {
@@ -62,7 +68,10 @@ export function statement(memos: MemoSummary[]): string {
   if (count("stuck")) parts.push(`${count("stuck")} stuck.`);
   if (count("failed")) parts.push(`${count("failed")} failed.`);
   if (count("running")) parts.push(`${count("running")} in flight.`);
+  const escalated = memos.filter((m) => m.escalated && (m.status === "running" || m.status === "stuck")).length;
+  if (escalated) parts.push(`${escalated} escalated to the batch lane.`);
   if (count("complete")) parts.push(`${count("complete")} complete.`);
+  if (count("cancelled")) parts.push(`${count("cancelled")} cancelled.`);
   return parts.join(" ");
 }
 

@@ -25,9 +25,17 @@ export const AGENT_TYPES = [
   "bloodbank.conversation.turn.failed"
 ] as const;
 
-export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied" | "played";
-export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing";
-export type MemoStatus = "complete" | "failed" | "running" | "stuck";
+export type HopId =
+  | "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done"
+  // Only on an escalated memo: the second dispatch on the batch lane and the batch turn it started.
+  | "escalated" | "batch_started" | "batch_done"
+  | "replied" | "played";
+/**
+ * timed_out: the interactive turn hit its wall clock and the watcher handed the memo to the batch lane (not a failure).
+ * cancelled: someone ran `memo:cancel` (not an error either).
+ */
+export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing" | "timed_out" | "cancelled";
+export type MemoStatus = "complete" | "failed" | "running" | "stuck" | "cancelled";
 /** Which gateway lane carried the memo's command: invocation.invoke (interactive) or invocation.start (batch). */
 export type Lane = "interactive" | "batch";
 
@@ -62,6 +70,32 @@ export const HOPS: readonly Spec[] = [
   // Reported by the pad itself. Optional: a parked car reports nothing, and that is not a failed memo.
   { id: "played", label: "Played on car", budgetSeconds: 60, optional: true }
 ];
+
+/** The batch lane has no wall clock but queues behind ticket grooming, so the batch turn may wait a long time before it starts. */
+export const BATCH_START_BUDGET_SECONDS = 1800;
+/** Same as the watcher's MEMO_BATCH_TURN_TIMEOUT_S default: the watcher gives the batch turn this long. */
+export const BATCH_TURN_BUDGET_SECONDS = 7200;
+
+/**
+ * An escalated memo ran twice: the interactive turn timed out and the watcher re-dispatched the same prompt on the
+ * batch lane. The batch dispatch and its turn are their own hops, between the interactive agent hops and the reply.
+ */
+const ESCALATED_HOPS: readonly Spec[] = (() => {
+  const at = HOPS.findIndex((h) => h.id === "agent_done") + 1;
+  const interactive = (spec: Spec): Spec => (spec.id === "agent_started" || spec.id === "agent_done" ? { ...spec, label: `Interactive ${spec.label.toLowerCase()}` } : spec);
+  return [
+    ...HOPS.slice(0, at).map(interactive),
+    { id: "escalated", label: "Escalated to batch lane", budgetSeconds: 60 },
+    { id: "batch_started", label: "Batch agent started", budgetSeconds: BATCH_START_BUDGET_SECONDS },
+    { id: "batch_done", label: "Batch agent finished", budgetSeconds: BATCH_TURN_BUDGET_SECONDS },
+    ...HOPS.slice(at)
+  ];
+})();
+
+/** dispatched fact lane_reason of a memo the watcher re-dispatched on the batch lane after the interactive turn timed out. */
+export const ESCALATED_REASON = "turn_timeout_escalated";
+/** audio.memo.failed data.stage and error_code of a memo that `memo:cancel` ended. Not an error. */
+export const CANCELLED = "cancelled";
 
 /** Watcher StageError.stage -> the hop it was trying to reach. */
 const STAGE_HOP: Record<string, HopId> = {
@@ -178,6 +212,31 @@ export type Hop = {
   audio?: AudioLevel;
   /** Uploaded hop: what the device's own recorder measured, when it reported it. */
   capture?: CaptureLevel;
+  /** Replied hop: how the reply was spoken (late / escalated) and where its text sidecar went. */
+  reply?: ReplyInfo;
+  /** Set on the hop a `memo:cancel` stopped the memo at. */
+  cancel?: Cancellation;
+};
+
+/** From the audio.memo.replied fact. */
+export type ReplyInfo = {
+  /** Spoken with the "late reply" prefix: the agent finished after the deadline the memo was first given. */
+  late: boolean;
+  /** The reply came from the batch turn the watcher escalated to after the interactive turn timed out. */
+  escalated: boolean;
+  /** Earshot object of the reply audio (the phone's copy). */
+  earshotKey?: string;
+  /** Earshot object holding the FULL reply text next to the audio (the spoken digest is shorter). */
+  earshotTextKey?: string;
+};
+
+/** From an audio.memo.failed fact with data.stage "cancelled". */
+export type Cancellation = {
+  eventId: string;
+  at: string;
+  /** true: the command had been published, so the agent may still have run (nothing is undone, its reply is not spoken). */
+  afterDispatch: boolean;
+  message?: string;
 };
 
 export type MemoSummary = {
@@ -196,6 +255,12 @@ export type MemoSummary = {
   lane?: Lane;
   /** Why the memo is not on the lane the watcher is configured for, e.g. interactive_consumer_not_pulling. */
   laneReason?: string;
+  /** The interactive turn timed out and the memo was re-dispatched on the batch lane (it is not failed). */
+  escalated?: boolean;
+  /** The reply was spoken late ("<agent>, late reply."). */
+  late?: boolean;
+  /** Set when `memo:cancel` ended the memo. Cancelled is not an error. */
+  cancelled?: Cancellation;
   transcriptPreview?: string;
   replyPreview?: string;
   error?: string;
@@ -207,6 +272,8 @@ export type MemoSummary = {
 
 export type MemoDetail = MemoSummary & {
   commandId?: string;
+  /** Escalated memo: the interactive command whose turn timed out (commandId is the batch command). */
+  escalatedFromCommandId?: string;
   transcript?: string;
   replyText?: string;
   hops: Hop[];
@@ -297,6 +364,30 @@ export function laneOfDispatch(d: Record<string, unknown>): Lane {
   return subject?.endsWith(".invocation.invoke") ? "interactive" : "batch";
 }
 
+/** The dispatched fact of a re-dispatch on the batch lane after the interactive turn timed out. */
+export function isEscalatedDispatch(d: Record<string, unknown>): boolean {
+  return str(d.lane_reason) === ESCALATED_REASON || str(d.escalated_from_command_id) !== undefined;
+}
+
+/** A memo.failed fact that records `memo:cancel`, not a failure. */
+export function isCancelFact(d: Record<string, unknown>): boolean {
+  return str(d.stage) === CANCELLED || str(d.error_code) === CANCELLED;
+}
+
+export function replyInfoOf(d: Record<string, unknown>): ReplyInfo {
+  return { late: d.late === true, escalated: d.escalated === true, earshotKey: str(d.earshot_key), earshotTextKey: str(d.earshot_text_key) };
+}
+
+/** "command c2 · batch lane · fell back: interactive_consumer_not_pulling", or for an escalation: "... · escalated from command c1 (interactive turn timed out)". */
+function dispatchDetail(d: Record<string, unknown>): string {
+  const reason = str(d.lane_reason);
+  const from = str(d.escalated_from_command_id);
+  const why = isEscalatedDispatch(d)
+    ? `escalated${from ? ` from command ${from}` : ""} (interactive turn timed out)`
+    : reason ? `fell back: ${reason}` : undefined;
+  return [str(d.command_id) ? `command ${str(d.command_id)}` : undefined, `${laneOfDispatch(d)} lane`, why].filter(Boolean).join(" · ");
+}
+
 function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
   if (!e) return "";
   const d = e.data;
@@ -317,17 +408,14 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
       ].filter(Boolean);
       return bits.join(" · ");
     }
-    case "dispatched": {
-      const reason = str(d.lane_reason);
-      return [
-        str(d.command_id) ? `command ${str(d.command_id)}` : undefined,
-        `${laneOfDispatch(d)} lane`,
-        reason ? `fell back: ${reason}` : undefined
-      ].filter(Boolean).join(" · ");
-    }
+    case "dispatched":
+    case "escalated":
+      return dispatchDetail(d);
     case "agent_started":
+    case "batch_started":
       return str(e.producer) ?? "";
     case "agent_done":
+    case "batch_done":
       return e.type.endsWith(".completed") ? "invocation completed" : (agentFailure(e).message ?? e.type);
     case "played": {
       const bits = [
@@ -339,6 +427,7 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
     }
     case "replied": {
       const bits = [
+        d.late === true ? "late reply" : undefined,
         num(d.tts_seconds) !== undefined ? `tts ${num(d.tts_seconds)} s` : undefined,
         str(d.tts_engine),
         str(d.reply_s3_key)
@@ -348,22 +437,34 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
   }
 }
 
-/** Pick the events that prove each hop, oldest first. */
-function hopEvents(events: JourneyEvent[]): Record<HopId, JourneyEvent[]> {
+const AGENT_STARTED = ["bloodbank.agent.invocation.started", "bloodbank.conversation.turn.started"];
+const AGENT_DONE = [
+  "bloodbank.agent.invocation.completed",
+  "bloodbank.agent.invocation.failed",
+  "bloodbank.agent.invocation.skipped",
+  "bloodbank.conversation.turn.completed",
+  "bloodbank.conversation.turn.failed"
+];
+
+type Side = "first" | "batch";
+/** Which command of an escalated memo an event belongs to: by command id, else by whether it came before the escalation. */
+type Split = { escalation: JourneyEvent; sideOf: (e: JourneyEvent) => Side };
+
+/** Pick the events that prove each hop, oldest first. An escalated memo splits its dispatch and agent facts between its two commands. */
+function hopEvents(events: JourneyEvent[], split?: Split): Record<HopId, JourneyEvent[]> {
   const byType = (...t: string[]) => events.filter((e) => t.includes(e.type));
+  const on = (list: JourneyEvent[], side: Side) => (split ? list.filter((e) => split.sideOf(e) === side) : side === "first" ? list : []);
+  const dispatches = byType("bloodbank.audio.memo.dispatched");
   return {
     uploaded: byType("bloodbank.audio.memo.uploaded"),
     received: byType("bloodbank.audio.memo.received"),
     transcribed: byType("bloodbank.audio.memo.transcribed"),
-    dispatched: byType("bloodbank.audio.memo.dispatched"),
-    agent_started: byType("bloodbank.agent.invocation.started", "bloodbank.conversation.turn.started"),
-    agent_done: byType(
-      "bloodbank.agent.invocation.completed",
-      "bloodbank.agent.invocation.failed",
-      "bloodbank.agent.invocation.skipped",
-      "bloodbank.conversation.turn.completed",
-      "bloodbank.conversation.turn.failed"
-    ),
+    dispatched: split ? dispatches.filter((e) => e !== split.escalation) : dispatches,
+    escalated: split ? [split.escalation] : [],
+    agent_started: on(byType(...AGENT_STARTED), "first"),
+    agent_done: on(byType(...AGENT_DONE), "first"),
+    batch_started: on(byType(...AGENT_STARTED), "batch"),
+    batch_done: on(byType(...AGENT_DONE), "batch"),
     replied: byType("bloodbank.audio.memo.replied"),
     played: byType("bloodbank.audio.memo.played")
   };
@@ -385,37 +486,90 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
 
   // A retried memo is dispatched again under a fresh command id (and may pick another lane): the NEWEST
   // dispatched fact is the live command, the same one memo:trace reports.
-  const dispatched = last(events, "bloodbank.audio.memo.dispatched");
+  const dispatches = events.filter((e) => e.type === "bloodbank.audio.memo.dispatched");
+  const dispatched = dispatches.at(-1);
   const commandId = str(dispatched?.data.command_id) ?? str(last(events, "bloodbank.audio.memo.replied")?.data.command_id);
-  // Agent facts must belong to this memo's command when both ids are known.
+
+  // An escalated memo's live command is the batch re-dispatch of the interactive command whose turn timed out.
+  // Both commands' agent facts belong to the memo; the escalation splits them into two sets of hops.
+  const escalation = dispatched && isEscalatedDispatch(dispatched.data) ? dispatched : undefined;
+  const escalatedAt = ms(escalation?.at) ?? 0;
+  const firstCommandId = escalation
+    ? str(escalation.data.escalated_from_command_id)
+      ?? str(dispatches.filter((d) => d !== escalation && (ms(d.at) ?? 0) <= escalatedAt).at(-1)?.data.command_id)
+    : undefined;
+  const sideOf = (e: JourneyEvent): Side => {
+    if (!escalation) return "first";
+    const cid = str(e.data.command_id);
+    if (cid) return cid === commandId ? "batch" : "first";
+    return (ms(e.at) ?? 0) >= escalatedAt ? "batch" : "first";
+  };
+  const ours = new Set([commandId, firstCommandId].filter((c): c is string => c !== undefined));
+  // Agent facts must belong to this memo's command(s) when the ids are known.
   const relevant = events.filter((e) => {
     if (e.type.startsWith("bloodbank.audio.memo.")) return true;
     const cid = str(e.data.command_id);
-    return !commandId || !cid || cid === commandId;
+    return !ours.size || !cid || ours.has(cid);
   });
 
-  const proof = hopEvents(relevant);
-  const failedFacts = relevant.filter((e) => e.type === "bloodbank.audio.memo.failed").map(failureOf);
-  const failuresByHop = new Map<HopId, HopFailure[]>();
-  for (const f of failedFacts) {
+  const specs = escalation ? ESCALATED_HOPS : HOPS;
+  const proof = hopEvents(relevant, escalation ? { escalation, sideOf } : undefined);
+
+  // `memo:cancel` is a verdict, not a failure: it is kept apart from the failed facts.
+  const cancelEvent = relevant.filter((e) => e.type === "bloodbank.audio.memo.failed" && isCancelFact(e.data)).at(-1);
+  const cancelMs = ms(cancelEvent?.at) ?? 0;
+  const cancelAfterDispatch = cancelEvent
+    ? typeof cancelEvent.data.after_dispatch === "boolean" ? cancelEvent.data.after_dispatch : dispatches.some((d) => (ms(d.at) ?? 0) <= cancelMs)
+    : false;
+  // An explicit `memo:retry` revives a cancelled memo: any stage fact after the cancel supersedes it. A dispatched fact
+  // after an after-dispatch cancel is only the watcher's late bookkeeping, not a revival.
+  const revival = ["received", "transcribed", ...(cancelAfterDispatch ? [] : ["dispatched"]), "replied"].map((t) => `bloodbank.audio.memo.${t}`);
+  const cancelled: Cancellation | undefined = cancelEvent && !memoFacts.some((e) => revival.includes(e.type) && (ms(e.at) ?? 0) > cancelMs)
+    ? { eventId: cancelEvent.id, at: cancelEvent.at, afterDispatch: cancelAfterDispatch, message: str(cancelEvent.data.error_message) }
+    : undefined;
+
+  const failureSide = new Map<string, Side>();
+  const failedFacts: HopFailure[] = [];
+  for (const e of relevant) {
+    if (e.type !== "bloodbank.audio.memo.failed" || isCancelFact(e.data)) continue;
+    const f = failureOf(e);
+    failedFacts.push(f);
+    failureSide.set(f.eventId, sideOf(e));
+  }
+  const hopOfFailure = (f: HopFailure): HopId | undefined => {
+    const batch = failureSide.get(f.eventId) === "batch";
     let hop = (f.stage && STAGE_HOP[f.stage]) || undefined;
+    if (batch && hop === "agent_started") hop = "batch_started";
+    if (batch && hop === "agent_done") hop = "batch_done";
     // The watcher times out on "no completed turn"; when the agent never even started (the gateway dropped the
     // command, or it is still queued) the hop that failed is "Agent started", not "Agent finished".
-    if (f.stage === "agent_reply" && f.code === "timeout" && proof.agent_started.length === 0) hop = "agent_started";
-    if (!hop) continue;
-    failuresByHop.set(hop, [...(failuresByHop.get(hop) ?? []), f]);
+    if (f.stage === "agent_reply" && f.code === "timeout" && (batch ? proof.batch_started : proof.agent_started).length === 0) {
+      hop = batch ? "batch_started" : "agent_started";
+    }
+    return hop;
+  };
+  const failuresByHop = new Map<HopId, HopFailure[]>();
+  const unplaced: HopFailure[] = [];
+  for (const f of failedFacts) {
+    const hop = hopOfFailure(f);
+    if (!hop) unplaced.push(f);
+    else failuresByHop.set(hop, [...(failuresByHop.get(hop) ?? []), f]);
   }
-  const unplaced = failedFacts.filter((f) => !f.stage || !STAGE_HOP[f.stage]);
 
-  const hops: Hop[] = HOPS.map((spec) => {
+  const hops: Hop[] = specs.map((spec) => {
     const evs = proof[spec.id];
     const failures = failuresByHop.get(spec.id) ?? [];
     // A device-side silent_capture is superseded by any upload after it ("send anyway"): the pad let it go, the watcher judges it from here.
     const supersededByUpload = (f: HopFailure) =>
       f.code === SILENT_CAPTURE && f.stage === "record" && proof.uploaded.some((e) => (ms(e.at) ?? 0) >= (ms(f.at) ?? 0));
-    const terminal = failures.filter((f) => !f.retryable && !supersededByUpload(f)).at(-1);
-    const agentBad = spec.id === "agent_done" ? evs.find((e) => AGENT_FAILED.includes(e.type)) : undefined;
-    const happened = spec.id === "agent_done" ? evs.find((e) => e.type === "bloodbank.agent.invocation.completed") ?? agentBad ?? evs[0] : evs[0];
+    const isDone = spec.id === "agent_done" || spec.id === "batch_done";
+    const agentBad = isDone ? evs.find((e) => AGENT_FAILED.includes(e.type)) : undefined;
+    const happened = isDone ? evs.find((e) => e.type === "bloodbank.agent.invocation.completed") ?? agentBad ?? evs[0] : evs[0];
+    // On an escalated memo the interactive turn's timeout is the reason for the escalation, not the memo's verdict.
+    const timedOut = escalation && spec.id === "agent_done" && !happened?.type.endsWith(".completed")
+      ? agentBad ? (str(agentBad.data.error_code) === TURN_TIMEOUT ? agentFailure(agentBad) : undefined) : failures.find((f) => f.code === TURN_TIMEOUT)
+      : undefined;
+    const terminal = failures.filter((f) => !f.retryable && !supersededByUpload(f) && f !== timedOut).at(-1);
     const out: Hop = {
       id: spec.id, label: spec.label, status: "pending", budgetSeconds: spec.budgetSeconds,
       at: happened?.at,
@@ -423,12 +577,21 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       failures, events: evs
     };
     if (spec.id === "uploaded") out.capture = memoFacts.map((e) => captureLevelOf(e.data)).find(Boolean);
+    if (spec.id === "replied" && evs[0]) out.reply = replyInfoOf(evs[0].data);
     if (spec.id === "transcribed") {
       out.audio = (evs[0] ? audioLevelOf(evs[0].data) : undefined) ?? failures.map((f) => f.audio).filter(Boolean).at(-1);
       // The watcher fails a silent recording before it transcribes: that failure IS the transcribed hop's verdict, with the level as evidence.
       if (out.audio && !evs[0]) out.detail = audioLevelText(out.audio);
     }
-    if (agentBad && !happened?.type.endsWith(".completed")) {
+    if (timedOut) {
+      out.status = "timed_out";
+      out.error = timedOut;
+      out.detail = "not a failure: the watcher re-dispatched the same prompt on the batch lane";
+      // Only the watcher's copy of the timeout may be collected so far: it still places the hop in time.
+      const fact = relevant.find((e) => e.id === timedOut.eventId);
+      if (fact && !evs.includes(fact)) out.events = [...evs, fact];
+      out.at ??= timedOut.at;
+    } else if (agentBad && !happened?.type.endsWith(".completed")) {
       out.status = "failed";
       out.error = agentFailure(agentBad);
     } else if (terminal) {
@@ -477,7 +640,21 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   // The first hop with no proof that comes after the last one that happened is the one we are waiting on.
   const lastHappened = hops[reachedIdx];
   const nextIdx = reachedIdx + 1;
-  if (replied.status === "ok" && !failedHop) {
+  if (cancelled) {
+    // The cancel is the verdict. It lands on the hop the memo had not reached yet, which keeps the later hops "not reached".
+    status = "cancelled";
+    const target = hops.slice(nextIdx).find((h) => h.status === "pending") ?? hops.at(-1)!;
+    const at = ms(cancelled.at);
+    const before = ms(lastHappened?.at);
+    target.status = "cancelled";
+    target.cancel = cancelled;
+    target.at = cancelled.at;
+    target.detail = cancelled.afterDispatch
+      ? "cancelled after the command was published: the agent may still run, nothing is undone, and its reply will not be spoken"
+      : "cancelled before dispatch: nothing was sent to an agent";
+    target.events = [...target.events, cancelEvent!];
+    if (at !== undefined && before !== undefined) target.sinceMs = Math.max(0, at - before);
+  } else if (replied.status === "ok" && !failedHop) {
     status = "complete";
   } else if (failedHop) {
     status = "failed";
@@ -509,7 +686,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   }
 
   const startedAt = hops.find((h) => h.at)?.at ?? events[0].at;
-  const terminalAt = failedHop?.error?.at ?? (status === "complete" ? replied.at : undefined);
+  const terminalAt = status === "cancelled" ? cancelled?.at : failedHop?.error?.at ?? (status === "complete" ? replied.at : undefined);
   const endMs = (terminalAt ? ms(terminalAt) : undefined) ?? now;
   const startMs = ms(startedAt) ?? now;
   const updatedAt = events.reduce((acc, e) => ((ms(e.at) ?? 0) > (ms(acc) ?? 0) ? e.at : acc), startedAt);
@@ -522,12 +699,15 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const replyText = str(repliedEvent?.data.reply_text);
   const agent = memoFacts.map((e) => str(e.data.target_agent_id)).find(Boolean);
   const s3Key = memoFacts.map((e) => str(e.data.s3_key)).find(Boolean);
+  const reply = repliedEvent ? replyInfoOf(repliedEvent.data) : undefined;
+  const escalated = escalation !== undefined || reply?.escalated === true;
 
   let stageLabel: string;
-  if (status === "complete") stageLabel = "Complete";
+  if (status === "cancelled") stageLabel = `Cancelled ${cancelled?.afterDispatch ? "after" : "before"} dispatch`;
+  else if (status === "complete") stageLabel = reply?.late ? "Complete · late reply" : "Complete";
   else if (status === "failed" && failedHop?.error?.timeout) {
     const secs = failedHop.error.timeout.elapsedSeconds;
-    stageLabel = `Agent turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
+    stageLabel = `${failedHop.id === "batch_done" ? "Batch agent" : "Agent"} turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
   } else if (status === "failed" && (failedHop?.error?.code === SILENT_AUDIO || failedHop?.error?.code === SILENT_CAPTURE)) {
     stageLabel = "Silent microphone";
   } else if (status === "failed" && failedHop?.id === "transcribed" && failedHop.error?.code === "empty_transcript" && failedHop.error.audio) {
@@ -535,8 +715,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   } else if (status === "failed") stageLabel = `Failed at ${(failedHop?.label ?? "unknown").toLowerCase()}`;
   else if (status === "stuck") stageLabel = `Stuck before ${(hops.find((h) => h.id === stuckAt)?.label ?? "").toLowerCase()}`;
   else stageLabel = hops[nextIdx] ? `Waiting for ${hops[nextIdx].label.toLowerCase()}` : "Running";
+  // The interactive turn timed out and the batch turn is carrying the memo: say so, it is in progress and not failed.
+  if (escalation && (status === "running" || status === "stuck")) stageLabel = `Escalated to batch · ${stageLabel.charAt(0).toLowerCase()}${stageLabel.slice(1)}`;
   // Nothing happened yet, so no hop to name; a failure that carries its own label (the pad's silent_capture) keeps it.
-  if (status !== "complete" && reachedIdx < 0 && stageLabel !== "Silent microphone") stageLabel = "Unknown";
+  if (status !== "complete" && status !== "cancelled" && reachedIdx < 0 && stageLabel !== "Silent microphone") stageLabel = "Unknown";
 
   // The raw failure facts belong to the hop they failed, so the UI can show their envelopes too.
   // This runs after every state decision above, which read `events` as proof that a hop happened.
@@ -556,22 +738,27 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     stageLabel,
     stuckAt,
     lane, laneReason,
+    ...(escalated ? { escalated } : {}),
+    ...(reply?.late ? { late: true } : {}),
+    ...(cancelled ? { cancelled } : {}),
     audio: hops.find((h) => h.id === "transcribed")?.audio,
     capture: hops.find((h) => h.id === "uploaded")?.capture,
     transcriptPreview: preview(transcript, 140),
     replyPreview: preview(replyText, 140),
-    error: (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
+    // A cancelled memo is not an error, whatever else its hops recorded.
+    error: status !== "cancelled" && (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
       ? `${(failedHop ?? playedHop).error!.code ?? "failed"}: ${(failedHop ?? playedHop).error!.message ?? ""}`.trim()
       : undefined
   };
-  return { ...summary, commandId, transcript, replyText, hops, events: relevant };
+  return { ...summary, commandId, ...(escalation && firstCommandId ? { escalatedFromCommandId: firstCommandId } : {}), transcript, replyText, hops, events: relevant };
 }
 
 export function toSummary(detail: MemoDetail): MemoSummary {
   return {
     memoId: detail.memoId, agent: detail.agent, s3Key: detail.s3Key, startedAt: detail.startedAt, updatedAt: detail.updatedAt,
     totalSeconds: detail.totalSeconds, status: detail.status, reached: detail.reached, stageLabel: detail.stageLabel,
-    stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
+    stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, escalated: detail.escalated, late: detail.late, cancelled: detail.cancelled,
+    audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
   };
 }
 

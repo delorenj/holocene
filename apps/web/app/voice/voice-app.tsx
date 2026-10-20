@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
+import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
 import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
@@ -158,9 +158,11 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
               <span className="voice-row-foot">
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
                 {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
+                {m.late ? <LateChip /> : null}
                 {m.audio ? <span className={`voice-level${m.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(m.audio)}</span> : null}
                 {m.status === "stuck" ? <span className="voice-badge is-stuck">stuck</span> : null}
                 {m.status === "failed" ? <span className="voice-badge is-failed">failed</span> : null}
+                {m.status === "cancelled" ? <span className="voice-badge is-cancelled">cancelled</span> : null}
               </span>
             </button>
           </li>
@@ -171,11 +173,19 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
 }
 
 function LaneChip({ lane, reason }: { lane: Lane; reason?: string }) {
+  // An escalation is the watcher doing its job after a turn timeout; a fallback is the gateway lane being down.
+  if (reason === ESCALATED_REASON) {
+    return <span className="voice-lane is-escalated" title="the interactive turn timed out; the same prompt was re-dispatched on the batch lane">{lane} (escalated)</span>;
+  }
   return (
     <span className={`voice-lane is-${lane}${reason ? " is-fallback" : ""}`} title={reason ? `fell back to batch: ${reason}` : `${lane} lane`}>
       {lane}{reason ? " (fallback)" : ""}
     </span>
   );
+}
+
+function LateChip() {
+  return <span className="voice-flag is-late" title="the reply was spoken late: the agent finished after the memo's first deadline">late reply</span>;
 }
 
 function Journey({ memoId, now }: { memoId: string; now: number }) {
@@ -210,6 +220,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
             <p className="hub-note">
               {dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}
               {memo.lane ? <> · <LaneChip lane={memo.lane} reason={memo.laneReason} /></> : null}
+              {memo.late ? <> · <LateChip /></> : null}
               {memo.audio ? <> · <span className={`voice-level${memo.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(memo.audio)}</span></> : null}
               {captureChip(memo.capture) ? <> · <span className={`voice-level${memo.capture?.silent ? " is-silent" : ""}`} title="level the device's recorder reported">{captureChip(memo.capture)}</span></> : null}
             </p>
@@ -217,6 +228,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
         </div>
         <dl className="voice-ids">
           <div><dt>memo</dt><dd><CopyRef value={memo.memoId} /></dd></div>
+          {memo.escalatedFromCommandId ? <div><dt>1st cmd</dt><dd><CopyRef value={memo.escalatedFromCommandId} /></dd></div> : null}
           {memo.commandId ? <div><dt>command</dt><dd><CopyRef value={memo.commandId} /></dd></div> : null}
           {memo.s3Key ? <div><dt>audio</dt><dd><CopyRef value={memo.s3Key} /></dd></div> : null}
         </dl>
@@ -230,10 +242,32 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
         </div>
       ) : null}
 
+      {memo.cancelled ? (
+        <div className="voice-note is-cancelled" role="status">
+          <span className="hub-label">Cancelled {memo.cancelled.afterDispatch ? "after" : "before"} dispatch</span>
+          <p>
+            {memo.cancelled.afterDispatch
+              ? "The command had already been published, so the agent may still run: nothing is undone. Its reply will not be spoken or mirrored."
+              : "Nothing was sent to an agent."}
+            {" "}Not an error. It is only retried by an explicit <code>mise run memo:retry</code>.
+          </p>
+        </div>
+      ) : null}
+
+      {memo.escalated && !memo.cancelled && memo.status !== "failed" ? (
+        <div className="voice-note is-escalated" role="status">
+          <span className="hub-label">Escalated to the batch lane</span>
+          <p>
+            {escalationText(memo)}
+            {memo.status === "complete" ? " The reply was spoken as a late reply." : " It is not failed: the reply will be spoken as a late reply when the batch turn finishes."}
+          </p>
+        </div>
+      ) : null}
+
       {memo.transcript || memo.replyText ? (
         <div className="voice-text">
           {memo.transcript ? <blockquote><span className="hub-label">Heard</span><p>{memo.transcript}</p></blockquote> : null}
-          {memo.replyText ? <blockquote><span className="hub-label">Agent said</span><p>{memo.replyText}</p></blockquote> : null}
+          {memo.replyText ? <blockquote><span className="hub-label">Agent said{memo.late ? " (late reply)" : ""}</span><p>{memo.replyText}</p></blockquote> : null}
         </div>
       ) : null}
 
@@ -246,8 +280,16 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
   );
 }
 
+/** "The interactive turn timed out after 20s (lane limit 20s); the same prompt was re-dispatched on the batch lane, which has no wall clock." */
+function escalationText(memo: MemoDetail): string {
+  const t = memo.hops.find((h) => h.id === "agent_done")?.error?.timeout;
+  const after = t?.elapsedSeconds !== undefined ? ` after ${Math.round(t.elapsedSeconds)}s` : "";
+  const limit = t?.limitSeconds !== undefined ? ` (limit ${t.limitSeconds}s)` : "";
+  return `The interactive turn timed out${after}${limit}; the watcher re-dispatched the same prompt on the batch lane, in the same session.`;
+}
+
 // Hops the inbox watcher is responsible for: if it is down, that is why they are stuck.
-const WATCHER_HOPS = new Set(["received", "transcribed", "dispatched", "replied"]);
+const WATCHER_HOPS = new Set(["received", "transcribed", "dispatched", "escalated", "replied"]);
 
 /** "turn stopped · lane limit 300s": what the gateway did when the agent's turn outlived its wall clock. */
 function timeoutMeta(t: NonNullable<HopFailure["timeout"]>): string {
@@ -266,6 +308,7 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
         <div className="voice-hop-head">
           <h3 className="voice-hop-name">{hop.label}</h3>
           <span className={`voice-badge is-${hop.status}`}>{HOP_WORD[hop.status]}</span>
+          {hop.reply?.late ? <LateChip /> : null}
           {hop.at && hop.events.length ? <time className="voice-hop-time" dateTime={hop.at} title={hop.at}>{clockTime(hop.at)}</time> : null}
           {hop.sinceMs !== undefined ? <span className="voice-hop-lat" title="since the previous hop">+{formatLatency(hop.sinceMs)}</span> : null}
           {waited !== undefined ? (
@@ -275,7 +318,12 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
           ) : null}
         </div>
         {hop.detail ? <p className="voice-hop-detail">{hop.detail}</p> : null}
-        {live && hop.id === "agent_started" && lane && laneQueueText(lane, watcher?.lanes?.[lane]) ? (
+        {hop.reply?.earshotTextKey ? (
+          <p className="voice-hop-detail voice-sidecar" title="The phone gets the full reply text as a sibling object of the reply audio, uploaded before it">
+            Earshot text sidecar <CopyRef value={hop.reply.earshotTextKey} />
+          </p>
+        ) : null}
+        {live && (hop.id === "agent_started" || hop.id === "batch_started") && lane && laneQueueText(lane, watcher?.lanes?.[lane]) ? (
           <p className="voice-hop-detail">Gateway: {laneQueueText(lane, watcher?.lanes?.[lane])}</p>
         ) : null}
         {live && watcher && watcher.state !== "running" && WATCHER_HOPS.has(hop.id) ? (
@@ -283,7 +331,7 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
         ) : null}
         {hop.status === "missing" ? <p className="voice-hop-detail">No fact for this hop, though later hops happened.</p> : null}
         {hop.error ? (
-          <div className="voice-error">
+          <div className={`voice-error${hop.status === "timed_out" ? " is-soft" : ""}`}>
             <span className="voice-error-code">{hop.error.code ?? "error"}</span>
             <span className="voice-error-msg">{hop.error.message ?? "No message."}</span>
             {hop.error.retryable ? <span className="voice-error-meta">retryable · attempt {hop.error.attempt ?? "?"}</span> : null}
