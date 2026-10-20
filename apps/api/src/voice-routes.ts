@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { EventCollector } from "./event-collector.js";
 import {
   AGENT_TYPES,
+  MEMO_ANNOTATION_TYPES,
+  MEMO_STAGE_TYPES,
   MEMO_TYPES,
   buildMemoDetail,
   buildMemoSummaries,
@@ -31,15 +33,16 @@ export function registerVoiceRoutes(app: FastifyInstance, collector: EventCollec
   }, async (req, reply) => {
     reply.header("Cache-Control", "no-store");
     const limit = req.query.limit ?? 25, now = Date.now();
-    const facts = events(store.recent([...MEMO_TYPES], 1500));
+    const facts = events(store.recent([...MEMO_STAGE_TYPES], 1500));
     // Newest memos first; their stage facts are all in the window because they are recent.
     const newest = [...groupByMemo(facts).entries()]
       .sort((a, b) => Math.min(...b[1].map(e => e.cursor)) - Math.min(...a[1].map(e => e.cursor)))
       .slice(0, limit);
     // Agent facts are only needed while a memo is still waiting on the agent or the reply.
     const open = newest.filter(([, list]) => list.some(e => e.type.endsWith(".dispatched")) && !list.some(e => e.type.endsWith(".replied")));
+    // ...and with them what the driver heard meanwhile (progress lines, narrations, the car's speech decisions).
     const agentFacts = open.length
-      ? events(store.correlated([...AGENT_TYPES], open.map(([id]) => id), Math.min(...open.map(([, list]) => Math.min(...list.map(e => e.cursor))))))
+      ? events(store.correlated([...AGENT_TYPES, ...MEMO_ANNOTATION_TYPES], open.map(([id]) => id), Math.min(...open.map(([, list]) => Math.min(...list.map(e => e.cursor))))))
       : [];
     const memos = buildMemoSummaries([...newest.flatMap(([, list]) => list), ...agentFacts], now, limit);
     return { generated_at: new Date(now).toISOString(), source: source(), watcher: await readWatcherStatus(now), memos };

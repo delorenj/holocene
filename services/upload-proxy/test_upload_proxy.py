@@ -233,6 +233,33 @@ class HttpBehaviour(unittest.TestCase):
                 f"Content-Type: application/json\r\nConnection: close\r\n\r\n").encode()
         return self.raw(head + body).split(b"\r\n")[0]
 
+    def client_event(self, body: bytes):
+        head = (f"POST /upload/client-event HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\n"
+                f"Content-Type: application/json\r\nUser-Agent: HoloceneAuto/0.9.0\r\nConnection: close\r\n\r\n").encode()
+        return self.raw(head + body).split(b"\r\n")[0]
+
+    def test_memo_tied_speech_decisions_are_published_and_mic_ones_only_logged(self):
+        import json
+        n0 = len(self.published)
+        mid = mc.memo_id_for(KEY)
+        start = {"action": "start", "kind": "ack", "id": f"ack-{mid}", "seq": 4, "reason": "waited_ms=3", "mic": "idle",
+                 "at": 1760990100123, "mono_ms": 5512, "memo_id": mid}
+        self.assertIn(b" 200 ", self.client_event(json.dumps({"event": "speech", "key": KEY, "speech": start}).encode()))
+        self.assertIn(b" 200 ", self.client_event(json.dumps({"event": "speech", "speech": {**start, "action": "queued"}}).encode()))
+        mic = {"action": "mic", "kind": "", "id": "", "seq": 0, "reason": "recording", "mic": "recording", "at": 1760990100200}
+        self.assertIn(b" 200 ", self.client_event(json.dumps({"event": "speech", "key": KEY, "speech": mic}).encode()))
+        new = self.published[n0:]
+        self.assertEqual(len(new), 1)  # queued is bookkeeping, mic names no utterance: both log only
+        env, key = new[0]
+        self.assertEqual((env["type"], env["correlationid"], key), ("bloodbank.audio.memo.notified", mid, KEY))
+        d = env["data"]
+        self.assertEqual((d["utterance"], d["decision"], d["reason"], d["recording"], d["seq"]), ("ack", "start", "waited_ms=3", False, 4))
+        self.assertEqual(d["device_at"], "2025-10-20T19:55:00.123Z")
+        self.assertEqual((d["s3_key"], d["target_agent_id"], d["client_user_agent"]), (KEY, "holocene-pm", "HoloceneAuto/0.9.0"))
+        # a decision the proxy cannot read is 202 and publishes nothing
+        self.assertIn(b" 202 ", self.client_event(json.dumps({"event": "speech", "speech": {"action": "explode"}}).encode()))
+        self.assertEqual(len(self.published), n0 + 1)
+
     def test_good_beacon_is_logged_and_published(self):
         import json
         n0 = len(self.published)
@@ -627,6 +654,36 @@ class WheelKeyLines(unittest.TestCase):
     def test_garbage_is_ignored(self):
         self.assertEqual(up.wheel_key_lines({"lines": "nope"}), [])
         self.assertEqual(up.wheel_key_lines({}), [])
+
+class SpeechFacts(unittest.TestCase):
+    """audio.memo.notified: a memo-tied decision of the car's speech queue, contract- and schema-valid."""
+
+    def test_only_start_end_halt_drop_deferred_become_facts(self):
+        mid = mc.memo_id_for(KEY)
+        base = {"speech_kind": "echo", "speech_id": "echo-1", "speech_reason": "recording", "mic": "recording", "device_at": 5}
+        for action in ("start", "end", "halt", "drop", "deferred"):
+            env = up.build_speech_envelope({**base, "speech_action": action}, mid, None, "ua")
+            self.assertEqual(env["data"]["decision"], action)
+            self.assertIs(env["data"]["recording"], True)
+            self.assertIsNone(env["data"]["device_at"])  # 5 is not epoch milliseconds
+        for action in ("queued", "ignored", "mic"):
+            self.assertIsNone(up.build_speech_envelope({**base, "speech_action": action}, mid, None, "ua"))
+
+    def test_the_fact_passes_the_bloodbank_contract_and_schema(self):
+        if not BB_HOOKS.is_dir():
+            self.skipTest("bloodbank repo not available")
+        sys.path.insert(0, str(BB_HOOKS))
+        from core import validate
+        d = up.speech_decision({"action": "end", "kind": "reply", "id": "replies/x.ogg", "seq": 9, "reason": "", "mic": "idle",
+                                "at": 1760990100123, "mono_ms": 7})
+        env = up.build_speech_envelope(d, mc.memo_id_for(KEY), KEY, "HoloceneAuto/0.9.0")
+        self.assertEqual((env["subject"], env["ordering_key"]),
+                         ("bloodbank.evt.audio.memo.notified", f"memo:{mc.memo_id_for(KEY)}"))
+        validate.assert_contract(env)
+        try:
+            validate.validate_envelope(env)
+        except validate.ValidationUnavailable:
+            self.skipTest("jsonschema not installed")
 
 
 if __name__ == "__main__":

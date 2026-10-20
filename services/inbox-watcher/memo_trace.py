@@ -216,6 +216,110 @@ def earshot_hops(ekey: str | None, tkey: str | None = None) -> list[Hop]:
     return hops
 
 
+PROGRESS_SHOWN = 8  # a turn with more progress lines than this shows the first and last few and counts the rest
+
+
+def progress_hops(by_type: dict[str, list[dict]], command_id: str | None) -> list[Hop]:
+    """One optional hop per progress line of this command (agent:progress#<seq>) and per narration the watcher spoke for
+    it (car:narrated#<n>), interleaved by time. A long turn shows its first and last lines with a count between."""
+    if not command_id:
+        return []
+    lines = [(evt_ts(e), "p", e) for e in by_type.get(c.PROGRESS_TYPE, [])
+             if (e.get("data") or {}).get("command_id") == command_id]
+    spoken = [(evt_ts(e), "n", e) for e in by_type.get("bloodbank.audio.memo.narrated", [])
+              if (e.get("data") or {}).get("command_id") == command_id]
+    lines.sort(key=lambda x: ((x[2].get("data") or {}).get("seq") or 0))
+    if len(lines) > PROGRESS_SHOWN:
+        head, tail = lines[:3], lines[-3:]
+        hidden = len(lines) - 6
+        mid = (head[-1][0], "gap", {"data": {"hidden": hidden}})
+        lines = head + [mid] + tail
+    hops = []
+    for ts, kind, e in sorted(lines + spoken, key=lambda x: (x[0] is None, x[0] or 0)):
+        d = e.get("data") or {}
+        if kind == "gap":
+            hops.append(Hop("agent:progress...", OK, None, f"{d['hidden']} more progress lines", optional=True))
+        elif kind == "p":
+            hops.append(Hop(f"agent:progress#{d.get('seq')}", OK, ts,
+                            f"{d.get('elapsed_seconds')}s into the turn: {str(d.get('text') or '')[:110]!r}", optional=True))
+        else:
+            hops.append(Hop(f"car:narrated#{d.get('narration')}", OK, ts,
+                            f"spoke progress #{d.get('seq')} -> {d.get('progress_s3_key')} (tts {d.get('tts_seconds')}s "
+                            f"{d.get('tts_engine')}, {d.get('elapsed_seconds')}s after dispatch)", optional=True))
+    return hops
+
+
+def speech_events(by_type: dict[str, list[dict]]) -> list[dict]:
+    """The car's speech-arbiter decisions for this memo (audio.memo.notified), oldest first."""
+    return sorted(by_type.get("bloodbank.audio.memo.notified", []), key=lambda e: evt_ts(e) or c.now_utc())
+
+
+def speech_lines(events: list[dict], t0) -> list[str]:
+    """'+0.8s  ack      started   since stop 412 ms' ... for render(): every decision, relative to the upload."""
+    out = []
+    for e in events:
+        d = e.get("data") or {}
+        ts = evt_ts(e)
+        rel = f"{(ts - t0).total_seconds():+.1f}s" if ts and t0 else "-"
+        bits = [f"since stop {d['since_stop_ms']} ms" if isinstance(d.get("since_stop_ms"), int) else "",
+                f"reason {d.get('reason')}" if d.get("reason") else "",
+                "while recording" if d.get("recording") is True else "",
+                f"mic {d.get('mic')}" if d.get("mic") not in (None, "idle") else ""]
+        out.append(f"  {rel:<9} {str(d.get('utterance')):<9} {str(d.get('decision')):<12} "
+                   + "  ".join(b for b in bits if b))
+    return out
+
+
+# The car's words (SpeechArbiter wire: kinds ack|echo|progress|cue|reply, actions start|end|halt|drop|deferred) and the
+# schema's examples (heard, started) both count.
+UTTERANCE_WORDS = {"ack": ("ack",), "heard": ("echo", "heard"), "progress": ("progress",), "reply": ("reply",)}
+STARTED_WORDS = ("start", "started")
+
+
+def first_at(events: list[dict], utterance: str):
+    """When the car first STARTED saying this kind of thing for the memo (device time when it sent one), else None."""
+    words = UTTERANCE_WORDS.get(utterance, (utterance,))
+    e = next((x for x in events if (x.get("data") or {}).get("utterance") in words
+              and (x.get("data") or {}).get("decision") in STARTED_WORDS), None)
+    if not e:
+        return None
+    return c.parse_iso((e.get("data") or {}).get("device_at")) or evt_ts(e)
+
+
+def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
+    """Time to the first thing the driver heard, hop by hop: ack, heard echo, first progress, first narration, reply."""
+    t0 = next((h.ts for h in hops if h.name in ("fact:uploaded", "s3_object") and h.status == OK and h.ts), None)
+    if t0 is None:
+        return None
+    sp = ctx.get("speech") or []
+    bits = []
+
+    def rel(label, ts):
+        if ts is not None:
+            bits.append(f"{label} {(ts - t0).total_seconds():+.1f}s")
+    rel("ack", first_at(sp, "ack"))
+    rel("heard-echo", first_at(sp, "heard"))
+    # any turn: an escalated memo's first turn spoke to the driver too
+    rel("first progress", min((h.ts for h in hops if "agent:progress#" in h.name and h.ts), default=None))
+    rel("first narration", min((h.ts for h in hops if "car:narrated#" in h.name and h.ts), default=None))
+    rel("progress played", first_at(sp, "progress"))
+    rel("reply played", first_at(sp, "reply") or next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK), None))
+    return "since upload: " + " | ".join(bits) if bits else None
+
+
+def status_hop(key: str, memo_id: str) -> Hop:
+    """The car's status object as it is in the bucket now (optional: the watcher writes it fail-open)."""
+    skey = c.status_key_for(key, memo_id)
+    doc = c.s3_read_json(skey)
+    if doc is None:
+        return Hop("car_status_object", UNKNOWN, detail=f"no {skey} (written by watchers since 2026-10-20)", optional=True)
+    narr = doc.get("narration") or {}
+    detail = (f"{skey}: stage={doc.get('stage')} progress_seq={doc.get('progress_seq')} "
+              f"narrations={narr.get('n', 0)} elapsed={doc.get('elapsed_s')}s"
+              + (f" error={doc.get('error_code')}" if doc.get("error_code") else ""))
+    return Hop("car_status_object", OK, c.parse_iso(doc.get("updated_at")), detail, optional=True)
+
+
 def watcher_logs(memo_id: str, lines: int = 40) -> list[str]:
     r = subprocess.run(["journalctl", "--user", "-u", c.WATCHER_UNIT, "--no-pager", "-o", "cat", "--since", "-3 days"],
                        capture_output=True, text=True, timeout=30)
@@ -368,6 +472,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
         else:
             hops.append(Hop("agent:invocation.started", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
                             detail="no bloodbank.agent.invocation.started for this command in Candystore"))
+        # 5a. what the agent said it was doing (gateway: agent.invocation.progressed) and which of it the car heard
+        # (watcher: audio.memo.narrated), in time order. Annotations: a quick or silent turn has none.
+        hops.extend(progress_hops(by_type, command_id))
         if failed:
             d = failed.get("data") or {}
             hops.append(Hop("agent:invocation.done", FAILED, evt_ts(failed),
@@ -476,6 +583,13 @@ def build(key: str) -> tuple[list[Hop], dict]:
             hops.extend(earshot_hops(ekey, tkey))
         except Exception as e:  # noqa: BLE001
             hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
+
+    # 8. the car's status object (what the tile shows) and its speech arbiter's decisions (rendered as their own block)
+    try:
+        hops.append(status_hop(key, memo_id))
+    except Exception as e:  # noqa: BLE001
+        hops.append(Hop("car_status_object", UNKNOWN, detail=str(e)[:140], optional=True))
+    ctx["speech"] = speech_events(by_type)
 
     # failed facts, positioned by time
     for ev in by_type.get("bloodbank.audio.memo.failed", []):
@@ -657,6 +771,15 @@ def render(hops: list[Hop], ctx: dict) -> None:
         opt = " (optional)" if h.optional and h.status != OK else ""
         sup = " (superseded: the memo was re-dispatched)" if h.superseded and h.status != OK else ""
         print(f"  {tag} {h.name:<26} {ts:<25} {lat:<8} {h.detail}{opt}{sup}")
+    speech = ctx.get("speech") or []
+    t0 = next((h.ts for h in hops if h.name in ("fact:uploaded", "s3_object") and h.status == OK and h.ts), None)
+    if speech:
+        print(f"\ncar speech ({len(speech)} arbiter decisions reported by the device, audio.memo.notified; time since upload):")
+        for line in speech_lines(speech, t0):
+            print(line)
+    timing = timing_line(ctx, hops)
+    if timing:
+        print(f"\ntiming   {timing}")
 
 
 def resolve_key(arg: str) -> str:

@@ -5,7 +5,7 @@ import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
-import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, WatcherStatus } from "./types";
+import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -155,6 +155,11 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
                 <span className="voice-total">{formatDuration(liveTotal(m, now))}</span>
               </span>
               <span className="voice-preview">{m.transcriptPreview ?? <em>no transcript yet</em>}</span>
+              {m.latestProgress && (m.status === "running" || m.status === "stuck") ? (
+                <span className="voice-progress-line" title={`${m.progressCount ?? 1} progress lines from the agent${m.narrationCount ? `, ${m.narrationCount} spoken in the car` : ""}`}>
+                  {m.latestProgress}
+                </span>
+              ) : null}
               <span className="voice-row-foot">
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
                 {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
@@ -271,11 +276,83 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
         </div>
       ) : null}
 
+      <WhileWaiting memo={memo} />
+
       <ol className="voice-hops">
         {memo.hops.map((hop, i) => (
           <HopRow key={hop.id} hop={hop} last={i === memo.hops.length - 1} now={now} basis={lastAt} watcher={watcher} lane={memo.lane} />
         ))}
       </ol>
+    </section>
+  );
+}
+
+const TIMING: { key: keyof MemoTiming; label: string; title: string }[] = [
+  { key: "ackSeconds", label: "ack", title: "the car's instant acknowledgement started (device clock)" },
+  { key: "heardEchoSeconds", label: "heard echo", title: "the car said what it heard" },
+  { key: "firstProgressSeconds", label: "first progress", title: "the agent wrote its first line while working" },
+  { key: "firstNarrationSeconds", label: "first narration", title: "the watcher spoke a progress line for the car" },
+  { key: "progressPlayedSeconds", label: "progress played", title: "the car started playing a progress update" },
+  { key: "replyPlayedSeconds", label: "reply played", title: "the car started playing the reply" }
+];
+
+/** "+0.6 s" / "−0.4 s": seconds relative to the upload (the ack can start before the upload lands). */
+function signed(seconds: number): string {
+  return `${seconds < 0 ? "\u2212" : "+"}${formatLatency(Math.abs(seconds) * 1000)}`;
+}
+
+/** What the driver heard before the answer: the timing of each first sound, the agent's own progress lines (and which of
+ * them were spoken in the car), and every decision of the car's speech queue. Nothing here when there was none of it. */
+function WhileWaiting({ memo }: { memo: MemoDetail }) {
+  const progress = memo.progress ?? [];
+  const narrations = memo.narrations ?? [];
+  const speech = memo.speech ?? [];
+  const timing = TIMING.filter((t) => memo.timing?.[t.key] !== undefined);
+  if (!progress.length && !narrations.length && !speech.length) return null;
+  const spoken = new Map(narrations.filter((n) => n.seq !== undefined).map((n) => [n.seq!, n]));
+  const current = progress.filter((p) => !p.superseded);
+  return (
+    <section className="voice-waiting" aria-label="While the driver waited">
+      {timing.length ? (
+        <p className="voice-timing">
+          <span className="hub-label">Since upload</span>
+          {timing.map((t) => (
+            <span key={t.key} className="voice-timing-item" title={t.title}>{t.label} <strong>{signed(memo.timing![t.key]!)}</strong></span>
+          ))}
+        </p>
+      ) : null}
+      {progress.length ? (
+        <div className="voice-progress">
+          <span className="hub-label">The agent said, while working ({current.length}{narrations.length ? `, ${narrations.length} spoken in the car` : ""})</span>
+          <ol>
+            {progress.map((p) => {
+              const said = !p.superseded ? spoken.get(p.seq) : undefined;
+              return (
+                <li key={p.eventId} className={p.superseded ? "is-superseded" : said ? "is-spoken" : undefined}>
+                  <time dateTime={p.at}>{clockTime(p.at)}</time>
+                  <span className="voice-progress-at">{p.elapsedSeconds !== undefined ? `${Math.round(p.elapsedSeconds)}s` : `#${p.seq}`}</span>
+                  <span className="voice-progress-text">{p.text}</span>
+                  {said ? <span className="voice-flag is-spoken" title={said.key}>spoken {clockTime(said.at)}{said.ttsSeconds !== undefined ? ` · tts ${said.ttsSeconds}s` : ""}</span> : null}
+                  {p.superseded ? <span className="voice-flag" title="the interactive turn that timed out">1st turn</span> : null}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ) : null}
+      {speech.length ? (
+        <details className="voice-raw">
+          <summary>Car speech queue ({speech.length} decisions)</summary>
+          <ul className="voice-attempts" aria-label="Car speech decisions">
+            {speech.map((d) => (
+              <li key={d.eventId} className={d.recording ? "is-recording" : undefined}>
+                <time dateTime={d.deviceAt ?? d.at}>{clockTime(d.deviceAt ?? d.at)}</time> {d.utterance} {d.decision}
+                {d.reason ? ` · ${d.reason}` : ""}{d.mic && d.mic !== "idle" ? ` · mic ${d.mic}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </section>
   );
 }

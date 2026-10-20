@@ -413,3 +413,65 @@
   overflow-wrap: anywhere;
   color: var(--ink);
 }
+
+/* ---------- while the driver waited: first-sound timing, the agent's progress lines, the car's speech queue ---------- */
+
+.hub-root .voice-progress-line {
+  display: block;
+  margin-top: 2px;
+  font: 400 12px/17px var(--font-mono);
+  color: var(--working);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hub-root .voice-waiting {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+}
+.hub-root .voice-timing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 0;
+  font: 400 12px/18px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .voice-timing strong {
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.hub-root .voice-progress ol {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.hub-root .voice-progress li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font: 400 12px/18px var(--font-mono);
+}
+.hub-root .voice-progress li time,
+.hub-root .voice-progress-at {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.hub-root .voice-progress-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.hub-root .voice-progress li.is-superseded .voice-progress-text { color: var(--ink-3); }
+.hub-root .voice-progress li.is-spoken .voice-progress-text { font-weight: 600; }
+.hub-root .voice-flag.is-spoken { color: var(--cleared); }
+.hub-root .voice-attempts li.is-recording { color: var(--stuck); }

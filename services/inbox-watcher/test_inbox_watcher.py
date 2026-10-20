@@ -29,6 +29,7 @@ EMITS = ROOT / "emits.jsonl"
 MC_LOG = ROOT / "mc-cp.jsonl"          # every `mc cp` the watcher ran: {src, dst, attr}
 MC_RM_LOG = ROOT / "mc-rm.jsonl"       # every `mc rm` the watcher ran: the url it removed
 MC_FAIL_TXT = ROOT / "mc-fail-txt"     # while this file exists, uploading a .txt fails (the text sidecar is fail-open)
+MC_PIPE_LOG = ROOT / "mc-pipe.jsonl"   # every `mc pipe` (status objects): {dst, attr}
 
 FAKE_MC = ROOT / "mc"
 FAKE_MC.write_text(textwrap.dedent(f"""\
@@ -69,6 +70,18 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
             print("mc: <ERROR> refusing the text upload", file=sys.stderr); sys.exit(1)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
+    elif a[0] == "pipe":
+        dst = local(a[1])
+        with open({str(MC_PIPE_LOG)!r}, "a") as f:
+            f.write(json.dumps({{"dst": a[1], "attr": attr}}) + "\\n")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "wb") as f:
+            f.write(sys.stdin.buffer.read())
+    elif a[0] == "cat":
+        p = local(a[1])
+        if not os.path.exists(p):
+            print("mc: <ERROR> object does not exist", file=sys.stderr); sys.exit(1)
+        sys.stdout.write(open(p).read())
     elif a[0] == "rm":
         with open({str(MC_RM_LOG)!r}, "a") as f:
             f.write(json.dumps({{"url": a[1]}}) + "\\n")
@@ -2294,6 +2307,58 @@ class TraceEscalationAndCancel(unittest.TestCase):
         self.assertTrue(text.startswith("COMPLETE in"), text)
         self.assertIn("escalated to the batch lane", text)
 
+    def test_progress_narrations_and_car_speech_are_shown_per_turn_and_timed(self):
+        import io
+        import contextlib
+        import memo_trace as mt
+        mid = mc_.memo_id_for(self.KEY)
+
+        def ev(typ, at, **data):
+            return {"type": f"bloodbank.{typ}", "time": at, "data": {"memo_id": mid, "occurred_at": at, **data}}
+        events = self._events()
+        events += [ev("agent.invocation.progressed", f"2026-10-20T02:00:1{i}.000Z", command_id=self.CMD1, seq=i,
+                      text=f"first turn step {i}", elapsed_seconds=10 + i) for i in (1, 2)]
+        events += [ev("agent.invocation.progressed", f"2026-10-20T02:06:{10 + i}.000Z", command_id=self.CMD2, seq=i,
+                      text=f"batch step {i}", elapsed_seconds=60 + i) for i in range(1, 11)]
+        events.append(ev("audio.memo.narrated", "2026-10-20T02:06:30.000Z", command_id=self.CMD2, seq=10, narration=1,
+                         progress_s3_key="progress/2026/10/20/x-1.ogg", tts_seconds=2.1, tts_engine="voxcpm", elapsed_seconds=86))
+        events += [ev("audio.memo.notified", "2026-10-20T01:59:59.600Z", utterance="ack", decision="started", since_stop_ms=410),
+                   ev("audio.memo.notified", "2026-10-20T02:00:02.900Z", utterance="echo", decision="start",
+                      device_at="2026-10-20T02:00:02.500Z", mic="idle"),
+                   ev("audio.memo.notified", "2026-10-20T02:06:31.000Z", utterance="progress", decision="deferred",
+                      reason="recording", recording=True),
+                   ev("audio.memo.notified", "2026-10-20T02:12:09.000Z", utterance="reply", decision="started")]
+        rec = {"status": "done", "escalated": True, "lane": "batch", "lane_reason": "turn_timeout_escalated",
+               "command_id": self.CMD2, "escalated_from_command_id": self.CMD1}
+        hops, ctx, (text, complete) = self._build(events, rec)
+        names = [h.name for h in hops]
+        # the timed-out turn's progress is history, named for its turn
+        self.assertIn("turn1:agent:progress#1", names)
+        self.assertTrue(next(h for h in hops if h.name == "turn1:agent:progress#2").superseded)
+        # the batch turn's ten lines: first three, a count, last three, with the narration placed by time
+        cur = [n for n in names if n.startswith(("agent:progress", "car:narrated"))]
+        self.assertEqual(cur, ["agent:progress#1", "agent:progress#2", "agent:progress#3", "agent:progress...",
+                               "agent:progress#8", "agent:progress#9", "agent:progress#10", "car:narrated#1"])
+        self.assertIn("4 more", next(h for h in hops if h.name == "agent:progress...").detail)
+        self.assertIn("progress/2026/10/20/x-1.ogg", next(h for h in hops if h.name == "car:narrated#1").detail)
+        self.assertTrue(all(h.optional for h in hops if h.name.startswith(("agent:progress", "car:", "turn1:agent:progress"))))
+        self.assertTrue(complete, text)  # annotations never decide the verdict
+        self.assertEqual(next(h for h in hops if h.name == "car_status_object").status, mt.UNKNOWN)
+        # car speech and the time-to-first-sound line
+        self.assertEqual([e["data"]["utterance"] for e in ctx["speech"]], ["ack", "echo", "progress", "reply"])
+        t0 = mc_.parse_iso("2026-10-20T02:00:00Z")
+        lines = mt.speech_lines(ctx["speech"], t0)
+        self.assertTrue(lines[0].strip().startswith("-0.4s") and "since stop 410 ms" in lines[0], lines[0])
+        self.assertIn("while recording", lines[2])
+        timing = mt.timing_line(ctx, hops)
+        for part in ("ack -0.4s", "heard-echo +2.5s", "first progress +11.0s", "first narration +390.0s", "reply played +729.0s"):
+            self.assertIn(part, timing)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mt.render(hops, ctx)
+        self.assertIn("car speech (4 arbiter decisions", out.getvalue())
+        self.assertIn("timing   since upload:", out.getvalue())
+
     def test_a_memo_between_the_timeout_and_the_batch_dispatch_is_in_progress_not_stopped(self):
         import memo_trace as mt
         rec = {"status": "active", "stage": "dispatch", "escalated": True, "lane": "batch", "lane_reason": "turn_timeout_escalated",
@@ -2307,6 +2372,258 @@ class TraceEscalationAndCancel(unittest.TestCase):
         self.assertFalse(complete)
         self.assertTrue(text.startswith("IN PROGRESS at dispatch"), text)
         self.assertNotIn("turn1", text)  # the timed-out turn is not the reason the memo is waiting
+
+
+class RecordingWriter(iw.StatusWriter):
+    """The real StatusWriter, recording every document the watcher hands it (key, doc), superseded ones included."""
+
+    def __init__(self):
+        self.docs = []
+        super().__init__(upload=lambda key, body: (True, ""))
+
+    def put(self, key, doc):
+        self.docs.append((key, json.loads(json.dumps(doc, default=str))))
+        super().put(key, doc)
+
+    def stages(self, key=None):
+        out = []
+        for k, d in self.docs:
+            if (key is None or k == key) and (not out or out[-1] != d["stage"]):
+                out.append(d["stage"])
+        return out
+
+    def last(self, key=None):
+        return [d for k, d in self.docs if key is None or k == key][-1]
+
+
+def progress_fact(cid, seq, text, secs_ago=0.0):
+    at = mc_.iso(time.time() - secs_ago)
+    return {"type": mc_.PROGRESS_TYPE, "time": at,
+            "data": {"command_id": cid, "seq": seq, "text": text, "elapsed_seconds": 10.0 + seq}}
+
+
+class CarStatus(MemoHarness, unittest.TestCase):
+    """status/<date>/<memo_id>.json follows the memo; the newest progress line is in it and, throttled, spoken."""
+
+    def setUp(self):
+        super().setUp()
+        self.w.status_writer = RecordingWriter()
+        self.events = []
+        self.cs = unittest.mock.patch.object(mc_, "progress_events", side_effect=lambda mid, limit=200: list(self.events))
+        self.cs.start()
+        MC_PIPE_LOG.unlink(missing_ok=True)
+
+    def tearDown(self):
+        self.cs.stop()
+        super().tearDown()
+
+    def drain(self):
+        self.w.status_writer.drain()
+
+    def wait_narration(self, timeout=5.0):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            with self.w.mu:
+                if not self.w.narrating:
+                    return
+            time.sleep(0.02)
+        self.fail("a narration render never finished")
+
+    def working(self, name, since_dispatch=20.0):
+        """A memo whose command is out and whose agent is working, dispatched `since_dispatch` seconds ago."""
+        key, m = self.to_await(name)
+        m["dispatched_ts"] = time.time() - since_dispatch
+        return key, m
+
+    def test_the_status_object_follows_every_stage_and_carries_what_the_car_needs(self):
+        key = self.upload("status-journey")
+        mid = mc_.memo_id_for(key)
+        skey = f"status/2026/10/19/{mid}.json"
+        self.assertEqual(mc_.status_key_for(key), skey)
+        m = self.discover(key)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", mid, "Here is the summary.")
+        self.tick_until(lambda: m["status"] == "done")
+        rec = self.w.status_writer
+        self.assertEqual(rec.stages(skey), ["received", "transcribing", "heard", "working", "replying", "done"])
+        heard = next(d for k, d in rec.docs if k == skey and d["stage"] == "heard")
+        self.assertEqual(heard["heard"], "Summarize recent work.")
+        self.assertEqual((heard["memo_id"], heard["agent"], heard["agent_name"], heard["s3_key"]),
+                         (mid, "holocene-pm", "Holocene PM", key))
+        self.assertIsNone(heard["progress"])
+        working = next(d for k, d in rec.docs if k == skey and d["stage"] == "working")
+        self.assertEqual(working["command_id"], m["command_id"])
+        self.assertIsNotNone(working["dispatched_at"])
+        done = rec.last(skey)
+        self.assertEqual(done["reply_key"], m["reply_key"])
+        self.assertEqual(done["started_at"], m["uploaded_at"])
+        self.assertGreaterEqual(done["elapsed_s"], 0)
+        self.assertNotIn("error", done)
+
+    def test_the_real_writer_uploads_json_that_is_never_cached(self):
+        w = iw.StatusWriter()
+        key = "status/2026/10/19/abc.json"
+        w.put(key, {"stage": "heard"})
+        w.put(key, {"stage": "working"})  # newest wins: one upload
+        self.assertEqual(w.drain(), 1)
+        self.assertEqual(json.loads((BUCKET_DIR / key).read_text()), {"stage": "working"})
+        pipes = [json.loads(line) for line in MC_PIPE_LOG.read_text().splitlines()]
+        self.assertEqual(pipes, [{"dst": f"delo/holocene-auto/{key}", "attr": iw.STATUS_ATTR}])
+        (BUCKET_DIR / key).unlink()
+
+    def test_a_failed_write_is_retried_unless_something_newer_replaced_it(self):
+        calls = []
+        w = iw.StatusWriter(upload=lambda k, b: (calls.append(json.loads(b)), (len(calls) > 1, "down"))[1])
+        w.put("k", {"n": 1})
+        self.assertEqual(w.drain(), 0)
+        self.assertEqual(w.pending(), 1)  # kept for the retry
+        self.assertEqual(w.drain(), 1)
+        self.assertEqual(calls, [{"n": 1}, {"n": 1}])
+
+    def test_a_failed_memo_says_why(self):
+        key = self.upload("status-deadmic", b"OggS DEADMIC")
+        m = self.discover(key)
+        self.tick_until(lambda: m["status"] == "failed")
+        doc = self.w.status_writer.last(mc_.status_key_for(key))
+        self.assertEqual((doc["stage"], doc["error_code"]), ("failed", "silent_audio"))
+        self.assertIn("recording is silent", doc["error"])
+
+    def test_a_cancelled_memo_is_failed_for_the_car(self):
+        key, m = self.to_await("status-cancel")
+        self.w.cancel_memo(m)
+        doc = self.w.status_writer.last(mc_.status_key_for(key))
+        self.assertEqual((doc["stage"], doc["error_code"]), ("failed", iw.CANCELLED))
+
+    def test_the_newest_progress_line_reaches_the_status_and_is_spoken_once(self):
+        key, m = self.working("status-progress")
+        cid = m["command_id"]
+        self.events = [progress_fact(cid, 1, "I'll check the board first.", 5),
+                       progress_fact(cid, 2, "**Reading** the `open` tickets now: https://x.y/z", 1)]
+        self.w.poll_progress()
+        self.wait_narration()
+        doc = self.w.status_writer.last(mc_.status_key_for(key))
+        self.assertEqual((doc["stage"], doc["progress_seq"]), ("working", 2))
+        self.assertEqual(doc["progress"], "Reading the open tickets now: link")
+        # spoken: the newest line, with the agent's name, through the progress voice
+        self.assertEqual(VOX_TEXTS[-1], "Holocene PM: Reading the open tickets now: link")
+        pkey = f"progress/2026/10/19/{m['memo_id']}-1.ogg"
+        self.assertTrue((BUCKET_DIR / pkey).exists())
+        self.assertIn({"src": unittest.mock.ANY, "dst": f"delo/holocene-auto/{pkey}", "attr": "Content-Type=audio/ogg"},
+                      mc_cps())
+        (narr,) = self.of_type("narrated", key)
+        self.assertEqual((narr["seq"], narr["narration"], narr["progress_s3_key"], narr["command_id"]), (2, 1, pkey, cid))
+        self.assertEqual(narr["tts_engine"], "fakevox")
+        doc = self.w.status_writer.last(mc_.status_key_for(key))
+        self.assertEqual((doc["narration"]["n"], doc["narration"]["key"], doc["narration"]["seq"]), (1, pkey, 2))
+        # the pad's cursor: the newest clip number (progress/<day>/<memo>-<spoken_seq>.ogg), not the gateway's seq
+        self.assertEqual((doc["spoken_seq"], doc["spoken_key"]), (1, pkey))
+        # nothing new: nothing spoken again
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertEqual(len(self.of_type("narrated", key)), 1)
+        (BUCKET_DIR / pkey).unlink()
+
+    def test_at_most_one_update_per_gap_and_the_newest_one_wins(self):
+        key, m = self.working("status-gap")
+        cid = m["command_id"]
+        self.events = [progress_fact(cid, 1, "Checking the date.")]
+        self.w.poll_progress()
+        self.wait_narration()
+        self.events.append(progress_fact(cid, 2, "Counting the files."))
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertEqual(len(self.of_type("narrated", key)), 1)  # inside the 30 s gap: shown, not spoken
+        self.assertEqual(self.w.status_writer.last(mc_.status_key_for(key))["progress_seq"], 2)
+        self.assertEqual(self.w.narration_due(m), "too_soon")
+        self.events.append(progress_fact(cid, 3, "Writing the answer."))
+        m["narr_last_ts"] -= iw.NARRATE_GAP_S + 1
+        self.w.poll_progress()
+        self.wait_narration()
+        spoken = self.of_type("narrated", key)
+        self.assertEqual([(n["narration"], n["seq"]) for n in spoken], [(1, 1), (2, 3)])  # seq 2 was never spoken
+        self.assertEqual(VOX_TEXTS[-1], "Holocene PM: Writing the answer.")
+        for n in (1, 2):
+            (BUCKET_DIR / mc_.progress_key_for(key, n)).unlink(missing_ok=True)
+
+    def test_nothing_is_spoken_in_the_first_seconds_of_a_turn(self):
+        key, m = self.working("status-early", since_dispatch=2.0)
+        self.events = [progress_fact(m["command_id"], 1, "On it.")]
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertEqual(self.w.status_writer.last(mc_.status_key_for(key))["progress"], "On it.")  # shown at once
+        self.assertEqual(self.of_type("narrated", key), [])
+        self.assertEqual(self.w.narration_due(m), "too_early")
+        self.assertEqual(VOX_TEXTS, [])
+
+    def test_a_turn_that_is_done_gets_no_narration_even_with_a_render_in_flight(self):
+        key, m = self.working("status-done")
+        cid = m["command_id"]
+        self.events = [progress_fact(cid, 1, "Looking it up.")]
+        real = iw.synthesize
+
+        def finishing(text, tmp, **kw):
+            with self.w.mu:
+                m["stage"] = "reply"  # the agent finished while the progress line was being voiced
+            return real(text, tmp, **kw)
+        with unittest.mock.patch.object(iw, "synthesize", side_effect=finishing):
+            self.w.poll_progress()
+            self.wait_narration()
+        self.assertEqual(self.of_type("narrated", key), [])
+        self.assertFalse((BUCKET_DIR / mc_.progress_key_for(key, 1)).exists())
+        # and once it is past await_agent the poller does not even ask
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertEqual(self.of_type("narrated", key), [])
+
+    def test_progress_of_another_command_is_not_this_memos(self):
+        key, m = self.working("status-other")
+        self.events = [progress_fact(str(uuid.uuid4()), 4, "Somebody else's work.")]
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertIsNone(m.get("progress_text"))
+        self.assertEqual(self.of_type("narrated", key), [])
+
+    def test_a_new_command_starts_its_seq_again(self):
+        key, m = self.working("status-esc")
+        old = m["command_id"]
+        self.events = [progress_fact(old, 5, "First turn, step five.")]
+        self.w.poll_progress()
+        self.wait_narration()
+        m["command_id"] = new = str(uuid.uuid4())  # escalated: the batch command reports seq 1 again
+        self.events = [progress_fact(new, 1, "Batch turn, step one.")]
+        m["narr_last_ts"] -= iw.NARRATE_GAP_S + 1
+        self.w.poll_progress()
+        self.wait_narration()
+        self.assertEqual((m["progress_cmd"], m["progress_seq"], m["progress_text"]), (new, 1, "Batch turn, step one."))
+        spoken = self.of_type("narrated", key)
+        self.assertEqual([(n["narration"], n["command_id"]) for n in spoken], [(1, old), (2, new)])
+        for n in (1, 2):
+            (BUCKET_DIR / mc_.progress_key_for(key, n)).unlink(missing_ok=True)
+
+    def test_candystore_down_keeps_the_last_line_and_never_raises(self):
+        key, m = self.working("status-cs-down")
+        self.events = [progress_fact(m["command_id"], 1, "Step one.")]
+        self.w.poll_progress()
+        self.wait_narration()
+        with unittest.mock.patch.object(mc_, "progress_events", side_effect=OSError("connection refused")):
+            self.w.poll_progress()
+            self.w.poll_progress()
+        self.assertEqual(m["progress_text"], "Step one.")
+        (BUCKET_DIR / mc_.progress_key_for(key, 1)).unlink(missing_ok=True)
+
+    def test_keys_stages_and_the_prompt_asks_for_narration(self):
+        key = "inbox/holocene-pm/2026/10/19/x.ogg"
+        mid = mc_.memo_id_for(key)
+        self.assertEqual(mc_.progress_key_for(key, 3), f"progress/2026/10/19/{mid}-3.ogg")
+        self.assertTrue(mc_.status_key_for("inbox/stray.ogg").startswith("status/"))
+        self.assertEqual(iw.car_stage({"status": "active", "stage": "dispatch"}), "heard")
+        self.assertEqual(iw.car_stage({"status": "active", "stage": "dispatch", "escalated": True}), "working")
+        self.assertEqual(iw.car_stage({"status": "failed", "stage": "await_agent"}), "failed")
+        self.assertEqual(iw.car_stage({"status": "active", "stage": "speak"}), "replying")
+        self.assertIn("before each tool call", iw.VOICE_PREFIX)
+        # the phone's bucket is never written: progress and status live in holocene-auto
+        self.assertTrue(mc_.s3_url(mc_.progress_key_for(key, 1)).startswith(f"delo/{mc_.BUCKET}/progress/"))
 
 
 class EarshotMirror(unittest.TestCase):

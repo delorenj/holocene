@@ -322,6 +322,29 @@ def speech_decision(raw):
     return out
 
 
+# Published as facts: what was said (or refused) for a memo. "queued" is the arbiter's bookkeeping (the start that
+# follows carries waited_ms), "ignored" names no utterance and "mic" no memo: those stay in the log.
+SPEECH_FACT_ACTIONS = ("start", "end", "halt", "drop", "deferred")
+
+
+def build_speech_envelope(d: dict, memo_id: str, key: str | None, user_agent: str):
+    """bloodbank.audio.memo.notified for one memo-tied speech decision, or None for log-only ones."""
+    if d.get("speech_action") not in SPEECH_FACT_ACTIONS:
+        return None
+    at = d.get("device_at")
+    device_at = None
+    if isinstance(at, int) and 1_000_000_000_000 <= at < 10_000_000_000_000:  # epoch milliseconds
+        device_at = datetime.fromtimestamp(at / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    mic = d.get("mic")
+    return _envelope("notified", memo_id, {
+        "s3_key": key, "target_agent_id": agent_from_key(key) if key else None,
+        "utterance": d.get("speech_kind") or "unknown", "decision": d["speech_action"],
+        "reason": d.get("speech_reason") or None, "utterance_id": d.get("speech_id") or None,
+        "device_at": device_at, "recording": (mic in ("arming", "recording")) if isinstance(mic, str) else None,
+        "mic": mic, "seq": d.get("seq"), "mono_ms": d.get("mono_ms"),
+        "client_user_agent": user_agent[:200] or None, "source": "holocene-auto"})
+
+
 def build_client_envelope(ev: dict, user_agent: str):
     """failed(stage record|upload) for a device-side failure, or None for log-only events / bad input."""
     key = ev.get("key")
@@ -667,16 +690,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             publish_async(env, key)
 
     def _speech(self, ev: dict, ua: str):
-        """One decision of the car's speech queue (SpeechArbiter): logged only, never a fact. With the device's wall
-        clock `at` on every start/end/halt, overlap between utterances (or with a recording) is auditable from here."""
+        """One decision of the car's speech queue (SpeechArbiter): logged, and published as audio.memo.notified when it
+        is tied to a memo. With the device's wall clock `at` on every start/end/halt, overlap between utterances (or with
+        a recording) is auditable from here; the fact puts the ack / echo / progress / reply timing on the memo's
+        journey (memo:trace, Holocene /voice). `mic` decisions name no memo: log only."""
         d = speech_decision(ev.get("speech"))
         key = ev.get("key")
         key = key if isinstance(key, str) and KEY_RE.match(key) else None
-        log("speech", status=200 if d else 202, key=key, memo_id=(d or {}).get("memo_id") or (memo_id_for(key) if key else None),
-            remote=self.client_address[0], ua=ua[:120], **(d or {}))
+        memo_id = (d or {}).get("memo_id") or (memo_id_for(key) if key else None)
+        log("speech", status=200 if d else 202, key=key, memo_id=memo_id,
+            remote=self.client_address[0], ua=ua[:120], **{k: v for k, v in (d or {}).items() if k != "memo_id"})
         self.send_response(200 if d else 202)
         self.send_header("Content-Length", "0")
         self.end_headers()
+        env = build_speech_envelope(d, memo_id, key, ua) if d and memo_id else None
+        if env:
+            publish_async(env, key or memo_id)
 
     def _heard(self):
         """Earshot device beacon: POST /upload/heard {channel,key?,phase,at,last_modified?,device,

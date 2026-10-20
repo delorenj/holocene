@@ -49,6 +49,18 @@ export type Hop = {
   cancel?: Cancellation;
 };
 
+/** One line the agent wrote while working (agent.invocation.progressed). superseded: an escalated memo's first turn. */
+export type ProgressLine = { eventId: string; at: string; seq: number; text: string; commandId?: string; elapsedSeconds?: number; superseded: boolean };
+/** A progress line the watcher spoke for the car (audio.memo.narrated): progress/<day>/<memo_id>-<n>.ogg. */
+export type Narration = { eventId: string; at: string; n: number; seq?: number; key?: string; text?: string; ttsSeconds?: number; engine?: string; elapsedSeconds?: number };
+/** One decision of the car's speech queue about the memo (audio.memo.notified), in the device's words. */
+export type SpeechDecision = { eventId: string; at: string; deviceAt?: string; utterance: string; decision: string; reason?: string; recording?: boolean; mic?: string };
+/** Seconds from the upload to the first ack, heard echo, progress line, narration and playback. */
+export type MemoTiming = {
+  ackSeconds?: number; heardEchoSeconds?: number; firstProgressSeconds?: number; firstNarrationSeconds?: number;
+  progressPlayedSeconds?: number; replyPlayedSeconds?: number;
+};
+
 export type MemoSummary = {
   memoId: string;
   agent?: string;
@@ -70,9 +82,15 @@ export type MemoSummary = {
   error?: string;
   audio?: AudioLevel;
   capture?: CaptureLevel;
+  latestProgress?: string;
+  progressCount?: number;
+  narrationCount?: number;
 };
 
-export type MemoDetail = MemoSummary & { commandId?: string; escalatedFromCommandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[] };
+export type MemoDetail = MemoSummary & {
+  commandId?: string; escalatedFromCommandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[];
+  progress?: ProgressLine[]; narrations?: Narration[]; speech?: SpeechDecision[]; timing?: MemoTiming;
+};
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };
 export type LaneStatus = { pulling?: boolean; waiting?: number; inFlight?: number; queued?: number; slots?: number; error?: string };

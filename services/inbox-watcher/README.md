@@ -33,20 +33,82 @@ tools to see every hop of it.
    Hermes gateway (hermes-gateway.service, bloodbank plugin)   HOP 7  agent turn
         |-- executions row (command_id)  ~/.hermes/bloodbank-hermes-gateway-state.sqlite3
         |-- facts agent.invocation.started / completed / failed  (same correlationid)
+        |-- agent.invocation.progressed  0..n: every line the model writes next to a tool call (seq 1..n, text <= 500)
         |-- the reply is saved in the target profile's state.db (source 'bloodbank', chat_id = memo_id)
         v
    inbox_watcher.py   (correlates by command_id, never "latest row")
+        |-- WHILE THE AGENT WORKS (progress thread, Candystore every 1.5 s):
+        |     newest progress line -> status object (below)
+        |     spoken: vox (same voice, 6 steps, ~2 s) -> progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>.ogg
+        |       never in the turn's first 15 s, at most one per 30 s, newest line wins, none once the turn is done
+        |     narrated   fact: audio.memo.narrated {seq, narration n, progress_s3_key, tts_seconds}
         |-- reads that session's last assistant message   HOP 8  reply text
         |-- vox /synthesize-url (voice rick) -> OGG        HOP 9  TTS
         |-- mc cp -> replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg    HOP 10 reply object
         |-- replied     fact: audio.memo.replied
+        |-- EVERY stage change and progress line: status/<yyyy>/<mm>/<dd>/<memo_id>.json (the car's view)
         v
    Agent Pad polls replies/ every 2 s for 10 min after a send (else 15 s), plays in order   HOP 11 playback
+        |-- and the memo's status object on the same poll: tile line "Working 1:20 · <progress>", heard echo, progress clips
         |-- POST /upload/played {reply_key, phase}  -> upload proxy log line "playback"
         |-- played      fact: audio.memo.played (phase started|ended)  or  failed(stage=playback, retryable)
+        |-- the car's ONE speech queue (SpeechArbiter): ack on Stop & Send, heard echo, progress, reply, never over a
+        |   recording or each other; every decision POST /upload/client-event {event: speech} -> log line "speech",
+        |   and memo-tied start|end|halt|drop|deferred -> notified fact: audio.memo.notified
 
    Any stage can instead publish   audio.memo.failed {stage, error_code, error_message, retryable, attempt}
 ```
+
+## While the agent works: status object and spoken progress
+
+Measured on six real memos (2026-10-19/20): upload to dispatch under 2 s, transcription 5-6 s, the agent turn
+102-231 s, the reply's TTS 8-19 s. The wait is real work, so the car is told what is happening instead of sitting
+silent:
+
+| when | what the driver gets | from |
+|---|---|---|
+| Stop & Send, ~0.5 s | "Got it, <agent>'s on it" (local Android TTS, no server) | the car |
+| transcription done, ~7 s | "<agent> heard: <first words>" | `status.heard` |
+| every 30 s while the agent works (not before 15 s) | "<agent>: <newest progress line>" | `progress/...-<n>.ogg` |
+| the turn is done | the reply, as before | `replies/` |
+
+**Status object** `status/<yyyy>/<mm>/<dd>/<memo_id>.json` in `holocene-auto` (the inbox key's day, so the car names it
+from the key it uploaded; anonymous read, `Cache-Control: no-store`), rewritten on every stage change and every new
+progress line by one writer thread (newest document per memo wins, a failed write is retried):
+
+```json
+{"v": 1, "memo_id": "...", "agent": "holocene-pm", "agent_name": "Holocene PM", "s3_key": "inbox/holocene-pm/...",
+ "stage": "received|transcribing|heard|working|replying|done|failed",
+ "heard": "<first 200 chars of the transcript>", "progress": "<newest progress line, one line, <= 200>",
+ "progress_seq": 7, "progress_at": "...", "spoken_seq": 2, "spoken_key": "progress/2026/10/20/<memo_id>-2.ogg",
+ "narration": {"n": 2, "key": "...", "seq": 7, "at": "...", "text": "..."},
+ "started_at": "<upload time>", "dispatched_at": "...", "updated_at": "...", "elapsed_s": 81.4,
+ "command_id": "...", "lane": "interactive", "late": false, "escalated": false, "reply_key": null,
+ "error_code": "silent_audio", "error": "..."}
+```
+
+`progress_seq` is the gateway's seq (it restarts at 1 on an escalated memo's batch command); `spoken_seq` is the newest
+clip number, 1..n per memo, the one the pad plays up to. `error`/`error_code` only on `failed` (a `memo:cancel` is
+`failed` with `error_code: cancelled`).
+
+**Spoken progress** comes from `bloodbank.agent.invocation.progressed`, which the Hermes gateway publishes for every
+line the model writes next to a tool call (bloodbank `services/hermes-gateway/README.md`, "Progress"). Most memo turns
+wrote none (0-4 of 8-18 tool rounds, 2026-10-20), so the voice prefix asks for one short sentence before each tool call
+(`MEMO_VOICE_PREFIX` overrides it). The watcher renders the newest line with the reply's voice at
+`MEMO_PROGRESS_TTS_STEPS` (6) steps: about 2 s on voxcpm. vox has no per-request engine choice and vibevoice is not in
+`VOX_ENGINES` on this host today, so "the fast engine" is voxcpm with fewer steps. A render in flight when the turn
+finishes is dropped before upload (`narration_dropped reason=turn_finished`); one that lands while the reply is still
+rendering stays, and the car's speech queue drops progress that would play after a reply. Progress never goes to the
+Earshot bucket, so the phone plays replies only. Knobs: `MEMO_PROGRESS_POLL_S` (1.5), `MEMO_NARRATE_FIRST_S` (15),
+`MEMO_NARRATE_GAP_S` (30), `MEMO_NARRATE_MAX` (20 per memo), `MEMO_NARRATE_CHARS` (140), `MEMO_PROGRESS_VOICE` (the
+reply voice), `MEMO_PROGRESS_TTS_STEPS` (6).
+
+Log lines: `progress` (a new line adopted), `narrated`, `narration_dropped`, `narration_failed`, `status_write_failed`,
+`progress_read_failed`. `memo:trace` shows `agent:progress#<seq>` and `car:narrated#<n>` hops inside each turn (a long
+turn shows its first and last three lines), a `car_status_object` hop, a "car speech" block (every arbiter decision,
+relative to the upload) and one timing line: `since upload: ack -0.4s | heard-echo +7.1s | first progress +19.0s |
+first narration +31.2s | progress played +32.0s | reply played +128.5s`. Holocene `/voice` shows the same under the
+memo's summary, and the newest progress line on a running memo's row.
 
 One id ties it together: **memo_id**. It is the Bloodbank `correlationid` of
 every `audio.memo.*` fact, of the invocation command, and (inherited from the
@@ -110,6 +172,10 @@ the lane as `batch (esc.)`. The phone hops start with `phone_text` (the full-tex
 | audio level | loudest/mean sample in dBFS, measured before transcribing (`audio_max_dbfs`, `audio_mean_dbfs` on `transcribed` and on every transcribe-stage `failed`); `audio_level` hop in `memo:trace`; `device heard peak ...` from the pad when it sends `data.capture` | `ffmpeg -i <file> -af volumedetect -f null -` |
 | device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |
 | played | the pad's beacon (`started`/`ended`/`blocked`/`error`/`skipped`) | `docker logs agent-pad-upload \| grep '"event":"playback"'`, `audio.memo.played` |
+| agent:progress#n | what the agent wrote while working (gateway) | `curl -s 'http://127.0.0.1:8683/events?correlationid=<memo_id>&type=bloodbank.agent.invocation.progressed'` |
+| car:narrated#n | a progress line spoken for the car (watcher) | same query, `type=bloodbank.audio.memo.narrated`; `mc stat delo/holocene-auto/progress/<day>/<memo_id>-<n>.ogg` |
+| car_status_object | the car's view of the memo | `mc cat delo/holocene-auto/status/<day>/<memo_id>.json` |
+| car speech | every decision of the car's speech queue | `docker logs agent-pad-upload \| grep '"event":"speech"'`; memo-tied ones: `type=bloodbank.audio.memo.notified` |
 
 Holocene itself (`https://holocene.delo.sh`) collects every `bloodbank.evt.>`
 envelope; the `audio.memo.*` facts and the gateway facts are in its event
@@ -329,7 +395,7 @@ Configuration is env only (see the unit file): `MEMO_AGENT_TIMEOUT_S`,
 `MEMO_MAX_AGE_HOURS`, `MEMO_SPEAK_CHARS`, `MEMO_VOX_VOICE`, `TRANSCRIBE_DIR`,
 `MEMO_LANE` (`interactive` default | `batch`), `MEMO_LANE_PROBE_GAP_S`,
 `MEMO_BATCH_TURN_TIMEOUT_S` (7200: how long an escalated batch turn is waited for; 0 turns escalation off),
-`MEMO_TURN_UNWIND_WAIT_S` (10), `MEMO_EARSHOT_TEXT_MAX_BYTES` (60000).
+`MEMO_TURN_UNWIND_WAIT_S` (10), `MEMO_EARSHOT_TEXT_MAX_BYTES` (60000), and the progress knobs above.
 The heartbeat (`heartbeat.json`) carries `lane` and `lanes.{interactive,batch}`
 (`ok`, `waiting`, `ack_pending`, `pending`, `max_ack_pending`, probed every 5 s
 off the tick thread); `/voice` reads it.
@@ -338,8 +404,10 @@ S3 access is the `delo` alias in `~/.mc/config.json`; the unit holds no secrets.
 ## Bloodbank facts
 
 Defined in the bloodbank repo (`schemas/bloodbank/audio/memo.*.json`, entity
-`memo`, actions `uploaded|received|transcribed|dispatched|replied|failed`,
-ordering key `memo:<memo_id>`). Validate a sample without publishing:
+`memo`, actions `uploaded|received|transcribed|dispatched|replied|played|failed`, plus the annotations `narrated`
+(watcher: a progress line spoken for the car) and `notified` (upload proxy: a memo-tied decision of the car's speech
+queue), ordering key `memo:<memo_id>`). The gateway's `agent.invocation.progressed` carries the memo id in
+`data.context.memo_id` and the memo's correlationid. ntfy-router mutes all three. Validate a sample without publishing:
 
 ```bash
 echo '{"memo_id":"...","s3_key":"...","target_agent_id":"holocene-pm","transcript_text":"hi"}' \
@@ -365,7 +433,11 @@ over raw NATS to `host.docker.internal:4222` (compose maps it with
 Content-Length (a cell drop mid-upload) is rejected 400 `short_body` and
 published as `failed(stage=upload)`; an `.ogg` key must hold an `OggS` stream.
 `POST /upload/client-event` takes the device-side events from the pad (see the
-hop table). After editing it:
+hop table). `{"event": "speech", "key": <inbox key>, "speech": {action, kind, id, seq, reason, mic, at, mono_ms,
+memo_id}}` is one decision of the car's speech queue: logged as a `speech` line (`docker logs agent-pad-upload | grep
+'"event":"speech"'` is the overlap audit: `at` is the device's wall clock, `mic` idle|arming|recording), and the
+memo-tied `start|end|halt|drop|deferred` ones are published as `audio.memo.notified` (`queued`, `ignored` and `mic` stay
+in the log). After editing it:
 
 ```bash
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload

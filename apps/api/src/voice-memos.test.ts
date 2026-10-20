@@ -594,3 +594,52 @@ test("a failure with nothing after it still decides, and a retry's fresh dispatc
   const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), stale, transcribed(150), dispatched(151)], now(160))!;
   assert.notEqual(d.status, "failed");
 });
+
+// ---- what the driver heard while waiting: progress lines, narrations, the car's speech decisions -------------------
+
+const progressed = (seq: number, s: number, text: string, cmd = CMD) =>
+  fact("agent.invocation.progressed", s, { command_id: cmd, seq, text, elapsed_seconds: s - 50 }, MEMO, "hermes-agent:holocene-pm");
+const narrated = (n: number, s: number, seq: number) =>
+  fact("audio.memo.narrated", s, { occurred_at: iso(s), command_id: CMD, seq, narration: n, progress_s3_key: `progress/2026/10/15/${MEMO}-${n}.ogg`,
+    spoken_text: "Holocene PM: checking the board.", tts_seconds: 2.1, tts_engine: "voxcpm", elapsed_seconds: s - 43 });
+const notified = (utterance: string, decision: string, s: number, extra: Record<string, unknown> = {}) =>
+  fact("audio.memo.notified", s, { occurred_at: iso(s), utterance, decision, mic: "idle", ...extra }, MEMO, "agent-pad-upload");
+
+test("progress lines, narrations and car speech ride on the detail and time the first sounds without moving any hop", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started()];
+  const extra = [
+    notified("ack", "start", -0.5, { device_at: iso(-0.6) }), notified("ack", "end", 0.9),
+    notified("echo", "start", 41.6), progressed(1, 62, "I'll check the board first."),
+    progressed(2, 70, "Reading the **open** tickets."), narrated(1, 72, 2), notified("progress", "start", 73),
+    notified("progress", "deferred", 75, { reason: "recording", recording: true, mic: "recording" })
+  ];
+  const plain = buildMemoDetail(MEMO, base, now(80))!;
+  const d = buildMemoDetail(MEMO, [...base, ...extra], now(80))!;
+  assert.deepEqual(d.hops.map(h => h.status), plain.hops.map(h => h.status));
+  assert.equal(d.status, "running");
+  assert.deepEqual(d.progress.map(p => [p.seq, p.text, p.superseded]), [[1, "I'll check the board first.", false], [2, "Reading the **open** tickets.", false]]);
+  assert.equal(d.progress[0].elapsedSeconds, 12);
+  assert.deepEqual(d.narrations.map(n => [n.n, n.seq, n.engine]), [[1, 2, "voxcpm"]]);
+  assert.equal(d.speech.length, 5);
+  assert.deepEqual(d.speech.at(-1), { eventId: d.speech.at(-1)!.eventId, at: iso(75), deviceAt: undefined, utterance: "progress", decision: "deferred", reason: "recording", recording: true, mic: "recording" });
+  // timing is measured from the upload, with the device's own clock when it sent one
+  assert.deepEqual(d.timing, { ackSeconds: -0.6, heardEchoSeconds: 41.6, firstProgressSeconds: 62, firstNarrationSeconds: 72, progressPlayedSeconds: 73 });
+  const sum = toSummary(d);
+  assert.equal(sum.latestProgress, "Reading the **open** tickets.");
+  assert.equal(sum.progressCount, 2);
+  assert.equal(sum.narrationCount, 1);
+  // a memo the agent answered without narrating carries none of it
+  assert.equal(plain.latestProgress, undefined);
+  assert.deepEqual([plain.progress, plain.narrations, plain.speech, plain.timing], [[], [], [], {}]);
+});
+
+test("an escalated memo keeps its first turn's progress as history and reports the batch turn's newest line", () => {
+  const d = buildMemoDetail(MEMO, [...upToEscalation(), progressed(1, 60, "first turn"), progressed(1, 80, "batch turn", CMD_B), progressed(2, 90, "batch turn, step two", CMD_B)], now(100))!;
+  assert.deepEqual(d.progress.map(p => [p.commandId, p.seq, p.superseded]), [[CMD, 1, true], [CMD_B, 1, false], [CMD_B, 2, false]]);
+  assert.equal(d.latestProgress, "batch turn, step two");
+});
+
+test("progress of another command on the same correlation id is not this memo's", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), progressed(1, 60, "somebody else", "0b8a0c1e-0000-4000-8000-000000000000")], now(70))!;
+  assert.deepEqual(d.progress, []);
+});

@@ -94,8 +94,13 @@ TRANSCRIBE_MAX_S = int(os.environ.get("MEMO_TRANSCRIBE_MAX_S", "7200"))
 MAX_ATTEMPTS = int(os.environ.get("MEMO_MAX_ATTEMPTS", "3"))
 MIN_AUDIO_S = float(os.environ.get("MEMO_MIN_AUDIO_S", "0.7"))
 SILENT_MAX_DBFS = mc_.SILENT_MAX_DBFS  # loudest-sample line below which a recording is silent (see memo_common)
-# Prepended to the transcript so the agent knows it is speech-to-text, not typed text.
-VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - speech-to-text, may contain recognition errors] ")
+# Prepended to the transcript so the agent knows it is speech-to-text, not typed text, and that the driver hears what it
+# says while it works: the gateway publishes every sentence the model writes next to a tool call
+# (agent.invocation.progressed) and the watcher speaks the newest one every 30 s. Without the ask most memo turns write
+# none (measured 2026-10-20: 0-4 of 8-18 tool rounds carried text), and a 2-minute turn is 2 minutes of silence.
+VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - speech-to-text, may contain recognition errors. "
+                              "The driver hears your progress aloud while you work: before each tool call, write one short "
+                              "sentence saying what you are about to do.] ")
 # Whisper's usual output on noise or an accidental tap: never a real prompt.
 HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watching", "thank you for watching", "you", "bye",
                   "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
@@ -118,6 +123,25 @@ EARSHOT_TEXT_TYPE = "text/plain; charset=utf-8"
 EARSHOT_TEXT_MAX_BYTES = int(os.environ.get("MEMO_EARSHOT_TEXT_MAX_BYTES", "60000"))
 EARSHOT_TEXT_CUT_NOTE = "\n\n[truncated; full text in Holocene /voice]"
 WAIT_LOG_EVERY_S = 30
+# ---- the car's view of a memo while it waits (status object + spoken progress)
+# status/<yyyy>/<mm>/<dd>/<memo_id>.json is rewritten on every stage change and every new progress line; the pad reads
+# it anonymously (Cache-Control: no-store). One writer thread, newest document per memo wins.
+STATUS_ATTR = "Content-Type=application/json;Cache-Control=no-store"
+HEARD_CHARS = 200            # status.heard: the start of the transcript, for the car's "heard" echo
+PROGRESS_LINE_CHARS = 200    # status.progress: the newest progress line, one line
+# How often the watcher asks Candystore for a working memo's newest agent.invocation.progressed (a ~20 ms query).
+PROGRESS_POLL_S = float(os.environ.get("MEMO_PROGRESS_POLL_S", "1.5"))
+# Spoken progress: nothing in the turn's first NARRATE_FIRST_S (a quick answer needs no update), then at most one every
+# NARRATE_GAP_S per memo, always the newest line, none once the turn is done, at most NARRATE_MAX per memo.
+NARRATE_FIRST_S = float(os.environ.get("MEMO_NARRATE_FIRST_S", "15"))
+NARRATE_GAP_S = float(os.environ.get("MEMO_NARRATE_GAP_S", "30"))
+NARRATE_MAX = int(os.environ.get("MEMO_NARRATE_MAX", "20"))
+NARRATE_CHARS = int(os.environ.get("MEMO_NARRATE_CHARS", "140"))
+# vox has no per-request engine choice: a voice is served by its own engine (vibevoice for a cloned profile, else the
+# VOX_ENGINES order, voxcpm on this host today). A short line on voxcpm renders in about 2 s (measured 2026-10-20: 70
+# characters, 2.1 s at 6 steps, 2.6 s at 10), so progress keeps the reply's voice at fewer steps.
+PROGRESS_VOICE = os.environ.get("MEMO_PROGRESS_VOICE") or VOICE
+PROGRESS_TTS_STEPS = int(os.environ.get("MEMO_PROGRESS_TTS_STEPS", "6"))
 # How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
 # between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
 AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
@@ -255,6 +279,7 @@ def compact(m: dict) -> None:
         for k, n in (("transcript", 300), ("reply_text", 300), ("prompt", 300)):
             if isinstance(m.get(k), str) and len(m[k]) > n:
                 m[k] = m[k][:n]
+        m.pop("progress_full", None)  # the status object keeps the short line; the full one is in Candystore
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
 
@@ -339,6 +364,142 @@ class LaneProbe:
             return dict(self._snap)
 
 
+def put_status_object(key: str, body: bytes) -> tuple[bool, str]:
+    """Upload one status document (mc pipe, JSON, no-store). (ok, error)."""
+    try:
+        r = subprocess.run([mc_.MC_BIN, "pipe", "--quiet", "--attr", STATUS_ATTR, mc_.s3_url(key)],
+                           input=body, capture_output=True, timeout=20)
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"[:200]
+    if r.returncode != 0:
+        return False, f"mc pipe rc={r.returncode}: {r.stderr.decode('utf-8', 'replace').strip()[-200:]}"
+    return True, ""
+
+
+class StatusWriter:
+    """status/<yyyy>/<mm>/<dd>/<memo_id>.json for every memo, newest document wins.
+
+    put() never blocks the caller (it runs under the watcher lock): it replaces the pending document for that key and
+    wakes one writer thread, which uploads them one at a time. A document superseded before it went up is never written;
+    a failed write is retried once its key has nothing newer. Tests call drain() instead of start()."""
+
+    def __init__(self, upload=put_status_object):
+        self._upload = upload
+        self._pending: dict[str, bytes] = {}
+        self._cv = threading.Condition()
+        self._last_err: str | None = None
+        self.written = 0
+
+    def put(self, key: str, doc: dict) -> None:
+        body = json.dumps(doc, separators=(",", ":"), default=str).encode()
+        with self._cv:
+            self._pending[key] = body
+            self._cv.notify()
+
+    def pending(self) -> int:
+        with self._cv:
+            return len(self._pending)
+
+    def _take(self, wait: float | None) -> tuple[str, bytes] | None:
+        with self._cv:
+            if not self._pending and wait:
+                self._cv.wait(wait)
+            if not self._pending:
+                return None
+            key = next(iter(self._pending))
+            return key, self._pending.pop(key)
+
+    def _write(self, key: str, body: bytes) -> bool:
+        ok, err = self._upload(key, body)
+        if ok:
+            self.written += 1
+            self._last_err = None
+            return True
+        if err != self._last_err:  # an outage logs once, not once per document
+            log("status_write_failed", "warn", key=key, error=err)
+        self._last_err = err
+        with self._cv:
+            self._pending.setdefault(key, body)  # retried unless something newer replaced it meanwhile
+        return False
+
+    def drain(self) -> int:
+        """Write everything pending now, on the caller's thread (tests, shutdown). Returns how many went up."""
+        n = 0
+        for _ in range(1000):
+            item = self._take(None)
+            if item is None:
+                break
+            if not self._write(*item):
+                break
+            n += 1
+        return n
+
+    def start(self) -> None:
+        def loop():
+            while not STOP:
+                item = self._take(1.0)
+                if item and not self._write(*item):
+                    time.sleep(2.0)
+        threading.Thread(target=loop, name="status-writer", daemon=True).start()
+
+
+def car_stage(m: dict) -> str:
+    """The memo's stage as the car shows it: received | transcribing | heard | working | replying | done | failed."""
+    status, stage = m.get("status"), m.get("stage")
+    if status in ("failed", "skipped", CANCELLED):
+        return "failed"
+    if status == "done" or stage == "done":
+        return "done"
+    if stage == "receive":
+        return "received"
+    if stage == "transcribe":
+        return "transcribing"
+    if stage == "dispatch":
+        # an escalated memo goes back through dispatch on its way to the batch lane: the agent is still on it
+        return "working" if m.get("escalated") else "heard"
+    if stage == "await_agent":
+        return "working"
+    if stage in ("reply", "speak"):
+        return "replying"
+    return "received"
+
+
+def memo_started_ts(m: dict) -> float:
+    """When the memo started, for the car's 'Working 1:20': the upload (the device's Stop & Send), else detection."""
+    up = mc_.parse_iso(m.get("uploaded_at"))
+    return up.timestamp() if up else float(m.get("detected_ts") or time.time())
+
+
+def status_doc(m: dict) -> dict:
+    """The car's status document for one memo (schema: services/inbox-watcher/README.md, "Status object")."""
+    now = time.time()
+    started = memo_started_ts(m)
+    stage = car_stage(m)
+    heard = re.sub(r"\s+", " ", m.get("transcript") or "").strip()[:HEARD_CHARS] or None
+    doc = {
+        "v": 1, "memo_id": m["memo_id"], "agent": m.get("agent"),
+        "agent_name": m.get("display_name") or (m.get("agent") or "").replace("-", " ") or None,
+        "s3_key": m["key"], "stage": stage, "heard": heard,
+        "progress": m.get("progress_text"), "progress_seq": m.get("progress_seq", 0),
+        "progress_at": iso(m["progress_ts"]) if m.get("progress_ts") else None,
+        # the newest progress clip: progress/<day>/<memo_id>-<spoken_seq>.ogg (1..n per memo, the pad's playback cursor)
+        "spoken_seq": m.get("narr_count") or None, "spoken_key": m.get("narr_key"),
+        "narration": ({"n": m["narr_count"], "key": m.get("narr_key"), "seq": m.get("narr_src_seq"),
+                       "at": iso(m["narr_last_ts"]) if m.get("narr_last_ts") else None, "text": m.get("narr_text")}
+                      if m.get("narr_count") else None),
+        "started_at": iso(started), "dispatched_at": iso(m["dispatched_ts"]) if m.get("dispatched_ts") else None,
+        "updated_at": iso(now), "elapsed_s": round(max(0.0, now - started), 1),
+        "command_id": m.get("command_id"), "lane": m.get("lane"),
+        "late": bool(m.get("late")), "escalated": bool(m.get("escalated")),
+        "reply_key": m.get("reply_key"),
+    }
+    if stage == "failed":
+        code = m.get("failed_code") or m.get("status")
+        doc["error_code"] = code
+        doc["error"] = (m.get("failed_message") or str(code))[:300]
+    return doc
+
+
 def rescue_closes_at(m: dict) -> float:
     """When a failed memo stops being watched for a late reply. The window runs from the command's own deadline for an
     escalated batch turn (a turn that ends at its 2 h deadline would otherwise find the 2 h window already shut and
@@ -365,9 +526,14 @@ class Watcher:
         self.mu = threading.RLock()
         self.running: set[str] = set()
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
-                      "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io")}
+                      "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io"),
+                      # spoken progress renders on its own worker: a 2 s vox call never holds up a stage
+                      "narrate": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="narrate")}
         self.last_rescue = 0.0
         self.lane_probe: LaneProbe | None = None  # started by main(); tests leave it off
+        self.status_writer = StatusWriter()       # its thread is started by main(); tests drain() it
+        self.narrating: set[str] = set()          # memo keys with a progress render in flight
+        self.progress_err: str | None = None
 
     def choose_lane(self) -> tuple[str, str | None]:
         """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
@@ -429,6 +595,15 @@ class Watcher:
             self.s.data["outbox"].append(rec)
             log("fact_queued", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
                 stage=action, error=str(e)[:300], outbox=len(self.s.data["outbox"]))
+
+    def status(self, m: dict) -> None:
+        """Queue the memo's status object for the car (never blocks; the writer thread uploads it)."""
+        if not m.get("agent"):
+            return  # a key with no agent was never going anywhere: nothing for a tile to show
+        try:
+            self.status_writer.put(mc_.status_key_for(m["key"], m["memo_id"]), status_doc(m))
+        except Exception as e:  # noqa: BLE001 - the car's view never stops the pipeline
+            log("status_failed", "warn", memo_id=m["memo_id"], key=m["key"], error=f"{type(e).__name__}: {e}"[:200])
 
     def flush_outbox(self) -> None:
         box = self.s.data["outbox"]
@@ -505,6 +680,7 @@ class Watcher:
             else:
                 log("discovered", memo_id=mid, key=key, agent=agent, stage="receive", bytes=o["size"],
                     age_s=round(age, 1))
+                self.status(m)
             self.s.save()
 
     # ---- control + rescue ------------------------------------------------
@@ -542,10 +718,12 @@ class Watcher:
         if failed:
             m["attempts"].pop(failed, None)
             m.get("first_fail", {}).pop(failed, None)
-        for k in ("failed_stage", "failed_code", "resume_stage", "cancelled_ts", "cancelled_stage", "cancelled_after_dispatch"):
+        for k in ("failed_stage", "failed_code", "failed_message", "resume_stage", "cancelled_ts", "cancelled_stage",
+                  "cancelled_after_dispatch"):
             m.pop(k, None)
         m.update(status="active", stage=stage, next_at=0.0, revived_ts=time.time())
         log("memo_revived", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage, why=why)
+        self.status(m)
         if stage != "receive":
             # Tell the journey the memo is moving again: a failed or cancelled fact older than this is history. A revive
             # at receive needs none (step_receive publishes the real `received` fact next); one at await_agent or reply
@@ -618,6 +796,7 @@ class Watcher:
         m["cancelled_stage"], m["cancelled_after_dispatch"], m["cancelled_ts"] = stage, after, time.time()
         m["resume_stage"] = resume_for({**m, "resume_stage": stage})  # `memo:retry` restarts where it stopped
         m.update(status=CANCELLED, failed_stage=CANCELLED, failed_code=CANCELLED, next_at=0.0)
+        m["failed_message"] = "cancelled by memo:cancel"
         if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak"):
             # after_dispatch stays true (the interactive command went out and ran); only the message is about the batch one
             msg = (f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the interactive command was "
@@ -635,6 +814,7 @@ class Watcher:
         log("memo_cancelled", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
             after_dispatch=after, command_id=m.get("command_id") if after else None,
             retry_with=f"mise run memo:retry {m['memo_id']}")
+        self.status(m)
         self.s.save()
 
     @staticmethod
@@ -773,6 +953,7 @@ class Watcher:
             m["status"] = "failed"
             m["failed_stage"] = e.stage
             m["failed_code"] = e.code
+            m["failed_message"] = e.message[:300]
             m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
                                  else "dispatch" if e.stage == "agent_reply" and e.code == mc_.TURN_TIMEOUT  # fresh command
                                  else RESUME_STAGE.get(e.stage, "receive"))
@@ -781,12 +962,14 @@ class Watcher:
             log("memo_failed", "error", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
                 code=e.code, error=e.message[:300], attempt=n,
                 retry_with=f"mise run memo:retry {m['memo_id']}")
+            self.status(m)
 
     def done_stage(self, m: dict, stage: str, nxt: str, ms: float | None = None, **extra) -> None:
         log("stage_done", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
             next=nxt, ms=int(ms) if ms is not None else None, **extra)
         m["stage"] = nxt
         m["next_at"] = 0.0
+        self.status(m)
         WAKE.set()  # the next stage starts now, not at the next tick
 
     # ---- steps -----------------------------------------------------------
@@ -1430,6 +1613,165 @@ class Watcher:
             self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
                             journey_s=round(journey, 1))
 
+    # ---- progress: what the agent says it is doing, while the driver waits --------------------------------------
+    #
+    # The Hermes gateway publishes every interim assistant message of the memo's turn as agent.invocation.progressed
+    # (seq 1..n per command). The watcher reads the newest one for every memo whose agent is working, puts it in the
+    # car's status object, and speaks it: never in the first NARRATE_FIRST_S of the turn, at most once per NARRATE_GAP_S,
+    # always the newest line, never once the turn is done. Runs on its own thread (start_progress_watch); tests call
+    # poll_progress() directly.
+
+    def start_progress_watch(self) -> None:
+        def loop():
+            while not STOP:
+                t0 = time.time()
+                try:
+                    self.poll_progress()
+                except Exception as e:  # noqa: BLE001
+                    log("progress_poll_failed", "warn", error=f"{type(e).__name__}: {e}"[:200])
+                time.sleep(max(0.2, PROGRESS_POLL_S - (time.time() - t0)))
+        threading.Thread(target=loop, name="progress", daemon=True).start()
+
+    def poll_progress(self) -> None:
+        """One pass over every memo whose agent is working: newest progress line in, maybe one narration out."""
+        with self.mu:
+            work = [(m["key"], m["memo_id"], m["command_id"]) for m in self.active()
+                    if m.get("stage") == "await_agent" and m.get("command_id")]
+        for key, mid, cid in work:
+            try:
+                events = mc_.progress_events(mid)  # outside the lock: an HTTP call
+            except Exception as e:  # noqa: BLE001
+                err = f"{type(e).__name__}: {e}"[:200]
+                if err != self.progress_err:
+                    log("progress_read_failed", "warn", memo_id=mid, key=key, error=err,
+                        note="Candystore unreachable: the status object keeps its last progress line")
+                self.progress_err = err
+                continue
+            self.progress_err = None
+            mine = [e for e in events if (e.get("data") or {}).get("command_id") == cid
+                    and isinstance((e.get("data") or {}).get("seq"), int)]
+            with self.mu:
+                m = self.s.memos.get(key)
+                if not m or m.get("stage") != "await_agent" or m.get("command_id") != cid or self._cancelled(m):
+                    continue
+                if mine:
+                    self.apply_progress(m, max(mine, key=lambda e: e["data"]["seq"]))
+                self.maybe_narrate(m)
+
+    def apply_progress(self, m: dict, ev: dict) -> None:
+        """Adopt a progress fact if it is newer than what the memo has (a new command starts its seq at 1 again)."""
+        d = ev.get("data") or {}
+        seq, cid = d["seq"], d.get("command_id")
+        if m.get("progress_cmd") == cid and seq <= m.get("progress_seq", 0):
+            return
+        line = clean_for_speech(str(d.get("text") or ""), PROGRESS_LINE_CHARS)
+        if not line:
+            return
+        at = mc_.parse_iso(ev.get("time"))
+        m.update(progress_cmd=cid, progress_seq=seq, progress_text=line,
+                 progress_ts=at.timestamp() if at else time.time(), progress_full=str(d.get("text") or ""))
+        log("progress", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent", command_id=cid, seq=seq,
+            elapsed_s=d.get("elapsed_seconds"), text=line[:120])
+        self.status(m)
+
+    def narration_due(self, m: dict, now: float | None = None) -> str | None:
+        """None when a progress update should be spoken now, else why not (logged by tests, not by the loop)."""
+        now = time.time() if now is None else now
+        if m.get("stage") != "await_agent" or m.get("status") != "active":
+            return "turn_not_running"
+        if m["key"] in self.narrating:
+            return "render_in_flight"
+        if not m.get("progress_text"):
+            return "no_progress"
+        if (m.get("narr_cmd"), m.get("narr_src_seq")) == (m.get("progress_cmd"), m.get("progress_seq")):
+            return "already_spoken"
+        if m.get("narr_count", 0) >= NARRATE_MAX:
+            return "max_reached"
+        if now < float(m.get("dispatched_ts") or now) + NARRATE_FIRST_S:
+            return "too_early"
+        if now < float(m.get("narr_last_ts") or 0) + NARRATE_GAP_S:
+            return "too_soon"
+        return None
+
+    def maybe_narrate(self, m: dict) -> bool:
+        """Under the lock: start one narration render for this memo if one is due. True when it started."""
+        if self.narration_due(m) is not None:
+            return False
+        n = m.get("narr_count", 0) + 1
+        name = m.get("display_name") or mc_.spoken_name(m["agent"])
+        line = clean_for_speech(m.get("progress_full") or m["progress_text"], NARRATE_CHARS)
+        job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["progress_cmd"],
+               "seq": m["progress_seq"], "n": n, "spoken": f"{name}: {line}", "line": line}
+        self.narrating.add(m["key"])
+        # Claimed now, not when the upload lands: the gap runs from the decision, so a slow vox cannot cause two
+        # renders of the same memo back to back.
+        m["narr_last_ts"] = time.time()
+        self.pools["narrate"].submit(self._narrate_job, job)
+        return True
+
+    def _narrate_job(self, job: dict) -> None:
+        try:
+            self._narrate(job)
+        except Exception as e:  # noqa: BLE001
+            log("narration_failed", "warn", memo_id=job["mid"], key=job["key"], agent=job["agent"], n=job["n"],
+                error=f"{type(e).__name__}: {e}"[:300])
+        finally:
+            with self.mu:
+                self.narrating.discard(job["key"])
+
+    def _still_working(self, m: dict | None, job: dict) -> str | None:
+        """None while the memo's turn (the same command) is still running, else why the narration is dropped."""
+        if m is None or self._cancelled(m):
+            return "cancelled"
+        if m.get("command_id") != job["cid"]:
+            return "command_changed"
+        if m.get("stage") != "await_agent":
+            return "turn_finished"
+        return None
+
+    def _narrate(self, job: dict) -> None:
+        key, mid = job["key"], job["mid"]
+        tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
+        try:
+            t0 = time.time()
+            audio, engine = synthesize(job["spoken"], tmp, voice=PROGRESS_VOICE, steps=PROGRESS_TTS_STEPS)
+            tts_s = time.time() - t0
+            with self.mu:
+                why = self._still_working(self.s.memos.get(key), job)
+            if why:
+                # Nothing is spoken once the turn is done: the reply is next, and a progress line after it is noise.
+                log("narration_dropped", memo_id=mid, key=key, agent=job["agent"], n=job["n"], seq=job["seq"], reason=why,
+                    tts_ms=int(tts_s * 1000))
+                return
+            pkey = mc_.progress_key_for(key, job["n"], mid)
+            r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(audio), mc_.s3_url(pkey), timeout=30)
+            if r.returncode != 0:
+                raise RuntimeError(f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
+            size = audio.stat().st_size
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        with self.mu:
+            m = self.s.memos.get(key)
+            why = self._still_working(m, job)
+            if why in ("cancelled", "command_changed"):
+                log("narration_dropped", memo_id=mid, key=key, agent=job["agent"], n=job["n"], seq=job["seq"], reason=why,
+                    progress_key=pkey, note="uploaded before the memo moved on; the car drops a stale update")
+                return
+            # A turn that finished during the upload keeps the object: the reply is still rendering, and the car's
+            # speech arbiter drops a progress update that would play after the reply.
+            m.update(narr_count=job["n"], narr_key=pkey, narr_cmd=job["cid"], narr_src_seq=job["seq"],
+                     narr_text=job["line"], narr_last_ts=time.time())
+            elapsed = time.time() - float(m.get("dispatched_ts") or time.time())
+            log("narrated", memo_id=mid, key=key, agent=job["agent"], stage="agent", n=job["n"], seq=job["seq"],
+                progress_key=pkey, tts_ms=int(tts_s * 1000), engine=engine, elapsed_s=round(elapsed, 1),
+                text=job["line"][:120])
+            self.fact("narrated", m, {
+                "command_id": job["cid"], "seq": job["seq"], "narration": job["n"], "progress_s3_key": pkey,
+                "spoken_text": job["spoken"], "elapsed_seconds": round(max(0.0, elapsed), 1),
+                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": PROGRESS_VOICE, "audio_bytes": size})
+            self.status(m)
+            self.s.save()
+
 
 # ------------------------------------------------------------------ earshot mirror
 
@@ -1550,10 +1892,14 @@ def clean_for_speech(text: str, limit: int) -> str:
     return t
 
 
-def synthesize(text: str, tmp: Path) -> tuple[Path, str]:
-    """vox /synthesize-url -> OGG/Opus file. Returns (path, engine that served it)."""
+def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None) -> tuple[Path, str]:
+    """vox /synthesize-url -> OGG/Opus file. Returns (path, engine that served it). `steps` trades quality for speed
+    (diffusion steps; vox defaults to 10): progress updates use fewer."""
+    body = {"text": text, "voice": voice or VOICE}
+    if steps:
+        body["steps"] = steps
     req = urllib.request.Request(f"{mc_.VOX_URL}/synthesize-url", method="POST",
-                                 data=json.dumps({"text": text, "voice": VOICE}).encode(),
+                                 data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -1605,6 +1951,8 @@ def main() -> int:
     w = Watcher(state)
     w.lane_probe = LaneProbe()
     w.lane_probe.start()
+    w.status_writer.start()
+    w.start_progress_watch()
     log("starting", lane=LANE, poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
         first_start=state.fresh)
     while True:

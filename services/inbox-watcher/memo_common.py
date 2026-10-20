@@ -25,6 +25,13 @@ BUCKET = os.environ.get("MEMO_BUCKET", "holocene-auto")
 S3_ALIAS = os.environ.get("MEMO_S3_ALIAS", "delo")
 INBOX_PREFIX = "inbox"
 REPLIES_PREFIX = "replies"
+# Per-memo status for the car (status/<yyyy>/<mm>/<dd>/<memo_id>.json, the inbox key's date) and the spoken progress
+# updates (progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>.ogg). Both live in holocene-auto, which the pad reads anonymously;
+# neither is in the Earshot bucket, so the phone never plays a progress update.
+STATUS_PREFIX = "status"
+PROGRESS_PREFIX = "progress"
+# One interim assistant message of a running turn, published by the Hermes gateway (bloodbank services/hermes-gateway).
+PROGRESS_TYPE = "bloodbank.agent.invocation.progressed"
 S3_PUBLIC_BASE = os.environ.get("MEMO_S3_PUBLIC_BASE", "https://s3.delo.sh/holocene-auto")
 
 HOME = Path.home()
@@ -87,6 +94,26 @@ def agent_from_key(key: str) -> str | None:
     if len(parts) >= 6 and parts[0] == INBOX_PREFIX and parts[1]:
         return parts[1]
     return None
+
+
+def memo_day(key: str) -> str:
+    """<yyyy>/<mm>/<dd> of an inbox key (the day the device recorded it), so the car can name its memo's status and
+    progress objects from the key it uploaded. A key without a date (never dispatched anyway) uses today, UTC."""
+    parts = key.split("/")
+    if len(parts) >= 6 and parts[0] == INBOX_PREFIX and all(p.isdigit() for p in parts[2:5]):
+        return "/".join(parts[2:5])
+    return datetime.now(timezone.utc).strftime("%Y/%m/%d")
+
+
+def status_key_for(key: str, memo_id: str | None = None) -> str:
+    """status/<yyyy>/<mm>/<dd>/<memo_id>.json: the memo's live status, rewritten on every stage change."""
+    return f"{STATUS_PREFIX}/{memo_day(key)}/{memo_id or memo_id_for(key)}.json"
+
+
+def progress_key_for(key: str, n: int, memo_id: str | None = None) -> str:
+    """progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>.ogg: the memo's n-th spoken progress update (1..n per memo, so an
+    escalated memo's second command never overwrites the first one's)."""
+    return f"{PROGRESS_PREFIX}/{memo_day(key)}/{memo_id or memo_id_for(key)}-{n}.ogg"
 
 
 def now_utc() -> datetime:
@@ -307,6 +334,21 @@ def s3_list_inbox(timeout: int = 60) -> list[dict]:
     return out
 
 
+def s3_read_json(key: str) -> dict | None:
+    """A small JSON object from the bucket (a memo's status object), or None when it is missing or unreadable."""
+    try:
+        r = mc("cat", s3_url(key), timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        return None
+    return out if isinstance(out, dict) else None
+
+
 def s3_stat(key: str) -> dict | None:
     """{key,size,last_modified} or None when the object does not exist."""
     r = mc("stat", "--json", s3_url(key), timeout=30)
@@ -348,6 +390,15 @@ def candystore_events(correlation_id: str, limit: int = 200) -> list[dict]:
     body = http_json(url, timeout=8)
     events = body.get("events", [])
     return sorted(events, key=lambda e: e.get("time") or "")
+
+
+def progress_events(correlation_id: str, limit: int = 200) -> list[dict]:
+    """The gateway's agent.invocation.progressed facts for this correlationid (every command of the memo), oldest first.
+    One cheap indexed query (~20 ms), so the watcher can ask every second or two while a turn runs."""
+    url = (f"{CANDYSTORE_URL}/events?correlationid={urllib.parse.quote(correlation_id)}"
+           f"&type={urllib.parse.quote(PROGRESS_TYPE)}&limit={limit}")
+    body = http_json(url, timeout=4)
+    return sorted(body.get("events", []), key=lambda e: e.get("time") or "")
 
 
 # ---------------------------------------------------------------- gateway journal

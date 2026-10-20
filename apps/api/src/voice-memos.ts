@@ -5,7 +5,8 @@
 // gateway's agent.invocation.* and conversation.turn.* facts inherit it. Grouping those facts
 // reproduces `mise run memo:trace` (services/inbox-watcher/memo_trace.py) from the collection.
 
-export const MEMO_TYPES = [
+/** The journey's stage facts: a handful per memo, scanned newest-first to find the recent memos. */
+export const MEMO_STAGE_TYPES = [
   "bloodbank.audio.memo.uploaded",
   "bloodbank.audio.memo.received",
   "bloodbank.audio.memo.transcribed",
@@ -15,8 +16,21 @@ export const MEMO_TYPES = [
   "bloodbank.audio.memo.failed"
 ] as const;
 
+/**
+ * What the driver heard while waiting: narrated = the watcher spoke a progress line for the car, notified = one
+ * decision of the car's speech queue (ack, heard echo, progress, reply: start / end / halt / drop / deferred).
+ * Many per memo, so they are read by correlation id for the memos on screen, never scanned.
+ */
+export const MEMO_ANNOTATION_TYPES = ["bloodbank.audio.memo.narrated", "bloodbank.audio.memo.notified"] as const;
+
+export const MEMO_TYPES = [...MEMO_STAGE_TYPES, ...MEMO_ANNOTATION_TYPES] as const;
+
+/** One interim assistant message of the memo's running turn (the Hermes gateway publishes every one). */
+export const PROGRESS_TYPE = "bloodbank.agent.invocation.progressed";
+
 export const AGENT_TYPES = [
   "bloodbank.agent.invocation.started",
+  PROGRESS_TYPE,
   "bloodbank.agent.invocation.completed",
   "bloodbank.agent.invocation.failed",
   "bloodbank.agent.invocation.skipped",
@@ -239,6 +253,59 @@ export type Cancellation = {
   message?: string;
 };
 
+/** One line the agent wrote while working (agent.invocation.progressed), in the order the gateway saw them. */
+export type ProgressLine = {
+  eventId: string;
+  at: string;
+  seq: number;
+  text: string;
+  commandId?: string;
+  /** Seconds since the gateway handed the turn to Hermes. */
+  elapsedSeconds?: number;
+  /** A line of an earlier turn of an escalated memo (the interactive one that timed out). */
+  superseded: boolean;
+};
+
+/** A progress line the watcher spoke for the car (audio.memo.narrated). */
+export type Narration = {
+  eventId: string;
+  at: string;
+  /** 1..n per memo: progress/<day>/<memo_id>-<n>.ogg. */
+  n: number;
+  /** The progress line's seq (agent.invocation.progressed) that was spoken. */
+  seq?: number;
+  key?: string;
+  text?: string;
+  ttsSeconds?: number;
+  engine?: string;
+  elapsedSeconds?: number;
+};
+
+/** One decision of the car's speech queue about this memo (audio.memo.notified). */
+export type SpeechDecision = {
+  eventId: string;
+  /** Server time; deviceAt is the device's own clock when it sent one. */
+  at: string;
+  deviceAt?: string;
+  /** ack | echo | progress | cue | reply (the device's word). */
+  utterance: string;
+  /** start | end | halt | drop | deferred (the device's word). */
+  decision: string;
+  reason?: string;
+  recording?: boolean;
+  mic?: string;
+};
+
+/** Seconds from the memo's start (its upload) to the first time the driver heard each kind of thing. */
+export type MemoTiming = {
+  ackSeconds?: number;
+  heardEchoSeconds?: number;
+  firstProgressSeconds?: number;
+  firstNarrationSeconds?: number;
+  progressPlayedSeconds?: number;
+  replyPlayedSeconds?: number;
+};
+
 export type MemoSummary = {
   memoId: string;
   agent?: string;
@@ -268,6 +335,11 @@ export type MemoSummary = {
   audio?: AudioLevel;
   /** Level the device's recorder reported (absent unless the pad / Honda app sends data.capture). */
   capture?: CaptureLevel;
+  /** The newest line the agent wrote while working, and how many it wrote (absent when it wrote none). */
+  latestProgress?: string;
+  progressCount?: number;
+  /** How many progress lines were spoken in the car. */
+  narrationCount?: number;
 };
 
 export type MemoDetail = MemoSummary & {
@@ -278,6 +350,10 @@ export type MemoDetail = MemoSummary & {
   replyText?: string;
   hops: Hop[];
   events: JourneyEvent[];
+  progress: ProgressLine[];
+  narrations: Narration[];
+  speech: SpeechDecision[];
+  timing: MemoTiming;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
@@ -738,6 +814,28 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     hop.events = [...hop.events].sort((a, b) => (ms(a.at) ?? 0) - (ms(b.at) ?? 0) || a.cursor - b.cursor);
   }
 
+  // While the agent worked: its own lines, the ones spoken in the car, and every decision of the car's speech queue.
+  const progress: ProgressLine[] = relevant.filter((e) => e.type === PROGRESS_TYPE && typeof e.data.seq === "number")
+    .map((e) => ({
+      eventId: e.id, at: e.at, seq: e.data.seq as number, text: str(e.data.text) ?? "", commandId: str(e.data.command_id),
+      elapsedSeconds: num(e.data.elapsed_seconds), superseded: escalation !== undefined && sideOf(e) === "first"
+    }))
+    .sort((a, b) => Number(a.superseded === false) - Number(b.superseded === false) || a.seq - b.seq);
+  const narrations: Narration[] = memoFacts.filter((e) => e.type === "bloodbank.audio.memo.narrated")
+    .map((e) => ({
+      eventId: e.id, at: e.at, n: num(e.data.narration) ?? 0, seq: num(e.data.seq), key: str(e.data.progress_s3_key),
+      text: str(e.data.spoken_text), ttsSeconds: num(e.data.tts_seconds), engine: str(e.data.tts_engine),
+      elapsedSeconds: num(e.data.elapsed_seconds)
+    }));
+  const speech: SpeechDecision[] = memoFacts.filter((e) => e.type === "bloodbank.audio.memo.notified")
+    .map((e) => ({
+      eventId: e.id, at: e.at, deviceAt: str(e.data.device_at), utterance: str(e.data.utterance) ?? "unknown",
+      decision: str(e.data.decision) ?? "unknown", reason: str(e.data.reason),
+      recording: typeof e.data.recording === "boolean" ? e.data.recording : undefined, mic: str(e.data.mic)
+    }));
+  const timing = memoTiming(startedAt, progress, narrations, speech);
+  const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
+
   const summary: MemoSummary = {
     memoId, agent, s3Key, startedAt, updatedAt,
     totalSeconds: Math.max(0, (endMs - startMs) / 1000),
@@ -756,9 +854,39 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     // A cancelled memo is not an error, whatever else its hops recorded.
     error: status !== "cancelled" && (failedHop ?? (playedHop.status === "failed" ? playedHop : undefined))?.error
       ? `${(failedHop ?? playedHop).error!.code ?? "failed"}: ${(failedHop ?? playedHop).error!.message ?? ""}`.trim()
-      : undefined
+      : undefined,
+    ...(latest ? { latestProgress: preview(latest.text, 140), progressCount: progress.length } : {}),
+    ...(narrations.length ? { narrationCount: narrations.length } : {})
   };
-  return { ...summary, commandId, ...(escalation && firstCommandId ? { escalatedFromCommandId: firstCommandId } : {}), transcript, replyText, hops, events: relevant };
+  return {
+    ...summary, commandId, ...(escalation && firstCommandId ? { escalatedFromCommandId: firstCommandId } : {}), transcript, replyText,
+    hops, events: relevant, progress, narrations, speech, timing
+  };
+}
+
+/** The car's words (SpeechArbiter: ack | echo | progress | reply, start) and the schema's examples (heard, started). */
+const SPOKEN: Record<string, string[]> = { ack: ["ack"], heard: ["echo", "heard"], progress: ["progress"], reply: ["reply"] };
+const STARTED = ["start", "started"];
+
+/** Seconds from the memo's start to the first ack, heard echo, progress line, narration and playback the driver got. */
+export function memoTiming(startedAt: string, progress: ProgressLine[], narrations: Narration[], speech: SpeechDecision[]): MemoTiming {
+  const t0 = ms(startedAt);
+  const since = (iso: string | undefined) => {
+    const t = ms(iso);
+    return t0 !== undefined && t !== undefined ? Math.round((t - t0) / 100) / 10 : undefined;
+  };
+  const firstOf = (isos: (string | undefined)[]) => isos.filter((x): x is string => ms(x) !== undefined).sort((a, b) => ms(a)! - ms(b)!)[0];
+  const started = (what: keyof typeof SPOKEN) =>
+    firstOf(speech.filter((d) => SPOKEN[what].includes(d.utterance) && STARTED.includes(d.decision)).map((d) => d.deviceAt ?? d.at));
+  const out: MemoTiming = {
+    ackSeconds: since(started("ack")),
+    heardEchoSeconds: since(started("heard")),
+    firstProgressSeconds: since(firstOf(progress.map((p) => p.at))),
+    firstNarrationSeconds: since(firstOf(narrations.map((n) => n.at))),
+    progressPlayedSeconds: since(started("progress")),
+    replyPlayedSeconds: since(started("reply"))
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as MemoTiming;
 }
 
 export function toSummary(detail: MemoDetail): MemoSummary {
@@ -766,7 +894,8 @@ export function toSummary(detail: MemoDetail): MemoSummary {
     memoId: detail.memoId, agent: detail.agent, s3Key: detail.s3Key, startedAt: detail.startedAt, updatedAt: detail.updatedAt,
     totalSeconds: detail.totalSeconds, status: detail.status, reached: detail.reached, stageLabel: detail.stageLabel,
     stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, escalated: detail.escalated, late: detail.late, cancelled: detail.cancelled,
-    audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error
+    audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error,
+    latestProgress: detail.latestProgress, progressCount: detail.progressCount, narrationCount: detail.narrationCount
   };
 }
 
