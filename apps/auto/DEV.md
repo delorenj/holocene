@@ -169,6 +169,25 @@ Everything above the production policy is gated on `FLAG_DEBUGGABLE`, never on a
 - Cleartext to `localhost`/`127.0.0.1` comes from `app/src/debug/` only; the release manifest is untouched.
 - `WebView.setWebContentsDebuggingEnabled(true)`.
 
+## Did the car talk over itself or into a recording? (speaker-level audit)
+
+The speech queue (logcat `HoloceneSpeech`) and the platform logs only say what was *started* and *ended*; the output
+path is ~0.3 s long, so they can show zero overlaps while the speakers overlap (the START beep used to sound 0.2 s
+into every note). Record what the sim actually plays, then audit:
+
+```bash
+adb -s emulator-5554 logcat -v epoch > /tmp/logcat.txt &                     # during the test
+uv run --no-project --with "protobuf>=7.35" --with grpcio python apps/auto/tools/sim_audio_tap.py --seconds 1800 --out /tmp/tap &
+# offset: device clock minus host clock (adb shell 'echo $EPOCHREALTIME' vs date +%s.%N; the sim ran -1293 ms)
+python3 apps/auto/tools/speech_overlap.py --logcat /tmp/logcat.txt --tap /tmp/tap.jsonl --offset-ms -1293 --from <T> --to <T>
+```
+
+Six checks: queue x queue, queue x recording (app mic and the OS's active capture), HAL mix x capture, speaker output
+x open mic, unowned sound, a sound running into the next. Worked example and numbers:
+`_bmad-output/implementation-artifacts/agent-pad-auto/ttfr.md`. The emulator's AudioTrack presentation timestamps run
+65-263 ms ahead of its speakers (host audio path), which is why the mic settles 300 ms after the prompt on the emulator
+and 150 ms on hardware (`SpeechTail`).
+
 ## Pitfalls
 
 - `empty_transcript` / `silent_audio` on a sim memo = stuck PulseAudio capture (qemu's source output stays
