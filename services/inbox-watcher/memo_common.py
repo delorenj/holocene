@@ -157,6 +157,25 @@ def spoken_name(agent_id: str, route: dict | None = None) -> str:
     return name or agent_id.replace("-", " ")
 
 
+# ---------------------------------------------------------------- memo retry (shared by the watcher and memo_trace)
+
+def resume_for(m: dict) -> str:
+    """Where `memo:retry` restarts a failed memo. A memo with no transcript cannot dispatch (it failed at receive,
+    for an unroutable agent, before any audio was heard): it starts over at receive."""
+    stage = m.get("resume_stage") or "receive"
+    if stage == "dispatch" and not m.get("transcript"):
+        return "receive"
+    return stage
+
+
+def truncated_by_old_watcher(m: dict) -> bool:
+    """A failed memo whose prompt was cut to exactly 300 characters by the old compact() and never carried a prompt
+    hash: its full text is gone from state.json. The audio is still in the inbox, so `memo:retry` revives it at
+    'transcribe' (transcript/prompt/prompt_sha256 dropped) rather than re-sending the cut prompt."""
+    return (m.get("status") == "failed" and not m.get("prompt_sha256") and isinstance(m.get("prompt"), str)
+            and len(m["prompt"]) == 300 and m.get("resume_stage") in ("dispatch", "await_agent"))
+
+
 # ---------------------------------------------------------------- audio probe
 
 def probe_audio(path: Path) -> dict:

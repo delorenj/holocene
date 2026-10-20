@@ -26,11 +26,14 @@ things only it can see: record started/stopped (bytes, duration), recording fail
 capture), upload failed after retries. The proxy logs each one (event "client"); the failures also
 publish bloodbank.audio.memo.failed (stage record | upload) keyed by the key the memo WOULD have had,
 so a memo that never reached S3 still has a memo_id and a place in memo:trace and /voice.
-A PUT under inbox/<agent>/ for an agent the gateway cannot route (not in the registry, bloodbank disabled) is
-rejected 422 "unroutable agent <id>" and not stored, so the pad shows "NOT sent" instead of SENT for a memo the
-watcher would only hold; it also publishes failed(stage upload, unknown_agent, retryable false), at most once an hour
-per key. The check reuses memo_common.registry_route and fails OPEN (the PUT is accepted, one log line) when the
-registry or memo_common cannot be read here.
+A PUT under inbox/<agent>/ for an agent the gateway cannot route is rejected 422 "unroutable agent <id>" and not
+stored, so the pad shows "NOT sent" instead of SENT for a memo the watcher would only hold; it also publishes
+failed(stage upload, unknown_agent, retryable false), at most once an hour per key. The routable list is the pad's
+own roster (MEMO_PAD_ROSTER_DIR/roster.json, regenerated every 2 min by the pad-roster timer and mounted here as a
+DIRECTORY - a single-file bind mount pins the inode, so the old registry mount never saw the writer's os.replace).
+An id is refused only on positive knowledge: it is in the roster's `skipped` list, or it is absent from `agents`
+while the roster is under ROSTER_FRESH_S old. A missing, unreadable or stale roster fails OPEN (the PUT is
+accepted, one log line): a broken check never blocks a memo.
 A PUT whose body is shorter than its Content-Length (cell drop mid-upload) is rejected 400 and
 published as failed(stage upload) instead of being stored as a complete memo.
 
@@ -104,37 +107,56 @@ def agent_from_key(key: str):
     return parts[1] if len(parts) >= 6 and parts[0] == "inbox" and parts[1] else None
 
 
-# ---------------------------------------------------------------- agent routing (shared with the inbox watcher)
+# ---------------------------------------------------------------- agent routing (the pad roster, re-read on change)
 
-_memo_common = None
+# The same roster.json the pad's web UI shows (regenerated every 2 min by the holocene-pad-roster timer). The
+# compose stack mounts the roster DIRECTORY read-only; outside the container the default is the host path.
+PAD_ROSTER_DIR = Path(os.environ.get("MEMO_PAD_ROSTER_DIR", Path.home() / ".local/share/holocene-auto/pad-roster"))
+# An id that is absent from `agents` is refused only while the roster itself is this fresh: a stale roster says
+# nothing about an agent hired since. (A `skipped` entry is positive knowledge and refuses at any age.)
+ROSTER_FRESH_S = int(os.environ.get("MEMO_ROSTER_FRESH_S", "600"))
+
+_roster_cache: dict = {"stamp": None, "roster": None}
 
 
-def _load_memo_common():
-    """services/inbox-watcher/memo_common.py: next to this file in the container, or in the sibling checkout."""
-    global _memo_common
-    if _memo_common is None:
-        import importlib.util
-        here = Path(__file__).resolve().parent
-        for d in (os.environ.get("MEMO_COMMON_DIR"), here, here.parent / "inbox-watcher"):
-            f = Path(d) / "memo_common.py" if d else None
-            if f and f.is_file():
-                spec = importlib.util.spec_from_file_location("memo_common", f)
-                _memo_common = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(_memo_common)
-                break
-        else:
-            raise ImportError("memo_common.py not found")
-    return _memo_common
+def _roster() -> dict | None:
+    """Parsed roster.json, re-read whenever the file changes (a directory mount sees the writer's os.replace,
+    unlike the old single-file registry mount). None when missing or unreadable."""
+    try:
+        p = PAD_ROSTER_DIR / "roster.json"
+        st = p.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+        if _roster_cache["stamp"] != stamp:
+            _roster_cache["roster"] = json.loads(p.read_text(encoding="utf-8"))
+            _roster_cache["stamp"] = stamp
+        return _roster_cache["roster"] if isinstance(_roster_cache["roster"], dict) else None
+    except (OSError, ValueError):
+        return None
 
 
 def agent_route(agent: str) -> dict:
-    """{ok: True|False|None, reason}. None = could not tell (memo_common, PyYAML or the registry is missing here):
-    the caller accepts the upload, so a broken check never blocks a memo."""
+    """{ok: True|False|None, reason} from the pad roster. None = could not tell (roster missing, unreadable or
+    stale): the caller accepts the upload, so a broken check never blocks a memo."""
     try:
-        r = _load_memo_common().registry_route(agent)
+        r = _roster()
     except Exception as e:  # noqa: BLE001 - fail open
         return {"ok": None, "reason": f"route check unavailable: {type(e).__name__}: {e}"[:200]}
-    return {"ok": r["ok"], "reason": r["reason"]}
+    if r is None:
+        return {"ok": None, "reason": f"pad roster unreadable: {PAD_ROSTER_DIR}/roster.json"}
+    for s in r.get("skipped") or []:
+        if isinstance(s, dict) and s.get("id") == agent:
+            return {"ok": False, "reason": str(s.get("reason") or f"{agent!r} is skipped in the pad roster")[:200]}
+    agents = r.get("agents")
+    ids = {a.get("id") for a in agents if isinstance(a, dict)} if isinstance(agents, list) else set()
+    if agent in ids:
+        return {"ok": True, "reason": None}
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(r.get("generated_at", "")).replace("Z", "+00:00"))).total_seconds()
+    except ValueError:
+        age = None
+    if age is not None and age <= ROSTER_FRESH_S:
+        return {"ok": False, "reason": f"{agent!r} is not in the pad roster (generated {int(age)}s ago): the gateway cannot route it"}
+    return {"ok": None, "reason": "pad roster is stale; absence from it is not proof of unroutable"}
 
 
 _UNROUTABLE_PUBLISHED: dict = {}   # key -> time of the last failed fact: the pad re-PUTs a rejected memo every 30 s
