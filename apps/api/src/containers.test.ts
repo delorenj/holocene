@@ -84,3 +84,12 @@ test("an unreadable cooldown file and an empty log are no state, not a crash", (
   assert.equal(snap.summary.unknown, 5);
   assert.equal(snap.polr.mood, "asleep");
 });
+
+test("a run still probing keeps the previous run's skips on screen", () => {
+  const probing = `${LOG}\n2026-10-20T03:30:01Z probe https://ok.delo.sh/ -> 200\n2026-10-20T03:30:02Z probe https://dead.delo.sh/ -> 200`;
+  const log = parseLog(probing);
+  assert.equal(log.lastRunAt, "2026-10-20T03:30:01Z");
+  assert.deepEqual(log.skipped, [{ container: "gone", reason: "no container behind the router" }]);
+  const done = parseLog(`${probing}\n2026-10-20T03:30:03Z all targets healthy`);
+  assert.deepEqual(done.skipped, [], "the finished newer run skipped nothing");
+});

@@ -92,17 +92,27 @@ export type ParsedLog = {
   skipped: { container: string; reason: string }[];
 };
 
-// One pass, newest line first. A run is the block of probe lines one cron tick writes; the newest probe's run
-// is the last run, and its skip lines say what the deathwatch saw dead but would not touch.
+// One pass, newest line first. A run is the block of probe lines one cron tick writes, followed by its verdicts
+// (restarts, skips, "all targets healthy"). The newest probe's run is the last run; the skips shown are those of the
+// newest run that has finished, so a run still probing does not blank them.
 export function parseLog(text: string): ParsedLog {
   const probes = new Map<string, { status: number | null; timestamp: string }>();
   const restarts: RestartEvent[] = [];
-  const skipped: { container: string; reason: string }[] = [];
   let lastRunAt: string | null = null;
   let newestProbeAt: string | null = null;
+  // runs[0] is the newest; a verdict met after a run's probes belongs to the next older run
+  const runs: { probed: boolean; finished: boolean; skipped: { container: string; reason: string }[] }[] = [
+    { probed: false, finished: false, skipped: [] }
+  ];
+  const verdict = (skip?: { container: string; reason: string }) => {
+    if (runs[runs.length - 1].probed) runs.push({ probed: false, finished: false, skipped: [] });
+    const run = runs[runs.length - 1];
+    run.finished = true;
+    if (skip) run.skipped.push(skip);
+  };
   const lines = text.split("\n");
 
-  for (let i = lines.length - 1; i >= 0; i--) {
+  for (let i = lines.length - 1; i >= 0 && (runs.length < 3 || restarts.length < RECENT_RESTARTS); i--) {
     const match = lines[i].trim().match(LINE_RE);
     if (!match) continue;
     const [, at, message] = match;
@@ -114,28 +124,33 @@ export function parseLog(text: string): ParsedLog {
       // the run started at its earliest probe; one run's probes sit within a few minutes, runs 10 apart
       newestProbeAt ??= at;
       if (Date.parse(newestProbeAt) - Date.parse(at) < 300_000) lastRunAt = at;
+      runs[runs.length - 1].probed = true;
       continue;
     }
 
-    // read newest first, the lines before the first probe met are the last run's verdicts
-    const inLastRun = probes.size === 0;
     let m: RegExpMatchArray | null;
     if ((m = message.match(/^restarted (\S+)$/))) {
+      verdict();
       if (restarts.length < RECENT_RESTARTS) restarts.push({ at, container: m[1], outcome: "restarted", detail: message });
     } else if ((m = message.match(/^failed to restart (\S+?):\s*(.*)$/))) {
+      verdict();
       if (restarts.length < RECENT_RESTARTS) restarts.push({ at, container: m[1], outcome: "failed", detail: m[2] || message });
     } else if ((m = message.match(/^(\S+) container is missing; queued a restart of (\S+)/))) {
+      verdict();
       if (restarts.length < RECENT_RESTARTS) restarts.push({ at, container: m[1], outcome: "queued", detail: message });
-    } else if (inLastRun && (m = message.match(/^could not map (\S+) to a container; skipping$/))) {
-      skipped.push({ container: m[1].split("@")[0], reason: "no container behind the router" });
-    } else if (inLastRun && (m = message.match(/^(\S+) on cooldown; skipped$/))) {
-      skipped.push({ container: m[1], reason: "on cooldown" });
-    } else if (inLastRun && (m = message.match(/^no service detail for (\S+); skipping$/))) {
-      skipped.push({ container: m[1].split("@")[0], reason: "Traefik has no service detail" });
+    } else if ((m = message.match(/^could not map (\S+) to a container; skipping$/))) {
+      verdict({ container: m[1].split("@")[0], reason: "no container behind the router" });
+    } else if ((m = message.match(/^(\S+) on cooldown; skipped$/))) {
+      verdict({ container: m[1], reason: "on cooldown" });
+    } else if ((m = message.match(/^no service detail for (\S+); skipping$/))) {
+      verdict({ container: m[1].split("@")[0], reason: "Traefik has no service detail" });
+    } else if (message === "all targets healthy") {
+      verdict();
     }
   }
 
-  return { probes, lastRunAt, restarts, skipped };
+  const finished = runs.find((run) => run.finished && run.probed);
+  return { probes, lastRunAt, restarts, skipped: finished?.skipped ?? [] };
 }
 
 export function parseCooldown(text: string): Map<string, number> {
