@@ -183,7 +183,9 @@ python3 apps/auto/tools/speech_overlap.py --logcat /tmp/logcat.txt --tap /tmp/ta
 ```
 
 Six checks: queue x queue, queue x recording (app mic and the OS's active capture), HAL mix x capture, speaker output
-x open mic, unowned sound, a sound running into the next. Worked example and numbers:
+x open mic, unowned sound, a sound running into the next. (The Honda HAL mixes the assistant source on FOCUS: the
+exclusive focus a note holds, `RecordingFocus`, opens an empty mix for the whole recording, so the HAL check counts a
+mix only while one of the app's playback focus holders has focus. Capture the logcat unfiltered.) Worked example and numbers:
 `_bmad-output/implementation-artifacts/agent-pad-auto/ttfr.md`. The emulator's AudioTrack presentation timestamps run
 65-263 ms ahead of its speakers (host audio path), which is why the mic settles 300 ms after the prompt on the emulator
 and 150 ms on hardware (`SpeechTail`).

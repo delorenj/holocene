@@ -1,0 +1,35 @@
+intervals (device clock, epoch s):
+  1792535526.522   +2.260s  speech    reply 223202Z-holocene-pm-e28e...b62412bb.og e28ef9f3-323c-5d95-a385-e4cdb62412bb -> halt stopped
+  1792535528.379   +0.713s  audio     speaker output                               rms<=488
+  1792535529.163   +3.178s  speech    arming arm:121826                            - -> end 
+  1792535530.489   +1.328s  audio     speaker output                               rms<=597
+  1792535532.076   +0.441s  audio     speaker output                               rms<=659
+  1792535532.788   +1.297s  recording OS capture active                           
+  1792535532.799   +1.292s  recording app mic                                     
+  1792535534.091   +2.601s  speech    ack ack:stopped:127048                       - -> end 
+  1792535534.348   +0.284s  audio     speaker output                               rms<=652
+  1792535534.981   +0.375s  audio     speaker output                               rms<=450
+  1792535535.675   +0.887s  audio     speaker output                               rms<=554
+  1792535536.693  +10.821s  speech    reply 223202Z-holocene-pm-e28e...b62412bb.og e28ef9f3-323c-5d95-a385-e4cdb62412bb -> end 
+  1792535537.044   +2.975s  audio     speaker output                               rms<=464
+  1792535540.227   +1.181s  audio     speaker output                               rms<=408
+  1792535541.667   +0.920s  audio     speaker output                               rms<=408
+  1792535542.725   +0.144s  audio     speaker output                               rms<=286
+  1792535543.007   +1.741s  audio     speaker output                               rms<=306
+  1792535545.007   +2.299s  audio     speaker output                               rms<=333
+  1792535873.509   +2.170s  speech    arming arm:466397                            - -> end 
+  1792535873.959   +1.304s  audio     speaker output                               rms<=616
+  1792535875.500   +0.254s  audio     speaker output                               rms<=657
+  1792535876.095   +3.311s  recording app mic                                     
+  1792535876.109   +3.298s  recording OS capture active                           
+  1792535879.407   +0.979s  speech    cue cue:cancelled:472365                     - -> end 
+  1792535879.915   +0.448s  audio     speaker output                               rms<=452
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+      speaker output: 15 spans, 15.3 s of sound in the window
+RESULT ZERO OVERLAPS  (6 utterances, 2 app recordings, 2 OS capture windows, 5 HAL mix windows)

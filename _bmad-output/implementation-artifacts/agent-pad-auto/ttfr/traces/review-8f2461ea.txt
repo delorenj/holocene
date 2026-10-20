@@ -1,0 +1,44 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 8f2461ea
+memo_id  8f2461ea-f95e-5a13-bd53-61c4de021fe1
+key      inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg
+agent    holocene-pm
+command  -
+lane     batch   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=8f2461ea-f95e-5a13-bd53-61c4de021fe1&limit=100'
+
+  OK      s3_object                  2026-10-20T22:32:14.000Z           inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg  5872 bytes
+  OK      upload_proxy_log           2026-10-20T22:32:14.945Z  +0.9s    {"ts":"2026-10-20T22:32:14.945Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","memo_id":"8f2461ea-f95e-5a
+  OK      fact:uploaded              2026-10-20T22:32:14.945Z  +0.0s    5872 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -48 dBFS, window avg -50 dBFS
+  OK      fact:received              2026-10-20T22:32:15.632Z  +0.7s    watcher saw it, lag 693ms
+  MISSING fact:transcribed           -                                  no bloodbank.audio.memo.transcribed with correlationid=8f2461ea-f95e-5a13-bd53-61c4de021fe1
+  OK      audio_level                2026-10-20T22:32:22.276Z  +6.6s    max -49 dBFS, mean -63 dBFS over 1.2 s  -> audible | device heard peak -48 dBFS, window avg -50 dBFS
+  MISSING fact:dispatched            -                                  no bloodbank.audio.memo.dispatched with correlationid=8f2461ea-f95e-5a13-bd53-61c4de021fe1
+  MISSING gateway_journal            -                                  no command id yet (not dispatched)
+  MISSING agent:invocation.started   -                                  no bloodbank.agent.invocation.started for this command in Candystore
+  MISSING agent:invocation.done      -                                  no invocation.completed/failed for this command
+  MISSING fact:replied               -                                  no bloodbank.audio.memo.replied with correlationid=8f2461ea-f95e-5a13-bd53-61c4de021fe1
+  MISSING reply_object               -                                  no reply key recorded
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      car_status_object          2026-10-20T22:32:22.402Z  +0.1s    status/2026/10/20/8f2461ea-f95e-5a13-bd53-61c4de021fe1.json: stage=failed progress_seq=0 narrations=0 elapsed=7.5s error=empty_transcript
+  FAILED  fact:failed[transcribe]    2026-10-20T22:32:22.276Z           empty_transcript: audible (max -49 dBFS, mean -63 dBFS over 1.2 s) but no words recognised (retryable=False, attempt=1)
+
+car speech (4 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.1s     ack       deferred     reason recording  while recording  mic recording
+  -0.1s     ack       start        reason waited_ms=50
+  +2.5s     ack       end          
+  +13.5s    ack       drop         reason expired
+
+timing   since upload (server clock): ack -0.1s
+
+VERDICT  STOPPED AT transcribe: empty_transcript: audible (max -49 dBFS, mean -63 dBFS over 1.2 s) but no words recognised (retryable=False, attempt=1)
+
+watcher log (8 lines, journalctl --user -u holocene-inbox-watcher.service):
+  {"ts":"2026-10-20T22:32:15.631Z","svc":"inbox-watcher","level":"info","event":"discovered","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"receive","bytes":5872,"age_s":0
+  {"ts":"2026-10-20T22:32:15.743Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"received","fact":"audio.mem
+  {"ts":"2026-10-20T22:32:15.770Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"received","next":"transcribe","
+  {"ts":"2026-10-20T22:32:16.053Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"download","ms":281,"bytes":5872
+  {"ts":"2026-10-20T22:32:16.178Z","svc":"inbox-watcher","level":"info","event":"audio_level","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"transcribe","audio_s":1.24,"au
+  {"ts":"2026-10-20T22:32:16.178Z","svc":"inbox-watcher","level":"info","event":"transcribe_start","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"transcribe","audio_s":1.2
+  {"ts":"2026-10-20T22:32:22.402Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"failed","fact":"audio.memo.
+  {"ts":"2026-10-20T22:32:22.402Z","svc":"inbox-watcher","level":"error","event":"memo_failed","memo_id":"8f2461ea-f95e-5a13-bd53-61c4de021fe1","key":"inbox/holocene-pm/2026/10/20/20261020T223208Z.ogg","agent":"holocene-pm","stage":"transcribe","code":"empty_tra
+[memo:trace] ERROR task failed

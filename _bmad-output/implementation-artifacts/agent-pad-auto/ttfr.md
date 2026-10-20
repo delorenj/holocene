@@ -245,6 +245,33 @@ and quiet time. Several existing arbiter tests now step through the drain.
 | ![driving working 22](ttfr/shots/07-driving-b-working-0-22.png) the same line 16 s later, only the clock text changed | ![driving reply](ttfr/shots/08-driving-b-reply.png) driving: banner REPLY while the reply plays |
 | ![parked reply](ttfr/shots/03-parked-a2-playing-reply.png) parked: "playing reply" | ![left parked](ttfr/shots/09-left-parked-app-open.png) left parked, app open |
 
+## Review round (after the proof): fixes verified on the sim
+
+An independent review of the proof found that a recording started over a playing reply skipped the 350 ms drain (the
+page stops its reply 16-55 ms before it asks to record), that the phone's Earshot copy of every reply could play
+through the car's speakers (twice, or into a recording), and that every pad played every reply. Fixed in `3c0b10a`
+and `f5b460e` (holocene); verified on the cold-booted sim (debug APK from `f5b460e`), memo `e28ef9f3` (uploaded as
+the sim car with its device id, so the server-side path is the real one; gRPC mic injection crashed the emulator twice
+this session):
+
+| check | result |
+|---|---|
+| reply cut by a recording start | `halt reply reason=stopped`, 49 ms later `deferred arming reason=drain`, `start arming` 381 ms after the halt. On the speakers the reply's last sound ended 310 ms after the halt, 71 ms BEFORE the prompt started (before the fix: 230-383 ms into it). |
+| recording focus | `dumpsys audio` during the note: `RecordingFocus` holds `GAIN_TRANSIENT_EXCLUSIVE`, `USAGE_ASSISTANT`; released after the mic closed, after the ack took its own focus. |
+| Earshot | `memo:trace`: `phone_object OK not mirrored to the phone: the car that sent the memo was connected and spoke the reply itself`; `presence` answered `car_live` from the upload's device headers (also stored as S3 metadata). |
+| ack on the memo | the note recorded over the reply (`8f2461ea`): `car speech` lists `ack deferred / start / end` and the SENT tone's `ack drop expired`; `timing since upload (server clock): ack -0.1s`. |
+| second tap while arming | ignored: one `arm`, no `halt arming`; the button reads `Starting…` (shots/10). |
+| speaker-level audit | `ttfr/overlap-5-review-fixes.txt`: ZERO OVERLAPS on all six checks (6 utterances, 2 recordings). |
+
+Check 3 changed with this round: the Honda HAL opens its assistant mix on FOCUS, not on sound, so the recording's own
+exclusive focus opened an (empty) mix for the whole note. A mix now counts only while an assistant focus holder other
+than `RecordingFocus` has focus; a logcat filtered to the AMP lines (the earlier evidence) keeps the old rule and
+re-audits unchanged (36 HAL windows, ZERO OVERLAPS).
+
+Not verified on the sim: the TTS focus refusal and loss paths (no call or assistant to trigger them), the browser
+fallback path (the car always records natively), the driving hero's REPLY label after a cancel. The real car gets the
+native changes with the next Play release; the pad, proxy, watcher and /voice changes are live now.
+
 ## Files
 
 - Tools (committed): `apps/auto/tools/sim_audio_tap.py` and `apps/auto/tools/speech_overlap.py`.
@@ -255,3 +282,5 @@ and quiet time. Several existing arbiter tests now step through the drain.
   - `ttfr/speaker-tap.jsonl.gz`: every speaker packet as `{t, n, rms}`, host clock.
   - `ttfr/runs/*.json`: host times of each press and injection.
   - `ttfr/traces/*.txt`: memo:trace output.
+  - Review round: `ttfr/speech-logcat-review-fixes.txt`, `ttfr/speaker-tap-review-fixes.jsonl.gz` (offset -718 ms),
+    `ttfr/overlap-5-review-fixes.txt`.

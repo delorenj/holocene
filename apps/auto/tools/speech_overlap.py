@@ -7,7 +7,10 @@ Three independent sources, all optional except the logcat:
     every change: "session:N -- source client=MIC" while a capture runs, "null or empty" when none does) are when the OS
     had the microphone open, and the Honda audio HAL's AudioFocusControl MM_AF,AMP startMixing/stopMixing is when it
     mixed an assistant source (our TTS, earcons and clips) into the speakers. (SystemUI's mic indicator is no use here:
-    it is held on screen for a minimum time after a capture ends.);
+    it is held on screen for a minimum time after a capture ends.) The HAL mixes on FOCUS, not on sound: the exclusive
+    focus a recording holds (RecordingFocus, so the car pauses other media for the note) opens the same mix with
+    nothing in it, so a mix counts only while an assistant focus holder OTHER than RecordingFocus has focus (the arming
+    prompt, which plays under RecordingFocus, is covered by checks 2 and 4 instead);
   * what the speakers actually got: the emulator's audio OUTPUT captured with tools/sim_audio_tap.py (host clock, so
     --offset-ms, device minus host, lines it up with logcat).
 
@@ -35,6 +38,9 @@ SPEECH = re.compile(r"^\s*(\d+\.\d+)\s+\d+\s+\d+\s+\w\s+HoloceneSpeech:\s+(\w+) 
                     r"mic=(\w+) reason=(.*?) at=(\d+)\s*$")
 OS_MIC = re.compile(r"^\s*(\d+\.\d+)\s.*dumpAudioRecordingConfigurations, (session:\d+ -- source client=MIC|List<AudioRecordingConfiguration> is null or empty)")
 AMP = re.compile(r"^\s*(\d+\.\d+)\s.*AudioFocusControl: MM_AF,AMP,(startMixing|stopMixing)")
+# MM_AF,REQUEST,ENTER,<client>,USAGE_VOICE_COMMAND,... / MM_AF,ABANDON,RECOGNIZED,<client>,... / MM_AF,CHANGE,AUDIOFOCUS_LOSS,<client>
+AF_HOLD = re.compile(r"^\s*(\d+\.\d+)\s.*AudioFocusControl: MM_AF,(REQUEST,ENTER|ABANDON,RECOGNIZED|CHANGE,AUDIOFOCUS_LOSS),([^,]+),USAGE_VOICE_COMMAND,")
+RECORDING_FOCUS = "RecordingFocus"
 
 
 class Span:
@@ -54,7 +60,19 @@ def parse_logcat(path, lo, hi):
     rec = None
     mic_on = None
     mix_on = None
+    mixing = False
+    holders = set()  # assistant-usage focus clients that play (never the recording's own focus)
+    saw_focus = False  # a logcat filtered to the AMP lines only (older evidence) keeps the AMP-only rule
     last = 0.0
+
+    def mix_edge(t):
+        nonlocal mix_on
+        on = mixing and (bool(holders) or not saw_focus)
+        if on and mix_on is None:
+            mix_on = t
+        elif not on and mix_on is not None:
+            amp.append(Span("hal", "assistant mix", mix_on, t))
+            mix_on = None
     with open(path, errors="replace") as f:
         for line in f:
             m = SPEECH.match(line)
@@ -92,16 +110,25 @@ def parse_logcat(path, lo, hi):
                     os_mic.append(Span("recording", "OS capture active", mic_on, t))
                     mic_on = None
                 continue
+            m = AF_HOLD.match(line)
+            if m:
+                t = float(m.group(1))
+                saw_focus = True
+                if RECORDING_FOCUS in m.group(3):
+                    continue
+                if m.group(2) == "REQUEST,ENTER":
+                    holders.add(m.group(3))
+                else:
+                    holders.discard(m.group(3))
+                if lo <= t <= hi:
+                    mix_edge(t)
+                continue
             m = AMP.match(line)
             if m:
                 t = float(m.group(1))
-                if t < lo or t > hi:
-                    continue
-                if m.group(2) == "startMixing" and mix_on is None:
-                    mix_on = t
-                elif m.group(2) == "stopMixing" and mix_on is not None:
-                    amp.append(Span("hal", "assistant mix", mix_on, t))
-                    mix_on = None
+                mixing = m.group(2) == "startMixing"
+                if lo <= t <= hi:
+                    mix_edge(t)
     for s in open_u.values():
         speech.append(s)
     if rec is not None:

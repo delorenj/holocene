@@ -293,9 +293,19 @@ def first_at(events: list[dict], utterance: str):
     return evt_ts(e) or c.parse_iso((e.get("data") or {}).get("device_at"))
 
 
+def upload_ts(hops: list[Hop]):
+    """When the memo was uploaded: the proxy's uploaded fact (milliseconds), else the S3 object's LastModified (whole
+    seconds only: an ack said 0.2 s before the upload finished would read +0.8 s)."""
+    for name in ("fact:uploaded", "s3_object"):
+        ts = next((h.ts for h in hops if h.name == name and h.status == OK and h.ts), None)
+        if ts is not None:
+            return ts
+    return None
+
+
 def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     """Time to the first thing the driver heard, hop by hop: ack, heard echo, first progress, first narration, reply."""
-    t0 = next((h.ts for h in hops if h.name in ("fact:uploaded", "s3_object") and h.status == OK and h.ts), None)
+    t0 = upload_ts(hops)
     if t0 is None:
         return None
     sp = ctx.get("speech") or []
@@ -825,7 +835,7 @@ def render(hops: list[Hop], ctx: dict) -> None:
         sup = " (superseded: the memo was re-dispatched)" if h.superseded and h.status != OK else ""
         print(f"  {tag} {h.name:<26} {ts:<25} {lat:<8} {h.detail}{opt}{sup}")
     speech = ctx.get("speech") or []
-    t0 = next((h.ts for h in hops if h.name in ("fact:uploaded", "s3_object") and h.status == OK and h.ts), None)
+    t0 = upload_ts(hops)
     if speech:
         print(f"\ncar speech ({len(speech)} arbiter decisions reported by the device, audio.memo.notified; time since upload):")
         for line in speech_lines(speech, t0):
