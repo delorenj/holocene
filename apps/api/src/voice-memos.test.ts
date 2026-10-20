@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMemoDetail, buildMemoSummaries, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
+import { buildMemoDetail, buildMemoSummaries, replyInfoOf, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
 import { EventStore } from "./event-store.js";
 
 const MEMO = "d84f8cb5-ad88-5bc9-a573-cf2e297e1b4d";
@@ -488,6 +488,8 @@ test("a reply carries its Earshot text sidecar whether or not it was escalated",
   // a reply from before the sidecar existed has none
   const plain = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied()], now(120))!;
   assert.equal(plain.hops.find(h => h.id === "replied")!.reply?.earshotTextKey, undefined);
+  assert.equal(replyInfoOf({ earshot_skipped: "car_live" }).earshotSkipped, "car_live");
+  assert.equal("earshotSkipped" in replyInfoOf({}), false);
 });
 
 // ---- memo:cancel -----------------------------------------------------------------------------------------------
@@ -622,8 +624,8 @@ test("progress lines, narrations and car speech ride on the detail and time the 
   assert.deepEqual(d.narrations.map(n => [n.n, n.seq, n.engine]), [[1, 2, "voxcpm"]]);
   assert.equal(d.speech.length, 5);
   assert.deepEqual(d.speech.at(-1), { eventId: d.speech.at(-1)!.eventId, at: iso(75), deviceAt: undefined, utterance: "progress", decision: "deferred", reason: "recording", recording: true, mic: "recording" });
-  // timing is measured from the upload, with the device's own clock when it sent one
-  assert.deepEqual(d.timing, { ackSeconds: -0.6, heardEchoSeconds: 41.6, firstProgressSeconds: 62, firstNarrationSeconds: 72, progressPlayedSeconds: 73 });
+  // timing is measured from the upload, on the server's clock (never the device's own, which is not comparable)
+  assert.deepEqual(d.timing, { ackSeconds: -0.5, heardEchoSeconds: 41.6, firstProgressSeconds: 62, firstNarrationSeconds: 72, progressPlayedSeconds: 73 });
   const sum = toSummary(d);
   assert.equal(sum.latestProgress, "Reading the **open** tickets.");
   assert.equal(sum.progressCount, 2);

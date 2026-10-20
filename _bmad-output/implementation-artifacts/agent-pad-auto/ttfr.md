@@ -65,7 +65,8 @@ capture.
 
 | step | A2 parked | B driving | baseline (6 memos, Oct 19-20) |
 |---|---|---|---|
-| ack audible ("Got it, Holocene's on it.") | **+0.40 s** | **+0.35 s** | none |
+| first sound (the STOP tone, 244 ms) | **+0.40 s** | **+0.35 s** | none |
+| spoken ack audible ("Got it, Holocene's on it.") | **+1.15 s** | **+0.94 s** | none |
 | upload fact | +0.30 s | +0.22 s | < 2 s with pickup and dispatch |
 | transcribed | +7.49 s | +5.61 s | 5-6 s (21-43 s on CPU) |
 | heard echo audible ("Holocene heard: ...") | **+8.84 s** | **+7.00 s** | none |
@@ -88,7 +89,9 @@ capture.
     (`statusLine(..., maxProgress = 0)`).
 
 **Compared with the baseline:**
-- The first sound now comes 0.35-0.41 s after Stop & Send. Before, nothing played until the reply, about 2-4.5
+- The first sound now comes 0.35-0.41 s after Stop & Send: the STOP tone. The spoken ack ("Got it, Holocene's on
+  it.") follows at +0.94-1.15 s. (An earlier version of this table labelled the tone as the ack; recomputed from
+  runs/runA2.json, runs/runB.json and the speaker capture.) Before, nothing played until the reply, about 2-4.5
   minutes later for the baseline's turns.
 - A long reply now starts about 5-6 s after the agent finishes. Before, it waited for the whole 8-19 s render plus
   the car's lag.
@@ -228,6 +231,9 @@ and quiet time. Several existing arbiter tests now step through the drain.
     which upload nothing.
   - Before the next sim test, decide whether test replies should reach the car at all (a per-device or per-sender
     filter), and whether a car starting up should play a backlog that is hours old.
+  - Decided in the follow-up round: a pad now plays only the replies to the memos it sent (apps/agent-pad/src/ledger.ts),
+    and a reply older than 30 min is never played. The phone's Earshot copy is left out for a memo whose sending car
+    is connected (it speaks the reply itself).
 - **The sim is left running**: windowed, parked, app open, Holocene selected.
 
 ## Screenshots

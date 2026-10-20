@@ -19,6 +19,12 @@ import java.util.Locale
  * Eyes-free feedback for the steering-wheel control: short local TTS phrases and earcons, played as
  * USAGE_ASSISTANT with a transient may-duck focus request so the radio dips and comes back instead of being
  * stopped. Nothing here holds standing audio focus or a MediaSession.
+ *
+ * Focus is honoured, not just asked for: a refused request (a phone call, the car's own voice assistant listening)
+ * means the phrase is not said ([say]/[tone] report `false`), and losing the focus mid-phrase (a call starts) stops it
+ * and is reported through [onFocusLost], so the speech queue ends that utterance instead of talking over the call.
+ * `ownFocus = false`: the caller already holds focus for this sound (the arming prompt plays under the recording's
+ * exclusive focus, see SpeechHost.arm), so no second request competes with it.
  */
 class DriveFeedback(context: Context) {
     private val app = context.applicationContext
@@ -27,12 +33,17 @@ class DriveFeedback(context: Context) {
     private var tts: TextToSpeech? = null
     private var ready = false
     private var failed = false
-    private val queued = ArrayList<Pair<String, () -> Unit>>()
-    private val callbacks = HashMap<String, () -> Unit>()
+    private val queued = ArrayList<Triple<String, Boolean, (Boolean) -> Unit>>()
+    private val callbacks = HashMap<String, (Boolean) -> Unit>()
     private var focus: AudioFocusRequest? = null
+    /** Phrases spoken under the caller's own focus (ownFocus = false): their end gives nothing back. */
+    private val unfocused = HashSet<String>()
     private var outstanding = 0
     private var seq = 0
     private var track: AudioTrack? = null
+
+    /** The focus this app was granted for the sound now playing was taken away (LOSS or LOSS_TRANSIENT); main thread. */
+    var onFocusLost: ((change: Int) -> Unit)? = null
 
     private val attrs = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANT)
@@ -69,21 +80,29 @@ class DriveFeedback(context: Context) {
         }
     }
 
-    /** Speak [text] now (drops what is being said); [then] runs when it finished or could not be spoken. */
-    fun say(text: String, then: () -> Unit = {}) {
+    /**
+     * Speak [text] now (drops what is being said); [then] runs when it finished or could not be spoken: `false` when the
+     * audio focus was refused and nothing was said.
+     */
+    fun say(text: String, ownFocus: Boolean = true, then: (Boolean) -> Unit = {}) {
         Log.i(TAG, "say \"$text\"") // the only record of what the car was told; no TTS engine logs the words
         prepare()
-        if (failed) { then(); return }
-        if (!ready) { queued += text to then; guard(then); return }
-        speakNow(text, then)
+        if (failed) { then(true); return }
+        if (!ready) { queued += Triple(text, ownFocus, then); guard(then); return }
+        speakNow(text, ownFocus, then)
     }
 
-    private fun speakNow(text: String, then: () -> Unit) {
+    private fun speakNow(text: String, ownFocus: Boolean, then: (Boolean) -> Unit) {
         val t = tts
-        if (t == null) { then(); return }
+        if (t == null) { then(true); return }
+        if (ownFocus && !requestFocus()) {
+            Log.w(TAG, "focus refused; not saying \"$text\"")
+            then(false)
+            return
+        }
         val id = "wheel-${++seq}"
         callbacks[id] = then
-        requestFocus()
+        if (!ownFocus) unfocused += id
         if (t.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
             finished(id)
             return
@@ -103,8 +122,8 @@ class DriveFeedback(context: Context) {
                         Log.w(TAG, "still speaking after $elapsed ms; cut")
                         val cb = callbacks.remove(id)
                         t.stop()
-                        releaseFocus()
-                        cb?.invoke()
+                        if (!unfocused.remove(id)) releaseFocus()
+                        cb?.invoke(true)
                     }
                 }
             }
@@ -112,32 +131,37 @@ class DriveFeedback(context: Context) {
         main.postDelayed(guard, SpeechTail.SPEECH_CHECK_MS)
     }
 
-    private fun guard(then: () -> Unit) {
+    private fun guard(then: (Boolean) -> Unit) {
         // If TTS never becomes ready, run the continuation anyway.
         main.postDelayed({
-            val i = queued.indexOfFirst { it.second === then }
-            if (i >= 0) { queued.removeAt(i); then() }
+            val i = queued.indexOfFirst { it.third === then }
+            if (i >= 0) { queued.removeAt(i); then(true) }
         }, INIT_MAX_MS)
     }
 
     private fun drain() {
         val pending = ArrayList(queued)
         queued.clear()
-        for ((text, then) in pending) if (ready) speakNow(text, then) else then()
+        for ((text, own, then) in pending) if (ready) speakNow(text, own, then) else then(true)
     }
 
     private fun finished(id: String?) {
         val cb = callbacks.remove(id ?: return) ?: return
-        releaseFocus()
-        cb()
+        if (!unfocused.remove(id)) releaseFocus()
+        cb(true)
     }
 
-    /** Play an earcon; [then] runs after it ends (its last frame reported presented; see SpeechTail). */
-    fun tone(tone: DriveSpeech.Tone, then: () -> Unit = {}) {
+    /** Play an earcon; [then] runs after it ends (its last frame reported presented; see SpeechTail): `false` = focus refused. */
+    fun tone(tone: DriveSpeech.Tone, ownFocus: Boolean = true, then: (Boolean) -> Unit = {}) {
         Log.i(TAG, "tone ${tone.name}")
+        if (ownFocus && !requestFocus()) {
+            Log.w(TAG, "focus refused; tone ${tone.name} not played")
+            then(false)
+            return
+        }
         val pcm = Earcons.pcm(tone)
         var made: AudioTrack? = null
-        var focused = false
+        val focused = ownFocus
         try {
             track?.release()
             track = null
@@ -149,8 +173,6 @@ class DriveFeedback(context: Context) {
             )
             made = t
             t.write(pcm, 0, pcm.size)
-            requestFocus()
-            focused = true
             t.play()
             track = t
             // Over once its last frame was reported presented, not when play() + its length has passed: the output path
@@ -170,8 +192,8 @@ class DriveFeedback(context: Context) {
                     val line = "tone ${tone.name} out after $elapsed ms (${duration} ms long, ${end.reason}, presented=${presented ?: "n/a"}/${pcm.size})"
                     if (end.reason == "presented") Log.i(TAG, line) else Log.w(TAG, line)
                     if (track === t) { t.release(); track = null }
-                    releaseFocus()
-                    then()
+                    if (ownFocus) releaseFocus()
+                    then(true)
                 }
             }
             main.postDelayed(check, duration)
@@ -181,16 +203,35 @@ class DriveFeedback(context: Context) {
             made?.let { try { it.release() } catch (_: RuntimeException) {} }
             if (track === made) track = null
             if (focused) releaseFocus()
-            then()
+            then(true)
         }
     }
 
-    private fun requestFocus() {
-        outstanding++
-        if (focus != null) return
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
+    /** Ask for (or share the one already held) transient may-duck focus. False: refused, nothing may sound. */
+    private fun requestFocus(): Boolean {
+        if (focus != null) { outstanding++; return true }
+        lateinit var request: AudioFocusRequest
+        request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs)
+            .setOnAudioFocusChangeListener({ change -> onFocusChange(request, change) }, main)
+            .build()
+        val granted = audio.requestAudioFocus(request)
+        if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.w(TAG, "focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=$granted")
+            return false
+        }
         focus = request
-        audio.requestAudioFocus(request)
+        outstanding++
+        return true
+    }
+
+    // Only the request that is still held counts: a late callback for one already given back (the sound was halted and
+    // the next one asked again) says nothing about what plays now.
+    private fun onFocusChange(request: AudioFocusRequest, change: Int) {
+        if (focus !== request || outstanding <= 0) return
+        if (change != AudioManager.AUDIOFOCUS_LOSS && change != AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) return
+        Log.w(TAG, "focus lost change=$change while speaking: stopping")
+        stop()
+        onFocusLost?.invoke(change)
     }
 
     private fun releaseFocus() {
@@ -204,6 +245,7 @@ class DriveFeedback(context: Context) {
     fun stop() {
         queued.clear()
         callbacks.clear()
+        unfocused.clear()
         tts?.stop()
         track?.let { try { it.release() } catch (_: RuntimeException) {} }
         track = null

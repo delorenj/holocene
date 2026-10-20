@@ -27,7 +27,7 @@ export type AudioLevel = { maxDbfs: number; meanDbfs?: number; durationSeconds?:
 export type CaptureLevel = { peakDbfs?: number; rmsDbfs?: number; silent?: boolean };
 export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout; audio?: AudioLevel };
 /** From the audio.memo.replied fact: spoken late / from the escalated batch turn, and where the full text went next to the audio. */
-export type ReplyInfo = { late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string };
+export type ReplyInfo = { late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string; earshotSkipped?: string };
 /** From an audio.memo.failed fact with data.stage "cancelled". afterDispatch: the agent may still have run. */
 export type Cancellation = { eventId: string; at: string; afterDispatch: boolean; message?: string };
 

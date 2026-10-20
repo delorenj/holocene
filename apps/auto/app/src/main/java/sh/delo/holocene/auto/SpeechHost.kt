@@ -1,6 +1,9 @@
 package sh.delo.holocene.auto
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -34,8 +37,19 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     /** Every arbiter decision as compact JSON (the page posts it as a client event). */
     var onDecision: ((String) -> Unit)? = null
 
+    /** Held from arm() until the mic closes: the car pauses other media (the phone's Bluetooth audio, the radio). */
+    private val recordingFocus = RecordingFocus(context, main)
+
     init {
         player.onPhase = { id, phase, detail -> onClip(id, phase, detail) }
+        // A call (or the car's own assistant) took the focus a phrase was spoken under: that utterance ends now, through
+        // the queue, instead of talking over it.
+        feedback.onFocusLost = { change ->
+            val c = arbiter.current
+            if (c != null && c.kind != SpeechKind.ARMING && c.chunks == 0 && c.parts.none { it is SpeechPart.Clip }) {
+                arbiter.cancel(c.id, "focus_lost:$change")
+            }
+        }
     }
 
     private fun onClip(id: String, phase: String, detail: String) {
@@ -67,9 +81,15 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     private fun runParts(u: Utterance, token: Int, i: Int) {
         if (token != step || arbiter.current?.id != u.id) return
         if (i >= u.parts.size) { arbiter.finished(u.id); return }
+        // The arming prompt plays under the recording's own exclusive focus (taken in arm()); everything else asks for
+        // its own transient focus, and is not said at all when that is refused (a call, the car's assistant listening).
+        val own = u.kind != SpeechKind.ARMING || !recordingFocus.held
+        val next: (Boolean) -> Unit = { ok ->
+            main.post { if (ok) runParts(u, token, i + 1) else if (token == step && arbiter.current?.id == u.id) arbiter.finished(u.id, "error:focus_denied") }
+        }
         when (val p = u.parts[i]) {
-            is SpeechPart.Say -> feedback.say(p.text) { main.post { runParts(u, token, i + 1) } }
-            is SpeechPart.Tone -> feedback.tone(p.tone) { main.post { runParts(u, token, i + 1) } }
+            is SpeechPart.Say -> feedback.say(p.text, own, next)
+            is SpeechPart.Tone -> feedback.tone(p.tone, own, next)
             // A clip is always the last part: the player's phase callback ends the utterance.
             is SpeechPart.Clip -> player.play(u.id, p.bytes, p.ext)
         }
@@ -155,11 +175,17 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     fun arm(prompt: List<SpeechPart>?, ready: () -> Unit) {
         val id = "arm:${SystemClock.elapsedRealtime()}"
         val seq = ++armSeq
+        // Exclusive focus first, before anything of ours plays: the car pauses or mutes whatever else is playing (the
+        // phone's Bluetooth audio - Earshot speaks the agents' replies there -, the radio) for the length of the note.
+        // The queue below only knows the app's own sounds; this is what keeps everyone else's out of the memo.
+        val media = recordingFocus.acquire()
         // What ended or was halted is still on its way to the speakers (~0.3 s on the sim), and must not be in the note.
         // After the prompt: its START beep was reported presented, so only the part the platform does not report is
-        // left (micSettleMs). With no prompt: until nothing has sounded for DRAIN_MS, a clip just halted or just ended.
+        // left (micSettleMs). With no prompt: until nothing has sounded for DRAIN_MS, a clip just halted or just ended,
+        // and, when other media was playing, until the car has had a moment to pause it.
         val go: () -> Unit = {
-            val wait = if (prompt == null) arbiter.quietLeftMs(SpeechTail.DRAIN_MS) else SpeechTail.micSettleMs(emulator)
+            val wait = if (prompt == null) maxOf(arbiter.quietLeftMs(SpeechTail.DRAIN_MS), if (media) SpeechTail.MEDIA_PAUSE_MS else 0L)
+                else SpeechTail.micSettleMs(emulator)
             if (wait <= 0) ready()
             else main.postDelayed({ if (seq == armSeq && arbiter.mic == SpeechArbiter.Mic.ARMING) ready() }, wait)
         }
@@ -167,16 +193,27 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         // A prompt that never reports its end must not leave the queue frozen in "arming" forever.
         main.postDelayed({ if (seq == armSeq && arbiter.mic == SpeechArbiter.Mic.ARMING && (arbiter.current == null || arbiter.current?.id == id)) {
             Log.w(TAG, "arming never finished; releasing the queue")
-            arbiter.recordingEnded()
+            recordingEnded()
         } }, ARM_MAX_MS)
     }
 
-    fun recordingStarted() = arbiter.recordingStarted()
-    fun recordingEnded() = arbiter.recordingEnded()
+    fun recordingStarted() {
+        recordingFocus.acquire() // a no-op after arm(); the page's getUserMedia fallback opens a mic without arming
+        arbiter.recordingStarted()
+    }
+
+    fun recordingEnded() {
+        // The queue resumes first (an ack takes its own focus), then the recording's focus goes back: the paused media
+        // comes back after what the car says next, not under it.
+        arbiter.recordingEnded()
+        recordingFocus.release()
+    }
+
     fun dropFeedback() = arbiter.dropFeedback()
 
     fun reset() {
         arbiter.reset()
+        recordingFocus.release()
         main.removeCallbacksAndMessages(null)
     }
 
@@ -189,4 +226,43 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         const val TAG = "HoloceneSpeech"
         const val ARM_MAX_MS = 15_000L
     }
+}
+
+/**
+ * The audio focus a note holds while it is armed and recorded: AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE as assistant usage.
+ * Media that holds focus (the phone's Bluetooth stream, which is where Earshot plays a reply when the phone is paired;
+ * the radio) loses it transiently, so the head unit pauses or mutes it until the note is done (Earshot keeps a paused
+ * item and replays it later). Nothing plays under it but the app's own arming prompt.
+ */
+private class RecordingFocus(context: Context, private val main: Handler) {
+    private val audio = context.applicationContext.getSystemService(AudioManager::class.java)
+    private var request: AudioFocusRequest? = null
+
+    val held: Boolean get() = request != null
+
+    /** Take the focus (once per note). True when other media was playing as it was taken (the mic gives it a moment). */
+    fun acquire(): Boolean {
+        if (request != null) return false
+        val media = try { audio.isMusicActive } catch (e: RuntimeException) { false }
+        val r = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setOnAudioFocusChangeListener({ change -> Log.i(TAG, "recording focus change=$change") }, main)
+            .build()
+        val result = try { audio.requestAudioFocus(r) } catch (e: RuntimeException) { AudioManager.AUDIOFOCUS_REQUEST_FAILED }
+        Log.i(TAG, "recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=$result media_active=$media")
+        // Held (and given back later) even when refused: abandoning a request that was never granted is harmless, and a
+        // refusal (a call) must not stop the driver from recording.
+        request = r
+        return media && result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    fun release() {
+        val r = request ?: return
+        request = null
+        try { audio.abandonAudioFocusRequest(r) } catch (_: RuntimeException) {}
+        Log.i(TAG, "recording focus released")
+    }
+
+    private companion object { const val TAG = "HoloceneSpeech" }
 }

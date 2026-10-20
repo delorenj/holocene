@@ -75,3 +75,18 @@ export function planUnit(u: Unit, chunkHost: boolean, now: number): Plan {
   if (chunkHost && u.n > 1 && u.chunks[1]) return 'chunks'
   return now - u.seenAt > UNIT_WAIT_MS ? 'give_up' : 'wait'
 }
+
+/**
+ * Which queued unit plays now. The head, when it can; when the head is still waiting for its audio (no full file yet on
+ * a host that cannot play chunks, or no chunk 1), the first later unit that can play now goes first, so a short reply
+ * that is ready does not wait 10-15 s behind a long one's full file. A unit that waited too long is given up wherever it
+ * sits. Null: nothing can play yet.
+ */
+export function nextUnit(queue: string[], get: (key: string) => Unit | undefined, chunkHost: boolean, now: number): { key: string; plan: Plan } | null {
+  for (const key of queue) {
+    const u = get(key)
+    const plan: Plan = u ? planUnit(u, chunkHost, now) : 'full'
+    if (plan !== 'wait') return { key, plan }
+  }
+  return null
+}

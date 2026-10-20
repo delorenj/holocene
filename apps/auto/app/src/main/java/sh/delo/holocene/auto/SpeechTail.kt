@@ -28,6 +28,13 @@ object SpeechTail {
      */
     const val MIC_SETTLE_MS = 150L
 
+    /**
+     * No prompt, and other media was playing when the recording took its exclusive focus: the head unit needs a moment
+     * to pause it (a Bluetooth stream goes through AVRCP to the phone). A judgment, not a measurement; with a prompt the
+     * prompt itself (~1.5 s) is that moment.
+     */
+    const val MEDIA_PAUSE_MS = 400L
+
     /** How long the mic waits after the arming prompt (ending in the START beep) reported its end. */
     fun micSettleMs(emulator: Boolean): Long = if (emulator) MIC_SETTLE_EMULATOR_MS else MIC_SETTLE_MS
 

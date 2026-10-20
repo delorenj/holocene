@@ -37,10 +37,12 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
     #!/usr/bin/env python3
     import json, shutil, sys, os, datetime, hashlib
     B = {str(BUCKET_DIR)!r}
-    argv, a, attr, i = sys.argv[1:], [], None, 0
+    argv, a, attr, tags, i = sys.argv[1:], [], None, None, 0
     while i < len(argv):
         if argv[i] == "--attr":    # mc cp --attr 'Content-Type="text/plain; charset=utf-8"': the value is not a path
             attr = argv[i + 1]; i += 2
+        elif argv[i] == "--tags":  # mc cp --tags kind=chunk: logged with the copy, not a path
+            tags = argv[i + 1]; i += 2
         elif argv[i].startswith("--"):
             i += 1
         else:
@@ -66,7 +68,7 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
     elif a[0] == "cp":
         src, dst = local(a[1]), local(a[2])
         with open({str(MC_LOG)!r}, "a") as f:
-            f.write(json.dumps({{"src": a[1], "dst": a[2], "attr": attr}}) + "\\n")
+            f.write(json.dumps({{"src": a[1], "dst": a[2], "attr": attr, "tags": tags}}) + "\\n")
         if a[2].endswith(".txt") and os.path.exists({str(MC_FAIL_TXT)!r}):
             print("mc: <ERROR> refusing the text upload", file=sys.stderr); sys.exit(1)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -197,6 +199,7 @@ os.environ.update({
     "MEMO_STATE_DIR": str(ROOT / "state"), "MEMO_GATEWAY_DB": str(GATEWAY_DB),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
+    "MEMO_PAD_PRESENCE_URL": "http://127.0.0.1:9/upload/presence",
     "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_FFMPEG": str(FAKE_FFMPEG), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
 })
@@ -346,6 +349,33 @@ class Pipeline(unittest.TestCase):
         self.assertTrue(m["earshot_key"].startswith("phone/") and m["earshot_key"].endswith(f"Z-holocene-pm-{mid}.ogg"))
         self.assertEqual((BUCKET_DIR / m["earshot_key"]).read_bytes(), (BUCKET_DIR / m["reply_key"]).read_bytes())
         self.assertEqual(replied["earshot_key"], m["earshot_key"])
+
+    def test_02b_a_live_cars_memo_is_not_mirrored_to_the_phone(self):
+        # The car that sent the memo speaks the reply itself; a paired phone would play it again through the same
+        # speakers (or into the next recording), so the Earshot copy is left out and the replied fact says why.
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/20261015T201700Z.ogg"
+        mid = mc_.memo_id_for(key)
+        put(key)
+        m = None
+
+        def at_await():
+            nonlocal m
+            m = self.state.memos.get(key)
+            return m and m["stage"] == "await_agent"
+        self.tick_until(at_await)
+        asked = []
+        with mock.patch.object(iw, "car_speaks_reply", side_effect=lambda memo, k: asked.append((memo, k)) or "car_live"):
+            journal(m["command_id"], "holocene-pm")
+            hermes_session("holocene-pm", mid, "Done. The build is green.")
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(asked, [(mid, key)])
+        self.assertNotIn("earshot_key", m)
+        self.assertEqual(m["earshot_skipped"], "car_live")
+        self.assertFalse(any(mid in p.name for p in (BUCKET_DIR / "phone").rglob("*")) if (BUCKET_DIR / "phone").exists() else False)
+        replied = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.replied" and r["data"]["memo_id"] == mid][-1]
+        self.assertEqual((replied["earshot_key"], replied["earshot_skipped"]), (None, "car_live"))
+        self.assertTrue((BUCKET_DIR / m["reply_key"]).exists(), "the car's own copy is still the reply of record")
 
     def test_03_agent_timeout_emits_failed_not_retryable(self):
         key = "inbox/holocene-pm/2026/10/15/timeout.ogg"
@@ -2361,13 +2391,14 @@ class TraceEscalationAndCancel(unittest.TestCase):
         self.assertTrue(lines[0].strip().startswith("-0.4s") and "since stop 410 ms" in lines[0], lines[0])
         self.assertIn("while recording", lines[2])
         timing = mt.timing_line(ctx, hops)
-        for part in ("ack -0.4s", "heard-echo +2.5s", "first progress +11.0s", "first narration +390.0s", "reply played +729.0s"):
+        # the car's decisions on the server's clock (when the proxy got them), never the device's own (2.5 s here)
+        for part in ("ack -0.4s", "heard-echo +2.9s", "first progress +11.0s", "first narration +390.0s", "reply played +729.0s"):
             self.assertIn(part, timing)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             mt.render(hops, ctx)
         self.assertIn("car speech (4 arbiter decisions", out.getvalue())
-        self.assertIn("timing   since upload:", out.getvalue())
+        self.assertIn("timing   since upload (server clock):", out.getvalue())
 
     def test_a_memo_between_the_timeout_and_the_batch_dispatch_is_in_progress_not_stopped(self):
         import memo_trace as mt
@@ -2519,7 +2550,7 @@ class CarStatus(MemoHarness, unittest.TestCase):
         self.assertEqual(VOX_TEXTS[-1], "Holocene PM: Reading the open tickets now: link")
         pkey = f"progress/2026/10/19/{m['memo_id']}-1.ogg"
         self.assertTrue((BUCKET_DIR / pkey).exists())
-        self.assertIn({"src": unittest.mock.ANY, "dst": f"delo/holocene-auto/{pkey}", "attr": "Content-Type=audio/ogg"},
+        self.assertIn({"src": unittest.mock.ANY, "dst": f"delo/holocene-auto/{pkey}", "attr": "Content-Type=audio/ogg", "tags": None},
                       mc_cps())
         (narr,) = self.of_type("narrated", key)
         self.assertEqual((narr["seq"], narr["narration"], narr["progress_s3_key"], narr["command_id"]), (2, 1, pkey, cid))
@@ -2656,6 +2687,40 @@ class EarshotMirror(unittest.TestCase):
         with mock.patch.object(iw, "EARSHOT_CHANNEL", ""):
             self.assertIsNone(iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k"))
 
+    def test_the_phone_copy_is_left_out_only_for_a_car_that_speaks_it(self):
+        from unittest import mock
+        notified = {"type": "bloodbank.audio.memo.notified", "data": {"utterance": "reply", "decision": "start"}}
+        with mock.patch.object(iw.mc_, "candystore_events", return_value=[notified]):
+            self.assertEqual(iw.car_speaks_reply("m", "k"), "car_spoke")
+
+        class Answer:
+            def __init__(self, body): self.body = body
+            def read(self): return json.dumps(self.body).encode()
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        urls = []
+        quiet = [{"type": "bloodbank.audio.memo.notified", "data": {"utterance": "echo", "decision": "start"}}]
+        with mock.patch.object(iw.mc_, "candystore_events", return_value=quiet), \
+                mock.patch.object(iw.urllib.request, "urlopen", side_effect=lambda req, timeout: urls.append(req.full_url) or Answer({"car_live": True, "device": "d"})):
+            self.assertEqual(iw.car_speaks_reply("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg"), "car_live")
+        self.assertIn("memo=f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", urls[0])
+        self.assertIn("key=inbox%2Fa%2F2026%2F10%2F20%2Fx.ogg", urls[0])
+        with mock.patch.object(iw.mc_, "candystore_events", return_value=[]), \
+                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": "browser"})):
+            self.assertIsNone(iw.car_speaks_reply("m", "k"), "a browser's memo still goes to the phone")
+        # fail-open: nothing known, nothing reachable -> mirror as before
+        with mock.patch.object(iw.mc_, "candystore_events", side_effect=OSError("down")), \
+                mock.patch.object(iw.urllib.request, "urlopen", side_effect=OSError("refused")):
+            self.assertIsNone(iw.car_speaks_reply("m", "k"))
+        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False), mock.patch.object(iw.mc_, "candystore_events", return_value=[notified]):
+            self.assertIsNone(iw.car_speaks_reply("m", "k"))
+
+    def test_a_skipped_phone_copy_is_an_ok_hop_that_says_why(self):
+        import memo_trace as mt
+        [h] = mt.earshot_hops(None, None, "car_live")
+        self.assertEqual((h.name, h.status), ("phone_object", mt.OK))
+        self.assertIn("spoke the reply itself", h.detail)
+
     def test_phone_beacons_become_hops_with_skew_corrected_times(self):
         import memo_trace as mt
         from unittest import mock
@@ -2778,6 +2843,9 @@ class ChunkedSpeech(MemoHarness, unittest.TestCase):
         calls = [c for c in mc_cps()[n0:] if "/holocene-auto/replies/" in c["dst"]]
         self.assertEqual([c["dst"].split("/holocene-auto/")[1] for c in calls], [v["chunk_s3_key"] for v in voiced] + [replied["reply_s3_key"]])
         self.assertTrue(all(c["attr"] == "Content-Type=audio/ogg" for c in calls[:-1]))
+        # chunks are tagged for the 1-day lifecycle rule; the full file (the reply of record) is not
+        self.assertTrue(all(c["tags"] == "kind=chunk" for c in calls[:-1]))
+        self.assertIsNone(calls[-1].get("tags"))
         full = (BUCKET_DIR / replied["reply_s3_key"]).read_bytes()
         self.assertEqual(full, b"".join((BUCKET_DIR / v["chunk_s3_key"]).read_bytes() for v in voiced))
         # the fact order: every voiced before replied; timing on both

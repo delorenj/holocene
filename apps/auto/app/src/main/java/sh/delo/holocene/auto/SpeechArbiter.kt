@@ -320,7 +320,6 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
      * and [ready] runs when it ended, so the prompt is never recorded. With no prompt [ready] runs at once.
      */
     fun arm(prompt: Utterance?, ready: () -> Unit) {
-        val cut = current != null
         preempt("recording")
         mic = Mic.ARMING
         onArmed = null
@@ -329,11 +328,14 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         if (prompt == null) { ready(); return }
         val p = prompt.copy(kind = SpeechKind.ARMING)
         onArmed = ready
-        if (cut) {
-            // What was cut is still coming out of the speakers: the prompt starts once that has drained.
+        // What was cut is still coming out of the speakers: the prompt starts once that has drained. Not only a cut made
+        // here: the page stops its reply (stopReply -> cancel) a few ms BEFORE it asks to record, so by now nothing is
+        // current but the reply's tail is still playing (the sim: 16-55 ms between the halt and the arm).
+        val left = drainLeft()
+        if (left > 0) {
             pendingPrompt = p
             log("deferred", p, "drain")
-            out.wakeAfter(HALT_DRAIN_MS)
+            out.wakeAfter(left)
             return
         }
         current = p

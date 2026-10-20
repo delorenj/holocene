@@ -61,6 +61,14 @@ Push channel for the car: GET /upload/events is a Server-Sent Events stream of t
 (received, transcribed, dispatched, narrated, voiced, replied, failed, and agent.invocation.progressed of a memo turn),
 read from one core NATS subscription and reduced to ids and keys. See PushHub below and the inbox-watcher README,
 "The reply, sentence by sentence, pushed to the car".
+
+Who sent a memo, and is that car live: the pad names its device (X-Holocene-Device, a random id it keeps) and host
+(X-Holocene-Host: car | browser) on the PUT and on its push stream (/upload/events?device=&host=). The proxy keeps them
+with the memo (in memory, and as S3 metadata on the inbox object, so a restart loses nothing) and in the
+audio.memo.uploaded fact (device_id, device_host). GET /upload/presence?memo=<memo_id>&key=<inbox key> answers whether
+the memo came from a car whose push stream is open right now: the inbox watcher then leaves the reply's Earshot phone
+copy out, because the car speaks it itself and a paired phone plays through the same speakers (the same reply twice,
+or a reply into the next recording). See Presence below.
 """
 import re
 
@@ -202,7 +210,122 @@ def parse_capture(raw):
     return out
 
 
-def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None) -> dict:
+# ---------------------------------------------------------------- who sent it (device), and is that car live
+
+DEVICE_HEADER = "X-Holocene-Device"
+HOST_HEADER = "X-Holocene-Host"
+DEVICE_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+HOST_KINDS = ("car", "browser")
+
+
+def clean_device(device, host):
+    """(device id or None, host kind or None) from what a pad sent; anything malformed is dropped, never guessed."""
+    d = device if isinstance(device, str) and DEVICE_RE.match(device) else None
+    h = host if isinstance(host, str) and host in HOST_KINDS else None
+    return d, h
+
+
+# A pad's stream ends at PUSH_MAX_AGE_S and the pad reconnects about 3 s later (retry: 3000): a device whose last stream
+# closed this recently is still live. Kept short because an edge (Cloudflare) can hold a dead client's stream open until
+# the proxy itself recycles it, so "live" lags a car that was switched off by at most PUSH_MAX_AGE_S + this.
+PRESENCE_GRACE_S = float(os.environ.get("PRESENCE_GRACE_S", "30"))
+PRESENCE_MEMOS = 2000
+
+
+class Presence:
+    """Which devices hold a push stream right now (or did a moment ago), and which device sent which memo."""
+
+    def __init__(self, grace_s: float = PRESENCE_GRACE_S, memos_max: int = PRESENCE_MEMOS):
+        self._lock = threading.Lock()
+        self._devices: dict = {}   # device -> {"host", "open", "since", "closed_at"}
+        self._memos: dict = {}     # memo_id -> (device, host)  (insertion ordered, bounded)
+        self.grace_s = grace_s
+        self._max = memos_max
+
+    def opened(self, device, host, now: float | None = None) -> None:
+        if not device:
+            return
+        now = time.time() if now is None else now
+        with self._lock:
+            d = self._devices.setdefault(device, {"host": host, "open": 0, "since": now, "closed_at": None})
+            if d["open"] == 0 and (d["closed_at"] is None or now - d["closed_at"] > self.grace_s):
+                d["since"] = now
+            d["open"] += 1
+            d["host"] = host or d["host"]
+
+    def closed(self, device, now: float | None = None) -> None:
+        if not device:
+            return
+        now = time.time() if now is None else now
+        with self._lock:
+            d = self._devices.get(device)
+            if d:
+                d["open"] = max(0, d["open"] - 1)
+                d["closed_at"] = now
+
+    def sent(self, memo_id: str, device, host) -> None:
+        if not memo_id or not (device or host):
+            return
+        with self._lock:
+            self._memos.pop(memo_id, None)
+            self._memos[memo_id] = (device, host)
+            while len(self._memos) > self._max:
+                self._memos.pop(next(iter(self._memos)))
+
+    def sender(self, memo_id: str):
+        with self._lock:
+            return self._memos.get(memo_id)
+
+    def live(self, device, now: float | None = None) -> dict:
+        """{live, host, streams, since} for a device (live: a stream is open, or closed within grace_s)."""
+        now = time.time() if now is None else now
+        with self._lock:
+            d = self._devices.get(device) if device else None
+            if not d:
+                return {"live": False, "host": None, "streams": 0, "since": None}
+            ok = d["open"] > 0 or (d["closed_at"] is not None and now - d["closed_at"] <= self.grace_s)
+            return {"live": ok, "host": d["host"], "streams": d["open"],
+                    "since": datetime.fromtimestamp(d["since"], timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z") if ok else None}
+
+    def devices(self, now: float | None = None) -> list:
+        with self._lock:
+            names = list(self._devices)
+        return [{"device": n, **self.live(n, now)} for n in names]
+
+
+PRESENCE = Presence()
+
+
+def stored_sender(key: str):
+    """(device, host) from the inbox object's S3 metadata (the PUT stores them), for a memo uploaded before a restart."""
+    try:
+        r = subprocess.run([MC_BIN, "stat", "--json", f"{S3_ALIAS}/{S3_BUCKET}/{key}"], capture_output=True, text=True, timeout=10)
+        meta = (json.loads(r.stdout.strip().splitlines()[-1]).get("metadata") or {}) if r.returncode == 0 else {}
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+    low = {str(k).lower(): v for k, v in meta.items()}
+    d, h = clean_device(low.get("x-amz-meta-holocene-device"), low.get("x-amz-meta-holocene-host"))
+    return (d, h) if d or h else None
+
+
+def presence_answer(memo_id: str, key: str | None, presence: "Presence" = None, lookup=stored_sender) -> dict:
+    """GET /upload/presence: did this memo come from a car whose push stream is live? Unknown sender: car_live false."""
+    presence = presence or PRESENCE
+    who = presence.sender(memo_id)
+    source = "upload" if who else None
+    if not who and key:
+        who = lookup(key)
+        if who:
+            source = "s3_metadata"
+            presence.sent(memo_id, *who)
+    device, host = who or (None, None)
+    state = presence.live(device) if device else {"live": False, "host": None, "streams": 0, "since": None}
+    return {"memo_id": memo_id, "device": device, "host": host, "source": source, **state,
+            "car_live": host == "car" and state["live"]}
+
+
+def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None,
+                            device=None, host=None) -> dict:
     memo_id = memo_id_for(key)
     ce_type = "bloodbank.audio.memo.uploaded"
     env = {
@@ -231,6 +354,10 @@ def build_uploaded_envelope(key: str, size: int, content_type: str, user_agent: 
     }
     if capture:
         env["data"]["capture"] = capture
+    if device:
+        env["data"]["device_id"] = device
+    if host:
+        env["data"]["device_host"] = host
     return env
 
 
@@ -546,12 +673,13 @@ def nats_publish(subject: str, body: bytes, timeout: float = 3.0) -> None:
                 raise IOError(line.decode(errors="replace").strip())
 
 
-def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None) -> None:
+def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None,
+                        device=None, host=None) -> None:
     if not EMIT_FACTS or not key.startswith("inbox/") or agent_from_key(key) is None:
         return
 
     def work():
-        env = build_uploaded_envelope(key, size, content_type, user_agent, upload_ms, capture)
+        env = build_uploaded_envelope(key, size, content_type, user_agent, upload_ms, capture, device, host)
         try:
             nats_publish(env["subject"], json.dumps(env, separators=(",", ":")).encode())
             log("fact_published", key=key, memo_id=env["correlationid"], fact="audio.memo.uploaded", fact_id=env["id"])
@@ -576,7 +704,9 @@ PUSH_SUBJECTS = ("bloodbank.evt.audio.memo.>", "bloodbank.evt.agent.invocation.p
 PUSH_FACTS = ("received", "transcribed", "dispatched", "narrated", "voiced", "replied", "failed")
 PUSH_HEARTBEAT_S = float(os.environ.get("PUSH_HEARTBEAT_S", "15"))
 PUSH_MAX_CLIENTS = int(os.environ.get("PUSH_MAX_CLIENTS", "32"))
-PUSH_MAX_AGE_S = float(os.environ.get("PUSH_MAX_AGE_S", "900"))   # a stream is recycled (the client reconnects at once)
+# A stream is recycled (the client reconnects ~3 s later and Last-Event-ID replays the gap). Short, so a stream an edge
+# keeps open for a client that is gone (Cloudflare held one for 10 min) stops counting as a live car soon (Presence).
+PUSH_MAX_AGE_S = float(os.environ.get("PUSH_MAX_AGE_S", "180"))
 PUSH_RING = 200
 PUSH_NATS_IDLE_S = 150.0   # the server PINGs every 2 min: silence longer than this is a dead connection
 MEMO_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -799,6 +929,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ua = self.headers.get("User-Agent", "")
         raw_capture = self.headers.get(CAPTURE_HEADER)
         capture = parse_capture(raw_capture[:512]) if raw_capture else None
+        device, host = clean_device(self.headers.get(DEVICE_HEADER), self.headers.get(HOST_HEADER))
         if len(body) != content_length:
             # The client went away mid-body (a cell drop in the car). Storing the prefix would hand the
             # watcher a cut-off recording and dispatch half a sentence to an agent as a real prompt.
@@ -833,8 +964,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         try:
             t1 = time.time()
+            # Who sent it rides along as object metadata, so it outlives this process (Presence, stored_sender).
+            attrs = ";".join(f"X-Amz-Meta-Holocene-{n}={v}" for n, v in (("Device", device), ("Host", host)) if v)
             result = subprocess.run(
-                [MC_BIN, "cp", "--quiet", tmp_path, f"{S3_ALIAS}/{S3_BUCKET}/{key}"],
+                [MC_BIN, "cp", "--quiet", *(["--attr", attrs] if attrs and key.startswith("inbox/") else []),
+                 tmp_path, f"{S3_ALIAS}/{S3_BUCKET}/{key}"],
                 capture_output=True, text=True, timeout=30,
             )
             s3_ms = (time.time() - t1) * 1000
@@ -846,11 +980,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             log("upload", key=key, memo_id=memo_id_for(key), agent=agent_from_key(key), bytes=len(body), status=200,
                 content_type=content_type, s3_ms=int(s3_ms), ms=int((time.time() - t0) * 1000),
                 peak_dbfs=capture and capture["peak_dbfs"], rms_dbfs=capture and capture["rms_dbfs"],
-                sent_anyway=capture and capture.get("sent_anyway"), remote=self.client_address[0], ua=ua)
+                sent_anyway=capture and capture.get("sent_anyway"), device=device, host=host,
+                remote=self.client_address[0], ua=ua)
+            if key.startswith("inbox/"):
+                PRESENCE.sent(memo_id_for(key), device, host)
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
-            emit_uploaded_async(key, len(body), content_type, ua, s3_ms, capture)
+            emit_uploaded_async(key, len(body), content_type, ua, s3_ms, capture, device, host)
         finally:
             os.unlink(tmp_path)
 
@@ -994,6 +1131,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/upload/events" or self.path.startswith("/upload/events?"):
             return self._events()
+        if self.path == "/upload/presence" or self.path.startswith("/upload/presence?"):
+            return self._presence()
         if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -1003,16 +1142,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_error(404, "not found")
 
+    def _presence(self):
+        """GET /upload/presence?memo=<memo_id>[&key=<inbox key>]: was this memo sent from a car whose push stream is live
+        (the watcher skips the Earshot phone copy then). Without memo: every device the proxy has seen, for debugging."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        memo = (q.get("memo") or [""])[0]
+        key = (q.get("key") or [""])[0]
+        key = key if KEY_RE.match(key) else None
+        if memo and not MEMO_UUID_RE.match(memo):
+            return self.send_error(400, "bad memo id")
+        body = presence_answer(memo, key) if memo else {"devices": PRESENCE.devices()}
+        raw = json.dumps(body, separators=(",", ":")).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+        if memo:
+            log("presence", memo_id=memo, key=key, device=body.get("device"), host=body.get("host"), live=body.get("live"),
+                car_live=body.get("car_live"), source=body.get("source"), remote=self.client_address[0])
+
     def _events(self):
         """GET /upload/events: the car's push channel (Server-Sent Events). See PushHub."""
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         last = self.headers.get("Last-Event-ID") or (q.get("last") or [None])[0]
         ua = (self.headers.get("User-Agent") or "")[:120]
+        device, host = clean_device((q.get("device") or [None])[0], (q.get("host") or [None])[0])
         sub = PUSH.subscribe(last)
         if sub is None:
             log("push", status=503, reason="too many streams", remote=self.client_address[0], ua=ua)
             return self.send_error(503, "too many streams")
         client, backlog = sub
+        PRESENCE.opened(device, host)
         t0 = time.time()
         sent = 0
         why = "closed"
@@ -1030,7 +1192,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(sse_frame("memo", ev, ev_id))
                 sent += 1
             log("push", status=200, phase="open", replayed=len(backlog), streams=PUSH.clients(), nats=PUSH.nats_up,
-                remote=self.client_address[0], ua=ua)
+                device=device, host=host, remote=self.client_address[0], ua=ua)
             while time.time() - t0 < PUSH_MAX_AGE_S:
                 try:
                     ev_id, ev = client.q.get(timeout=PUSH_HEARTBEAT_S)
@@ -1046,8 +1208,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             why = "client_gone"
         finally:
             PUSH.unsubscribe(client)
+            PRESENCE.closed(device)
             log("push", status=200, phase="close", reason=why, sent=sent, s=int(time.time() - t0),
-                remote=self.client_address[0])
+                device=device, remote=self.client_address[0])
 
     def log_message(self, format, *args):
         pass  # structured logging above replaces the default access log

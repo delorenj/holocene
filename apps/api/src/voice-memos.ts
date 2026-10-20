@@ -243,6 +243,8 @@ export type ReplyInfo = {
   earshotKey?: string;
   /** Earshot object holding the FULL reply text next to the audio (the spoken digest is shorter). */
   earshotTextKey?: string;
+  /** Why the phone copy was left out: car_spoke | car_live (the car that sent the memo speaks it itself). */
+  earshotSkipped?: string;
 };
 
 /** From an audio.memo.failed fact with data.stage "cancelled". */
@@ -476,7 +478,9 @@ export function isCancelFact(d: Record<string, unknown>): boolean {
 }
 
 export function replyInfoOf(d: Record<string, unknown>): ReplyInfo {
-  return { late: d.late === true, escalated: d.escalated === true, earshotKey: str(d.earshot_key), earshotTextKey: str(d.earshot_text_key) };
+  const skipped = str(d.earshot_skipped);
+  return { late: d.late === true, escalated: d.escalated === true, earshotKey: str(d.earshot_key), earshotTextKey: str(d.earshot_text_key),
+    ...(skipped ? { earshotSkipped: skipped } : {}) };
 }
 
 /** "command c2 · batch lane · fell back: interactive_consumer_not_pulling", or for an escalation: "... · escalated from command c1 (interactive turn timed out)". */
@@ -787,7 +791,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     }
   }
   if (status === "complete" && playedHop.status === "pending") {
-    playedHop.detail = "no playback report from the pad yet (it polls every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)";
+    playedHop.detail = "no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing)";
   }
   // Hops behind the frontier that never happened (not the optional first one) are holes in the record.
   for (const [i, hop] of hops.entries()) {
@@ -916,8 +920,10 @@ export function memoTiming(startedAt: string, progress: ProgressLine[], narratio
     return t0 !== undefined && t !== undefined ? Math.round((t - t0) / 100) / 10 : undefined;
   };
   const firstOf = (isos: (string | undefined)[]) => isos.filter((x): x is string => ms(x) !== undefined).sort((a, b) => ms(a)! - ms(b)!)[0];
+  // On the server's clock (when the proxy got the decision), like every other figure here: the device's own clock is
+  // not comparable with server facts (the sim's ran 1.3 s behind; the car's skew is unknown).
   const started = (what: keyof typeof SPOKEN) =>
-    firstOf(speech.filter((d) => SPOKEN[what].includes(d.utterance) && STARTED.includes(d.decision)).map((d) => d.deviceAt ?? d.at));
+    firstOf(speech.filter((d) => SPOKEN[what].includes(d.utterance) && STARTED.includes(d.decision)).map((d) => d.at ?? d.deviceAt));
   const between = (from: string | undefined, to: string | undefined) => {
     const a = ms(from), b = ms(to);
     return a !== undefined && b !== undefined ? Math.round((b - a) / 100) / 10 : undefined;

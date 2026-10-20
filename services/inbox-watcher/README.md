@@ -128,17 +128,33 @@ chunking only plays `.ogg/.webm/.m4a/.mp3`, so it never plays a chunk as a separ
 its full key and names its count, so a pad that only lists still knows when it has them all. A cancel between chunks
 takes every uploaded chunk back; a speak-stage retry re-uploads the same keys and announces each chunk once.
 `MEMO_REPLY_CHUNKS=0` turns it off. The status object carries `reply_chunks {n, voiced}` while it happens.
+Chunks are uploaded with the object tag `kind=chunk`, and a bucket lifecycle rule expires them after a day (the full
+file holds the same audio): `mc ilm rule add --tags "kind=chunk" --expire-days 1 delo/holocene-auto`.
 
 **Push channel.** The upload proxy keeps one core NATS subscription to `bloodbank.evt.audio.memo.>` and
 `bloodbank.evt.agent.invocation.progressed` and serves `GET /upload/events` on the pad's own host (Server-Sent Events,
 through Cloudflare and Traefik): one `memo` event per received / transcribed / dispatched / narrated / voiced / replied /
 failed fact and per memo-turn progress line, reduced to the ids and keys the car needs, a `beat` every 15 s (with
 whether NATS is up), a `hello` on connect, ids `<boot>-<n>` with a 200-event replay ring for `Last-Event-ID`, and each
-stream recycled after 15 min. The pad subscribes for as long as it runs: a `voiced` or `replied` event queues the
+stream recycled after 3 min (`PUSH_MAX_AGE_S`; the pad reconnects about 3 s later and the ring replays the gap). The pad subscribes for as long as it runs: a `voiced` or `replied` event queues the
 chunk or reply at once (no listing), `narrated` fetches that progress clip, anything else re-reads the memo's status
 object. Polling stays the fallback; with the stream live the fast reply poll relaxes from 2 s to 6 s, and a stream
 that is silent for 45 s is dropped and reopened. `docker logs agent-pad-upload | grep '"event":"push'` shows streams
 opening and closing and NATS going up or down.
+
+**Only the sending pad plays a reply, and a live car's reply is not mirrored to the phone.** A pad keeps the ids of
+the memos it uploaded (IndexedDB, it survives the car's cold start) and plays only their replies (`?replies=all` in a
+browser opts back into every reply). It names its device (a random id) and host (`car` or `browser`) on the PUT
+(`X-Holocene-Device`, `X-Holocene-Host`, kept as S3 metadata on the inbox object and as `device_id` / `device_host` on
+`audio.memo.uploaded`) and on its push stream (`/upload/events?device=&host=`). Before the watcher drops a reply into
+Earshot it asks: did the car's speech queue already start this reply (`audio.memo.notified` reply/start), or did the
+memo come from a car whose push stream is open now (`GET https://agent-pad.delo.sh/upload/presence?memo=&key=`,
+`MEMO_PAD_PRESENCE_URL`)? Then the phone copy is left out (logged `earshot_skipped`, `earshot_skipped: car_spoke |
+car_live` on `replied`, an OK `phone_object` hop in memo:trace): a phone paired with that car plays through the same
+speakers, 10+ s into the car's own playback or into the driver's next recording. Anything unknown or unreachable
+mirrors as before; `MEMO_EARSHOT_SKIP_CAR=0` mirrors every reply. While a note is armed or recorded the car app also
+holds exclusive transient audio focus, so the head unit pauses other media (the phone's Bluetooth stream, the radio)
+for the length of the note.
 
 **On the car.** With a host that has the chunk player (`HoloceneNative.speechVersion() >= 2`, `playReplyChunk`) the pad
 hands the chunks over in order as they download; the speech arbiter plays them back to back as ONE reply (audio focus

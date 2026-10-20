@@ -847,3 +847,125 @@ class PlayedChunks(unittest.TestCase):
         env = up.build_playback_envelope({"reply_key": key, "phase": "started", "chunks": 3}, "ua")
         self.assertEqual(env["data"]["chunks"], 3)
         self.assertNotIn("chunks", up.build_playback_envelope({"reply_key": key, "phase": "started", "chunks": True}, "ua")["data"])
+
+
+class DevicePresence(unittest.TestCase):
+    """Which car sent a memo, and is its push stream live: the watcher leaves the Earshot phone copy out then."""
+    DEV = "6f1c2a9e-1b2c-4d5e-8f90-0a1b2c3d4e5f"
+
+    def test_a_device_and_host_are_taken_only_when_well_formed(self):
+        self.assertEqual(up.clean_device(self.DEV, "car"), (self.DEV, "car"))
+        self.assertEqual(up.clean_device("a b", "car"), (None, "car"))
+        self.assertEqual(up.clean_device(self.DEV, "phone"), (self.DEV, None))
+        self.assertEqual(up.clean_device(None, None), (None, None))
+
+    def test_a_car_is_live_while_its_stream_is_open_and_a_moment_after(self):
+        p = up.Presence(grace_s=30)
+        p.sent(PUSH_MEMO, self.DEV, "car")
+        self.assertFalse(p.live(self.DEV, now=1000)["live"], "no stream yet")
+        p.opened(self.DEV, "car", now=1000)
+        p.opened(self.DEV, "car", now=1100)  # a reconnect overlapping the old stream
+        p.closed(self.DEV, now=1180)
+        self.assertTrue(p.live(self.DEV, now=1190)["live"], "one stream still open")
+        p.closed(self.DEV, now=1200)
+        self.assertTrue(p.live(self.DEV, now=1225)["live"], "recycled at max age, reconnecting")
+        self.assertFalse(p.live(self.DEV, now=1231)["live"], "gone (switched off)")
+        ans = up.presence_answer(PUSH_MEMO, None, p, lookup=lambda k: None)
+        self.assertEqual((ans["device"], ans["host"], ans["source"]), (self.DEV, "car", "upload"))
+
+    def test_presence_answer_falls_back_to_the_inbox_objects_metadata_and_says_car_live(self):
+        p = up.Presence()
+        p.opened(self.DEV, "car")
+        seen = []
+        ans = up.presence_answer(PUSH_MEMO, KEY, p, lookup=lambda k: seen.append(k) or (self.DEV, "car"))
+        self.assertEqual(seen, [KEY])
+        self.assertTrue(ans["car_live"])
+        self.assertEqual(ans["source"], "s3_metadata")
+        self.assertEqual(p.sender(PUSH_MEMO), (self.DEV, "car"), "remembered after the lookup")
+
+    def test_a_browser_or_an_unknown_sender_is_never_a_live_car(self):
+        p = up.Presence()
+        p.sent(PUSH_MEMO, self.DEV, "browser")
+        p.opened(self.DEV, "browser")
+        self.assertFalse(up.presence_answer(PUSH_MEMO, None, p)["car_live"])
+        other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+        ans = up.presence_answer(other, None, up.Presence(), lookup=lambda k: None)
+        self.assertEqual((ans["car_live"], ans["device"], ans["source"]), (False, None, None))
+
+    def test_the_memo_map_is_bounded(self):
+        p = up.Presence(memos_max=3)
+        for i in range(5):
+            p.sent(f"{i:08d}-0000-5000-8000-000000000000", self.DEV, "car")
+        self.assertIsNone(p.sender("00000000-0000-5000-8000-000000000000"))
+        self.assertIsNotNone(p.sender("00000004-0000-5000-8000-000000000000"))
+
+    def test_the_uploaded_fact_names_the_sender(self):
+        env = up.build_uploaded_envelope(KEY, 10, "audio/ogg", "ua", 1.0, None, self.DEV, "car")
+        self.assertEqual((env["data"]["device_id"], env["data"]["device_host"]), (self.DEV, "car"))
+        self.assertNotIn("device_id", up.build_uploaded_envelope(KEY, 10, "audio/ogg", "ua", 1.0)["data"])
+
+    def test_stored_sender_reads_the_s3_metadata(self):
+        import subprocess as sp
+        real = up.subprocess.run
+        out = json.dumps({"status": "success", "metadata": {"X-Amz-Meta-Holocene-Device": self.DEV, "X-Amz-Meta-Holocene-Host": "car"}})
+        up.subprocess.run = lambda *a, **k: sp.CompletedProcess(a, 0, out + "\n", "")
+        try:
+            self.assertEqual(up.stored_sender(KEY), (self.DEV, "car"))
+        finally:
+            up.subprocess.run = real
+        up.subprocess.run = lambda *a, **k: sp.CompletedProcess(a, 1, "", "no such object")
+        try:
+            self.assertIsNone(up.stored_sender(KEY))
+        finally:
+            up.subprocess.run = real
+
+
+class PresenceHttp(unittest.TestCase):
+    """The push stream registers the device; /upload/presence answers for a memo it sent."""
+    DEV = "6f1c2a9e-1b2c-4d5e-8f90-0a1b2c3d4e5f"
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        cls.old = (up.PUSH, up.PRESENCE, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S)
+        up.PUSH = up.PushHub()
+        up.PRESENCE = up.Presence(grace_s=0.2)
+        up.PUSH_HEARTBEAT_S = 0.2
+        up.PUSH_MAX_AGE_S = 1.0
+        cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        up.PUSH, up.PRESENCE, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S = cls.old
+
+    def get(self, path):
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
+            return r.status, json.loads(r.read())
+
+    def test_a_car_with_an_open_stream_is_live_for_its_memo_and_not_after(self):
+        import socket, time as t
+        up.PRESENCE.sent(PUSH_MEMO, self.DEV, "car")
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        s.sendall(f"GET /upload/events?device={self.DEV}&host=car HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+        s.recv(4096)  # headers + hello: the stream is open
+        t.sleep(0.1)
+        code, body = self.get(f"/upload/presence?memo={PUSH_MEMO}")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["car_live"], body)
+        self.assertEqual(body["streams"], 1)
+        while s.recv(65536):  # the stream ends at its max age
+            pass
+        s.close()
+        t.sleep(0.4)
+        self.assertFalse(self.get(f"/upload/presence?memo={PUSH_MEMO}")[1]["car_live"])
+        self.assertIn("devices", self.get("/upload/presence")[1])
+
+    def test_a_bad_memo_id_is_refused(self):
+        import urllib.error, urllib.request
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/upload/presence?memo=nope", timeout=5)
+        self.assertEqual(e.exception.code, 400)

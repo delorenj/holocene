@@ -425,6 +425,11 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
           ) : null}
         </div>
         {hop.detail ? <p className="voice-hop-detail">{hop.detail}</p> : null}
+        {hop.reply?.earshotSkipped ? (
+          <p className="voice-hop-detail" title="A paired phone plays through the car's speakers: the same reply twice, or into a recording">
+            Not mirrored to the phone: the car that sent it {hop.reply.earshotSkipped === "car_spoke" ? "was already speaking it" : "was connected and spoke it itself"}.
+          </p>
+        ) : null}
         {hop.reply?.earshotTextKey ? (
           <p className="voice-hop-detail voice-sidecar" title="The phone gets the full reply text as a sibling object of the reply audio, uploaded before it">
             Earshot text sidecar <CopyRef value={hop.reply.earshotTextKey} />

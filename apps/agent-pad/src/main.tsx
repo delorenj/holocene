@@ -5,7 +5,8 @@ import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from 
 import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
-import { type ReplyRef, type Unit, addRef, newUnit, parseReplyKey, planUnit, readyChunks } from './replies'
+import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
+import { type Ledger, closeUnit, forThisDevice, isOpen, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
@@ -148,6 +149,15 @@ async function listRepliesAfter(startAfter: string): Promise<string[]> {
   return out
 }
 
+// Who sent a memo: this pad's device id (random, kept beside the ledger) and whether it runs in the car app. The proxy
+// stores both with the memo, so the watcher can tell that a live car will speak the reply itself and skip the Earshot
+// phone copy (the phone plays through the car's speakers when it is paired: the same reply twice, or into a recording).
+const DEVICE = { id: '' }
+const HOST_KIND = (window as any).HoloceneNative ? 'car' : 'browser'
+function deviceHeaders(): Record<string, string> {
+  return DEVICE.id ? { 'X-Holocene-Device': DEVICE.id, 'X-Holocene-Host': HOST_KIND } : { 'X-Holocene-Host': HOST_KIND }
+}
+
 async function putObject(key: string, blob: Blob, capture?: Capture): Promise<void> {
   // Upload via the proxy (same origin) so credentials stay server-side
   const ctl = new AbortController()
@@ -157,7 +167,7 @@ async function putObject(key: string, blob: Blob, capture?: Capture): Promise<vo
       method: 'PUT',
       body: blob,
       // The capture levels ride along as a header; the proxy puts them in audio.memo.uploaded data.capture.
-      headers: { 'Content-Type': blob.type || 'application/octet-stream', ...(capture ? { 'X-Holocene-Capture': JSON.stringify(capture) } : {}) },
+      headers: { 'Content-Type': blob.type || 'application/octet-stream', ...deviceHeaders(), ...(capture ? { 'X-Holocene-Capture': JSON.stringify(capture) } : {}) },
       signal: ctl.signal,
     })
     if (!res.ok) {
@@ -235,6 +245,23 @@ const rosterDbSet = (list: Agent[], generatedAt: number | null) =>
 // The selected agent id, beside the roster: the WebView's localStorage is empty after a cold start, IndexedDB is not.
 const agentDbGet = async () => savedAgentId(await rosterDb<unknown>('readonly', (s) => s.get('agent')))
 const agentDbSet = (id: string) => rosterDb('readwrite', (s) => s.put(id, 'agent'))
+// The reply ledger (ledger.ts) and the device id, in the same IndexedDB store (it survives the car's cold start) and in
+// localStorage (a browser answers synchronously).
+const LS_LEDGER = 'agentpad.ledger'
+const LS_DEVICE = 'agentpad.device'
+const ledgerDbGet = async () => normLedger(await rosterDb<unknown>('readonly', (s) => s.get('ledger')), Date.now())
+const ledgerSave = (l: Ledger) => { lsSet(LS_LEDGER, JSON.stringify(l)); void rosterDb('readwrite', (s) => s.put(l, 'ledger')) }
+const deviceDbGet = async () => { const v = await rosterDb<unknown>('readonly', (s) => s.get('device')); return validDeviceId(v) ? v : '' }
+const deviceDbSet = (id: string) => rosterDb('readwrite', (s) => s.put(id, 'device'))
+// ?replies=all (remembered in this browser): play every reply in the bucket, as every pad did before replies were
+// scoped to the device that sent the memo. ?replies=mine undoes it.
+function playAllReplies(): boolean {
+  try {
+    const q = new URLSearchParams(location.search).get('replies')
+    if (q === 'all' || q === 'mine') lsSet('agentpad.replies', q)
+  } catch { /* no location */ }
+  return lsGet('agentpad.replies') === 'all'
+}
 
 // ---- client events: what only the device can see (record start/stop/failure, upload failure) ----
 // The proxy logs each one; failures also become audio.memo.failed(stage record|upload) facts keyed by the
@@ -469,6 +496,34 @@ function App() {
   const stopEmitted = useRef(false) // the host heard 'stopped' for the current note
   const flight = useRef(new InFlight()).current
 
+  // ---- which replies are this pad's, and which ones it still owes (ledger.ts) ----
+  const ledger = useRef<Ledger>(normLedger(lsGet(LS_LEDGER), Date.now()))
+  const playAll = useRef(playAllReplies())
+  const setLedger = (l: Ledger) => { if (l !== ledger.current) { ledger.current = l; ledgerSave(l) } }
+  // The IndexedDB copy (all the car has after a cold start) and the device id, before the first reply poll and before
+  // the push stream opens; never longer than 1.5 s (a stuck IndexedDB must not keep the pad deaf).
+  const ready = useRef<Promise<void> | null>(null)
+  if (!ready.current) {
+    ready.current = Promise.race([
+      (async () => {
+        const [stored, dev] = await Promise.all([ledgerDbGet(), deviceDbGet()])
+        setLedger(mergeLedgers(ledger.current, stored, Date.now()))
+        let id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : dev
+        if (!id) id = newDeviceId()
+        DEVICE.id = id
+        lsSet(LS_DEVICE, id)
+        if (id !== dev) void deviceDbSet(id)
+      })().catch(() => { /* storage blocked: run without */ }),
+      new Promise<void>((r) => setTimeout(r, 1500)),
+    ]).then(() => { if (!DEVICE.id) DEVICE.id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : newDeviceId() })
+  }
+  // A memo this pad sent: its reply is this pad's to play (recorded before the first upload attempt, so a reply that
+  // comes back fast, or a send that only succeeds from the outbox later, is still known).
+  const ownMemo = async (key: string) => {
+    const memo = await memoIdFor(key)
+    if (memo) setLedger(own(ledger.current, memo, Date.now()))
+  }
+
   // ---- playback: an ordered queue of every unseen reply, played one after the other ----
   // lastDone is the newest reply key whose playback finished, failed or was skipped. It is persisted, so a
   // restart (the car app restarts at every ignition) resumes from there instead of dropping or replaying.
@@ -606,11 +661,17 @@ function App() {
     beacon(key, phase, st && st.unit === key ? { ...extra, chunks: units.current.get(key)?.n } : extra)
   }, [])
 
-  const finish = useCallback((key: string) => {
+  // A reply the pad is done with (played, failed for good, skipped, or not this pad's): the marker moves up to it and it
+  // is no longer owed. Units still owed below the marker stay in the ledger's open set.
+  const settle = (key: string) => {
     if (key > lastDone.current) {
       lastDone.current = key
       markerSet(key)
     }
+    setLedger(closeUnit(ledger.current, key))
+  }
+  const finish = useCallback((key: string) => {
+    settle(key)
     queue.current = queue.current.filter((k) => k !== key)
     playingKey.current = ''
     const u = units.current.get(key)
@@ -635,11 +696,12 @@ function App() {
     units.current.delete(key)
     if (streaming.current?.unit === key) streaming.current = null
     parked.current.set(key, { at: Date.now(), checkedAt: Date.now() })
+    setLedger(parkUnit(ledger.current, key, Date.now())) // still owed after a cold start: its full file plays if it lands
     pump.current()
   }
   const checkParked = async () => {
     for (const [key, p] of [...parked.current]) {
-      if (Date.now() - p.at > MAX_REPLY_AGE_MS) { parked.current.delete(key); continue }
+      if (Date.now() - p.at > MAX_REPLY_AGE_MS) { parked.current.delete(key); setLedger(closeUnit(ledger.current, key)); continue }
       if (Date.now() - p.checkedAt < 10_000) continue
       p.checkedAt = Date.now()
       try {
@@ -650,7 +712,8 @@ function App() {
   }
 
   // One reply key from the listing or the push channel: it joins its unit (a new unit is queued in key order). A unit the
-  // pad already finished, or one older than lastDone, is ignored; a stale one is skipped as before. True: news.
+  // pad already finished, or one older than lastDone that it does not still owe, is ignored; a stale one is skipped as
+  // before; a reply to a memo another device sent is not this pad's (ledger.ts) and is passed over silently. True: news.
   const ingestReply = (key: string, firstRun = false): boolean => {
     const ref: ReplyRef | null = parseReplyKey(key)
     if (!ref) return false
@@ -658,21 +721,23 @@ function App() {
       if (ref.chunk) return false // its chunks failed once: only the full file brings it back
       parked.current.delete(ref.unit)
       enqueued.current.delete(ref.unit)
-    } else if (ref.unit <= lastDone.current) return false
+    } else if (ref.unit <= lastDone.current && !units.current.has(ref.unit) && !isOpen(ledger.current, ref.unit)) return false
     let u = units.current.get(ref.unit)
     if (!u) {
       if (enqueued.current.has(ref.unit)) return false // played (or skipped) already
       enqueued.current.add(ref.unit)
+      const mine = forThisDevice(ledger.current, ref.unit, playAll.current)
       const age = Date.now() - renderedAt(ref.unit)
-      if (age > MAX_REPLY_AGE_MS) {
-        if (!firstRun && age < 6 * 3600 * 1000) {
+      if (age > MAX_REPLY_AGE_MS || !mine) {
+        if (mine && !firstRun && age < 6 * 3600 * 1000) {
           beacon(ref.unit, 'skipped', { error: `stale: rendered ${Math.round(age / 60000)} min before the pad saw it` })
         }
-        if (ref.unit > lastDone.current) { lastDone.current = ref.unit; markerSet(ref.unit) }
+        settle(ref.unit)
         return false
       }
       u = newUnit(ref.unit, Date.now())
       units.current.set(ref.unit, u)
+      setLedger(openUnit(ledger.current, ref.unit, Date.now()))
       queue.current = [...queue.current, ref.unit].sort()
       const memo = REPLY_MEMO.exec(ref.unit)?.[1]
       if (memo && flights.current.has(memo)) flightFinal(memo)
@@ -680,6 +745,23 @@ function App() {
     const news = addRef(u, ref)
     if (news && streaming.current?.unit === ref.unit) void feedStream()
     return news
+  }
+
+  // After a cold start: the units the ledger says are still owed (queued behind another reply, or parked until their full
+  // file lands) are picked up again, though the marker may have moved past them. Once per page; again if it failed.
+  const reopened = useRef(false)
+  const reopenOwed = async () => {
+    if (reopened.current) return
+    reopened.current = true
+    for (const [key, o] of Object.entries(ledger.current.open)) {
+      if (units.current.has(key) || parked.current.has(key)) continue
+      if (Date.now() - renderedAt(key) > MAX_REPLY_AGE_MS) { setLedger(closeUnit(ledger.current, key)); continue }
+      if (o.parked) { parked.current.set(key, { at: o.seenAt, checkedAt: 0 }); continue }
+      try {
+        const page = await listPage(key.slice(0, key.lastIndexOf('.')), '', null)
+        for (const k of page.keys.sort()) ingestReply(k)
+      } catch { reopened.current = false } // the next tick tries again
+    }
   }
 
   // Hand the playing unit's chunks to the host in order, each as soon as it is downloaded. A download that fails is
@@ -727,10 +809,10 @@ function App() {
     // A reply must never play into the microphone: wait until the note is done.
     if (recordingRef.current || arming.current) return
     if (queue.current.length === 0) { playProgress(el); return }
-    const key = queue.current[0]
-    const unit = units.current.get(key)
-    const plan = unit ? planUnit(unit, !!nativeChunks(), Date.now()) : 'full'
-    if (plan === 'wait') return // its first chunk or its full file is on the way: the next tick or push brings it
+    // The head, or (while the head still waits for its first chunk or its full file) the first later reply that is ready.
+    const pick = nextUnit(queue.current, (k) => units.current.get(k), !!nativeChunks(), Date.now())
+    if (!pick) return // the next tick or push brings the audio
+    const { key, plan } = pick
     if (plan === 'give_up') {
       // A chunked reply that never completed (vox failed mid-reply, or a cancel took its chunks back) must not hold
       // the queue; its full file still plays if it lands later.
@@ -828,12 +910,27 @@ function App() {
     return () => { delete (window as any).__hnPlayback }
   })
   useEffect(() => {
-    ;(window as any).__hnSpeech = (d: { memo_id?: string } | null) => {
+    ;(window as any).__hnSpeech = (d: { memo_id?: string; kind?: string; id?: string } | null) => {
       const f = d?.memo_id ? flights.current.get(d.memo_id) : undefined
-      speechEvent(f?.key || '', d)
+      speechEvent(f?.key || (d?.kind === 'ack' ? ackKey(String(d.id || '')) : ''), d)
     }
     return () => { delete (window as any).__hnSpeech }
   }, [])
+  // The spoken ack is decided when Stop is pressed, before the upload, so the host cannot name its memo: the pad ties
+  // each ack to the note it answers (the key is minted at record start), first sight wins. Then the proxy publishes it
+  // as audio.memo.notified for that memo and memo:trace and /voice show the ack. "ack:stopped:*" answers the note just
+  // recorded; "ack:sent:*" is said for an outbox row that finally went out.
+  const noteKey = useRef('') // the note being recorded, or the one just stopped
+  const retryKey = useRef('') // the outbox row whose late send was just announced
+  const ackKeys = useRef<Map<string, string>>(new Map())
+  const ackKey = (id: string): string => {
+    const bound = ackKeys.current.get(id)
+    if (bound !== undefined) return bound
+    const key = id.startsWith('ack:stopped:') ? noteKey.current : id.startsWith('ack:sent:') ? retryKey.current : ''
+    ackKeys.current.set(id, key)
+    if (ackKeys.current.size > 50) ackKeys.current.delete(ackKeys.current.keys().next().value as string)
+    return key
+  }
 
   // A player that never reports the end (native host died, focus lost with no event) must not hold the queue or
   // keep a tile saying a reply is playing.
@@ -905,11 +1002,16 @@ function App() {
   // order, and say so (beacon 'skipped') about any recent reply the pad chooses not to play.
   useEffect(() => {
     const tick = async () => {
+      await ready.current // the ledger (which replies are this pad's) is read before any reply is judged
       try {
+        await reopenOwed()
         // First run on this device (nothing stored): old replies are history, not missed news. Skip them
         // silently instead of publishing a 'skipped' fact for memos that finished long ago.
         const firstRun = !lastDone.current
-        const after = lastDone.current || `${REPLIES_PREFIX}/${dayPrefix(-1)}/`
+        // From the marker, or from the oldest reply still owed if that is older (the marker can move past a reply that
+        // waits for its full file or its next chunk: another device's reply settled, or a later one played first).
+        const owed = Object.keys(ledger.current.open).map((k) => k.slice(0, k.lastIndexOf('.')))
+        const after = [lastDone.current || `${REPLIES_PREFIX}/${dayPrefix(-1)}/`, ...owed].sort()[0]
         // Only dated reply keys count: legacy flat keys (replies/2026101...) sort AFTER every dated key and would
         // otherwise pin lastDone past all future replies.
         // A reply's chunks (replies/...-cNNofMM.opus) join its unit; parseReplyKey keeps only dated keys.
@@ -976,7 +1078,9 @@ function App() {
     const close = () => { try { es?.close() } catch { /* already closed */ } es = null; push.current.heardAt = 0 }
     const open = () => {
       if (stopped || es) return
-      try { es = new EventSource('/upload/events') } catch { schedule(); return }
+      // device + host: the proxy knows which car is live, so the watcher can leave the Earshot phone copy out for it.
+      const url = `/upload/events?device=${encodeURIComponent(DEVICE.id)}&host=${HOST_KIND}`
+      try { es = new EventSource(url) } catch { schedule(); return }
       openedAt = Date.now()
       es.addEventListener('hello', (e) => { failures = 0; heard(data(e)?.nats); pollNow.current() }) // catch up on what a gap missed
       es.addEventListener('beat', (e) => heard(data(e)?.nats))
@@ -993,7 +1097,7 @@ function App() {
       window.clearTimeout(retry)
       if (!stopped) retry = window.setTimeout(open, pushBackoff(failures++))
     }
-    open()
+    void ready.current!.then(open)
     // A stream that stopped speaking is dropped and opened again (the proxy beats every 15 s).
     const watch = window.setInterval(() => {
       const last = push.current.heardAt || openedAt
@@ -1038,7 +1142,9 @@ function App() {
     if (live) setPhase('rejected')
     else setPhase((cur) => (cur === 'idle' || cur === 'sent' || cur === 'queued' ? 'rejected' : cur))
     setStatus(`NOT accepted (${why.slice(0, 80)}) - kept on this device, retrying hourly`)
-    emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: String(e.status) })
+    // Said once per recording: for the send the driver just made, or the first time a saved row is refused. The
+    // hourly self-heal (and every pad start) retrying rows that are still refused is not news the driver can act on.
+    if (live || !p.rejected) emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: String(e.status) })
     // An 'unroutable_agent' refusal already published its terminal failed fact at the proxy: a second one here
     // would show the same memo failing twice in /voice. Other final refusals are only visible from the device.
     if (e.code !== 'unroutable_agent') {
@@ -1049,11 +1155,13 @@ function App() {
   const sendPending = useCallback(async (p: Pending) => {
     if (!flight.begin(p.key)) return
     try {
+      await ownMemo(p.key) // a row saved before replies were scoped to the sending device
       await putObject(p.key, p.blob, p.capture)
       noteSent()
       await outboxDel(p.key)
       clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
       setStatus(`sent → ${p.agentName} (after a retry)`)
+      retryKey.current = p.key
       emitHost({ t: 'sent', name: p.agentName, reason: 'retry' })
       const agentId = /^inbox\/([^/]+)\//.exec(p.key)?.[1]
       if (agentId) void trackMemo(agentId, p.agentName, p.key)
@@ -1097,6 +1205,7 @@ function App() {
     setPhase('sending')
     // The outbox is written BEFORE the first attempt and cleared on success: if the app is backgrounded, killed or
     // loses the network mid-send, the recording is still on disk and the retry timer finishes the job.
+    await ownMemo(key) // its reply is this pad's to play, however fast it comes back
     await outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture })
     try {
       const memo = await memoIdFor(key)
@@ -1170,6 +1279,9 @@ function App() {
 
   const startRecording = useCallback(async () => {
     if (!selected) return
+    // One start at a time: a second tap while the mic is opening would cut the "Recording for X" prompt and say it
+    // again, and leave the first start waiting for an answer that goes to the second (the wheel path already refuses).
+    if (arming.current || recordingRef.current) return
     const agent = selected
     interruptReply()
     stopEmitted.current = false
@@ -1185,12 +1297,16 @@ function App() {
     const native = (window as any).HoloceneNative as { start(): void; startFor?(name: string): void; stop(): void; micClosed?(): void } | undefined
     if (native) {
       const key = mk('ogg')
+      noteKey.current = key
       const w = window as any
       arming.current = true
       discardRef.current = false
       setPhase('arming')
       const started = await new Promise<{ ok: boolean; err: string }>((resolve) => {
-        w.__hnStarted = (ok: boolean, err: string) => resolve({ ok, err })
+        // A host that never answers (its arming watchdog gave up after 15 s) must not leave the pad refusing every
+        // later start: after 20 s this start counts as interrupted.
+        const t = window.setTimeout(() => resolve({ ok: false, err: 'interrupted' }), 20000)
+        w.__hnStarted = (ok: boolean, err: string) => { window.clearTimeout(t); resolve({ ok, err }) }
         // startFor names the agent so the host can say "Recording for X" before the mic opens (never recorded).
         if (native.startFor) native.startFor(agent.name)
         else native.start()
@@ -1204,6 +1320,7 @@ function App() {
         return
       }
       nativeActive.current = true
+      recordingRef.current = true // at once, not only after the next render: no pump in between
       recStart.current = Date.now()
       clientEvent({ event: 'record_started', key })
       w.__hnStopped = async (b64: string, mime: string, cap?: unknown) => {
@@ -1237,9 +1354,15 @@ function App() {
     }
     let stream: MediaStream
     const kBrowser = mk('webm')
+    // Arming from here until the recorder runs: nothing may (re)start a reply or a progress clip in the audio element
+    // while getUserMedia is pending (a few hundred ms, seconds on a first permission prompt) - pump() checks this.
+    arming.current = true
+    setPhase('arming')
+    const disarm = (to: PadPhase) => { arming.current = false; setPhase(to) }
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (e) {
+      disarm('error')
       setStatus(`mic unavailable: ${(e as Error).name}`)
       clientEvent({ event: 'record_failed', key: kBrowser, error: `getUserMedia: ${(e as Error).name}`, code: 'mic_unavailable', retryable: false })
       return
@@ -1256,6 +1379,7 @@ function App() {
       if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break }
     }
     if (!mimeType) {
+      disarm('error')
       setStatus('no supported audio format on this browser')
       clientEvent({ event: 'record_failed', key: kBrowser, error: 'no supported MediaRecorder mime type', code: 'no_format', retryable: false })
       closeStream()
@@ -1263,6 +1387,7 @@ function App() {
     }
     const ext = mimeType.includes('mp4') ? 'm4a' : 'webm'
     const key = mk(ext)
+    noteKey.current = key
     const mr = new MediaRecorder(stream, { mimeType })
     mediaRecorder.current = mr
     chunks.current = []
@@ -1291,6 +1416,11 @@ function App() {
       await finishRecording(agent, key, blob, capture, Date.now() - recStart.current)
     }
     discardRef.current = false
+    // Anything that slipped in anyway is stopped before the mic records, and the recording flag is up at once (not
+    // only after the next render) so no pump between here and that render starts audio into the note.
+    interruptReply()
+    recordingRef.current = true
+    arming.current = false
     mr.start()
     setRecording(true)
     setPhase('recording')
@@ -1481,7 +1611,7 @@ function App() {
       {host.driving && (
         <div className="hero" data-phase={phase} style={{ ['--c' as string]: selected?.color ?? '#5a6275' }} aria-live="polite">
           <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
-          <div className="hstate">{speaking && (phase === 'idle' || phase === 'sent') ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
+          <div className="hstate">{speaking && phase !== 'recording' && phase !== 'arming' ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
           {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
           {heroNote && <div className="hsound hnote">{heroNote}</div>}
         </div>
@@ -1540,11 +1670,11 @@ function App() {
         <button
           className={`rec${recording ? ' live' : ''}`}
           onClick={recording ? stopRecording : startRecording}
-          disabled={!canRecord}
+          disabled={!canRecord || (phase === 'arming' && !recording)}
           style={{ ['--c' as string]: selected?.color ?? '#444' }}
         >
           {recording && <span className="dot" />}
-          {recording ? 'Stop & Send' : selected ? `Record for ${label(selected.name)}` : 'Pick an agent'}
+          {recording ? 'Stop & Send' : phase === 'arming' ? 'Starting…' : selected ? `Record for ${label(selected.name)}` : 'Pick an agent'}
         </button>
         <div className="status" aria-live="polite">
           {statusText}

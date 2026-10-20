@@ -110,6 +110,39 @@ class SpeechArbiterTest {
         assertEquals("echo:$memo2", audible) // highest priority deferred item first
     }
 
+    // The real order on the car: the page stops its reply (stopReply -> cancel) a few ms before it asks to record, so
+    // when arm() runs nothing is current, yet the reply's tail is still coming out of the speakers.
+    @Test fun recordingAfterThePageStoppedItsReply_promptWaitsForTheReplyToDrain() {
+        val r = reply(memo1)
+        a.offer(r)
+        a.cancel(r.id) // stopReply
+        assertEquals(r.id to "stopped", halted.single())
+        t += 30 // the page's startFor() lands 16-55 ms later
+        var ready = false
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording for Holocene.")), { ready = true })
+        assertNull("the prompt started over the tail of the reply that was just stopped", audible)
+        assertEquals("deferred", decisions.last { it.id == "arm" }.action)
+        assertEquals(SpeechArbiter.HALT_DRAIN_MS - 30, wakes.last())
+        t += SpeechArbiter.HALT_DRAIN_MS - 31
+        a.tick()
+        assertNull("the prompt started before the drain was over", audible)
+        t += 1
+        a.tick()
+        assertEquals("arm", audible)
+        assertFalse(ready)
+        end("arm")
+        assertTrue(ready)
+    }
+
+    @Test fun recordingLongAfterAReplyWasStopped_promptStartsAtOnce() {
+        val r = reply(memo1)
+        a.offer(r)
+        a.cancel(r.id)
+        t += SpeechArbiter.HALT_DRAIN_MS
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording for Holocene.")), { })
+        assertEquals("arm", audible)
+    }
+
     @Test fun armingWithoutPromptOpensAtOnceButStillHoldsTheQueue() {
         var ready = false
         a.arm(null) { ready = true }

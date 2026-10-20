@@ -177,7 +177,12 @@ def phone_time(b: dict):
     return c.parse_iso(b.get("ts")) or at
 
 
-def earshot_hops(ekey: str | None, tkey: str | None = None) -> list[Hop]:
+def earshot_hops(ekey: str | None, tkey: str | None = None, skipped: str | None = None) -> list[Hop]:
+    if not ekey and skipped:
+        why = {"car_spoke": "the car that sent the memo was already speaking the reply",
+               "car_live": "the car that sent the memo was connected and spoke the reply itself"}.get(skipped, skipped)
+        return [Hop("phone_object", OK, detail=f"not mirrored to the phone: {why} (a paired phone plays through the car's "
+                                               "speakers: the same reply twice, or into a recording)", optional=True)]
     if not ekey:
         return [Hop("phone_object", UNKNOWN, detail="no Earshot mirror recorded for this reply (MEMO_EARSHOT_CHANNEL off, "
                                                   "or the reply predates the mirror)", optional=True)]
@@ -277,13 +282,15 @@ STARTED_WORDS = ("start", "started")
 
 
 def first_at(events: list[dict], utterance: str):
-    """When the car first STARTED saying this kind of thing for the memo (device time when it sent one), else None."""
+    """When the car first STARTED saying this kind of thing for the memo, on the SERVER's clock (when the proxy got the
+    decision, the fact's time), else None. Never the device's own clock (data.device_at): it is compared with server
+    facts here, and the sim's ran 1.3 s behind (the real car's skew is unknown); the pad posts each decision at once."""
     words = UTTERANCE_WORDS.get(utterance, (utterance,))
     e = next((x for x in events if (x.get("data") or {}).get("utterance") in words
               and (x.get("data") or {}).get("decision") in STARTED_WORDS), None)
     if not e:
         return None
-    return c.parse_iso((e.get("data") or {}).get("device_at")) or evt_ts(e)
+    return evt_ts(e) or c.parse_iso((e.get("data") or {}).get("device_at"))
 
 
 def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
@@ -309,7 +316,7 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     rel("reply up", replied)
     played = first_at(sp, "reply") or next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK), None)
     rel("reply played", played)
-    line = "since upload: " + " | ".join(bits) if bits else None
+    line = "since upload (server clock): " + " | ".join(bits) if bits else None
     # Time to first response once the agent is done: what chunked speech and the push channel are for.
     done = next((h.ts for h in hops if h.name == "agent:invocation.done" and h.status == OK and h.ts), None)
     if line and done:
@@ -614,15 +621,18 @@ def build(key: str) -> tuple[list[Hop], dict]:
                         f"({str(d0.get('client_user_agent'))[:40]})", optional=True))
     else:
         hops.append(Hop("played_on_pad", UNKNOWN,
-                        detail="no playback report from the pad yet (it polls replies/ every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)", optional=True))
+                        detail="no playback report from the pad yet (replies reach it over the push channel /upload/events, with a "
+                               "6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only "
+                               "the pad that sent the memo plays it; a parked car reports nothing)", optional=True))
 
     # 7. the phone: the same reply mirrored into the Earshot channel (its full text first), and the device's own beacons for it
     ekey = ((rep or {}).get("data") or {}).get("earshot_key") or (rec or {}).get("earshot_key")
     tkey = ((rep or {}).get("data") or {}).get("earshot_text_key") or (rec or {}).get("earshot_text_key")
+    skipped = ((rep or {}).get("data") or {}).get("earshot_skipped") or (rec or {}).get("earshot_skipped")
     ctx["earshot_key"], ctx["earshot_text_key"] = ekey, tkey
     if reply_key:
         try:
-            hops.extend(earshot_hops(ekey, tkey))
+            hops.extend(earshot_hops(ekey, tkey, skipped))
         except Exception as e:  # noqa: BLE001
             hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
 
