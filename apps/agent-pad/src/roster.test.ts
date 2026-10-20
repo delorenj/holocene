@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AVATAR_RETRY_MS, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, ROSTER_STALE_MS, ageText, restoreSelection, rosterGeneratedAt, rosterStaleness, savedAgentId, stalenessText, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -89,4 +89,45 @@ test('the reply cue: set on start, cleared by every ending, set again on a repla
   assert.equal(speakNext(s, { t: 'ended', key: k }), null)
   assert.equal(speakNext(s, { t: 'failed', key: k }), null)
   assert.equal(speakNext(s, { t: 'watchdog' }), null)
+})
+
+test('generated_at is read from the roster JSON, parsed or raw', () => {
+  const t = Date.UTC(2026, 9, 19, 12, 0, 0)
+  assert.equal(rosterGeneratedAt('{"generated_at":"2026-10-19T12:00:00Z","agents":[]}'), t)
+  assert.equal(rosterGeneratedAt({ generated_at: '2026-10-19T12:00:00Z' }), t)
+  for (const raw of ['', 'nope', '{}', { generated_at: 5 }, { generated_at: 'yesterday' }, null]) assert.equal(rosterGeneratedAt(raw), null)
+})
+
+test('a roster is stale when it is older than 15 minutes or the last fetch failed, never otherwise', () => {
+  const now = Date.UTC(2026, 9, 19, 12, 0, 0)
+  assert.equal(rosterStaleness({ generatedAt: now - 60_000, failed: false }, now), null)
+  assert.equal(rosterStaleness({ generatedAt: now - ROSTER_STALE_MS, failed: false }, now), null)
+  assert.deepEqual(rosterStaleness({ generatedAt: now - ROSTER_STALE_MS - 1, failed: false }, now), { why: 'old', ageMs: ROSTER_STALE_MS + 1 })
+  assert.deepEqual(rosterStaleness({ generatedAt: now - 60_000, failed: true }, now), { why: 'failed', ageMs: 60_000 })
+  assert.deepEqual(rosterStaleness({ generatedAt: null, failed: true }, now), { why: 'failed', ageMs: null })
+  assert.equal(rosterStaleness({ generatedAt: null, failed: false }, now), null, 'no stamp and no failure: still loading')
+  assert.equal(rosterStaleness({ generatedAt: now + 5 * 60_000, failed: false }, now), null, 'a clock ahead of the server is not old')
+})
+
+test('the staleness wording is about the list and never says online', () => {
+  const old = { why: 'old', ageMs: 42 * 60_000 } as const
+  const failed = { why: 'failed', ageMs: null } as const
+  assert.equal(stalenessText(old), 'Agent list may be out of date (updated 42 min ago)')
+  assert.equal(stalenessText(failed), 'Agent list could not refresh (age unknown)')
+  assert.equal(stalenessText(old, true), 'List may be out of date')
+  assert.equal(stalenessText(failed, true), 'List not refreshing')
+  for (const s of [old, failed]) for (const short of [true, false]) assert.doesNotMatch(stalenessText(s, short), /online/i)
+  assert.equal(ageText(30_000), 'updated 1 min ago')
+  assert.equal(ageText(3 * 3600_000), 'updated 3 h ago')
+  assert.equal(ageText(72 * 3600_000), 'updated 3 days ago')
+})
+
+test('a saved agent returns as a selection, and is dropped only by a roster the server just answered', () => {
+  const all = ['a', 'b'].map((x) => A(x))
+  assert.equal(restoreSelection(all, 'b', false).pick?.id, 'b')
+  assert.deepEqual(restoreSelection(all, '', true), { pick: null, drop: false })
+  assert.deepEqual(restoreSelection(all, 'gone', false), { pick: null, drop: false }, 'a cached list lacking it proves nothing')
+  assert.deepEqual(restoreSelection(all, 'gone', true), { pick: null, drop: true })
+  assert.equal(savedAgentId('holocene-pm'), 'holocene-pm')
+  for (const raw of ['', 'Bad Id', '../x', null, 7, undefined]) assert.equal(savedAgentId(raw), '')
 })

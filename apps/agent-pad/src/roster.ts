@@ -63,6 +63,60 @@ export function step(agents: Agent[], selectedId: string | undefined, dir: 1 | -
   return agents[i < 0 ? (dir === 1 ? 0 : n - 1) : (i + dir + n) % n]
 }
 
+// How old the list is. The pad keeps the last good roster across cold starts, so without this a roster of any age was
+// shown as if it were current. generated_at is the server's own stamp; "failed" is the last fetch not producing a roster.
+// This is the age of the LIST, never a claim that any agent is up: the roster says who a memo can be routed to.
+export const ROSTER_STALE_MS = 15 * 60 * 1000
+export type RosterMeta = { generatedAt: number | null; failed: boolean }
+export type Staleness = { why: 'failed' | 'old'; ageMs: number | null }
+
+/** roster.json's generated_at as epoch ms (parsed or raw JSON), or null when absent or unreadable. */
+export function rosterGeneratedAt(raw: unknown): number | null {
+  let o = raw
+  if (typeof o === 'string') {
+    try { o = JSON.parse(o) } catch { return null }
+  }
+  const g = (o as { generated_at?: unknown } | null)?.generated_at
+  const t = typeof g === 'string' ? Date.parse(g) : NaN
+  return Number.isFinite(t) ? t : null
+}
+
+/**
+ * Null while the list can be trusted, else why not. A list with no stamp that has not failed is not flagged: it is
+ * either still loading or from before the stamp was kept, and a fresh fetch replaces it within two minutes.
+ */
+export function rosterStaleness(m: RosterMeta, now: number): Staleness | null {
+  const ageMs = m.generatedAt === null ? null : Math.max(0, now - m.generatedAt)
+  if (m.failed) return { why: 'failed', ageMs }
+  return ageMs !== null && ageMs > ROSTER_STALE_MS ? { why: 'old', ageMs } : null
+}
+
+export function ageText(ms: number | null): string {
+  if (ms === null) return 'age unknown'
+  const min = Math.floor(ms / 60000)
+  if (min < 60) return `updated ${Math.max(1, min)} min ago`
+  const h = Math.floor(min / 60)
+  return h < 48 ? `updated ${h} h ago` : `updated ${Math.floor(h / 24)} days ago`
+}
+
+/** Parked: the status line. Driving (short): a few big words, no age. */
+export function stalenessText(s: Staleness, short = false): string {
+  if (short) return s.why === 'failed' ? 'List not refreshing' : 'List may be out of date'
+  return s.why === 'failed' ? `Agent list could not refresh (${ageText(s.ageMs)})` : `Agent list may be out of date (${ageText(s.ageMs)})`
+}
+
+// The selected agent is kept across cold starts the same way (IndexedDB). It comes back as a selection only: nothing
+// records until a button is pressed. A saved agent the roster no longer lists is dropped, but only on a roster the
+// server just answered: a cached or built-in list that merely lacks it proves nothing.
+export function savedAgentId(raw: unknown): string {
+  return typeof raw === 'string' && ID.test(raw) ? raw : ''
+}
+export function restoreSelection(agents: Agent[], savedId: string, authoritative: boolean): { pick: Agent | null; drop: boolean } {
+  if (!savedId) return { pick: null, drop: false }
+  const pick = agents.find((a) => a.id === savedId) ?? null
+  return { pick, drop: !pick && authoritative }
+}
+
 // A tile whose picture failed to load tries again after these delays (a cold start in the car on a flaky link must
 // not leave letter tiles for the whole drive), then gives up and keeps the letter.
 export const AVATAR_RETRY_MS = [15_000, 60_000, 240_000]
