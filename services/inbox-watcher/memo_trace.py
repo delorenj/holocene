@@ -266,8 +266,15 @@ def build(key: str) -> tuple[list[Hop], dict]:
     for ev in events:
         by_type.setdefault(ev["type"], []).append(ev)
 
+    # The watcher's "this memo is moving again" marker is a `received` fact with revived=true: it places the memo in
+    # time (see history()) but is not the detection, so the received hop never shows it.
+    ctx["stage_times"] = [(evt_ts(e), e["type"].rsplit(".", 1)[-1]) for e in events
+                          if e["type"].rsplit(".", 1)[-1] in ("received", "transcribed", "dispatched") and e["type"].startswith("bloodbank.audio.memo.")]
+
     def fact(action: str) -> dict | None:
         lst = by_type.get(f"bloodbank.audio.memo.{action}")
+        if lst and action == "received":
+            lst = [e for e in lst if not (e.get("data") or {}).get("revived")] or lst
         return lst[-1] if lst else None
 
     def add_fact_hop(name, action, describe, optional=False):
@@ -378,7 +385,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
             sent_chars = ((disp or {}).get("data") or {}).get("prompt_chars")
             sent_hash = ((disp or {}).get("data") or {}).get("prompt_sha256")
             try:
-                found = c.find_reply(row["profile"], ctx["memo_id"])
+                # the user message of THIS command: a retried or escalated command shares the memo's session
+                found = c.find_reply(row["profile"], ctx["memo_id"], prompt_sha256=sent_hash,
+                                     since=evt_ts(disp).timestamp() if disp and evt_ts(disp) else None)
             except Exception as e:  # noqa: BLE001
                 hops.append(Hop("hermes_session", UNKNOWN, detail=str(e)[:140], optional=True))
             else:
@@ -518,6 +527,22 @@ def cancel_verdict(h: Hop) -> str | None:
     return "CANCELLED before dispatch"
 
 
+def history(ts, after_dispatch_cancel: bool, stage_times: list, rec: dict | None) -> bool:
+    """Has the memo moved past the failed (or cancelled) fact published at `ts`? True when a later stage fact exists
+    (received incl. the watcher's revive marker, transcribed, dispatched), or when the watcher's record is active and was
+    revived or dispatched after it. Only while the memo is unfinished in the watcher's eyes: a failed or cancelled record
+    is exactly what its facts say, and the dispatched fact the watcher still publishes for a command that was already
+    in flight when it was cancelled is bookkeeping, not a revival."""
+    if ts is None or (rec and rec.get("status") != "active"):
+        return False
+    for t, kind in stage_times:
+        if t and t > ts and not (after_dispatch_cancel and kind == "dispatched"):
+            return True
+    if rec:
+        return max(rec.get("revived_ts") or 0, rec.get("dispatched_ts") or 0) > ts.timestamp()
+    return False
+
+
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     rec = ctx.get("watcher_record") or {}
     # a terminal failed fact (retryable=false) always wins
@@ -530,6 +555,10 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     spoken = next((h for h in hops if h.name == "fact:replied" and h.status == OK and h.ts), None)
     if spoken:
         terminal = [h for h in terminal if not (h.ts and h.ts < spoken.ts)]
+    # Likewise a failure the memo moved past: a later stage fact (a retry, a late-timeout escalation), or, while the
+    # watcher still has the memo active, a revive or dispatch after it. Only the newest word decides.
+    terminal = [h for h in terminal if not history(h.ts, h.name == f"fact:failed[{c.CANCELLED}]" and "after_dispatch=True" in h.detail,
+                                                   ctx.get("stage_times", []), rec)]
     if not terminal:
         # the gateway's own invocation.failed can land before the watcher's memo.failed fact does
         timed = next((h for h in hops if h.name == "agent:invocation.done" and h.status == FAILED and timeout_verdict(h)), None)
@@ -726,20 +755,27 @@ def cmd_cancel(args) -> int:
     return 0
 
 
-def terminal_failure(events: list[dict]) -> dict | None:
-    """The last non-retryable failed fact, unless a reply went out after it (a retry got past it)."""
+def terminal_failure(events: list[dict], rec: dict | None = None) -> dict | None:
+    """The last non-retryable failed fact, unless the memo moved past it: a reply went out after it (a retry got past
+    it), or it is history (see history(): a later stage fact, a revive or dispatch while the watcher has it active)."""
     last = None
     for e in events:  # oldest first
         if e["type"].endswith("memo.failed") and not (e.get("data") or {}).get("retryable"):
             last = e
         elif e["type"].endswith("audio.memo.replied"):
             last = None
+    if last is not None:
+        stage_times = [(evt_ts(e), e["type"].rsplit(".", 1)[-1]) for e in events
+                       if e["type"].rsplit(".", 1)[-1] in ("received", "transcribed", "dispatched")]
+        d = last.get("data") or {}
+        if history(evt_ts(last), d.get("stage") == c.CANCELLED and d.get("after_dispatch") is True, stage_times, rec):
+            last = None
     return last
 
 
 def furthest(events: list[dict], rec: dict | None) -> str:
     types = {e["type"].replace("bloodbank.", "") for e in events}
-    failed = terminal_failure(events)
+    failed = terminal_failure(events, rec)
     if failed:
         stage = (failed.get("data") or {}).get("stage")
         return "CANCELLED" if stage == c.CANCELLED else f"FAILED@{stage}"

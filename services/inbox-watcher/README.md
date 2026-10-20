@@ -173,7 +173,7 @@ Behaviour worth knowing:
   start (exit 2, `bad_memo_lane` on stderr) rather than guess. **The lane is pinned to the
   command id** (the idempotency key, digest and journal row differ by type), so
   a dispatch retry never hops lanes; `memo:retry` of a failed agent stage gets
-  a fresh command id and may pick a fresh lane. A memo dispatched before lanes
+  a fresh command id and may pick a fresh lane (a memo that escalated stays on batch). A memo dispatched before lanes
   existed (no `lane` in state.json) is treated as batch.
 - **The agent deadline stretches while the command is verifiably queued or
   running.** `MEMO_AGENT_TIMEOUT_S` (600) is extended one period at a time, up
@@ -209,19 +209,36 @@ Behaviour worth knowing:
   not confirm the stop): when the batch turn is stopped too, when the memo rides the batch lane, after an explicit
   `memo:retry` of an escalated memo (its fresh command does not escalate again), or with
   `MEMO_BATCH_TURN_TIMEOUT_S=0` (the off switch). It is not `agent/agent_failure`, it is not retried, nothing waits
-  out the 600 s deadline. `memo:retry` of that failure sends a FRESH command (a new command id, possibly a new lane);
-  the old one is dead and its slot is already free. `bloodbank-ntfy-router` pushes the `failed` fact like any terminal
-  memo failure.
+  out the 600 s deadline. `memo:retry` of that failure sends a FRESH command (a new command id); the old one is dead
+  and its slot is already free. A memo that never escalated gets the interactive lane again; one that DID escalate is a
+  long ask, so its retry stays on the batch lane (`lane_reason` unchanged, still no second escalation). A retry that
+  re-transcribes (`receive`/`transcribe`, e.g. a prompt an old watcher cut) is a new ask: it drops the old command
+  (id, `publish_attempted`, lane, envelope id) and any escalation state, so a fresh interactive command is published
+  and no `dispatched` fact reuses the old id. A retry that resumes at `await_agent` keeps the live command. When the
+  gateway reports `turn_stopped=false` the watcher logs `turn_not_confirmed_stopped` and waits
+  `MEMO_TURN_UNWIND_WAIT_S` (10) before it escalates, so the batch turn does not start beside a turn that may still be
+  unwinding. The late-reply rescue window of an escalated memo runs from its batch deadline, so a batch reply after 2 h
+  is still spoken. `bloodbank-ntfy-router` pushes the `failed` fact like any terminal memo failure.
+- **A revive tells the journey.** Every `memo:retry` / rescue revive at a stage other than `receive` publishes a small
+  `audio.memo.received` fact with `revived=true`, `revived_to` and `revive_why` (no detection data; ntfy-router mutes
+  `received`). `memo:trace`, `memo:list` and Holocene `/voice` treat a failed or cancelled fact older than a later stage
+  fact (this marker included) as history, and `memo:trace` also does so while the watcher's record is active and was
+  revived or dispatched after it, so a memo whose batch turn is running no longer reads `STOPPED AT agent`. The record
+  carries `revived_ts`. A cancelled or failed record keeps what its facts say.
 - **`mise run memo:cancel <memo_id|key|latest>`** stops a memo, honestly. It drops `cancel-<memo_id>` in
   `<state>/control/` (the same mechanism as `memo:retry`; files are taken in the order they were written) and the
   watcher honours it at every stage, a transcription in flight included:
   - **before the command is published** (stage receive / transcribe / dispatch, i.e. before `publish_attempted`):
     the memo ends `cancelled` and nothing is ever dispatched, `data.after_dispatch=false`. A memo waiting to publish
     its escalation is the same: the batch command is not sent.
-  - **after it** (await_agent / reply / speak): a published command cannot be recalled, so the agent may still run.
-    The watcher ends the memo `cancelled` and does NOT synthesize, speak or mirror the reply, `data.after_dispatch=true`.
-    A failed memo still watched for a late reply (`agent_reply/timeout`) can be cancelled too, so that reply is never
-    spoken. A cancel that lands in the instant a worker is mid-upload cannot stop objects already in flight.
+  - **after it** (await_agent / reply / speak, or any memo that ever published a command: an escalated one, one with a
+    `dispatched_ts`): a published command cannot be recalled, so the agent may still run. The watcher ends the memo
+    `cancelled` and does NOT synthesize, speak or mirror the reply, `data.after_dispatch=true`. A memo cancelled
+    between its escalation and the batch publish is `after_dispatch=true` too (the interactive command went out); its
+    `error_message` says the batch command was not sent. A failed memo still watched for a late reply
+    (`agent_reply/timeout`) can be cancelled too, so that reply is never spoken. A cancel that lands in the instant a
+    worker is mid-upload takes the objects back: the watcher `mc rm`s the `replies/` object and the Earshot audio and
+    text it just uploaded (logged `reply_retracted`; a failure is `reply_retract_failed`).
 
   Either way one fact is published: `audio.memo.failed` with `data.stage="cancelled"`, `error_code="cancelled"`,
   `retryable=false`, `data.after_dispatch=true|false` (and `command_id` when one was out). A cancelled memo is never
@@ -302,13 +319,17 @@ Behaviour worth knowing:
   audio object, so the phone already has it when the audio arrives. It is fail-open like the audio mirror (a refused
   upload is logged `earshot_text_failed` and the audio still goes), uploaded once per memo, and its key is recorded as
   `earshot_text_key` on `audio.memo.replied` (`memo:trace` shows it as the `phone_text` hop, before `phone_object`).
-  The car path (`replies/` audio, the 500-character digest) is unchanged.
+  The car path (`replies/` audio, the 500-character digest) is unchanged. The phone ignores a text over 64 KB, so
+  the sidecar is capped at `MEMO_EARSHOT_TEXT_MAX_BYTES` (60000) with a closing
+  `[truncated; full text in Holocene /voice]` note (logged `earshot_text_truncated`); the `replied` fact and `/voice`
+  keep the whole reply.
 
 Configuration is env only (see the unit file): `MEMO_AGENT_TIMEOUT_S`,
 `MEMO_TRANSCRIBE_TIMEOUT_S`, `MEMO_MAX_ATTEMPTS`, `MEMO_POLL_S`,
 `MEMO_MAX_AGE_HOURS`, `MEMO_SPEAK_CHARS`, `MEMO_VOX_VOICE`, `TRANSCRIBE_DIR`,
 `MEMO_LANE` (`interactive` default | `batch`), `MEMO_LANE_PROBE_GAP_S`,
-`MEMO_BATCH_TURN_TIMEOUT_S` (7200: how long an escalated batch turn is waited for; 0 turns escalation off).
+`MEMO_BATCH_TURN_TIMEOUT_S` (7200: how long an escalated batch turn is waited for; 0 turns escalation off),
+`MEMO_TURN_UNWIND_WAIT_S` (10), `MEMO_EARSHOT_TEXT_MAX_BYTES` (60000).
 The heartbeat (`heartbeat.json`) carries `lane` and `lanes.{interactive,batch}`
 (`ok`, `waiting`, `ack_pending`, `pending`, `max_ack_pending`, probed every 5 s
 off the tick thread); `/voice` reads it.
@@ -331,7 +352,7 @@ echo '{"memo_id":"...","s3_key":"...","target_agent_id":"holocene-pm","transcrip
 Additive fields the watcher puts on these facts (the schemas allow extra properties): `dispatched`:
 `escalated_from_command_id` (with `lane=batch`, `lane_reason=turn_timeout_escalated`); `replied`: `escalated`,
 `earshot_text_key` (next to `late` and `earshot_key`); `failed` for a cancelled memo: `stage=cancelled`,
-`error_code=cancelled`, `after_dispatch`. Publishing is not schema-checked, but the `stage` enum in
+`error_code=cancelled`, `after_dispatch`; `received` as a revive marker: `revived`, `revived_to`, `revive_why`. Publishing is not schema-checked, but the `stage` enum in
 `schemas/bloodbank/audio/memo.failed.json` still needs `cancelled` for validators that enforce it.
 
 ## Upload proxy
