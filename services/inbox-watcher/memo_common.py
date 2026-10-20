@@ -7,6 +7,7 @@ both look at every hop the same way. Stdlib only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -191,10 +192,13 @@ def memo_escalated(m: dict) -> bool:
 
 
 def cancel_after_dispatch(m: dict) -> bool:
-    """Has this memo's command been (or may it have been) published? Then a cancel cannot undo it: the agent may still
-    run and only its reply is held back. Before that (stage receive/transcribe/dispatch with no publish attempted) a
-    cancel means nothing is ever sent."""
-    return bool(m.get("publish_attempted")) or m.get("stage") in ("await_agent", "reply", "speak")
+    """Has ANY command of this memo been (or may it have been) published? Then a cancel cannot undo it: the agent may
+    still run and only its reply is held back. That is also true between an escalation (which un-marks the publish
+    for the new batch command) and the batch publish, and for a revived memo whose earlier command went out
+    (dispatched_ts survives a revive). Only a memo that never sent anything (stage receive/transcribe/dispatch, no
+    publish attempted, no earlier dispatch) is cancelled with nothing sent."""
+    return (bool(m.get("publish_attempted")) or bool(m.get("escalated")) or bool(m.get("dispatched_ts"))
+            or m.get("stage") in ("await_agent", "reply", "speak"))
 
 
 def rescue_open(m: dict) -> bool:
@@ -424,13 +428,31 @@ def profile_db(profile: str) -> Path:
     return HERMES_PROFILES / profile / "state.db"
 
 
-def find_reply(profile: str, thread_id: str) -> dict | None:
+def _user_prompt(rows: list, prompt_sha256: str | None, since: float | None) -> str | None:
+    """The user message that is THIS command's prompt in a session that may hold several (an escalated or retried
+    command shares the memo's thread id, so the session): the newest one whose sha256 is the sent prompt's, else the
+    newest at or after the command's dispatch (a little slack for clock skew), else the newest there is."""
+    if not rows:
+        return None
+    if prompt_sha256:
+        for r in reversed(rows):
+            c = r["content"] or ""
+            if prompt_sha256 in (hashlib.sha256(c.strip().encode()).hexdigest(), hashlib.sha256(c.encode()).hexdigest()):
+                return c
+    if since is not None:
+        late = [r for r in rows if isinstance(r["timestamp"], (int, float)) and r["timestamp"] >= since - 2.0]
+        if late:
+            return late[-1]["content"]
+    return rows[-1]["content"]
+
+
+def find_reply(profile: str, thread_id: str, prompt_sha256: str | None = None, since: float | None = None) -> dict | None:
     """The agent's final reply for the session the gateway opened for this thread_id.
 
     Gateway contract: source 'bloodbank', chat_id = data.thread_id of the command.
     Because the watcher picks a unique thread_id per memo, this is exact: no
-    'latest session' / mtime guessing. Returns {session_id, text, timestamp, prompt (the first user message: what the agent was
-    actually given)} or None.
+    'latest session' / mtime guessing. Returns {session_id, text, timestamp, prompt (the user message the agent was
+    actually given for the command: see _user_prompt; prompt_sha256 / since identify the command)} or None.
     """
     path = profile_db(profile)
     if not path.exists():
@@ -450,11 +472,11 @@ def find_reply(profile: str, thread_id: str) -> dict | None:
             ).fetchone()
         if sess is None:
             return None
-        user = db.execute(
-            "SELECT content FROM messages WHERE session_id=? AND role='user' ORDER BY timestamp ASC, id ASC LIMIT 1",
+        users = db.execute(
+            "SELECT content, timestamp FROM messages WHERE session_id=? AND role='user' ORDER BY timestamp ASC, id ASC",
             (sess["id"],),
-        ).fetchone()
-        prompt = user["content"] if user else None
+        ).fetchall()
+        prompt = _user_prompt(users, prompt_sha256, since)
         msg = db.execute(
             "SELECT content, timestamp FROM messages WHERE session_id=? AND role='assistant' "
             "AND content IS NOT NULL AND TRIM(content) <> '' AND COALESCE(active,1)=1 "

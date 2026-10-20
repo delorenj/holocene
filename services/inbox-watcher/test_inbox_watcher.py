@@ -27,6 +27,7 @@ BUCKET_DIR = ROOT / "bucket"
 (BUCKET_DIR / "replies").mkdir(parents=True)
 EMITS = ROOT / "emits.jsonl"
 MC_LOG = ROOT / "mc-cp.jsonl"          # every `mc cp` the watcher ran: {src, dst, attr}
+MC_RM_LOG = ROOT / "mc-rm.jsonl"       # every `mc rm` the watcher ran: the url it removed
 MC_FAIL_TXT = ROOT / "mc-fail-txt"     # while this file exists, uploading a .txt fails (the text sidecar is fail-open)
 
 FAKE_MC = ROOT / "mc"
@@ -68,6 +69,13 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
             print("mc: <ERROR> refusing the text upload", file=sys.stderr); sys.exit(1)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
+    elif a[0] == "rm":
+        with open({str(MC_RM_LOG)!r}, "a") as f:
+            f.write(json.dumps({{"url": a[1]}}) + "\\n")
+        p = local(a[1])
+        if not os.path.exists(p):
+            print("mc: <ERROR> object does not exist", file=sys.stderr); sys.exit(1)
+        os.remove(p)
     """))
 FAKE_MC.chmod(0o755)
 
@@ -207,13 +215,13 @@ def journal(command_id, profile, state="completed", outcome="success"):
     db.commit(); db.close()
 
 
-def journal_turn_timeout(command_id, lane="interactive", message=None):
+def journal_turn_timeout(command_id, lane="interactive", message=None, turn_stopped=True):
     """The gateway stopped this command's turn at its wall clock: journal completed/failure/failure_code=turn_timeout."""
     message = message or f"agent turn timed out after 300s on {lane} lane (limit 300s)"
     journal(command_id, "holocene-pm", outcome="failure")
     terminal = [{"type": "bloodbank.agent.invocation.failed", "data": {
         "error_code": "turn_timeout", "error_message": message, "lane": lane, "elapsed_seconds": 300.2,
-        "timeout_seconds": 300.0, "timeout_source": "lane", "turn_stopped": True}}]
+        "timeout_seconds": 300.0, "timeout_source": "lane", "turn_stopped": turn_stopped}}]
     db = sqlite3.connect(GATEWAY_DB)
     try:
         db.execute("ALTER TABLE executions ADD COLUMN failure_code TEXT")
@@ -222,6 +230,11 @@ def journal_turn_timeout(command_id, lane="interactive", message=None):
     db.execute("UPDATE executions SET failure_code='turn_timeout', lane=?, terminal_events=? WHERE command_id=?",
                (lane, json.dumps(terminal), command_id))
     db.commit(); db.close()
+
+
+def mc_rms():
+    """Every object url the watcher has `mc rm`-ed so far, oldest first."""
+    return [json.loads(line)["url"] for line in MC_RM_LOG.read_text().splitlines()] if MC_RM_LOG.exists() else []
 
 
 def mc_cps():
@@ -1415,15 +1428,17 @@ class Escalation(MemoHarness, unittest.TestCase):
         self.assertEqual((f["stage"], f["error_code"], f["retryable"], f["command_id"]), ("agent_reply", "turn_timeout", False, cid2))
         self.ticks()
         self.assertEqual(len(self.cmds(key)), 2)  # no third command
-        # an explicit memo:retry sends ONE fresh command on the configured lane; it is not escalated again
+        # an explicit memo:retry sends ONE fresh command; the lane is sticky: a memo that escalated stays on the batch
+        # lane (reason unchanged) and is not escalated again
         self.control("retry", m)
         self.w.tick(discover=False)
         self.assertEqual(m["status"], "active")
         self.tick_until(lambda: m["stage"] == "await_agent")
         self.assertNotEqual(m["command_id"], cid2)
-        self.assertFalse(mc_.memo_escalated(m))
-        self.assertEqual([t for t, _ in self.cmds(key)][-1], "bloodbank.cmd.agent.invocation.invoke")
-        journal_turn_timeout(m["command_id"])
+        self.assertTrue(mc_.memo_escalated(m))
+        self.assertEqual((m["lane"], m["lane_reason"]), ("batch", "turn_timeout_escalated"))
+        self.assertEqual([t for t, _ in self.cmds(key)][-1], "bloodbank.cmd.agent.invocation.start")
+        journal_turn_timeout(m["command_id"], lane="batch")
         self.tick_until(lambda: m["status"] == "failed")
         self.assertEqual(len(self.cmds(key)), 3)  # the retried command failed final, it did not escalate
 
@@ -1667,7 +1682,8 @@ class Cancel(MemoHarness, unittest.TestCase):
         self.assertEqual(m["status"], "cancelled")
         self.assertEqual(len(self.cmds(key)), 1)  # only the interactive one ever went out
         f = self.of_type("failed", key)[-1]
-        self.assertEqual((f["stage"], f["after_dispatch"]), ("cancelled", False))
+        # the interactive command DID go out and ran: after_dispatch says so, the message is about the batch one
+        self.assertEqual((f["stage"], f["after_dispatch"]), ("cancelled", True))
         self.assertIn("batch command was not sent", f["error_message"])
 
     def test_memo_retry_revives_a_cancelled_memo_and_it_dispatches_once(self):
@@ -1763,6 +1779,243 @@ class Cancel(MemoHarness, unittest.TestCase):
         finally:
             mt.c.STATE_DIR = real
         self.assertTrue((d / "control" / f"retry-{mc_.memo_id_for(k4)}").exists())
+
+
+class DecisionReviewFixes(MemoHarness, unittest.TestCase):
+    """HOLOC-12 operator-decision review: a re-transcribe sends a fresh command, a retry of an escalated memo stays on the
+    batch lane, the reply is matched to the command's own prompt, and the cancel / sidecar / unwind edges."""
+
+    def stale(self, name, **extra):
+        """A memo the old watcher cut to 300 characters, that failed on an interactive turn_timeout and still carries that
+        command (id, publish_attempted, lane, envelope id) with the gateway journal row to prove it."""
+        key = self.upload(name)
+        old = str(uuid.uuid4())
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "status": "failed",
+             "stage": "agent", "failed_stage": "agent_reply", "failed_code": mc_.TURN_TIMEOUT, "resume_stage": "dispatch",
+             "prompt": "p" * 300, "transcript": "t" * 300, "command_id": old, "publish_attempted": True, "lane": "interactive",
+             "command_envelope_id": "env-old", "dispatched_ts": time.time() - 900,
+             "size": len(b"OggS fake audio"), "etag": iw.hashlib.md5(b"OggS fake audio").hexdigest(), **extra}
+        self.state.memos[key] = m
+        journal_turn_timeout(old)
+        return key, m, old
+
+    def escalated(self, name):
+        key, m = self.to_await(name)
+        cid1 = m["command_id"]
+        journal_turn_timeout(cid1)
+        self.tick_until(lambda: m["command_id"] != cid1 and m["stage"] == "await_agent")
+        return key, m, cid1
+
+    # ---- 1. a re-transcribe is a fresh send -----------------------------------------------------
+
+    def test_a_retranscribe_publishes_a_fresh_interactive_command_and_never_reuses_the_old_id(self):
+        key, m, old = self.stale("fix-retranscribe")
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"]), ("active", "transcribe"))
+        for k in ("command_id", "publish_attempted", "lane", "lane_reason", "command_envelope_id"):
+            self.assertNotIn(k, m, k)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertNotEqual(m["command_id"], old)
+        (cmd,) = self.cmds(key)  # exactly one command, on the interactive lane
+        self.assertEqual(cmd[0], "bloodbank.cmd.agent.invocation.invoke")
+        self.assertEqual(cmd[1]["data"]["prompt"], iw.VOICE_PREFIX + "Summarize recent work.")
+        disp = self.of_type("dispatched", key)
+        self.assertEqual([d["command_id"] for d in disp], [m["command_id"]])  # the old id is in no dispatched fact
+        self.assertEqual((disp[0]["lane"], disp[0]["idempotency_key"]), ("interactive", "ik-1"))
+        self.assertEqual(disp[0]["prompt_chars"], len(iw.VOICE_PREFIX + "Summarize recent work."))
+        self.assertEqual(self.of_type("failed", key), [])
+
+    def test_a_retranscribe_of_an_escalated_memo_starts_over_on_the_interactive_lane(self):
+        key, m, old = self.stale("fix-retranscribe-esc", escalated=True, lane_reason=mc_.ESCALATED_REASON, lane="batch",
+                                 escalated_from_command_id="first", escalation_causation="env-first")
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        for k in ("escalated", "escalated_from_command_id", "escalation_causation", "lane_reason"):
+            self.assertNotIn(k, m, k)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual([t for t, _ in self.cmds(key)], ["bloodbank.cmd.agent.invocation.invoke"])
+        self.assertFalse(mc_.memo_escalated(m))
+
+    def test_a_revive_to_dispatch_after_an_agent_failure_drops_the_command_but_one_to_await_agent_keeps_it(self):
+        _, m, old = self.stale("fix-revive-dispatch")
+        self.w.revive(m, "dispatch", "test")
+        self.assertEqual([k in m for k in ("command_id", "publish_attempted", "lane", "command_envelope_id")], [False] * 4)
+        key2 = self.upload("fix-revive-await")
+        live = {"memo_id": mc_.memo_id_for(key2), "key": key2, "agent": "holocene-pm", "attempts": {}, "status": "failed",
+                "stage": "agent", "failed_stage": "agent_reply", "failed_code": "timeout", "resume_stage": "await_agent",
+                "command_id": "live-cmd", "publish_attempted": True, "lane": "interactive", "dispatched_ts": time.time() - 700}
+        self.state.memos[key2] = live
+        self.w.revive(live, "await_agent", "test")
+        self.assertEqual((live["command_id"], live["publish_attempted"], live["lane"]), ("live-cmd", True, "interactive"))
+
+    def test_a_cancelled_memo_revived_after_its_command_went_out_keeps_that_command(self):
+        key, m = self.to_await("fix-cancel-keep")
+        cid = m["command_id"]
+        self.control("cancel", m)
+        self.w.tick(discover=False)
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["status"], m["stage"], m["command_id"]), ("active", "await_agent", cid))
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    # ---- 2. a revive is visible to the journey --------------------------------------------------
+
+    def test_a_revive_publishes_a_marker_fact_except_at_receive(self):
+        _, m, old = self.stale("fix-marker")
+        self.w.revive(m, "await_agent", "memo:retry")
+        marks = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.received" and r["data"]["s3_key"] == m["key"]]
+        self.assertEqual(len(marks), 1)
+        self.assertEqual((marks[0]["revived"], marks[0]["revived_to"], marks[0]["revive_why"]), (True, "await_agent", "memo:retry"))
+        self.assertNotIn("detect_lag_ms", marks[0])
+        self.assertTrue(m["revived_ts"])
+        key2 = self.upload("fix-marker-receive")
+        m2 = {"memo_id": mc_.memo_id_for(key2), "key": key2, "agent": "holocene-pm", "attempts": {}, "status": "skipped",
+              "stage": "skipped", "failed_stage": "receive", "failed_code": "too_old"}
+        self.state.memos[key2] = m2
+        self.w.revive(m2, "receive", "memo:retry")
+        self.assertEqual([r for t, r in facts() if t == "bloodbank.audio.memo.received" and r["data"]["s3_key"] == key2], [])
+
+    # ---- 3. the reply is matched to the command's own prompt ------------------------------------
+
+    @staticmethod
+    def add_user(chat_id, text, ts):
+        db = sqlite3.connect(HERMES / "holocene-pm" / "state.db")
+        db.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?,?,?,?)", (f"s-{chat_id}", "user", text, ts))
+        db.commit(); db.close()
+
+    def test_find_reply_compares_against_the_newest_user_message_of_the_command_not_the_first(self):
+        chat = str(uuid.uuid4())
+        now = time.time()
+        hermes_session("holocene-pm", chat, "The answer.", prompt="OLD prompt, cut by the old watcher", ts=now - 1000)
+        self.add_user(chat, "NEW prompt, re-transcribed", now - 100)
+        self.add_user(chat, "a later follow-up nobody sent", now - 50)
+        sha = lambda t: iw.hashlib.sha256(t.encode()).hexdigest()  # noqa: E731
+        by_hash = mc_.find_reply("holocene-pm", chat, prompt_sha256=sha("NEW prompt, re-transcribed"))
+        self.assertEqual(by_hash["prompt"], "NEW prompt, re-transcribed")
+        by_time = mc_.find_reply("holocene-pm", chat, since=now - 101)
+        self.assertEqual(by_time["prompt"], "a later follow-up nobody sent")  # newest at or after the dispatch
+        self.assertEqual(mc_.find_reply("holocene-pm", chat, since=now - 60)["prompt"], "a later follow-up nobody sent")
+        self.assertEqual(mc_.find_reply("holocene-pm", chat)["prompt"], "a later follow-up nobody sent")
+
+    def test_a_retranscribed_memo_in_an_old_session_is_not_a_prompt_mismatch(self):
+        key, m = self.to_await("fix-prompt-match")
+        journal(m["command_id"], "holocene-pm")
+        now = time.time()
+        # the session already holds the stale first prompt; this command's prompt is the second user message
+        hermes_session("holocene-pm", m["memo_id"], "Real answer.", prompt="stale 300-char prompt", ts=now - 5000)
+        self.add_user(m["memo_id"], m["prompt"], now - 1)
+        db = sqlite3.connect(HERMES / "holocene-pm" / "state.db")
+        db.execute("UPDATE messages SET timestamp=? WHERE session_id=? AND role='assistant'", (now, f"s-{m['memo_id']}"))
+        db.commit(); db.close()
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertIs(self.of_type("replied", key)[-1]["prompt_match"], True)
+
+    # ---- 4. sticky batch lane, rescue window from the batch deadline ----------------------------
+
+    def test_a_retry_after_a_non_timeout_batch_failure_stays_on_the_batch_lane(self):
+        key, m, cid1 = self.escalated("fix-sticky")
+        cid2 = m["command_id"]
+        journal(cid2, "holocene-pm", outcome="failure")  # the batch turn fails for another reason
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual(m["failed_stage"], "agent")
+        self.control("retry", m)
+        self.w.tick(discover=False)
+        self.assertEqual((m["lane"], m["lane_reason"]), ("batch", mc_.ESCALATED_REASON))
+        self.tick_until(lambda: m["stage"] == "await_agent" and m["command_id"] != cid2)
+        self.assertEqual([t for t, _ in self.cmds(key)][-1], "bloodbank.cmd.agent.invocation.start")
+        self.assertEqual(len(self.cmds(key)), 3)
+        last = self.of_type("dispatched", key)[-1]
+        self.assertEqual((last["lane"], last["lane_reason"], last["escalated_from_command_id"]), ("batch", mc_.ESCALATED_REASON, cid1))
+        self.assertEqual(m["deadline_ts"] - m["dispatched_ts"], iw.BATCH_TURN_TIMEOUT_S)
+
+    def test_the_rescue_window_of_an_escalated_memo_starts_at_its_batch_deadline(self):
+        now = time.time()
+        batch = {"status": "failed", "failed_stage": "agent_reply", "failed_code": "timeout", "command_id": "c",
+                 "lane_reason": mc_.ESCALATED_REASON, "dispatched_ts": now - 7300, "deadline_ts": now - 100}
+        self.assertGreater(iw.rescue_closes_at(batch), now)  # a batch reply 100 s past the 2 h deadline is still taken
+        self.assertAlmostEqual(iw.rescue_closes_at(batch), now - 100 + iw.RESCUE_WINDOW_S, delta=1)
+        plain = {**batch, "lane_reason": None}
+        self.assertLess(iw.rescue_closes_at(plain), now)  # an ordinary memo's window still runs from its dispatch
+        key, m = self.to_await("fix-rescue")
+        cid = m["command_id"]
+        m.update(status="failed", failed_stage="agent_reply", failed_code="timeout", lane_reason=mc_.ESCALATED_REASON,
+                 escalated=True, dispatched_ts=now - 7300, deadline_ts=now - 100)
+        journal(cid, "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "A reply after the two hours.", ts=time.time())
+        self.w.last_rescue = 0
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertTrue(self.of_type("replied", key)[-1]["late"])
+
+    # ---- 5. a cancel landing mid-upload takes the objects back ----------------------------------
+
+    def test_a_cancel_that_lands_during_the_upload_removes_the_uploaded_objects(self):
+        key, m = self.to_await("fix-retract")
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "A reply that gets cancelled while it uploads. " * 20, ts=time.time())
+        real = mc_.mc
+        fired = []
+
+        def spy(*a, **k):
+            r = real(*a, **k)
+            if a[0] == "cp" and "/replies/" in a[-1] and not fired:  # the car's copy is up: the operator cancels right now
+                fired.append(1)
+                with self.w.mu:
+                    self.w.cancel_memo(m)
+            return r
+        n_rm = len(mc_rms())
+        with unittest.mock.patch.object(mc_, "mc", side_effect=spy):
+            self.tick_until(lambda: m["status"] == "cancelled" and key not in self.w.running and len(mc_rms()) > n_rm)
+            self.ticks(6)
+        self.assertTrue(fired)
+        self.assertEqual(self.of_type("replied", key), [])
+        gone = mc_rms()[n_rm:]
+        self.assertEqual(len(gone), 3, gone)  # the car's copy, the phone's audio and its text
+        self.assertEqual([p for p in BUCKET_DIR.rglob("*") if m["memo_id"] in p.name], [])
+        for k in ("earshot_key", "earshot_text_key", "earshot_attempted"):
+            self.assertNotIn(k, m, k)
+
+    # ---- 6. after_dispatch ----------------------------------------------------------------------
+
+    def test_after_dispatch_is_true_whenever_any_command_was_ever_published(self):
+        self.assertTrue(mc_.cancel_after_dispatch({"stage": "dispatch", "escalated": True}))
+        self.assertTrue(mc_.cancel_after_dispatch({"stage": "transcribe", "dispatched_ts": 1.0}))
+        self.assertFalse(mc_.cancel_after_dispatch({"stage": "dispatch"}))
+
+    # ---- 7. the phone's text is capped ----------------------------------------------------------
+
+    def test_a_huge_reply_is_cut_for_the_phone_with_a_note_and_never_mid_character(self):
+        self.assertEqual(iw.cap_earshot_text("small"), ("small", False))
+        capped, cut = iw.cap_earshot_text("é" * 50000)  # 100 KB of two-byte characters
+        self.assertTrue(cut)
+        self.assertLessEqual(len(capped.encode("utf-8")), iw.EARSHOT_TEXT_MAX_BYTES)
+        self.assertGreater(len(capped.encode("utf-8")), iw.EARSHOT_TEXT_MAX_BYTES - 200)
+        self.assertTrue(capped.endswith("[truncated; full text in Holocene /voice]"))
+        key, m = self.to_await("fix-huge")
+        journal(m["command_id"], "holocene-pm")
+        reply = "Long batch reply sentence. " * 4000  # about 108 KB
+        hermes_session("holocene-pm", m["memo_id"], reply, ts=time.time())
+        self.tick_until(lambda: m["status"] == "done")
+        sidecar = (BUCKET_DIR / m["earshot_text_key"]).read_bytes()
+        self.assertLessEqual(len(sidecar), iw.EARSHOT_TEXT_MAX_BYTES)
+        self.assertTrue(sidecar.decode("utf-8").endswith("[truncated; full text in Holocene /voice]"))
+        self.assertEqual(self.of_type("replied", key)[-1]["reply_chars"], len(reply.strip()))  # the fact and /voice keep it all
+
+    # ---- 8. turn_stopped=false ------------------------------------------------------------------
+
+    def test_an_unconfirmed_stop_waits_briefly_before_escalating(self):
+        key, m = self.to_await("fix-unwind")
+        cid1 = m["command_id"]
+        journal_turn_timeout(cid1, turn_stopped=False)
+        with unittest.mock.patch.object(iw, "TURN_UNWIND_WAIT_S", 0.4):
+            self.w.tick(discover=False)
+            self.assertEqual((m["stage"], m["command_id"]), ("await_agent", cid1))  # waiting, not escalated yet
+            self.assertTrue(m.get("unwind_since"))
+            self.ticks(3)
+            self.assertEqual(m["command_id"], cid1)
+            self.tick_until(lambda: m["command_id"] != cid1 and m["stage"] == "await_agent")
+        self.assertNotIn("unwind_since", m)
+        self.assertEqual([t for t, _ in self.cmds(key)], ["bloodbank.cmd.agent.invocation.invoke", "bloodbank.cmd.agent.invocation.start"])
 
 
 class TextSidecar(MemoHarness, unittest.TestCase):
@@ -1888,6 +2141,52 @@ class TraceEscalationAndCancel(unittest.TestCase):
         self.assertEqual(mt.verdict([replied, self.hop("fact:failed[cancelled]", mt.FAILED, ts=t(50),
                                                        detail="cancelled: x (retryable=False, attempt=1, after_dispatch=False)")],
                                     {"watcher_record": {}})[0], "CANCELLED before dispatch")
+
+    def test_a_failure_the_memo_moved_past_does_not_decide_the_verdict(self):
+        import memo_trace as mt
+        t = lambda s: mc_.parse_iso(f"2026-10-20T02:00:{s:02d}Z")  # noqa: E731
+        stuck = self.hop("fact:failed[agent_reply]", mt.FAILED, ts=t(10),
+                         detail="turn_timeout: agent turn timed out after 300s (retryable=False, attempt=1)")
+        later = self.hop("fact:dispatched", mt.OK, ts=t(30), detail="batch")
+        waiting = self.hop("agent:invocation.done", mt.MISSING, detail="no invocation.completed/failed for this command")
+        ctx = {"watcher_record": None, "stage_times": [(t(30), "dispatched")]}
+        v, ok = mt.verdict([later, waiting, stuck], ctx)
+        self.assertNotIn("turn timeout", v)  # a later dispatch: the old failure is history
+        self.assertTrue(v.startswith("STOPPED AT agent:invocation.done"))
+        # the same failure with nothing after it still decides
+        self.assertIn("turn timeout", mt.verdict([waiting, stuck], {"watcher_record": None, "stage_times": []})[0])
+
+    def test_while_the_watcher_has_the_memo_active_a_revive_or_dispatch_after_the_failure_supersedes_it(self):
+        import memo_trace as mt
+        t = lambda s: mc_.parse_iso(f"2026-10-20T02:00:{s:02d}Z")  # noqa: E731
+        cancelled = self.hop("fact:failed[cancelled]", mt.FAILED, ts=t(10),
+                             detail="cancelled: x (retryable=False, attempt=1, after_dispatch=True)")
+        revived = {"status": "active", "stage": "await_agent", "revived_ts": t(20).timestamp()}
+        self.assertFalse(mt.verdict([cancelled], {"watcher_record": revived})[0].startswith("CANCELLED"))
+        # an operator who has not retried yet: the record says cancelled, and so does the verdict
+        self.assertTrue(mt.verdict([cancelled], {"watcher_record": {"status": "cancelled", "revived_ts": t(20).timestamp()}})[0]
+                        .startswith("CANCELLED"))
+        # a dispatched fact after an after-dispatch cancel is bookkeeping, not a revival (no record to say otherwise)
+        late_dispatch = {"watcher_record": None, "stage_times": [(t(11), "dispatched")]}
+        self.assertTrue(mt.verdict([cancelled], late_dispatch)[0].startswith("CANCELLED"))
+        # ... but a revive marker (a `received` fact) is
+        marker = {"watcher_record": None, "stage_times": [(t(11), "received")]}
+        self.assertFalse(mt.verdict([cancelled], marker)[0].startswith("CANCELLED"))
+
+    def test_list_shows_the_live_stage_not_a_stale_failure(self):
+        import memo_trace as mt
+        ev = lambda typ, ts, **d: {"type": f"bloodbank.{typ}", "time": f"2026-10-20T02:00:{ts:02d}Z", "data": d}  # noqa: E731
+        failed = ev("audio.memo.failed", 10, stage="agent_reply", retryable=False)
+        events = [ev("audio.memo.dispatched", 5), failed, ev("audio.memo.dispatched", 30)]
+        self.assertEqual(mt.furthest(events, None), "dispatched")
+        self.assertEqual(mt.furthest(events[:2], None), "FAILED@agent_reply")
+        # revived at await_agent: the marker fact is a received fact
+        marked = [ev("audio.memo.dispatched", 5), ev("audio.memo.failed", 10, stage="cancelled", retryable=False, after_dispatch=True),
+                  ev("audio.memo.received", 20, revived=True)]
+        self.assertEqual(mt.furthest(marked, {"status": "active"}), "dispatched")
+        self.assertEqual(mt.furthest(marked[:2], {"status": "cancelled"}), "CANCELLED")
+        # a record that is failed keeps what its facts say, even with a later stage fact
+        self.assertEqual(mt.furthest(events, {"status": "failed"}), "FAILED@agent_reply")
 
     def test_list_marks_a_cancelled_memo_until_a_reply_follows(self):
         import memo_trace as mt
