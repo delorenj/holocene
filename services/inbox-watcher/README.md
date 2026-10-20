@@ -191,6 +191,17 @@ Behaviour worth knowing:
   `~/.hermes/agents-registry.yaml` right after `received`, so an unknown or
   disabled agent fails `dispatch/unknown_agent` in milliseconds, not after a
   45 s transcription and a 10 minute wait.
+  `memo:retry` of that memo restarts at `receive` (it has no transcript to
+  dispatch). The upload proxy refuses such a PUT up front (422), so the pad
+  shows "NOT sent" instead of SENT.
+- **A prompt is never shortened.** The whole transcript and prompt are kept for
+  every failed or active memo (only done / skipped memos are compacted to
+  previews); `prompt_sha256` is saved with the transcript, before the publish,
+  and checked at send (`prompt_changed` holds a mismatch). A transcript over
+  `MEMO_MAX_TRANSCRIPT_CHARS` (200000) is held `transcribe/transcript_too_long`,
+  not cut. The size and etag of the object are recorded at discovery; a download
+  that differs is held `download/object_changed` (`memo:retry` takes the object
+  as it is now).
 - **Nothing blocks the loop.** transcribe, dispatch and speak run on worker
   threads (one transcription at a time); `tick()` keeps discovering, polling the
   journal, flushing the outbox and writing `heartbeat.json` (which lists which

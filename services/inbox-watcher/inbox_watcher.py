@@ -91,6 +91,10 @@ HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watc
                   "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
 MAX_AGE_S = int(float(os.environ.get("MEMO_MAX_AGE_HOURS", "24")) * 3600)
 SPEAK_CHARS = int(os.environ.get("MEMO_SPEAK_CHARS", "500"))
+# A prompt is never shortened: a transcript over this many characters (about 40 hours of speech, far above any
+# real memo) is held with a clear error instead of being sent cut. The old 20000-char slice silently dropped the
+# tail of a long memo (about 2 hours of speech) and sent the agent half a sentence as if it were the whole ask.
+MAX_TRANSCRIPT_CHARS = int(os.environ.get("MEMO_MAX_TRANSCRIPT_CHARS", "200000"))
 # Every spoken reply is also dropped into this Earshot channel (s3://earshot/<channel>/), so it plays on the phone
 # and its last hop (detected / started / finished on the device) shows up in memo:trace. Empty turns it off.
 EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
@@ -224,12 +228,33 @@ class State:
 
 
 def compact(m: dict) -> None:
-    """A finished memo keeps previews, not full transcripts: state.json must not grow without bound."""
-    for k, n in (("transcript", 300), ("reply_text", 300), ("prompt", 300)):
-        if isinstance(m.get(k), str) and len(m[k]) > n:
-            m[k] = m[k][:n]
+    """A finished memo (done / skipped) keeps previews, not full transcripts: state.json must not grow without bound.
+
+    A failed or active memo keeps its whole transcript, prompt and reply: `memo:retry` re-sends that prompt and
+    re-speaks that reply, so a preview there would be a silent truncation (four turn_timeout memos sat holding
+    300-char prompts, 2026-10)."""
+    if m.get("status") in ("done", "skipped"):
+        for k, n in (("transcript", 300), ("reply_text", 300), ("prompt", 300)):
+            if isinstance(m.get(k), str) and len(m[k]) > n:
+                m[k] = m[k][:n]
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
+
+
+def resume_for(m: dict) -> str:
+    """Where `memo:retry` restarts a failed memo. A memo with no transcript cannot dispatch (it failed at receive,
+    for an unroutable agent, before any audio was heard): it starts over at receive."""
+    stage = m.get("resume_stage") or "receive"
+    if stage == "dispatch" and not m.get("transcript"):
+        return "receive"
+    return stage
+
+
+def truncated_by_old_watcher(m: dict) -> bool:
+    """A failed memo whose prompt was cut to exactly 300 characters by the old compact() and never carried a prompt
+    hash: its full text is gone, so retrying would send the agent half a prompt."""
+    return (m.get("status") == "failed" and not m.get("prompt_sha256") and isinstance(m.get("prompt"), str)
+            and len(m["prompt"]) == 300 and m.get("resume_stage") in ("dispatch", "await_agent"))
 
 
 def transcribe_timeout(audio_s: float | None, timeouts_so_far: int) -> int:
@@ -450,7 +475,7 @@ class Watcher:
             agent = agent_from_key(key)
             mid = memo_id_for(key)
             age = (now_utc() - o["last_modified"]).total_seconds() if o["last_modified"] else 0
-            m = {"memo_id": mid, "key": key, "agent": agent, "size": o["size"],
+            m = {"memo_id": mid, "key": key, "agent": agent, "size": o["size"], "etag": o.get("etag"),
                  "uploaded_at": iso(o["last_modified"]), "detected_ts": time.time(),
                  "attempts": {}, "next_at": 0.0, "status": "active", "stage": "receive"}
             self.s.memos[key] = m
@@ -481,6 +506,10 @@ class Watcher:
             m.pop("lane_reason", None)
         if stage == "await_agent":
             m["deadline_ts"] = time.time() + AGENT_TIMEOUT_S
+        if m.get("failed_code") == "object_changed" and m.get("observed_object"):
+            # The operator asked for this memo again: take the object as it is now as the one to transcribe.
+            obs = m.pop("observed_object")
+            m["size"], m["etag"] = obs["size"], obs.get("etag")
         if failed:
             m["attempts"].pop(failed, None)
             m.get("first_fail", {}).pop(failed, None)
@@ -510,8 +539,11 @@ class Watcher:
                 log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo status is {m.get('status')}")
             elif m.get("agent") is None:
                 log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="no agent in the key path")
+            elif truncated_by_old_watcher(m):
+                log("retry_refused", "warn", memo_id=mid, key=m["key"],
+                    reason="its prompt was cut to 300 characters by an older watcher: re-upload the recording instead")
             else:
-                self.revive(m, m.get("resume_stage") or "receive", "memo:retry")
+                self.revive(m, resume_for(m), "memo:retry")
 
     def rescue_late(self) -> None:
         """A memo that hit the agent deadline may still complete (the command stayed queued). Speak it late."""
@@ -633,6 +665,7 @@ class Watcher:
             m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
                                  else "dispatch" if e.stage == "agent_reply" and e.code == mc_.TURN_TIMEOUT  # fresh command
                                  else RESUME_STAGE.get(e.stage, "receive"))
+            m["resume_stage"] = resume_for(m)
             compact(m)
             log("memo_failed", "error", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
                 code=e.code, error=e.message[:300], attempt=n,
@@ -671,17 +704,21 @@ class Watcher:
     def step_transcribe(self, m: dict) -> None:
         with self.mu:
             key, mid, agent, timeouts = m["key"], m["memo_id"], m["agent"], m.get("timeouts", 0)
+            want = {"size": m.get("size"), "etag": m.get("etag")}
         try:
-            work = self._transcribe_work(key, mid, agent, timeouts)
+            work = self._transcribe_work(key, mid, agent, timeouts, want)
         except StageError as e:
             if e.code == "timeout":
                 with self.mu:
                     m["timeouts"] = m.get("timeouts", 0) + 1
+            elif e.code == "object_changed":
+                with self.mu:
+                    m["observed_object"] = getattr(e, "observed", None)  # adopted if the operator retries
             raise
         with self.mu:
             self._transcribe_apply(m, work)
 
-    def _transcribe_work(self, key: str, mid: str, agent: str, timeouts: int) -> dict:
+    def _transcribe_work(self, key: str, mid: str, agent: str, timeouts: int, want: dict | None = None) -> dict:
         tmp = Path(tempfile.mkdtemp(prefix="memo-"))
         try:
             audio = tmp / Path(key).name
@@ -691,6 +728,7 @@ class Watcher:
                 raise StageError("download", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="download",
                 ms=int((time.time() - t0) * 1000), bytes=audio.stat().st_size)
+            self._check_object(audio, key, want or {})
 
             # Fail fast on audio nothing can decode, and size the timeout from the real duration.
             probe = mc_.probe_audio(audio)
@@ -719,6 +757,29 @@ class Watcher:
                 raise
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    @staticmethod
+    def _check_object(audio: Path, key: str, want: dict) -> None:
+        """Hold a memo whose object is not the one that was discovered: a recording replaced or cut after the listing
+        would be transcribed and sent to an agent as if it were what the operator said."""
+        size = audio.stat().st_size
+        etag = (want.get("etag") or "").strip('"')
+        why = None
+        if want.get("size") is not None and size != want["size"]:
+            why = f"{size} bytes now, {want['size']} bytes when it was discovered"
+        elif re.fullmatch(r"[0-9a-f]{32}", etag):  # a multipart upload's etag is not an md5: its size check covers it
+            md5 = hashlib.md5()
+            with audio.open("rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    md5.update(chunk)
+            if md5.hexdigest() != etag:
+                why = f"content hash {md5.hexdigest()} now, etag {etag} when it was discovered"
+        if why:
+            e = StageError("download", "object_changed",
+                           f"{key} changed after it was discovered ({why}); `memo:retry` takes the object as it is now",
+                           retryable=False)
+            e.observed = {"size": size, "etag": None}
+            raise e
 
     def _transcribe_run(self, tmp: Path, audio: Path, mid: str, key: str, agent: str, audio_s: float | None,
                         levels: dict, lvl: dict, timeouts: int) -> dict:
@@ -760,8 +821,13 @@ class Watcher:
 
     def _transcribe_apply(self, m: dict, w: dict) -> None:
         text, meta, took = w["text"], w["meta"], w["took"]
-        m["transcript"] = text[:20000]
-        m["prompt"] = build_prompt(m["transcript"])
+        if len(text) > MAX_TRANSCRIPT_CHARS:
+            raise StageError("transcribe", "transcript_too_long",
+                             f"transcript is {len(text)} chars, over the {MAX_TRANSCRIPT_CHARS} limit: held, not cut; "
+                             "a prompt is never sent shortened", retryable=False)
+        m["transcript"] = text
+        m["prompt"] = build_prompt(text)
+        m["prompt_sha256"] = hashlib.sha256(m["prompt"].encode()).hexdigest()  # saved with the step, before any publish
         self.fact("transcribed", m, {
             "transcript_text": m["transcript"], "transcript_chars": len(text),
             "word_count": meta.get("word_count") or len(text.split()),
@@ -775,8 +841,27 @@ class Watcher:
 
     # -- dispatch (worker thread) --
 
+    def _prompt_for_send(self, m: dict) -> str:
+        """The exact prompt to dispatch, proven to be the one that was transcribed: its sha256 was recorded with the
+        transcript and must still match. A memo with nothing to send is held, never sent empty."""
+        prompt = m.get("prompt")
+        if not prompt:
+            if not m.get("transcript"):
+                raise StageError("dispatch", "no_transcript", "this memo has no transcript to dispatch (it failed before "
+                                 "transcription): `memo:retry` starts it again at receive", retryable=False)
+            prompt = m["prompt"] = build_prompt(m["transcript"])
+        digest = hashlib.sha256(prompt.encode()).hexdigest()
+        if not m.get("prompt_sha256"):
+            m["prompt_sha256"] = digest  # a memo transcribed before hashes were recorded: pin what is there now
+        elif m["prompt_sha256"] != digest:
+            raise StageError("dispatch", "prompt_changed", f"the stored prompt ({len(prompt)} chars) no longer matches the "
+                             f"sha256 recorded at transcription ({m['prompt_sha256'][:12]}...): held, not sent", retryable=False)
+        return prompt
+
     def step_dispatch(self, m: dict) -> None:
         import uuid
+        with self.mu:
+            self._prompt_for_send(m)  # before the lane probe (it sleeps): a memo with nothing to send is held at once
         # Pick the lane once per command id and keep it: the idempotency key, the envelope digest and the
         # journal row all differ by command type, so re-sending one command id on the other subject would be
         # a terminal digest collision. Probed outside the lock (it sleeps between probes).
@@ -814,8 +899,7 @@ class Watcher:
             if route["ok"] is False:
                 raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
             m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
-            m.setdefault("prompt", build_prompt(m["transcript"]))
-            prompt = m["prompt"]
+            prompt = self._prompt_for_send(m)
             data = {
                 "target_agent_id": m["agent"], "prompt": prompt, "thread_id": m["thread_id"],
                 "turn_id": None,
@@ -862,7 +946,7 @@ class Watcher:
             "command_subject": ids.get("subject") or mc_.LANE_COMMAND_TYPES[memo_lane(m)],
             "lane": memo_lane(m), "lane_reason": m.get("lane_reason"),
             "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(prompt),
-            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "prompt_sha256": m.get("prompt_sha256") or hashlib.sha256(prompt.encode()).hexdigest(),
             "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms)})
         self.done_stage(m, "dispatched", "await_agent", ms=ms, command_id=cid, target=m["agent"],
                         lane=memo_lane(m))
