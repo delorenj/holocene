@@ -20,6 +20,7 @@ import { getVelocityTimeline, isVelocityRange } from "./velocity.js";
 import {
   getContainersSnapshot
 } from "./containers.js";
+import { getDirectorSnapshot } from "./director.js";
 import { getOrgTree } from "./org.js";
 import { getHubAgents, getHubProjects } from "./hub.js";
 import {
@@ -419,6 +420,13 @@ app.post<{ Params: { type: string; name: string; action: string } }>(
 );
 
 app.get("/api/modules/containers/snapshot", async () => getContainersSnapshot());
+
+// Read-only projection of the DeLoNET Director (HOLOC-8). GET only on purpose: Holocene has no write path to the
+// Director. A Director outage is still a 200 with health.level="down"; only a Holocene-side bug is a 500.
+app.get("/api/modules/director/snapshot", async (_req, reply) => {
+  reply.header("Cache-Control", "no-store");
+  return getDirectorSnapshot();
+});
 
 app.get("/api/modules/tooling/definitions", async () => ({
   generatedAt: new Date().toISOString(),

@@ -6,6 +6,7 @@ import { ClockCard } from "../clock-card";
 import { ToolingTab } from "../tooling";
 import { SystemsTab } from "../systems";
 import ContainersTab from "../containers";
+import DirectorTab from "../director";
 
 type ActiveWork = {
   status: "idle" | "checking" | "active" | "blocked" | "stalled" | "error" | "unknown";
@@ -404,10 +405,10 @@ function ServiceControls({
 
 export default function HomePage() {
   const [apiBase] = useState(resolveApiBase);
-  const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems" | "containers">("fleet");
+  const [activeTab, setActiveTab] = useState<"fleet" | "tooling" | "systems" | "containers" | "director">("fleet");
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (tab === "fleet" || tab === "tooling" || tab === "systems" || tab === "containers") setActiveTab(tab);
+    if (tab === "fleet" || tab === "tooling" || tab === "systems" || tab === "containers" || tab === "director") setActiveTab(tab);
   }, []);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -712,6 +713,15 @@ export default function HomePage() {
           type="button"
         >
           Containers
+        </button>
+        <button
+          aria-selected={activeTab === "director"}
+          className={activeTab === "director" ? "tab tab-active" : "tab"}
+          onClick={() => setActiveTab("director")}
+          role="tab"
+          type="button"
+        >
+          Director
         </button>
       </nav>
 
@@ -1034,6 +1044,8 @@ export default function HomePage() {
         <ToolingTab apiBase={apiBase} />
       ) : activeTab === "containers" ? (
         <ContainersTab apiBase={apiBase} />
+      ) : activeTab === "director" ? (
+        <DirectorTab apiBase={apiBase} />
       ) : (
         <SystemsTab apiBase={apiBase} />
       )}
