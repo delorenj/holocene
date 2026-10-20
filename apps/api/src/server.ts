@@ -16,6 +16,7 @@ import {
   restartGateways,
   syncTemplateDefaults
 } from "./fleet.js";
+import { getVelocityTimeline, isVelocityRange } from "./velocity.js";
 import {
   getContainersSnapshot
 } from "./containers.js";
@@ -351,6 +352,19 @@ app.get("/api/clock/state", async (_req, reply) => {
 
 
 app.get("/api/modules/hermes-fleet/snapshot", async () => getFleetSnapshot());
+
+// Candystore-backed invocation spans for the Ticket Velocity timeline (HOLOC-6).
+app.get<{ Querystring: { range?: string } }>("/api/modules/hermes-fleet/velocity", async (req, reply) => {
+  const range = req.query.range ?? "1h";
+  if (!isVelocityRange(range)) {
+    return reply.status(400).send({ error: `Invalid range '${range}'. Use 1h, 1d, or 3d.` });
+  }
+  try {
+    return await getVelocityTimeline(range);
+  } catch (err) {
+    return reply.status(502).send({ error: err instanceof Error ? err.message : "Candystore unavailable" });
+  }
+});
 
 // P2 — the fleet arranged into the operator's real reporting hierarchy
 // (~/.hermes/org.yaml merged with project_path derivation + live overlay).

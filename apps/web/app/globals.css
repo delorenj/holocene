@@ -614,6 +614,18 @@ h2 {
   margin-top: 5px;
 }
 
+.velocity-controls {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.velocity-range {
+  display: flex;
+  gap: 6px;
+}
+
 .velocity-legend {
   align-items: center;
   display: flex;
@@ -683,41 +695,83 @@ h2 {
 
 .velocity-corner {
   align-items: center;
+  background: #0f1729;
   border-right: 1px solid var(--line);
   color: var(--muted);
   display: flex;
   font-size: 0.76rem;
   font-weight: 800;
+  left: 0;
   padding: 11px 12px;
+  position: sticky;
   text-transform: uppercase;
+  z-index: 3;
 }
 
 .velocity-axis {
-  display: grid;
   min-height: 42px;
   pointer-events: none;
+  position: relative;
 }
 
-.velocity-axis span {
+/* Ticks are positioned by true time percentage so labels and gridlines line
+   up with the bars; the gridline itself never moves, only the label side. */
+.velocity-axis-tick {
   align-items: center;
   border-left: 1px solid rgba(154, 168, 199, 0.16);
+  bottom: 0;
+  display: flex;
+  position: absolute;
+  top: 0;
+}
+
+.velocity-axis-tick-end {
+  border-left: 0;
+  border-right: 1px solid rgba(154, 168, 199, 0.16);
+  justify-content: flex-end;
+}
+
+.velocity-axis-tick-label {
+  color: var(--muted);
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.velocity-axis-now {
+  align-items: center;
+  bottom: 0;
   color: var(--muted);
   display: flex;
   font-family:
     "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
   font-size: 0.72rem;
-  justify-content: center;
-  min-width: 60px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding-right: 6px;
+  position: absolute;
+  right: 0;
+  text-transform: uppercase;
+  top: 0;
 }
 
-.velocity-axis span:first-child {
-  border-left: 0;
+.velocity-project-row {
+  background: rgba(29, 41, 67, 0.55);
+  border-bottom: 1px solid rgba(38, 50, 77, 0.75);
+  grid-column: 1 / -1;
+  padding: 7px 12px;
 }
 
-.velocity-axis,
-.velocity-ticks,
-.velocity-segments {
-  grid-template-columns: repeat(12, minmax(60px, 1fr));
+.velocity-project-label {
+  color: var(--blue);
+  font-size: 0.76rem;
+  font-weight: 800;
+  left: 12px;
+  letter-spacing: 0.04em;
+  position: sticky;
+  text-transform: uppercase;
 }
 
 .velocity-row {
@@ -731,11 +785,15 @@ h2 {
 
 .velocity-lane-label {
   align-content: center;
+  background: #0f1729;
   border-right: 1px solid var(--line);
   display: grid;
   gap: 4px;
+  left: 0;
   min-width: 0;
   padding: 12px;
+  position: sticky;
+  z-index: 2;
 }
 
 .velocity-lane-label strong,
@@ -762,74 +820,71 @@ h2 {
   position: relative;
 }
 
-.velocity-ticks,
-.velocity-segments {
-  display: grid;
-  grid-column: 1;
-  grid-row: 1;
+.velocity-ticks {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
 }
 
 .velocity-ticks span {
   border-left: 1px solid rgba(154, 168, 199, 0.14);
+  bottom: 0;
+  position: absolute;
+  top: 0;
 }
 
-.velocity-ticks span:first-child {
-  border-left: 0;
-}
-
-.velocity-segments {
+.velocity-bar {
   align-items: center;
-  gap: 0;
-  padding: 10px 0;
-}
-
-.velocity-segment {
-  align-items: center;
-  align-self: center;
   border-radius: 7px;
+  bottom: 10px;
   box-shadow: 0 0 0 1px rgba(7, 17, 31, 0.35) inset;
   color: var(--ink);
-  display: grid;
-  gap: 2px;
-  justify-items: center;
-  margin: 0 5px;
-  min-height: 46px;
-  min-width: 0;
-  padding: 7px 8px;
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  min-width: 6px;
+  overflow: hidden;
+  padding: 0 8px;
+  position: absolute;
+  top: 10px;
 }
 
-.velocity-segment-green {
+.velocity-bar:focus {
+  outline: 2px solid rgba(127, 176, 255, 0.7);
+  outline-offset: 1px;
+}
+
+.velocity-bar-completed {
   background: var(--green);
 }
 
-.velocity-segment-yellow {
-  background: var(--yellow);
+.velocity-bar-running {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--yellow),
+    var(--yellow) 8px,
+    rgba(7, 17, 31, 0.35) 8px,
+    rgba(7, 17, 31, 0.35) 16px
+  );
 }
 
-.velocity-segment-red {
+.velocity-bar-failed {
   background: var(--red);
 }
 
-.velocity-segment-label,
-.velocity-segment-status {
+.velocity-bar-orphaned {
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+.velocity-bar-label {
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 900;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.velocity-segment-label {
-  font-family:
-    "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
-  font-size: 0.78rem;
-  font-weight: 900;
-}
-
-.velocity-segment-status {
-  font-size: 0.66rem;
-  font-weight: 800;
-  text-transform: uppercase;
 }
 
 .velocity-empty {

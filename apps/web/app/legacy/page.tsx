@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ClockCard } from "../clock-card";
 import { ToolingTab } from "../tooling";
@@ -96,26 +96,46 @@ function resolveApiBase() {
 const TASK_TEXT_LIMIT = 190;
 const LOG_TAIL_LINES = 160;
 const LOG_REFRESH_MS = 2000;
-const HEARTBEAT_INTERVAL_SECONDS = 5 * 60;
-const VELOCITY_TICK_COUNT = 12;
+const VELOCITY_REFRESH_MS = 30_000;
+const VELOCITY_RANGE_STORAGE_KEY = "holocene-velocity-range";
+const VELOCITY_MIN_BAR_WIDTH_PCT = 0.8;
 
-type VelocityTone = "green" | "yellow" | "red";
+type VelocityRange = "1h" | "1d" | "3d";
+const VELOCITY_RANGES: VelocityRange[] = ["1h", "1d", "3d"];
 
-type VelocitySegment = {
-  id: string;
-  issue: string;
-  summary: string;
-  status: ActiveWork["status"];
-  tone: VelocityTone;
-  span: 1 | 2 | 3;
-  startTick: number;
-  heartbeatAge?: number;
-  label: string;
+// Wider time-scaled tracks keep bars legible on long ranges; the 1h view fits
+// the scroll area exactly.
+const VELOCITY_TRACK_MIN_WIDTH: Record<VelocityRange, number | undefined> = {
+  "1h": undefined,
+  "1d": 1800,
+  "3d": 3600
 };
 
-type VelocityLane = {
-  agent: FleetAgent;
-  segments: VelocitySegment[];
+type VelocitySpanStatus = "completed" | "failed" | "running" | "orphaned";
+
+type VelocitySpan = {
+  id: string;
+  agent_id: string;
+  project: string;
+  issue?: string;
+  label: string;
+  lane?: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: VelocitySpanStatus;
+};
+
+type VelocityTimeline = {
+  generatedAt: string;
+  range: VelocityRange;
+  from: string;
+  to: string;
+  lanes: {
+    project: string;
+    agents: { agent_id: string; display_name: string; spans: VelocitySpan[] }[];
+  }[];
+  counts: { spans: number; running: number; failed: number };
+  source: "candystore";
 };
 
 const statusVerbs: Record<ActiveWork["status"], string> = {
@@ -290,127 +310,54 @@ function progressSteps(agent: FleetAgent, now: number) {
   ] as const;
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+function velocityAxisTicks(range: VelocityRange, fromMs: number, toMs: number): { atMs: number; label: string }[] {
+  const stepMs = range === "1h" ? 10 * 60 * 1000 : range === "1d" ? 2 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000;
+  const ticks: { atMs: number; label: string }[] = [];
 
-function severityFromStatus(
-  status: ActiveWork["status"],
-  options: { quietSeconds?: number; busyState?: FleetAgent["busy_state"]; runnerFailed?: boolean } = {}
-): { tone: VelocityTone; span: 1 | 2 | 3; label: string } {
-  if (
-    ["blocked", "stalled", "error"].includes(status) ||
-    ["blocked", "stalled", "error"].includes(options.busyState ?? "idle") ||
-    options.runnerFailed
-  ) {
-    return { tone: "red", span: 3, label: "3-tick blocker" };
+  for (let atMs = Math.ceil(fromMs / stepMs) * stepMs; atMs <= toMs; atMs += stepMs) {
+    const date = new Date(atMs);
+    const midnight = date.getHours() === 0 && date.getMinutes() === 0;
+    const label =
+      range !== "1h" && midnight
+        ? date.toLocaleDateString([], { month: "short", day: "numeric" })
+        : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    ticks.push({ atMs, label });
   }
 
-  if (
-    status === "checking" ||
-    options.quietSeconds === undefined ||
-    options.quietSeconds > HEARTBEAT_INTERVAL_SECONDS * 2 ||
-    options.busyState === "unknown"
-  ) {
-    return { tone: "yellow", span: 2, label: "2-tick watch" };
-  }
-
-  return { tone: "green", span: 1, label: "1-tick healthy" };
+  return ticks;
 }
 
-function velocitySeverity(agent: FleetAgent, now: number): { tone: VelocityTone; span: 1 | 2 | 3; label: string } {
-  const { active_work: work } = agent;
-  return severityFromStatus(work.status, {
-    quietSeconds: freshnessSeconds(work, now),
-    busyState: agent.busy_state,
-    runnerFailed: work.last_runner_exit_code !== undefined && work.last_runner_exit_code !== 0
-  });
+// Place a span on the window as left/width percentages, clipping to the window
+// edges and keeping a minimum visible width for zero-length spans.
+function spanGeometry(span: VelocitySpan, fromMs: number, toMs: number, nowMs: number) {
+  const total = toMs - fromMs;
+  if (total <= 0) return { left: 0, width: VELOCITY_MIN_BAR_WIDTH_PCT };
+
+  const startMs = Math.max(Date.parse(span.startedAt), fromMs);
+  const rawEndMs =
+    span.status === "running" ? nowMs : span.endedAt ? Date.parse(span.endedAt) : Date.parse(span.startedAt);
+  const endMs = Math.max(Math.min(rawEndMs, toMs), startMs);
+
+  const left = ((startMs - fromMs) / total) * 100;
+  const width = Math.max(((endMs - startMs) / total) * 100, VELOCITY_MIN_BAR_WIDTH_PCT);
+  return { left: Math.min(left, 100 - VELOCITY_MIN_BAR_WIDTH_PCT), width };
 }
 
-function buildCurrentVelocitySegment(agent: FleetAgent, now: number): VelocitySegment {
-  const heartbeatAge = freshnessSeconds(agent.active_work, now);
-  const { tone, span, label } = velocitySeverity(agent, now);
-  const heartbeatTick = clamp(
-    VELOCITY_TICK_COUNT - 1 - Math.floor((heartbeatAge ?? 0) / HEARTBEAT_INTERVAL_SECONDS),
-    0,
-    VELOCITY_TICK_COUNT - 1
-  );
-  const startTick = clamp(heartbeatTick - span + 1, 0, VELOCITY_TICK_COUNT - span);
-  const issue = agent.active_work.issue_id ?? agent.active_work.status;
-  const summary =
-    firstSentence(agent.active_work.summary) ??
-    firstSentence(agent.active_work.reason) ??
-    "No task detail recorded";
-
-  return {
-    id: `${agent.agent_id}-current-${issue}`,
-    issue,
-    summary,
-    status: agent.active_work.status,
-    tone,
-    span,
-    startTick,
-    heartbeatAge,
-    label
-  };
+function formatClock(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function buildHistoricalVelocitySegment(event: VelocityHistoryEvent, index: number, now: number): VelocitySegment | undefined {
-  const eventAge = secondsSince(event.timestamp, now);
-  if (eventAge === undefined || eventAge > HEARTBEAT_INTERVAL_SECONDS * VELOCITY_TICK_COUNT) return undefined;
-
-  const { tone, span, label } = severityFromStatus(event.status, {
-    quietSeconds: 0,
-    runnerFailed: event.last_runner_exit_code !== undefined && event.last_runner_exit_code !== 0
-  });
-  const heartbeatTick = clamp(
-    VELOCITY_TICK_COUNT - 1 - Math.floor(eventAge / HEARTBEAT_INTERVAL_SECONDS),
-    0,
-    VELOCITY_TICK_COUNT - 1
-  );
-  const startTick = clamp(heartbeatTick - span + 1, 0, VELOCITY_TICK_COUNT - span);
-  const issue = event.issue_id ?? event.status;
-
-  return {
-    id: `${event.agent_id}-${event.timestamp}-${index}`,
-    issue,
-    summary: firstSentence(event.summary) ?? firstSentence(event.reason) ?? event.event_type,
-    status: event.status,
-    tone,
-    span,
-    startTick,
-    heartbeatAge: eventAge,
-    label
-  };
+function spanDurationSeconds(span: VelocitySpan, nowMs: number): number | undefined {
+  const startMs = Date.parse(span.startedAt);
+  const endMs = span.endedAt ? Date.parse(span.endedAt) : span.status === "running" ? nowMs : undefined;
+  if (!Number.isFinite(startMs) || endMs === undefined || !Number.isFinite(endMs)) return undefined;
+  return Math.max(0, Math.round((endMs - startMs) / 1000));
 }
 
-function buildVelocityLanes(agents: FleetAgent[], history: VelocityHistoryEvent[] | undefined, now: number): VelocityLane[] {
-  const historyByAgent = new Map<string, VelocityHistoryEvent[]>();
-  for (const event of history ?? []) {
-    const events = historyByAgent.get(event.agent_id) ?? [];
-    events.push(event);
-    historyByAgent.set(event.agent_id, events);
-  }
-
-  return agents
-    .filter((agent) => agent.active_work.issue_id || !["idle", "unknown"].includes(agent.busy_state) || historyByAgent.has(agent.agent_id))
-    .map((agent) => {
-      const historicalSegments = (historyByAgent.get(agent.agent_id) ?? [])
-        .map((event, index) => buildHistoricalVelocitySegment(event, index, now))
-        .filter((segment): segment is VelocitySegment => segment !== undefined);
-
-      return {
-        agent,
-        segments: historicalSegments.length ? historicalSegments : [buildCurrentVelocitySegment(agent, now)]
-      };
-    });
-}
-
-function velocityTickLabels() {
-  return Array.from({ length: VELOCITY_TICK_COUNT }, (_, index) => {
-    const offsetSeconds = (VELOCITY_TICK_COUNT - 1 - index) * HEARTBEAT_INTERVAL_SECONDS;
-    return offsetSeconds === 0 ? "now" : `-${Math.round(offsetSeconds / 60)}m`;
-  });
+function spanDescription(span: VelocitySpan, agentName: string, nowMs: number) {
+  const duration = formatDuration(spanDurationSeconds(span, nowMs));
+  const end = span.endedAt ? formatClock(span.endedAt) : span.status === "running" ? "now" : "no end event";
+  return `${agentName} ${span.label}: ${span.status}, ${formatClock(span.startedAt)} → ${end}, ${duration}`;
 }
 
 type ServiceKind = "gateway" | "consumer" | "sentinel" | "checkpoint";
@@ -466,6 +413,40 @@ export default function HomePage() {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [velocityRange, setVelocityRange] = useState<VelocityRange>("1h");
+  // Gates the first velocity fetch until the persisted range has been
+  // restored, so a saved non-default range does not fire a wasted 1h fetch
+  // (a lazy useState initializer would mismatch the server-rendered HTML).
+  const [velocityRangeReady, setVelocityRangeReady] = useState(false);
+  const [velocity, setVelocity] = useState<VelocityTimeline | null>(null);
+  const [velocityError, setVelocityError] = useState<string | null>(null);
+  const [velocityRequested, setVelocityRequested] = useState(false);
+  const velocityScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VELOCITY_RANGE_STORAGE_KEY);
+      if (saved === "1h" || saved === "1d" || saved === "3d") setVelocityRange(saved);
+    } catch {
+      // Private windows can refuse storage; the 1h default still applies.
+    }
+    setVelocityRangeReady(true);
+  }, []);
+
+  const selectVelocityRange = (range: VelocityRange) => {
+    if (range === velocityRange) return;
+    setVelocityRange(range);
+    // Drop the previous range's timeline so stale spans, ticks and errors
+    // never render against the new window while the fetch is in flight.
+    setVelocity(null);
+    setVelocityError(null);
+    setVelocityRequested(false);
+    try {
+      window.localStorage.setItem(VELOCITY_RANGE_STORAGE_KEY, range);
+    } catch {
+      // Persistence is a convenience, never a blocker.
+    }
+  };
   const [openLogAgentId, setOpenLogAgentId] = useState<string | null>(null);
   const [logTails, setLogTails] = useState<Record<string, LogTail | undefined>>({});
   const [logErrors, setLogErrors] = useState<Record<string, string | undefined>>({});
@@ -523,8 +504,69 @@ export default function HomePage() {
       ),
     [agents]
   );
-  const velocityLanes = useMemo(() => buildVelocityLanes(agents, snapshot?.velocity_history, now), [agents, snapshot?.velocity_history, now]);
-  const velocityTicks = useMemo(() => velocityTickLabels(), []);
+  useEffect(() => {
+    if (!velocityRangeReady) return undefined;
+    let cancelled = false;
+
+    const loadVelocity = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/modules/hermes-fleet/velocity?range=${velocityRange}`, {
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          let message = `velocity ${response.status}`;
+          try {
+            const body = (await response.json()) as { error?: string };
+            if (body.error) message = body.error;
+          } catch {
+            // Keep the status fallback when the API did not return JSON.
+          }
+          throw new Error(message);
+        }
+        const data = (await response.json()) as VelocityTimeline;
+        if (!cancelled) {
+          setVelocity(data);
+          setVelocityError(null);
+          setVelocityRequested(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setVelocityError(err instanceof Error ? err.message : "velocity feed unavailable");
+          setVelocityRequested(true);
+        }
+      }
+    };
+
+    void loadVelocity();
+    const timer = window.setInterval(() => void loadVelocity(), VELOCITY_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [apiBase, velocityRange, velocityRangeReady]);
+
+  // Ticks carry their true time position as a percentage of the loaded
+  // window, so labels and gridlines sit exactly where bars do.
+  const velocityTicks = useMemo(() => {
+    if (!velocity) return [];
+    const fromMs = Date.parse(velocity.from);
+    const toMs = Date.parse(velocity.to);
+    const total = toMs - fromMs;
+    return velocityAxisTicks(velocity.range, fromMs, toMs).map((tick) => ({
+      ...tick,
+      left: total > 0 ? ((tick.atMs - fromMs) / total) * 100 : 0
+    }));
+  }, [velocity]);
+
+  // "Now" is the right edge: land there on first load and on every range change.
+  useEffect(() => {
+    const scroller = velocityScrollRef.current;
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+  }, [velocityRange, velocity?.range]);
+
+  const velocityFromMs = velocity ? Date.parse(velocity.from) : 0;
+  const velocityToMs = velocity ? Date.parse(velocity.to) : 0;
+  const velocityMultiProject = (velocity?.lanes.length ?? 0) > 1;
 
   useEffect(() => {
     if (!openLogAgentId) return undefined;
@@ -701,65 +743,115 @@ export default function HomePage() {
           <div>
             <h2>Ticket Velocity</h2>
             <p className="section-note">
-              Candystore-backed heartbeat history. Each tick is {formatDuration(HEARTBEAT_INTERVAL_SECONDS)}; bars widen as work needs attention.
+              Hermes gateway invocations via Candystore, paired into time-scaled spans. Scroll left to inspect
+              activity before a spike.
             </p>
           </div>
-          <div className="velocity-legend" aria-label="Velocity severity legend">
-            <span><i className="velocity-key velocity-key-green" /> 1 tick healthy</span>
-            <span><i className="velocity-key velocity-key-yellow" /> 2 tick watch</span>
-            <span><i className="velocity-key velocity-key-red" /> 3 tick blocker</span>
+          <div className="velocity-controls">
+            <div className="velocity-range" role="group" aria-label="Velocity time window">
+              {VELOCITY_RANGES.map((range) => (
+                <button
+                  className={velocityRange === range ? "tab tab-active" : "tab"}
+                  key={range}
+                  onClick={() => selectVelocityRange(range)}
+                  type="button"
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+            <div className="velocity-legend" aria-label="Velocity status legend">
+              <span><i className="velocity-key velocity-key-green" /> completed</span>
+              <span><i className="velocity-key velocity-key-yellow" /> running</span>
+              <span><i className="velocity-key velocity-key-red" /> failed</span>
+            </div>
           </div>
         </div>
         <div
           className="velocity-scroll"
           role="region"
-          aria-label="Scrollable ticket heartbeat timeline"
+          aria-label="Scrollable ticket velocity timeline"
           tabIndex={0}
+          ref={velocityScrollRef}
         >
-          <div className="velocity-grid">
+          <div
+            className="velocity-grid"
+            style={
+              VELOCITY_TRACK_MIN_WIDTH[velocity?.range ?? velocityRange]
+                ? { minWidth: 190 + (VELOCITY_TRACK_MIN_WIDTH[velocity?.range ?? velocityRange] ?? 0) }
+                : undefined
+            }
+          >
             <div className="velocity-header">
-              <div className="velocity-corner">Agent / ticket</div>
+              <div className="velocity-corner">Project / agent</div>
               <div className="velocity-axis" aria-hidden="true">
-                {velocityTicks.map((tick) => (
-                  <span key={tick}>{tick}</span>
-                ))}
+                {velocityTicks
+                  .filter((tick) => tick.left <= 95)
+                  .map((tick) => (
+                    <span
+                      className={
+                        tick.left > 88 ? "velocity-axis-tick velocity-axis-tick-end" : "velocity-axis-tick"
+                      }
+                      key={tick.atMs}
+                      style={{ left: `${tick.left}%` }}
+                    >
+                      <span className="velocity-axis-tick-label">{tick.label}</span>
+                    </span>
+                  ))}
+                <span className="velocity-axis-now">now</span>
               </div>
             </div>
-            {velocityLanes.map((lane) => (
-              <div className="velocity-row" key={lane.agent.agent_id}>
-                <div className="velocity-lane-label">
-                  <strong>{lane.agent.display_name}</strong>
-                  <span>{lane.segments[0]?.issue ?? "no active ticket"}</span>
-                </div>
-                <div className="velocity-track" aria-label={`${lane.agent.display_name} ticket velocity lane`}>
-                  <div className="velocity-ticks" aria-hidden="true">
-                    {velocityTicks.map((tick) => (
-                      <span key={tick} />
-                    ))}
+            {velocity?.lanes.map((projectLane) => (
+              <Fragment key={projectLane.project}>
+                {velocityMultiProject ? (
+                  <div className="velocity-project-row">
+                    <span className="velocity-project-label">{projectLane.project}</span>
                   </div>
-                  <div className="velocity-segments">
-                    {lane.segments.map((segment) => (
-                      <div
-                        aria-label={`${lane.agent.display_name} ${segment.issue}: ${segment.label}, ${segment.status}, spans ${segment.span} heartbeat ${segment.span === 1 ? "tick" : "ticks"}, last heartbeat ${formatAge(segment.heartbeatAge)}. ${segment.summary}`}
-                        className={`velocity-segment velocity-segment-${segment.tone}`}
-                        key={segment.id}
-                        style={{ gridColumn: `${segment.startTick + 1} / span ${segment.span}` }}
-                        title={`${segment.issue} • ${segment.label} • ${segment.status} • last heartbeat ${formatAge(segment.heartbeatAge)} • ${segment.summary}`}
-                      >
-                        <span className="velocity-segment-label">{segment.issue}</span>
-                        <span className="velocity-segment-status">{segment.label}</span>
+                ) : null}
+                {projectLane.agents.map((agentLane) => (
+                  <div className="velocity-row" key={agentLane.agent_id}>
+                    <div className="velocity-lane-label">
+                      <strong>{agentLane.display_name}</strong>
+                      <span>{agentLane.spans[agentLane.spans.length - 1]?.label ?? "no activity"}</span>
+                    </div>
+                    <div className="velocity-track" aria-label={`${agentLane.display_name} invocation timeline`}>
+                      <div className="velocity-ticks" aria-hidden="true">
+                        {velocityTicks
+                          .filter((tick) => tick.left <= 99.9)
+                          .map((tick) => (
+                            <span key={tick.atMs} style={{ left: `${tick.left}%` }} />
+                          ))}
                       </div>
-                    ))}
+                      {agentLane.spans.map((span) => {
+                        const geometry = spanGeometry(span, velocityFromMs, velocityToMs, now);
+                        const description = spanDescription(span, agentLane.display_name, now);
+                        return (
+                          <div
+                            aria-label={description}
+                            className={`velocity-bar velocity-bar-${span.status}`}
+                            key={span.id}
+                            role="img"
+                            style={{ left: `${geometry.left}%`, width: `${geometry.width}%` }}
+                            tabIndex={0}
+                            title={description}
+                          >
+                            <span className="velocity-bar-label">{span.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </div>
+                ))}
+              </Fragment>
             ))}
-            {!feedError && !snapshot ? <div className="velocity-empty empty">Loading ticket velocity.</div> : null}
-            {feedError ? <div className="velocity-empty empty">Fleet feed unavailable: {feedError}</div> : null}
-            {!feedError && snapshot && !velocityLanes.length ? (
-              <div className="velocity-empty empty">
-                No active tickets are moving through heartbeat lanes right now.
-              </div>
+            {!velocityError && !velocityRequested ? (
+              <div className="velocity-empty empty">Loading ticket velocity.</div>
+            ) : null}
+            {velocityError ? (
+              <div className="velocity-empty empty">Velocity feed unavailable: {velocityError}</div>
+            ) : null}
+            {!velocityError && velocityRequested && velocity && !velocity.counts.spans ? (
+              <div className="velocity-empty empty">No fleet invocations in the last {velocityRange}.</div>
             ) : null}
           </div>
         </div>

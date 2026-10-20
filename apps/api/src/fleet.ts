@@ -119,6 +119,22 @@ function readRegistry(): Record<string, AgentCfg> {
   return (parsed?.agents ?? {}) as Record<string, AgentCfg>;
 }
 
+export type FleetAgentRef = {
+  agent_id: string;
+  display_name: string;
+  repo: string;
+};
+
+// Lightweight registry view for readers that must not touch systemd (the
+// Candystore-backed velocity timeline pairs invocations by these ids).
+export function getFleetAgentRefs(): FleetAgentRef[] {
+  return Object.entries(readRegistry()).map(([agent_id, cfg]) => ({
+    agent_id,
+    display_name: cfg.display_name ?? agent_id,
+    repo: cfg.repo ?? ""
+  }));
+}
+
 async function unitState(unit?: string): Promise<string> {
   if (!unit) return "missing";
   try {
