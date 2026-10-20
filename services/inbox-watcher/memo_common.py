@@ -252,6 +252,7 @@ def s3_list_inbox(timeout: int = 60) -> list[dict]:
             "key": f"{INBOX_PREFIX}/{rel}",
             "size": int(o.get("size", 0)),
             "last_modified": parse_iso(o.get("lastModified")),
+            "etag": (o.get("etag") or "").strip('"') or None,
         })
     return out
 
@@ -267,7 +268,8 @@ def s3_stat(key: str) -> dict | None:
         return None
     if o.get("status") == "error":
         return None
-    return {"key": key, "size": int(o.get("size", 0)), "last_modified": parse_iso(o.get("lastModified"))}
+    return {"key": key, "size": int(o.get("size", 0)), "last_modified": parse_iso(o.get("lastModified")),
+            "etag": (o.get("etag") or "").strip('"') or None}
 
 
 def s3_find_inbox_key(fragment: str) -> str | None:

@@ -30,7 +30,7 @@ EMITS = ROOT / "emits.jsonl"
 FAKE_MC = ROOT / "mc"
 FAKE_MC.write_text(textwrap.dedent(f"""\
     #!/usr/bin/env python3
-    import json, shutil, sys, os, datetime
+    import json, shutil, sys, os, datetime, hashlib
     B = {str(BUCKET_DIR)!r}
     a = [x for x in sys.argv[1:] if not x.startswith("--") ]
     def local(p):  # delo/holocene-auto/<key> -> path
@@ -38,6 +38,7 @@ FAKE_MC.write_text(textwrap.dedent(f"""\
     def info(path, rel):
         st = os.stat(path)
         return {{"status":"success","type":"file","key":rel,"size":st.st_size,
+                 "etag": hashlib.md5(open(path, "rb").read()).hexdigest(),
                  "lastModified": datetime.datetime.fromtimestamp(st.st_mtime, datetime.timezone.utc).isoformat()}}
     if a[0] == "ls":
         root = local(a[1])
@@ -941,6 +942,233 @@ class ReviewGuards(unittest.TestCase):
         with unittest.mock.patch.object(iw.mc_, "s3_list_inbox", side_effect=listing):
             w.tick()
         self.assertEqual(held, [False])
+
+
+class PromptIntegrity(unittest.TestCase):
+    """HOLOC-12: a prompt is never sent shortened, the object that is transcribed is the one that was discovered, and a
+    memo held for an unroutable agent can be retried from the start. Memos are driven one at a time on a private State."""
+
+    def setUp(self):
+        self.before = EMITS.read_text() if EMITS.exists() else ""
+        self.state = iw.State(Path(tempfile.mkdtemp(prefix="memo-pi-")))
+        self.w = iw.Watcher(self.state)
+        self.keys = []
+
+    def tearDown(self):
+        EMITS.write_text(self.before)  # the Pipeline tests count every fact in this shared log
+        for k in self.keys:
+            (BUCKET_DIR / k).unlink(missing_ok=True)
+
+    def upload(self, name, content=b"OggS fake audio", agent="holocene-pm"):
+        key = f"inbox/{agent}/2026/10/18/{name}.ogg"
+        put(key, content)
+        self.keys.append(key)
+        return key
+
+    def discover(self, key):
+        self.w.discover(([o for o in mc_.s3_list_inbox() if o["key"] == key], None))
+        return self.state.memos[key]
+
+    def tick_until(self, pred, n=120):
+        for _ in range(n):
+            self.w.tick(discover=False)
+            if pred():
+                return
+            time.sleep(0.05)
+        self.fail("condition never met; memos=" + json.dumps(self.state.memos, default=str)[:800])
+
+    def transcribed(self, key, text):
+        """A memo at the dispatch stage holding `text` as its transcript, as _transcribe_apply leaves it."""
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "next_at": 0.0,
+             "status": "active", "stage": "transcribe"}
+        self.state.memos[key] = m
+        self.w._transcribe_apply(m, {"text": text, "meta": {}, "took": 0.1, "audio_s": 5.0, "levels": {}})
+        return m
+
+    @staticmethod
+    def sent_prompts(key):
+        return [r["data"]["prompt"] for t, r in facts() if t.startswith("bloodbank.cmd.") and r["data"]["context"]["memo_key"] == key]
+
+    def failed_fact(self, key):
+        return [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.failed" and r["data"]["s3_key"] == key][-1]
+
+    # ---- 1. no silent truncation -------------------------------------------------------------
+
+    def test_a_long_transcript_is_kept_whole_and_dispatched_whole(self):
+        key = self.upload("long")
+        text = " ".join(f"word{i}" for i in range(5000))  # about 44k chars: the old slice cut at 20000
+        self.assertGreater(len(text), 40000)
+        m = self.transcribed(key, text)
+        self.assertEqual(m["transcript"], text)
+        self.assertEqual(m["prompt"], iw.VOICE_PREFIX + text)
+        self.assertEqual(m["prompt_sha256"], iw.hashlib.sha256(m["prompt"].encode()).hexdigest())
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual(self.sent_prompts(key), [iw.VOICE_PREFIX + text])
+        dispatched = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.dispatched" and r["data"]["s3_key"] == key][-1]
+        self.assertEqual(dispatched["prompt_sha256"], m["prompt_sha256"])
+        self.assertEqual(dispatched["prompt_chars"], len(iw.VOICE_PREFIX + text))
+
+    def test_a_transcript_over_the_cap_is_held_not_cut(self):
+        key = self.upload("huge")
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "status": "active", "stage": "transcribe"}
+        self.state.memos[key] = m
+        with unittest.mock.patch.object(iw, "MAX_TRANSCRIPT_CHARS", 100):
+            with self.assertRaises(iw.StageError) as ctx:
+                self.w._transcribe_apply(m, {"text": "x" * 101, "meta": {}, "took": 0.1, "audio_s": 5.0, "levels": {}})
+        e = ctx.exception
+        self.assertEqual((e.stage, e.code, e.retryable), ("transcribe", "transcript_too_long", False))
+        self.assertNotIn("transcript", m)
+        self.assertNotIn("prompt", m)
+        self.assertEqual(self.sent_prompts(key), [])
+
+    def test_the_cap_is_far_above_real_speech(self):
+        self.assertGreaterEqual(iw.MAX_TRANSCRIPT_CHARS, 200000)
+
+    def test_a_failed_memo_keeps_its_full_prompt_and_retry_sends_all_of_it(self):
+        key = self.upload("revive")
+        text = " ".join(f"w{i}" for i in range(9000))
+        m = self.transcribed(key, text)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        full = iw.VOICE_PREFIX + text
+        self.assertEqual(self.sent_prompts(key), [full])
+        # the gateway stops the turn: a terminal, non-retryable failure that compacts the memo
+        self.w.on_error(m, iw.StageError("agent_reply", mc_.TURN_TIMEOUT, "turn stopped", retryable=False))
+        self.assertEqual((m["status"], m["resume_stage"]), ("failed", "dispatch"))
+        self.assertEqual((m["prompt"], m["transcript"]), (full, text))
+        ctl = Path(mc_.STATE_DIR) / "control"
+        ctl.mkdir(parents=True, exist_ok=True)
+        (ctl / f"retry-{m['memo_id']}").write_text("")
+        self.w.tick(discover=False)
+        self.tick_until(lambda: len(self.sent_prompts(key)) == 2)
+        self.assertEqual(self.sent_prompts(key), [full, full])
+
+    def test_only_a_finished_memo_is_compacted(self):
+        big = {"transcript": "t" * 1000, "prompt": "p" * 1000, "reply_text": "r" * 1000}
+        for status in ("failed", "active"):
+            m = {**big, "status": status}
+            iw.compact(m)
+            self.assertEqual((len(m["transcript"]), len(m["prompt"]), len(m["reply_text"])), (1000, 1000, 1000), status)
+        for status in ("done", "skipped"):
+            m = {**big, "status": status}
+            iw.compact(m)
+            self.assertEqual((len(m["transcript"]), len(m["prompt"]), len(m["reply_text"])), (300, 300, 300), status)
+
+    def test_a_prompt_that_no_longer_matches_its_hash_is_held_not_sent(self):
+        key = self.upload("tamper")
+        m = self.transcribed(key, "Summarize recent work.")
+        m["prompt"] = m["prompt"][:10]  # whatever truncated it
+        self.tick_until(lambda: m["status"] == "failed")
+        f = self.failed_fact(key)
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("dispatch", "prompt_changed", False))
+        self.assertEqual(self.sent_prompts(key), [])
+
+    def test_the_prompt_hash_is_saved_before_the_publish(self):
+        key = self.upload("hashfirst")
+        m = self.transcribed(key, "Summarize recent work.")
+        seen = []
+        real_run = iw.run
+
+        def spy(cmd, *a, **k):
+            if "--kind" in cmd:  # the command publish: what state.json holds right now
+                seen.append(json.loads((self.state.dir / "state.json").read_text())["memos"][key].get("prompt_sha256"))
+            return real_run(cmd, *a, **k)
+        with unittest.mock.patch.object(iw, "run", side_effect=spy):
+            self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual(seen, [m["prompt_sha256"]])
+        self.assertTrue(seen[0])
+
+    def test_a_memo_with_a_prompt_cut_by_the_old_watcher_is_not_retried(self):
+        key = self.upload("oldcut")
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "status": "failed",
+             "stage": "agent", "failed_stage": "agent_reply", "failed_code": mc_.TURN_TIMEOUT, "resume_stage": "dispatch",
+             "prompt": "p" * 300, "transcript": "t" * 300}
+        self.state.memos[key] = m
+        ctl = Path(mc_.STATE_DIR) / "control"
+        ctl.mkdir(parents=True, exist_ok=True)
+        (ctl / f"retry-{m['memo_id']}").write_text("")
+        self.w.tick(discover=False)
+        self.assertEqual(m["status"], "failed")
+
+    # ---- 2. content integrity ----------------------------------------------------------------
+
+    def test_discovery_records_size_and_etag(self):
+        key = self.upload("recorded")
+        m = self.discover(key)
+        self.assertEqual(m["size"], len(b"OggS fake audio"))
+        self.assertEqual(m["etag"], iw.hashlib.md5(b"OggS fake audio").hexdigest())
+
+    def test_an_object_replaced_with_a_different_size_is_held(self):
+        key = self.upload("grew")
+        m = self.discover(key)
+        put(key, b"OggS fake audio, and then a lot more")
+        self.tick_until(lambda: m["status"] == "failed")
+        f = self.failed_fact(key)
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("download", "object_changed", False))
+        self.assertEqual(self.sent_prompts(key), [])
+        self.assertNotIn("transcript", m)
+
+    def test_an_object_replaced_by_one_of_the_same_size_is_held_by_its_etag(self):
+        key = self.upload("swapped")
+        m = self.discover(key)
+        put(key, b"OggS fake audi0")  # same length, different bytes
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual(self.failed_fact(key)["error_code"], "object_changed")
+        self.assertIn("content hash", self.failed_fact(key)["error_message"])
+
+    def test_an_unchanged_object_is_transcribed(self):
+        key = self.upload("same")
+        m = self.discover(key)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual(m["transcript"], "Summarize recent work.")
+
+    def test_a_multipart_etag_is_judged_by_size_alone(self):
+        audio = Path(tempfile.mkdtemp(prefix="memo-etag-")) / "a.ogg"
+        audio.write_bytes(b"OggS fake audio")
+        iw.Watcher._check_object(audio, "k", {"size": 15, "etag": "0123456789abcdef0123456789abcdef-3"})  # no raise
+        with self.assertRaises(iw.StageError):
+            iw.Watcher._check_object(audio, "k", {"size": 16, "etag": "0123456789abcdef0123456789abcdef-3"})
+
+    def test_retrying_a_changed_object_takes_it_as_it_is_now(self):
+        key = self.upload("retried")
+        m = self.discover(key)
+        put(key, b"OggS fake audio, replaced")
+        self.tick_until(lambda: m["status"] == "failed")
+        ctl = Path(mc_.STATE_DIR) / "control"
+        ctl.mkdir(parents=True, exist_ok=True)
+        (ctl / f"retry-{m['memo_id']}").write_text("")
+        self.w.tick(discover=False)
+        self.assertEqual(m["size"], len(b"OggS fake audio, replaced"))
+        self.tick_until(lambda: m["stage"] == "await_agent")
+
+    # ---- 3. held unroutable memos ------------------------------------------------------------
+
+    def test_a_memo_held_for_an_unroutable_agent_retries_from_receive(self):
+        key = self.upload("held", agent="zz-nonexistent")
+        m = self.discover(key)
+        self.tick_until(lambda: m["status"] == "failed")
+        self.assertEqual((m["failed_stage"], m["failed_code"], m["resume_stage"]), ("dispatch", "unknown_agent", "receive"))
+        ctl = Path(mc_.STATE_DIR) / "control"
+        ctl.mkdir(parents=True, exist_ok=True)
+        (ctl / f"retry-{m['memo_id']}").write_text("")
+        self.w.process_control()
+        self.assertEqual((m["status"], m["stage"]), ("active", "receive"))
+
+    def test_an_old_failed_memo_with_a_dispatch_resume_and_no_transcript_restarts_at_receive(self):
+        self.assertEqual(iw.resume_for({"resume_stage": "dispatch"}), "receive")
+        self.assertEqual(iw.resume_for({"resume_stage": "dispatch", "transcript": "hello"}), "dispatch")
+        self.assertEqual(iw.resume_for({"resume_stage": "speak"}), "speak")
+        self.assertEqual(iw.resume_for({}), "receive")
+
+    def test_dispatch_without_a_transcript_is_held_not_a_keyerror(self):
+        key = self.upload("notranscript")
+        m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "next_at": 0.0,
+             "status": "active", "stage": "dispatch"}
+        self.state.memos[key] = m
+        self.tick_until(lambda: m["status"] == "failed")
+        f = self.failed_fact(key)
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("dispatch", "no_transcript", False))
+        self.assertEqual(m["resume_stage"], "receive")
+        self.assertEqual(self.sent_prompts(key), [])
 
 
 class EarshotMirror(unittest.TestCase):
