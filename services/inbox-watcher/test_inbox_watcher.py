@@ -365,7 +365,7 @@ class Pipeline(unittest.TestCase):
             return m and m["stage"] == "await_agent"
         self.tick_until(at_await)
         asked = []
-        with mock.patch.object(iw, "car_speaks_reply", side_effect=lambda memo, k: asked.append((memo, k)) or "car_live"):
+        with mock.patch.object(iw, "car_speaks_reply", side_effect=lambda memo, k, chunked: asked.append((memo, k)) or "car_live"):
             journal(m["command_id"], "holocene-pm")
             hermes_session("holocene-pm", mid, "Done. The build is green.")
             self.tick_until(lambda: m["status"] == "done")
@@ -376,6 +376,28 @@ class Pipeline(unittest.TestCase):
         replied = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.replied" and r["data"]["memo_id"] == mid][-1]
         self.assertEqual((replied["earshot_key"], replied["earshot_skipped"]), (None, "car_live"))
         self.assertTrue((BUCKET_DIR / m["reply_key"]).exists(), "the car's own copy is still the reply of record")
+
+    def test_02c_a_retry_after_the_car_left_mirrors_to_the_phone_after_all(self):
+        # The skip is decided again on every speak attempt: a car that was live at the first attempt may be gone when
+        # the car copy's upload is retried (or memo:retry runs an hour later), and then the phone is the only ear.
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/20261015T201800Z.ogg"
+        mid = mc_.memo_id_for(key)
+        put(key)
+        m = None
+
+        def at_await():
+            nonlocal m
+            m = self.state.memos.get(key)
+            return m and m["stage"] == "await_agent"
+        self.tick_until(at_await)
+        m["earshot_skipped"] = "car_live"  # what an earlier, failed attempt left behind
+        with mock.patch.object(iw, "car_speaks_reply", return_value=None):
+            journal(m["command_id"], "holocene-pm")
+            hermes_session("holocene-pm", mid, "Done again.")
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertTrue(m.get("earshot_key"), "mirrored this time")
+        self.assertNotIn("earshot_skipped", m)
 
     def test_03_agent_timeout_emits_failed_not_retryable(self):
         key = "inbox/holocene-pm/2026/10/15/timeout.ogg"
@@ -2689,30 +2711,43 @@ class EarshotMirror(unittest.TestCase):
 
     def test_the_phone_copy_is_left_out_only_for_a_car_that_speaks_it(self):
         from unittest import mock
-        notified = {"type": "bloodbank.audio.memo.notified", "data": {"utterance": "reply", "decision": "start"}}
-        with mock.patch.object(iw.mc_, "candystore_events", return_value=[notified]):
-            self.assertEqual(iw.car_speaks_reply("m", "k"), "car_spoke")
 
         class Answer:
             def __init__(self, body): self.body = body
             def read(self): return json.dumps(self.body).encode()
             def __enter__(self): return self
             def __exit__(self, *a): return False
-        urls = []
+        notified = {"type": "bloodbank.audio.memo.notified", "data": {"utterance": "reply", "decision": "start"}}
         quiet = [{"type": "bloodbank.audio.memo.notified", "data": {"utterance": "echo", "decision": "start"}}]
-        with mock.patch.object(iw.mc_, "candystore_events", return_value=quiet), \
-                mock.patch.object(iw.urllib.request, "urlopen", side_effect=lambda req, timeout: urls.append(req.full_url) or Answer({"car_live": True, "device": "d"})):
+        asked = []
+        typed = lambda rows: (lambda mid, t, **k: asked.append(t) or rows)
+        # presence first: a live car decides at once, without the trace
+        urls = []
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
+                mock.patch.object(iw.urllib.request, "urlopen", side_effect=lambda req, timeout: urls.append(req.full_url) or Answer({"car_live": True, "device": "d", "host": "car"})):
             self.assertEqual(iw.car_speaks_reply("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg"), "car_live")
         self.assertIn("memo=f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", urls[0])
         self.assertIn("key=inbox%2Fa%2F2026%2F10%2F20%2Fx.ogg", urls[0])
-        with mock.patch.object(iw.mc_, "candystore_events", return_value=[]), \
+        self.assertEqual(asked, [])
+        # not live (or unreachable), but the car's queue already started this chunked reply
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
+                mock.patch.object(iw.urllib.request, "urlopen", side_effect=OSError("refused")):
+            self.assertEqual(iw.car_speaks_reply("m", "k"), "car_spoke")
+        self.assertEqual(asked, ["bloodbank.audio.memo.notified"], "one indexed query of that type, not the whole trace")
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
+                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": None})):
+            self.assertIsNone(iw.car_speaks_reply("m", "k", chunked=False), "a single file goes up with the mirror: no car started it")
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
                 mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": "browser"})):
             self.assertIsNone(iw.car_speaks_reply("m", "k"), "a browser's memo still goes to the phone")
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed(quiet)), \
+                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": "car"})):
+            self.assertIsNone(iw.car_speaks_reply("m", "k"))
         # fail-open: nothing known, nothing reachable -> mirror as before
-        with mock.patch.object(iw.mc_, "candystore_events", side_effect=OSError("down")), \
+        with mock.patch.object(iw.mc_, "typed_events", side_effect=OSError("down")), \
                 mock.patch.object(iw.urllib.request, "urlopen", side_effect=OSError("refused")):
             self.assertIsNone(iw.car_speaks_reply("m", "k"))
-        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False), mock.patch.object(iw.mc_, "candystore_events", return_value=[notified]):
+        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False), mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": True})):
             self.assertIsNone(iw.car_speaks_reply("m", "k"))
 
     def test_a_skipped_phone_copy_is_an_ok_hop_that_says_why(self):

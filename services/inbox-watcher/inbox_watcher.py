@@ -121,6 +121,7 @@ EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
 EARSHOT_SKIP_CAR = os.environ.get("MEMO_EARSHOT_SKIP_CAR", "1") != "0"
 PRESENCE_URL = os.environ.get("MEMO_PAD_PRESENCE_URL", "https://agent-pad.delo.sh/upload/presence")
 PRESENCE_TIMEOUT_S = float(os.environ.get("MEMO_PAD_PRESENCE_TIMEOUT_S", "4"))
+NOTIFIED_TYPE = "bloodbank.audio.memo.notified"
 # Reply chunks carry this object tag; the holocene-auto lifecycle rule for it expires them after a day.
 CHUNK_TAGS = "kind=chunk"
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
@@ -1583,7 +1584,9 @@ class Watcher:
             # The phone copy goes up alongside the car's, not after it: it is the faster path to an ear.
             # Once per memo: re-dropping the same key would give it a new LastModified, and Earshot plays that again.
             mirror = None
-            if EARSHOT_CHANNEL and not m.get("earshot_key") and not m.get("earshot_skipped"):
+            with self.mu:
+                m.pop("earshot_skipped", None)  # decided again on every attempt: the car may be gone by a retry
+            if EARSHOT_CHANNEL and not m.get("earshot_key"):
                 want = earshot_key_for(stamp, agent, mid)
                 with self.mu:
                     tried = m.get("earshot_attempted") == want
@@ -1620,8 +1623,9 @@ class Watcher:
                     # A car that sent this memo and is live speaks the reply itself; the phone, paired with that car,
                     # would play the same reply through the same speakers 10+ s into the car's own playback, or into the
                     # driver's next recording. Decided on the mirror thread, so the car's copy is not held up by it.
-                    def mirror_or_skip(m=m, audio=audio, stamp=stamp, agent=agent, mid=mid, key=key, text=text):
-                        why = car_speaks_reply(mid, key)
+                    def mirror_or_skip(m=m, audio=audio, stamp=stamp, agent=agent, mid=mid, key=key, text=text,
+                                       chunked=len(parts) > 1):
+                        why = car_speaks_reply(mid, key, chunked)
                         if not why:
                             return mirror_to_earshot(audio, stamp, agent, mid, key, text, record_text)
                         with self.mu:
@@ -1985,34 +1989,39 @@ def upload_earshot_text(text: str, stamp: datetime, agent: str, mid: str, key: s
     return tkey
 
 
-def car_speaks_reply(mid: str, key: str) -> str | None:
-    """Why the reply's Earshot phone copy is left out, or None to mirror it. "car_spoke": the car's speech queue already
-    started this memo's reply (audio.memo.notified, reply/start; only the car app sends those). "car_live": the memo
-    came from a car whose push stream is open right now (the upload proxy's /upload/presence), so it will speak it.
+def car_speaks_reply(mid: str, key: str, chunked: bool = True) -> str | None:
+    """Why the reply's Earshot phone copy is left out, or None to mirror it.
+    "car_live": the memo came from a car whose push stream is open right now (the upload proxy's /upload/presence), so
+    it speaks the reply itself. "car_spoke": the car's speech queue already started this memo's reply
+    (audio.memo.notified reply/start; only the car app sends those), asked only for a chunked reply (a single file is
+    uploaded alongside this mirror, so no car can have started it) and only when the sender is not known to be a browser.
     Fail-open: anything unknown or unreachable mirrors, as before."""
     if not EARSHOT_SKIP_CAR:
         return None
-    try:
-        for e in mc_.candystore_events(mid):
-            d = e.get("data") or {}
-            if (e.get("type") == "bloodbank.audio.memo.notified" and d.get("utterance") == "reply"
-                    and d.get("decision") in ("start", "started")):
-                log("earshot_skipped", memo_id=mid, key=key, reason="car_spoke", note="the sending car already speaks it")
-                return "car_spoke"
-    except Exception as e:  # noqa: BLE001 - fail-open
-        log("earshot_car_check_failed", "warn", memo_id=mid, key=key, source="candystore", error=str(e)[:200])
+    host = None
     try:
         url = f"{PRESENCE_URL}?memo={urllib.parse.quote(mid, safe='')}&key={urllib.parse.quote(key, safe='')}"
         with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}),
                                     timeout=PRESENCE_TIMEOUT_S) as r:
             ans = json.loads(r.read().decode("utf-8", "replace"))
+        if isinstance(ans, dict):
+            host = ans.get("host")
+            if ans.get("car_live") is True:
+                log("earshot_skipped", memo_id=mid, key=key, reason="car_live", device=ans.get("device"), since=ans.get("since"),
+                    note="the sending car is connected and speaks it itself")
+                return "car_live"
     except Exception as e:  # noqa: BLE001 - fail-open
         log("earshot_car_check_failed", "warn", memo_id=mid, key=key, source="presence", error=str(e)[:200])
+    if not chunked or host == "browser":
         return None
-    if isinstance(ans, dict) and ans.get("car_live") is True:
-        log("earshot_skipped", memo_id=mid, key=key, reason="car_live", device=ans.get("device"), since=ans.get("since"),
-            note="the sending car is connected and speaks it itself")
-        return "car_live"
+    try:
+        for e in mc_.typed_events(mid, NOTIFIED_TYPE):
+            d = e.get("data") or {}
+            if d.get("utterance") == "reply" and d.get("decision") in ("start", "started"):
+                log("earshot_skipped", memo_id=mid, key=key, reason="car_spoke", note="the sending car already speaks it")
+                return "car_spoke"
+    except Exception as e:  # noqa: BLE001 - fail-open
+        log("earshot_car_check_failed", "warn", memo_id=mid, key=key, source="candystore", error=str(e)[:200])
     return None
 
 

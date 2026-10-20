@@ -392,6 +392,14 @@ def candystore_events(correlation_id: str, limit: int = 200) -> list[dict]:
     return sorted(events, key=lambda e: e.get("time") or "")
 
 
+def typed_events(correlation_id: str, ce_type: str, limit: int = 200, timeout: float = 4) -> list[dict]:
+    """The projected events of ONE type for this correlationid, oldest first (an indexed query, unlike the whole trace)."""
+    url = (f"{CANDYSTORE_URL}/events?correlationid={urllib.parse.quote(correlation_id)}"
+           f"&type={urllib.parse.quote(ce_type)}&limit={limit}")
+    body = http_json(url, timeout=timeout)
+    return sorted(body.get("events", []), key=lambda e: e.get("time") or "")
+
+
 def progress_events(correlation_id: str, limit: int = 200) -> list[dict]:
     """The gateway's agent.invocation.progressed facts for this correlationid (every command of the memo), oldest first.
     One cheap indexed query (~20 ms), so the watcher can ask every second or two while a turn runs."""

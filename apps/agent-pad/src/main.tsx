@@ -6,7 +6,7 @@ import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
-import { type Ledger, closeUnit, forThisDevice, isOpen, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
+import { type Ledger, closeUnit, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
@@ -249,6 +249,7 @@ const agentDbSet = (id: string) => rosterDb('readwrite', (s) => s.put(id, 'agent
 // localStorage (a browser answers synchronously).
 const LS_LEDGER = 'agentpad.ledger'
 const LS_DEVICE = 'agentpad.device'
+const LEDGER_WAIT_MS = 5000
 const ledgerDbGet = async () => normLedger(await rosterDb<unknown>('readonly', (s) => s.get('ledger')), Date.now())
 const ledgerSave = (l: Ledger) => { lsSet(LS_LEDGER, JSON.stringify(l)); void rosterDb('readwrite', (s) => s.put(l, 'ledger')) }
 const deviceDbGet = async () => { const v = await rosterDb<unknown>('readonly', (s) => s.get('device')); return validDeviceId(v) ? v : '' }
@@ -380,7 +381,6 @@ function nativeSpeech(): NativeSpeech | null {
   const n = (window as any).HoloceneNative
   return n && typeof n.speechProgress === 'function' && typeof n.speechEcho === 'function' ? (n as NativeSpeech) : null
 }
-const REPLY_MEMO = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[a-z0-9]+$/
 // A memo is followed (status line, echo, progress) for this long after it was sent, and a failed one stays on its
 // tile for a minute.
 const FLIGHT_MAX_MS = 20 * 60 * 1000
@@ -500,22 +500,34 @@ function App() {
   const ledger = useRef<Ledger>(normLedger(lsGet(LS_LEDGER), Date.now()))
   const playAll = useRef(playAllReplies())
   const setLedger = (l: Ledger) => { if (l !== ledger.current) { ledger.current = l; ledgerSave(l) } }
-  // The IndexedDB copy (all the car has after a cold start) and the device id, before the first reply poll and before
-  // the push stream opens; never longer than 1.5 s (a stuck IndexedDB must not keep the pad deaf).
+  // The IndexedDB copy (all the car has after a cold start: its localStorage is empty) and the device id are read
+  // before the first reply is judged and before the push stream opens. A store that does not answer within
+  // LEDGER_WAIT_MS (or fails) is not trusted to say what is NOT this pad's: the pad then plays every reply, as every pad
+  // did before replies were scoped, rather than drop its own. The device id is fixed once chosen: the PUTs and the push
+  // stream must name the same one (the presence check pairs them).
   const ready = useRef<Promise<void> | null>(null)
   if (!ready.current) {
+    let read = false
     ready.current = Promise.race([
       (async () => {
         const [stored, dev] = await Promise.all([ledgerDbGet(), deviceDbGet()])
         setLedger(mergeLedgers(ledger.current, stored, Date.now()))
-        let id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : dev
-        if (!id) id = newDeviceId()
-        DEVICE.id = id
-        lsSet(LS_DEVICE, id)
-        if (id !== dev) void deviceDbSet(id)
-      })().catch(() => { /* storage blocked: run without */ }),
-      new Promise<void>((r) => setTimeout(r, 1500)),
-    ]).then(() => { if (!DEVICE.id) DEVICE.id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : newDeviceId() })
+        if (!DEVICE.id) {
+          DEVICE.id = (validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : dev) || newDeviceId()
+          lsSet(LS_DEVICE, DEVICE.id)
+          if (DEVICE.id !== dev) void deviceDbSet(DEVICE.id)
+        }
+        read = true
+      })().catch(() => { /* storage blocked */ }),
+      new Promise<void>((r) => setTimeout(r, LEDGER_WAIT_MS)),
+    ]).then(() => {
+      if (!read) playAll.current = true // the ledger is unknown: never drop a reply that may be this pad's own
+      if (!DEVICE.id) {
+        DEVICE.id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : newDeviceId()
+        lsSet(LS_DEVICE, DEVICE.id)
+        void deviceDbSet(DEVICE.id)
+      }
+    })
   }
   // A memo this pad sent: its reply is this pad's to play (recorded before the first upload attempt, so a reply that
   // comes back fast, or a send that only succeeds from the outbox later, is still known).
@@ -739,7 +751,7 @@ function App() {
       units.current.set(ref.unit, u)
       setLedger(openUnit(ledger.current, ref.unit, Date.now()))
       queue.current = [...queue.current, ref.unit].sort()
-      const memo = REPLY_MEMO.exec(ref.unit)?.[1]
+      const memo = memoOfReply(ref.unit)
       if (memo && flights.current.has(memo)) flightFinal(memo)
     }
     const news = addRef(u, ref)
@@ -919,14 +931,14 @@ function App() {
   // The spoken ack is decided when Stop is pressed, before the upload, so the host cannot name its memo: the pad ties
   // each ack to the note it answers (the key is minted at record start), first sight wins. Then the proxy publishes it
   // as audio.memo.notified for that memo and memo:trace and /voice show the ack. "ack:stopped:*" answers the note just
-  // recorded; "ack:sent:*" is said for an outbox row that finally went out.
+  // recorded; "ack:sent:*" (the SENT tone, plus "Sent to X" after a retry) answers the send just announced.
   const noteKey = useRef('') // the note being recorded, or the one just stopped
-  const retryKey = useRef('') // the outbox row whose late send was just announced
+  const sentKey = useRef('') // the recording whose send was just announced (live, or an outbox row that finally went out)
   const ackKeys = useRef<Map<string, string>>(new Map())
   const ackKey = (id: string): string => {
     const bound = ackKeys.current.get(id)
     if (bound !== undefined) return bound
-    const key = id.startsWith('ack:stopped:') ? noteKey.current : id.startsWith('ack:sent:') ? retryKey.current : ''
+    const key = id.startsWith('ack:stopped:') ? noteKey.current : id.startsWith('ack:sent:') ? sentKey.current : ''
     ackKeys.current.set(id, key)
     if (ackKeys.current.size > 50) ackKeys.current.delete(ackKeys.current.keys().next().value as string)
     return key
@@ -1010,7 +1022,8 @@ function App() {
         const firstRun = !lastDone.current
         // From the marker, or from the oldest reply still owed if that is older (the marker can move past a reply that
         // waits for its full file or its next chunk: another device's reply settled, or a later one played first).
-        const owed = Object.keys(ledger.current.open).map((k) => k.slice(0, k.lastIndexOf('.')))
+        const owed = Object.entries(ledger.current.open).filter(([k, o]) => !o.parked && !parked.current.has(k))
+          .map(([k]) => k.slice(0, k.lastIndexOf('.')))
         const after = [lastDone.current || `${REPLIES_PREFIX}/${dayPrefix(-1)}/`, ...owed].sort()[0]
         // Only dated reply keys count: legacy flat keys (replies/2026101...) sort AFTER every dated key and would
         // otherwise pin lastDone past all future replies.
@@ -1161,7 +1174,7 @@ function App() {
       await outboxDel(p.key)
       clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
       setStatus(`sent → ${p.agentName} (after a retry)`)
-      retryKey.current = p.key
+      sentKey.current = p.key
       emitHost({ t: 'sent', name: p.agentName, reason: 'retry' })
       const agentId = /^inbox\/([^/]+)\//.exec(p.key)?.[1]
       if (agentId) void trackMemo(agentId, p.agentName, p.key)
@@ -1223,6 +1236,7 @@ function App() {
           await outboxDel(key)
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
+          sentKey.current = key
           emitHost({ t: 'sent', id: agent.id, name: agent.name })
           void trackMemo(agent.id, agent.name, key)
           if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
@@ -1360,7 +1374,16 @@ function App() {
     setPhase('arming')
     const disarm = (to: PadPhase) => { arming.current = false; setPhase(to) }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // A permission prompt left unanswered (or a getUserMedia that never settles) must not leave the pad arming for
+      // good: after 20 s this start fails; a stream that shows up after that is closed at once.
+      let late = false
+      stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((st) => {
+          if (late) st.getTracks().forEach((t) => t.stop())
+          return st
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => { late = true; reject(Object.assign(new Error('no answer in 20 s'), { name: 'Timeout' })) }, 20000)),
+      ])
     } catch (e) {
       disarm('error')
       setStatus(`mic unavailable: ${(e as Error).name}`)
@@ -1376,7 +1399,7 @@ function App() {
     const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
     let mimeType = ''
     for (const t of mimeTypes) {
-      if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break }
+      try { if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) { mimeType = t; break } } catch { /* none */ }
     }
     if (!mimeType) {
       disarm('error')
@@ -1388,7 +1411,16 @@ function App() {
     const ext = mimeType.includes('mp4') ? 'm4a' : 'webm'
     const key = mk(ext)
     noteKey.current = key
-    const mr = new MediaRecorder(stream, { mimeType })
+    let mr: MediaRecorder
+    try {
+      mr = new MediaRecorder(stream, { mimeType })
+    } catch (e) {
+      disarm('error') // never left arming (which would hold every reply and every later start)
+      setStatus(`mic unavailable: ${(e as Error).name}`)
+      clientEvent({ event: 'record_failed', key, error: `MediaRecorder: ${(e as Error).name}`, code: 'mic_unavailable', retryable: false })
+      closeStream()
+      return
+    }
     mediaRecorder.current = mr
     chunks.current = []
     recStart.current = Date.now()
@@ -1421,7 +1453,18 @@ function App() {
     interruptReply()
     recordingRef.current = true
     arming.current = false
-    mr.start()
+    try {
+      mr.start()
+    } catch (e) {
+      recordingRef.current = false
+      disarm('error')
+      setStatus(`mic unavailable: ${(e as Error).name}`)
+      clientEvent({ event: 'record_failed', key, error: `MediaRecorder.start: ${(e as Error).name}`, code: 'mic_unavailable', retryable: false })
+      analyser.current?.stop()
+      analyser.current = null
+      closeStream()
+      return
+    }
     setRecording(true)
     setPhase('recording')
     emitHost({ t: 'recording', id: agent.id, name: agent.name })

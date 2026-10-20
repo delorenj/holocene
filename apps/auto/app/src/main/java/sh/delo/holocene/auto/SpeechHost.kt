@@ -238,9 +238,14 @@ private class RecordingFocus(context: Context, private val main: Handler) {
     private val audio = context.applicationContext.getSystemService(AudioManager::class.java)
     private var request: AudioFocusRequest? = null
 
+    /** Granted and not given back yet: the arming prompt may play under it. */
     val held: Boolean get() = request != null
 
-    /** Take the focus (once per note). True when other media was playing as it was taken (the mic gives it a moment). */
+    /**
+     * Take the focus (once per note). True when other media was playing as it was taken (the mic gives it a moment).
+     * Refused (a call, the car's assistant listening): nothing is held, so the prompt asks for its own focus and is not
+     * said if that is refused too; the driver can still record.
+     */
     fun acquire(): Boolean {
         if (request != null) return false
         val media = try { audio.isMusicActive } catch (e: RuntimeException) { false }
@@ -251,10 +256,9 @@ private class RecordingFocus(context: Context, private val main: Handler) {
             .build()
         val result = try { audio.requestAudioFocus(r) } catch (e: RuntimeException) { AudioManager.AUDIOFOCUS_REQUEST_FAILED }
         Log.i(TAG, "recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=$result media_active=$media")
-        // Held (and given back later) even when refused: abandoning a request that was never granted is harmless, and a
-        // refusal (a call) must not stop the driver from recording.
+        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return false
         request = r
-        return media && result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        return media
     }
 
     fun release() {
