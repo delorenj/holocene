@@ -1,0 +1,40 @@
+
+  OK      s3_object                  2026-10-20T20:40:21.000Z           inbox/holocene-pm/2026/10/20/20261020T204011Z.ogg  37960 bytes
+  OK      upload_proxy_log           2026-10-20T20:40:21.863Z  +0.9s    {"ts":"2026-10-20T20:40:21.863Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/20/20261020T204011Z.ogg","memo_id":"0c7effbf-a048-
+  OK      fact:uploaded              2026-10-20T20:40:21.863Z  +0.0s    37960 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -2 dBFS, window avg -8 dBFS
+  OK      fact:received              2026-10-20T20:40:21.946Z  +0.1s    watcher saw it, lag 87ms
+  OK      fact:transcribed           2026-10-20T20:40:27.276Z  +5.3s    105 chars in 4.85s (large-v3), audio max -2 dBFS, mean -16 dBFS over 7.3 s: "Progress test, read today's Holocene, check each open ticket on the, then give m"
+  OK      audio_level                2026-10-20T20:40:27.276Z  +0.0s    max -2 dBFS, mean -16 dBFS over 7.3 s  -> audible | device heard peak -2 dBFS, window avg -8 dBFS
+  OK      fact:dispatched            2026-10-20T20:40:27.505Z  +0.2s    command 7b4bccf1-7cd0-42b8-a66c-f74f1a209220 -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-20T20:40:27.765Z  +0.3s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-20T20:40:27.765546Z updated=2026-10-20T20:41:12.229210Z
+  OK      agent:invocation.started   2026-10-20T20:40:27.765Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:progress#1           2026-10-20T20:40:36.262Z  +8.5s    8.4s into the turn: 'I’m checking the board-reading workflow before reviewing today’s Holocene activity.'
+  OK      agent:progress#2           2026-10-20T20:40:43.181Z  +6.9s    15.3s into the turn: 'I’m reading today’s commits and the current Holocene ticket list.'
+  OK      car:narrated#1             2026-10-20T20:40:49.508Z  +6.3s    spoke progress #2 -> progress/2026/10/20/0c7effbf-a048-5aa3-84f4-0d12650848cc-1.ogg (tts 5.17s voxcpm, 22.0s after dispatch)
+  OK      agent:progress#3           2026-10-20T20:40:56.662Z  +7.2s    28.8s into the turn: 'I found five open tickets, and I’m checking each ticket’s latest details and blockers.'
+  OK      agent:invocation.done      2026-10-20T20:41:12.229Z  +15.6s   invocation.completed
+  OK      hermes_session             2026-10-20T20:40:27.765Z  +0.0s    agent was given exactly what the watcher sent (313 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      car:chunk#1of3             2026-10-20T20:41:16.087Z  +48.3s   81 chars, tts 3.23s, 3.65s after the agent finished -> replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc-c01of03.opus (1 chunks betw
+  OK      car:chunk#3of3             2026-10-20T20:41:25.428Z  +9.3s    141 chars, tts 4.67s, 12.99s after the agent finished -> replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc-c03of03.opus
+  OK      fact:replied               2026-10-20T20:41:26.378Z  +0.9s    334 chars, tts 13.3s (voxcpm) -> replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg, 3 chunks (first up 3.64s, last 12.99s after 
+  OK      reply_object               2026-10-20T20:41:26.000Z  +0.0s    replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg  97803 bytes
+  OK      pad_playback_log           2026-10-20T20:41:27.084Z  +1.1s    {"ts":"2026-10-20T20:41:27.084Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848c
+  OK      played_on_pad              2026-10-20T20:41:21.664Z  +0.0s    reply started 5.6s after the first chunk was up (9663 ms after the key stamp, TTS included), ended after 19.52s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_text                 2026-10-20T20:41:26.000Z  +4.3s    s3://earshot/phone/2026/10/20/204112442Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.txt  336 bytes (the full reply text)
+  OK      phone_object               2026-10-20T20:41:26.000Z  +0.0s    s3://earshot/phone/2026/10/20/204112442Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg  97803 bytes
+  OK      phone_detected             2026-10-20T20:41:58.002Z  +32.0s   SM-S948U app 0.1.3
+  OK      phone_started              2026-10-20T20:41:58.391Z  +0.4s    SM-S948U app 0.1.3
+  UNKNOWN phone_finished             -                                  no beacon from the phone yet (earshot status: is it listening?) (optional)
+  OK      car_status_object          2026-10-20T20:41:26.483Z  +0.0s    status/2026/10/20/0c7effbf-a048-5aa3-84f4-0d12650848cc.json: stage=done progress_seq=3 narrations=1 elapsed=64.6s
+
+car speech (5 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  +21.4s    echo      start        reason waited_ms=14225
+  +26.8s    echo      end          
+  +55.2s    progress  drop         reason memo_final
+  +60.7s    reply     start        reason waited_ms=0
+  +80.8s    reply     end          reason chunks=3
+
+timing   since upload: heard-echo +20.1s | first progress +15.3s | first narration +28.5s | first chunk up +55.1s | reply up +65.4s | reply played +59.3s
+         after the agent finished: first chunk up +3.9s | reply up +14.1s | car speaking +9.4s
+
+VERDICT  COMPLETE in 65.0s; played on the pad 5.6s after the first chunk was up; speaking on the phone 32.4s after the full reply was up (97.4s recording-to-voice)

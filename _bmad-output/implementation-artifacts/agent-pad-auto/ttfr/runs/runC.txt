@@ -1,0 +1,3 @@
+{'start_pressed': 1792527953.2858503, 'mic_recording_seen': 1792527955.2161133, 'mic_line': '         1792527953.897 19444 19444 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792527953897', 'stop_pressed': 1792527979.8804958, 'mic_idle_seen': 1792527980.0318089}
+1792527955.4751537 1792527958.6833777 {"packets": 200, "bytes": 127520, "cancelled": false, "elapsed_s": 3.111, "lead_
+1792527958.6833894 1792527961.5969539 {"packets": 185, "bytes": 118400, "cancelled": false, "elapsed_s": 2.814, "lead_

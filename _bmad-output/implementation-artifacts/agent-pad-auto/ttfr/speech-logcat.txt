@@ -1,0 +1,957 @@
+         1792527922.663 19444 19444 I HoloceneSpeech: mic  id=arm:49580932 memo=- seq=0 mic=arming reason=arming at=1792527922663
+         1792527922.664 19444 19444 I HoloceneSpeech: start arming id=arm:49580932 memo=- seq=0 mic=arming reason=arming at=1792527922664
+         1792527922.664 19444 19444 I HoloceneWheel: say "Recording for Holocene."
+         1792527922.672   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527924.372   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527924.372 19444 19444 I HoloceneWheel: tone START
+         1792527924.383   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527924.675 19444 19444 I HoloceneSpeech: end arming id=arm:49580932 memo=- seq=0 mic=arming reason= at=1792527924675
+         1792527924.676   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527924.735   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:865 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:141 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792527924.736 19444 19444 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792527924736
+         1792527932.943 19444 19444 I HoloceneSpeech: deferred ack id=ack:stopped:49591212 memo=- seq=0 mic=recording reason=recording at=1792527932943
+         1792527932.998   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792527933.002 19444 19444 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792527933002
+         1792527933.003 19444 19444 I HoloceneSpeech: start ack id=ack:stopped:49591212 memo=- seq=0 mic=idle reason=waited_ms=60 at=1792527933003
+         1792527933.003 19444 19444 I HoloceneWheel: tone STOP
+         1792527933.025   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527933.204 19444 19444 I HoloceneSpeech: queued ack id=ack:sent:49591473 memo=- seq=0 mic=idle reason=behind_ack at=1792527933204
+         1792527933.318   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527933.318 19444 19444 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792527933.320   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527935.608 19444 19444 I HoloceneSpeech: end ack id=ack:stopped:49591212 memo=- seq=0 mic=idle reason= at=1792527935608
+         1792527935.610   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527935.613 19444 19444 I HoloceneSpeech: start ack id=ack:sent:49591473 memo=- seq=0 mic=idle reason=waited_ms=2408 at=1792527935613
+         1792527935.613 19444 19444 I HoloceneWheel: tone SENT
+         1792527935.640   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527935.980 19444 19444 I HoloceneSpeech: end ack id=ack:sent:49591473 memo=- seq=0 mic=idle reason= at=1792527935980
+         1792527935.981   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527939.554 19444 19444 I HoloceneSpeech: queued echo id=echo:6c295765-f721-58c6-8695-d1d9ceef8759 memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason= at=1792527939554
+         1792527939.555 19444 19444 I HoloceneSpeech: start echo id=echo:6c295765-f721-58c6-8695-d1d9ceef8759 memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason=waited_ms=1 at=1792527939555
+         1792527939.555 19444 19444 I HoloceneWheel: say "Holocene heard: Timing test check the current date with a"
+         1792527939.562   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527943.257   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527943.257 19444 19444 I HoloceneSpeech: end echo id=echo:6c295765-f721-58c6-8695-d1d9ceef8759 memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason= at=1792527943257
+         1792527952.014 19444 19444 I HoloceneSpeech: mic  id=arm:49610284 memo=- seq=0 mic=arming reason=arming at=1792527952014
+         1792527952.015 19444 19444 I HoloceneSpeech: start arming id=arm:49610284 memo=- seq=0 mic=arming reason=arming at=1792527952015
+         1792527952.015 19444 19444 I HoloceneWheel: say "Recording for Holocene."
+         1792527952.016   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527953.544   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527953.544 19444 19444 I HoloceneWheel: tone START
+         1792527953.548   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527953.836   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527953.836 19444 19444 I HoloceneSpeech: end arming id=arm:49610284 memo=- seq=0 mic=arming reason= at=1792527953836
+         1792527953.897   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:921 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:150 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792527953.897 19444 19444 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792527953897
+         1792527958.227 19444 19444 I HoloceneSpeech: deferred progress id=progress:6c295765-f721-58c6-8695-d1d9ceef8759:1 memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=1 mic=recording reason=recording at=1792527958227
+         1792527960.484 19444 19444 I HoloceneSpeech: drop progress id=progress:6c295765-f721-58c6-8695-d1d9ceef8759:1 memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=1 mic=recording reason=memo_final at=1792527960484
+         1792527978.645 19444 19444 I HoloceneSpeech: deferred ack id=ack:stopped:49636914 memo=- seq=0 mic=recording reason=recording at=1792527978645
+         1792527978.708   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792527978.717 19444 19444 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792527978717
+         1792527978.718 19444 19444 I HoloceneSpeech: start ack id=ack:stopped:49636914 memo=- seq=0 mic=idle reason=waited_ms=72 at=1792527978718
+         1792527978.718 19444 19444 I HoloceneWheel: tone STOP
+         1792527978.745   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527978.929 19444 19444 I HoloceneSpeech: queued reply id=replies/2026/10/20/202600Z-holocene-pm-6c295765-f721-58c6-8695-d1d9ceef8759.ogg memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason=behind_ack at=1792527978929
+         1792527978.998 19444 19444 I HoloceneSpeech: queued ack id=ack:sent:49637267 memo=- seq=0 mic=idle reason=behind_ack at=1792527978998
+         1792527979.047 19444 19444 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792527979.048   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527979.049   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527981.143   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527981.143 19444 19444 I HoloceneSpeech: end ack id=ack:stopped:49636914 memo=- seq=0 mic=idle reason= at=1792527981142
+         1792527981.143 19444 19444 I HoloceneSpeech: start reply id=replies/2026/10/20/202600Z-holocene-pm-6c295765-f721-58c6-8695-d1d9ceef8759.ogg memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason=waited_ms=2214 at=1792527981143
+         1792527981.145   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527981.146 19444 19444 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792527986.584 19444 19444 I HoloceneSpeech: queued echo id=echo:c77a967a-b50d-5f73-bf46-b20413f3c857 memo=c77a967a-b50d-5f73-bf46-b20413f3c857 seq=0 mic=idle reason=behind_reply at=1792527986584
+         1792527996.061 19444 19444 I HoloceneSpeech: drop echo id=echo:c77a967a-b50d-5f73-bf46-b20413f3c857 memo=c77a967a-b50d-5f73-bf46-b20413f3c857 seq=0 mic=idle reason=memo_final at=1792527996060
+         1792527997.288 19444 19444 I HoloceneSpeech: end reply id=replies/2026/10/20/202600Z-holocene-pm-6c295765-f721-58c6-8695-d1d9ceef8759.ogg memo=6c295765-f721-58c6-8695-d1d9ceef8759 seq=0 mic=idle reason= at=1792527997288
+         1792527997.289 19444 19444 I HoloceneSpeech: drop ack id=ack:sent:49637267 memo=- seq=0 mic=idle reason=expired at=1792527997289
+         1792527997.293   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792527997.351 19444 19444 I HoloceneSpeech: queued reply id=replies/2026/10/20/202633Z-holocene-pm-c77a967a-b50d-5f73-bf46-b20413f3c857.ogg memo=c77a967a-b50d-5f73-bf46-b20413f3c857 seq=0 mic=idle reason= at=1792527997351
+         1792527997.351 19444 19444 I HoloceneSpeech: start reply id=replies/2026/10/20/202633Z-holocene-pm-c77a967a-b50d-5f73-bf46-b20413f3c857.ogg memo=c77a967a-b50d-5f73-bf46-b20413f3c857 seq=0 mic=idle reason=waited_ms=0 at=1792527997351
+         1792527997.354   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792527997.356 19444 19444 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528001.312 19444 19444 I HoloceneSpeech: end reply id=replies/2026/10/20/202633Z-holocene-pm-c77a967a-b50d-5f73-bf46-b20413f3c857.ogg memo=c77a967a-b50d-5f73-bf46-b20413f3c857 seq=0 mic=idle reason= at=1792528001312
+         1792528001.343   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528366.769 21184 21184 I HoloceneSpeech: mic  id=arm:50025038 memo=- seq=0 mic=arming reason=arming at=1792528366769
+         1792528366.774 21184 21184 I HoloceneSpeech: start arming id=arm:50025038 memo=- seq=0 mic=arming reason=arming at=1792528366774
+         1792528366.775 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528366.797   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528368.636 21184 21184 I HoloceneWheel: tone START
+         1792528368.637   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528368.644   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528369.135 21184 21184 I HoloceneWheel: tone START out after 486 ms (244 ms long, presented=5401/5401)
+         1792528369.136   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528369.136 21184 21184 I HoloceneSpeech: end arming id=arm:50025038 memo=- seq=0 mic=arming reason= at=1792528369136
+         1792528369.236 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528369236
+         1792528369.243   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:993 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:159 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528372.810 21184 21184 I HoloceneSpeech: deferred cue id=cue:cancelled:50031079 memo=- seq=0 mic=recording reason=recording at=1792528372810
+         1792528372.843   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528372.851 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528372851
+         1792528372.852 21184 21184 I HoloceneSpeech: start cue id=cue:cancelled:50031079 memo=- seq=0 mic=idle reason=waited_ms=42 at=1792528372852
+         1792528372.852 21184 21184 I HoloceneWheel: say "Cancelled."
+         1792528372.854   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528373.694   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528373.694 21184 21184 I HoloceneSpeech: end cue id=cue:cancelled:50031079 memo=- seq=0 mic=idle reason= at=1792528373694
+         1792528436.520 21184 21184 I HoloceneSpeech: mic  id=arm:50094789 memo=- seq=0 mic=arming reason=arming at=1792528436520
+         1792528436.520 21184 21184 I HoloceneSpeech: start arming id=arm:50094789 memo=- seq=0 mic=arming reason=arming at=1792528436520
+         1792528436.521 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528436.525   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528438.071 21184 21184 I HoloceneWheel: tone START
+         1792528438.072   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528438.076   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528438.587 21184 21184 I HoloceneWheel: tone START out after 506 ms (244 ms long, presented=5401/5401)
+         1792528438.588 21184 21184 I HoloceneSpeech: end arming id=arm:50094789 memo=- seq=0 mic=arming reason= at=1792528438588
+         1792528438.590   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528438.631   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1025 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:165 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528438.632 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528438632
+         1792528446.544 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50104813 memo=- seq=0 mic=recording reason=recording at=1792528446544
+         1792528446.591   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528446.596 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528446596
+         1792528446.597 21184 21184 I HoloceneSpeech: start ack id=ack:stopped:50104813 memo=- seq=0 mic=idle reason=waited_ms=53 at=1792528446596
+         1792528446.597 21184 21184 I HoloceneWheel: tone STOP
+         1792528446.606   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528446.797 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50105066 memo=- seq=0 mic=idle reason=behind_ack at=1792528446797
+         1792528447.119 21184 21184 I HoloceneWheel: tone STOP out after 505 ms (244 ms long, presented=5401/5401)
+         1792528447.120 21184 21184 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792528447.121   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528447.122   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528449.366 21184 21184 I HoloceneSpeech: end ack id=ack:stopped:50104813 memo=- seq=0 mic=idle reason= at=1792528449366
+         1792528449.367 21184 21184 I HoloceneSpeech: start ack id=ack:sent:50105066 memo=- seq=0 mic=idle reason=waited_ms=2570 at=1792528449367
+         1792528449.367 21184 21184 I HoloceneWheel: tone SENT
+         1792528449.368   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528449.374   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528449.888 21184 21184 I HoloceneWheel: tone SENT out after 502 ms (289 ms long, presented=6393/6393)
+         1792528449.894 21184 21184 I HoloceneSpeech: end ack id=ack:sent:50105066 memo=- seq=0 mic=idle reason= at=1792528449894
+         1792528449.895   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528454.831 21184 21184 I HoloceneSpeech: queued echo id=echo:cacc736b-cf5d-584c-96c7-13861b48ab83 memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason= at=1792528454831
+         1792528454.831 21184 21184 I HoloceneSpeech: start echo id=echo:cacc736b-cf5d-584c-96c7-13861b48ab83 memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason=waited_ms=1 at=1792528454831
+         1792528454.832 21184 21184 I HoloceneWheel: say "Holocene heard: Timing test check the current date with a"
+         1792528454.833   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528458.444   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528458.444 21184 21184 I HoloceneSpeech: end echo id=echo:cacc736b-cf5d-584c-96c7-13861b48ab83 memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason= at=1792528458444
+         1792528470.764 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason= at=1792528470764
+         1792528470.764 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason=waited_ms=0 at=1792528470764
+         1792528470.765 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=1 mic=idle reason=first at=1792528470765
+         1792528470.772   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528470.776 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528477.407 21184 21184 I HoloceneSpeech: wait reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=2 mic=idle reason=chunk_2 at=1792528477407
+         1792528477.412   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528477.495 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=2 mic=idle reason=waited_ms=88 at=1792528477495
+         1792528477.499   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528477.501 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528487.722 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/203427Z-holocene-pm-cacc736b-cf5d-584c-96c7-13861b48ab83.ogg memo=cacc736b-cf5d-584c-96c7-13861b48ab83 seq=0 mic=idle reason=chunks=2 at=1792528487722
+         1792528487.728   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528535.843 21184 21184 I HoloceneSpeech: mic  id=arm:50194112 memo=- seq=0 mic=arming reason=arming at=1792528535843
+         1792528535.844 21184 21184 I HoloceneSpeech: start arming id=arm:50194112 memo=- seq=0 mic=arming reason=arming at=1792528535844
+         1792528535.844 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528535.849   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528537.432   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528537.432 21184 21184 I HoloceneWheel: tone START
+         1792528537.440   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528537.911 21184 21184 I HoloceneWheel: tone START out after 466 ms (244 ms long, presented=5401/5401)
+         1792528537.912   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528537.912 21184 21184 I HoloceneSpeech: end arming id=arm:50194112 memo=- seq=0 mic=arming reason= at=1792528537912
+         1792528537.973 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528537973
+         1792528537.975   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1105 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:177 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528546.979 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50205248 memo=- seq=0 mic=recording reason=recording at=1792528546979
+         1792528547.024   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528547.027 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528547027
+         1792528547.028 21184 21184 I HoloceneSpeech: start ack id=ack:stopped:50205248 memo=- seq=0 mic=idle reason=waited_ms=49 at=1792528547028
+         1792528547.028 21184 21184 I HoloceneWheel: tone STOP
+         1792528547.044   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528547.182 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50205451 memo=- seq=0 mic=idle reason=behind_ack at=1792528547182
+         1792528547.535 21184 21184 I HoloceneWheel: tone STOP out after 486 ms (244 ms long, presented=5401/5401)
+         1792528547.536   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528547.536 21184 21184 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792528547.538   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528549.610   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528549.610 21184 21184 I HoloceneSpeech: end ack id=ack:stopped:50205248 memo=- seq=0 mic=idle reason= at=1792528549610
+         1792528549.610 21184 21184 I HoloceneSpeech: start ack id=ack:sent:50205451 memo=- seq=0 mic=idle reason=waited_ms=2428 at=1792528549610
+         1792528549.610 21184 21184 I HoloceneWheel: tone SENT
+         1792528549.615   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528550.132 21184 21184 I HoloceneWheel: tone SENT out after 512 ms (289 ms long, presented=6393/6393)
+         1792528550.137 21184 21184 I HoloceneSpeech: end ack id=ack:sent:50205451 memo=- seq=0 mic=idle reason= at=1792528550137
+         1792528550.138   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528553.421 21184 21184 I HoloceneSpeech: queued echo id=echo:a99d8749-cba6-5c35-91c7-2e2ca4e626f6 memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason= at=1792528553421
+         1792528553.421 21184 21184 I HoloceneSpeech: start echo id=echo:a99d8749-cba6-5c35-91c7-2e2ca4e626f6 memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason=waited_ms=1 at=1792528553421
+         1792528553.421 21184 21184 I HoloceneWheel: say "Holocene heard: Driving timing test, check the date with a"
+         1792528553.425   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528557.875 21184 21184 I HoloceneSpeech: end echo id=echo:a99d8749-cba6-5c35-91c7-2e2ca4e626f6 memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason= at=1792528557875
+         1792528557.877   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528575.215 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason= at=1792528575215
+         1792528575.216 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=1 mic=idle reason=first at=1792528575216
+         1792528575.216 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason=waited_ms=0 at=1792528575216
+         1792528575.226   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528575.231 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528581.038 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=2 mic=idle reason=buffered at=1792528581038
+         1792528581.825 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=2 mic=idle reason=next at=1792528581825
+         1792528586.874 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=3 mic=idle reason=buffered at=1792528586873
+         1792528590.850 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=3 mic=idle reason=next at=1792528590850
+         1792528600.717 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/203610Z-holocene-pm-a99d8749-cba6-5c35-91c7-2e2ca4e626f6.ogg memo=a99d8749-cba6-5c35-91c7-2e2ca4e626f6 seq=0 mic=idle reason=chunks=3 at=1792528600717
+         1792528600.725   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528655.315 21184 21184 I HoloceneSpeech: mic  id=arm:50313584 memo=- seq=0 mic=arming reason=arming at=1792528655315
+         1792528655.315 21184 21184 I HoloceneSpeech: start arming id=arm:50313584 memo=- seq=0 mic=arming reason=arming at=1792528655315
+         1792528655.315 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528655.327   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528656.900 21184 21184 I HoloceneWheel: tone START
+         1792528656.901   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528656.911   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528657.381 21184 21184 I HoloceneWheel: tone START out after 467 ms (244 ms long, presented=5401/5401)
+         1792528657.383 21184 21184 I HoloceneSpeech: end arming id=arm:50313584 memo=- seq=0 mic=arming reason= at=1792528657383
+         1792528657.384   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528657.442   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1185 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:189 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528657.444 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528657444
+         1792528662.731 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50321000 memo=- seq=0 mic=recording reason=recording at=1792528662731
+         1792528662.782   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528662.799 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528662799
+         1792528662.799 21184 21184 I HoloceneSpeech: start ack id=ack:stopped:50321000 memo=- seq=0 mic=idle reason=waited_ms=69 at=1792528662799
+         1792528662.800 21184 21184 I HoloceneWheel: tone STOP
+         1792528662.813   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528662.940 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50321209 memo=- seq=0 mic=idle reason=behind_ack at=1792528662940
+         1792528663.314 21184 21184 I HoloceneWheel: tone STOP out after 492 ms (244 ms long, presented=5401/5401)
+         1792528663.329 21184 21184 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792528663.338   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528663.345   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528664.548 21184 21184 I HoloceneSpeech: halt ack id=ack:stopped:50321000 memo=- seq=0 mic=idle reason=recording at=1792528664547
+         1792528664.564 21184 21184 I HoloceneSpeech: mic  id=arm:50322817 memo=- seq=0 mic=arming reason=arming at=1792528664564
+         1792528664.565 21184 21184 I HoloceneSpeech: start arming id=arm:50322817 memo=- seq=0 mic=arming reason=arming at=1792528664565
+         1792528664.565 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528664.569   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528664.573   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528666.107   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528666.107 21184 21184 I HoloceneWheel: tone START
+         1792528666.114   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528666.525 21184 21184 I HoloceneWheel: tone START out after 407 ms (244 ms long, presented=5401/5401)
+         1792528666.527 21184 21184 I HoloceneSpeech: end arming id=arm:50322817 memo=- seq=0 mic=arming reason= at=1792528666527
+         1792528666.531   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528666.601 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528666601
+         1792528666.607   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1225 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:196 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528669.564 21184 21184 I HoloceneSpeech: deferred echo id=echo:c033a752-7851-5c2c-8040-fde9ce04c3a9 memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=recording reason=recording at=1792528669564
+         1792528674.015 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50332284 memo=- seq=0 mic=recording reason=recording at=1792528674015
+         1792528674.051   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528674.056 21184 21184 I HoloceneSpeech: drop ack id=ack:sent:50321209 memo=- seq=0 mic=idle reason=expired at=1792528674056
+         1792528674.056 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528674056
+         1792528674.060 21184 21184 I HoloceneSpeech: start echo id=echo:c033a752-7851-5c2c-8040-fde9ce04c3a9 memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=idle reason=waited_ms=4492 at=1792528674060
+         1792528674.060 21184 21184 I HoloceneWheel: say "Holocene heard: Reply test without using any tell me five"
+         1792528674.062   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528674.186 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50332455 memo=- seq=0 mic=idle reason=behind_echo at=1792528674186
+         1792528678.192 21184 21184 I HoloceneSpeech: end echo id=echo:c033a752-7851-5c2c-8040-fde9ce04c3a9 memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=idle reason= at=1792528678192
+         1792528678.192 21184 21184 I HoloceneSpeech: start ack id=ack:stopped:50332284 memo=- seq=0 mic=idle reason=waited_ms=4178 at=1792528678192
+         1792528678.193 21184 21184 I HoloceneWheel: tone STOP
+         1792528678.196   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528678.208   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528678.681 21184 21184 I HoloceneWheel: tone STOP out after 467 ms (244 ms long, presented=5401/5401)
+         1792528678.682   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528678.682 21184 21184 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792528678.684   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528680.749 21184 21184 I HoloceneSpeech: drop ack id=ack:sent:50332455 memo=- seq=0 mic=idle reason=expired at=1792528680749
+         1792528680.749 21184 21184 I HoloceneSpeech: end ack id=ack:stopped:50332284 memo=- seq=0 mic=idle reason= at=1792528680749
+         1792528680.750   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528681.102 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=idle reason= at=1792528681102
+         1792528681.102 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=idle reason=waited_ms=0 at=1792528681102
+         1792528681.103 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=1 mic=idle reason=first at=1792528681103
+         1792528681.105   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528681.108 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528683.004 21184 21184 I HoloceneSpeech: queued echo id=echo:946ce7c4-30fc-55ed-9ac0-3b89663199b3 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason=behind_reply at=1792528683004
+         1792528687.001 21184 21184 I HoloceneSpeech: wait reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=2 mic=idle reason=chunk_2 at=1792528687001
+         1792528687.006   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528687.867 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=2 mic=idle reason=waited_ms=866 at=1792528687867
+         1792528687.874   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528687.886 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528698.997 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/203757Z-holocene-pm-c033a752-7851-5c2c-8040-fde9ce04c3a9.ogg memo=c033a752-7851-5c2c-8040-fde9ce04c3a9 seq=0 mic=idle reason=chunks=2 at=1792528698997
+         1792528699.008 21184 21184 I HoloceneSpeech: start echo id=echo:946ce7c4-30fc-55ed-9ac0-3b89663199b3 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason=waited_ms=16004 at=1792528699008
+         1792528699.008 21184 21184 I HoloceneWheel: say "Holocene heard: Progress test, read today's Holocene, check each open"
+         1792528699.012   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528699.018   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528702.525 21184 21184 I HoloceneSpeech: queued progress id=progress:946ce7c4-30fc-55ed-9ac0-3b89663199b3:1 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=1 mic=idle reason=behind_echo at=1792528702525
+         1792528704.508 21184 21184 I HoloceneSpeech: end echo id=echo:946ce7c4-30fc-55ed-9ac0-3b89663199b3 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason= at=1792528704508
+         1792528704.509   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528704.509 21184 21184 I HoloceneSpeech: start progress id=progress:946ce7c4-30fc-55ed-9ac0-3b89663199b3:1 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=1 mic=idle reason=waited_ms=1984 at=1792528704509
+         1792528704.519   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528704.522 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528710.971 21184 21184 I HoloceneSpeech: end progress id=progress:946ce7c4-30fc-55ed-9ac0-3b89663199b3:1 memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=1 mic=idle reason= at=1792528710971
+         1792528710.976   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528723.623 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason= at=1792528723623
+         1792528723.624 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=1 mic=idle reason=first at=1792528723624
+         1792528723.624 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason=waited_ms=1 at=1792528723624
+         1792528723.635   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528723.641 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528727.614 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=2 mic=idle reason=buffered at=1792528727614
+         1792528730.334 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=2 mic=idle reason=next at=1792528730334
+         1792528730.733 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=3 mic=idle reason=buffered at=1792528730733
+         1792528737.800 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=3 mic=idle reason=next at=1792528737800
+         1792528741.734 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/203839Z-holocene-pm-946ce7c4-30fc-55ed-9ac0-3b89663199b3.ogg memo=946ce7c4-30fc-55ed-9ac0-3b89663199b3 seq=0 mic=idle reason=chunks=3 at=1792528741734
+         1792528741.740   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528802.178 21184 21184 I HoloceneSpeech: mic  id=arm:50460447 memo=- seq=0 mic=arming reason=arming at=1792528802178
+         1792528802.178 21184 21184 I HoloceneSpeech: start arming id=arm:50460447 memo=- seq=0 mic=arming reason=arming at=1792528802178
+         1792528802.178 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528802.182   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528803.744   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528803.744 21184 21184 I HoloceneWheel: tone START
+         1792528803.749   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528804.240 21184 21184 I HoloceneWheel: tone START out after 487 ms (244 ms long, presented=5401/5401)
+         1792528804.241 21184 21184 I HoloceneSpeech: end arming id=arm:50460447 memo=- seq=0 mic=arming reason= at=1792528804241
+         1792528804.242   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528804.299   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1329 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:211 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528804.299 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528804299
+         1792528809.379 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50467649 memo=- seq=0 mic=recording reason=recording at=1792528809379
+         1792528809.440   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528809.442 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528809442
+         1792528809.443 21184 21184 I HoloceneSpeech: start ack id=ack:stopped:50467649 memo=- seq=0 mic=idle reason=waited_ms=63 at=1792528809443
+         1792528809.443 21184 21184 I HoloceneWheel: tone STOP
+         1792528809.449   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528809.562 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/204006Z-33god-pm-dbef3892-6cdc-5346-8b8e-b4db4274fe29.ogg memo=dbef3892-6cdc-5346-8b8e-b4db4274fe29 seq=0 mic=idle reason=behind_ack at=1792528809562
+         1792528809.567 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50467836 memo=- seq=0 mic=idle reason=behind_ack at=1792528809567
+         1792528809.959 21184 21184 I HoloceneWheel: tone STOP out after 506 ms (244 ms long, presented=5401/5401)
+         1792528809.960 21184 21184 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792528809.961   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528809.963   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528811.050 21184 21184 I HoloceneSpeech: drop reply id=replies/2026/10/20/204006Z-33god-pm-dbef3892-6cdc-5346-8b8e-b4db4274fe29.ogg memo=dbef3892-6cdc-5346-8b8e-b4db4274fe29 seq=0 mic=idle reason=stopped at=1792528811050
+         1792528811.052 21184 21184 I HoloceneSpeech: halt ack id=ack:stopped:50467649 memo=- seq=0 mic=idle reason=recording at=1792528811052
+         1792528811.054   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528811.054 21184 21184 I HoloceneSpeech: mic  id=arm:50469322 memo=- seq=0 mic=arming reason=arming at=1792528811054
+         1792528811.054 21184 21184 I HoloceneSpeech: start arming id=arm:50469322 memo=- seq=0 mic=arming reason=arming at=1792528811054
+         1792528811.054 21184 21184 I HoloceneWheel: say "Recording for Holocene."
+         1792528811.056   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528812.566   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528812.566 21184 21184 I HoloceneWheel: tone START
+         1792528812.577   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528813.053 21184 21184 I HoloceneWheel: tone START out after 470 ms (244 ms long, presented=5401/5401)
+         1792528813.055 21184 21184 I HoloceneSpeech: end arming id=arm:50469322 memo=- seq=0 mic=arming reason= at=1792528813054
+         1792528813.061   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528813.095   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1369 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:218 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792528813.095 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792528813095
+         1792528817.068 21184 21184 I HoloceneSpeech: deferred echo id=echo:7fc81a3f-9793-5bbc-8234-687313d36347 memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=recording reason=recording at=1792528817068
+         1792528820.403 21184 21184 I HoloceneSpeech: deferred ack id=ack:stopped:50478673 memo=- seq=0 mic=recording reason=recording at=1792528820403
+         1792528820.447   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792528820.449 21184 21184 I HoloceneSpeech: drop ack id=ack:sent:50467836 memo=- seq=0 mic=idle reason=expired at=1792528820449
+         1792528820.449 21184 21184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792528820449
+         1792528820.449 21184 21184 I HoloceneSpeech: start echo id=echo:7fc81a3f-9793-5bbc-8234-687313d36347 memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=idle reason=waited_ms=3381 at=1792528820449
+         1792528820.449 21184 21184 I HoloceneWheel: say "Holocene heard: Reply test without using any tell me 10"
+         1792528820.451   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528820.561 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/204006Z-33god-pm-dbef3892-6cdc-5346-8b8e-b4db4274fe29.ogg memo=dbef3892-6cdc-5346-8b8e-b4db4274fe29 seq=0 mic=idle reason=behind_echo at=1792528820561
+         1792528820.586 21184 21184 I HoloceneSpeech: queued ack id=ack:sent:50478855 memo=- seq=0 mic=idle reason=behind_echo at=1792528820586
+         1792528824.542 21184 21184 I HoloceneSpeech: end echo id=echo:7fc81a3f-9793-5bbc-8234-687313d36347 memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=idle reason= at=1792528824541
+         1792528824.544   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528824.555 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/204006Z-33god-pm-dbef3892-6cdc-5346-8b8e-b4db4274fe29.ogg memo=dbef3892-6cdc-5346-8b8e-b4db4274fe29 seq=0 mic=idle reason=waited_ms=3993 at=1792528824555
+         1792528824.579   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528824.583 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528826.841 21184 21184 I HoloceneSpeech: queued echo id=echo:0c7effbf-a048-5aa3-84f4-0d12650848cc memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason=behind_reply at=1792528826841
+         1792528841.066 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/204006Z-33god-pm-dbef3892-6cdc-5346-8b8e-b4db4274fe29.ogg memo=dbef3892-6cdc-5346-8b8e-b4db4274fe29 seq=0 mic=idle reason= at=1792528841066
+         1792528841.067 21184 21184 I HoloceneSpeech: drop ack id=ack:sent:50478855 memo=- seq=0 mic=idle reason=expired at=1792528841067
+         1792528841.067 21184 21184 I HoloceneSpeech: drop ack id=ack:stopped:50478673 memo=- seq=0 mic=idle reason=expired at=1792528841067
+         1792528841.068 21184 21184 I HoloceneSpeech: start echo id=echo:0c7effbf-a048-5aa3-84f4-0d12650848cc memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason=waited_ms=14225 at=1792528841068
+         1792528841.068 21184 21184 I HoloceneWheel: say "Holocene heard: Progress test, read today's Holocene, check each open"
+         1792528841.159 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=idle reason=behind_echo at=1792528841159
+         1792528841.211 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=2 mic=idle reason=buffered at=1792528841211
+         1792528846.356 21184 21184 I HoloceneSpeech: end echo id=echo:0c7effbf-a048-5aa3-84f4-0d12650848cc memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason= at=1792528846356
+         1792528846.357   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528846.357   998  1263 W AudioFocusControl: [repeat_cnt=1, log_rate=16496(ms)]MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528846.357 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=1 mic=idle reason=first at=1792528846357
+         1792528846.357 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=idle reason=waited_ms=5198 at=1792528846357
+         1792528846.379   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528846.383 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528848.368 21184 21184 I HoloceneSpeech: queued progress id=progress:0c7effbf-a048-5aa3-84f4-0d12650848cc:1 memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=1 mic=idle reason=behind_reply at=1792528848368
+         1792528848.478 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=3 mic=idle reason=buffered at=1792528848478
+         1792528854.123 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=2 mic=idle reason=next at=1792528854123
+         1792528868.466 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=3 mic=idle reason=next at=1792528868466
+         1792528874.898 21184 21184 I HoloceneSpeech: drop progress id=progress:0c7effbf-a048-5aa3-84f4-0d12650848cc:1 memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=1 mic=idle reason=memo_final at=1792528874897
+         1792528880.231 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/204026Z-holocene-pm-7fc81a3f-9793-5bbc-8234-687313d36347.ogg memo=7fc81a3f-9793-5bbc-8234-687313d36347 seq=0 mic=idle reason=chunks=3 at=1792528880231
+         1792528880.236   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792528880.303 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=1 mic=idle reason=first at=1792528880303
+         1792528880.303 21184 21184 I HoloceneSpeech: queued reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason= at=1792528880303
+         1792528880.303 21184 21184 I HoloceneSpeech: start reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason=waited_ms=0 at=1792528880303
+         1792528880.306   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792528880.308 21184 21184 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792528880.381 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=2 mic=idle reason=buffered at=1792528880381
+         1792528884.349 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=3 mic=idle reason=buffered at=1792528884349
+         1792528885.149 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=2 mic=idle reason=next at=1792528885149
+         1792528892.725 21184 21184 I HoloceneSpeech: chunk reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=3 mic=idle reason=next at=1792528892725
+         1792528900.487 21184 21184 I HoloceneSpeech: end reply id=replies/2026/10/20/204112Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg memo=0c7effbf-a048-5aa3-84f4-0d12650848cc seq=0 mic=idle reason=chunks=3 at=1792528900487
+         1792528900.496   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529079.467   643  1365 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529081.014   643   892 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529081.014   643   892 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529081.017   643   819 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529094.893 24184 24184 I HoloceneSpeech: mic  id=arm:50753162 memo=- seq=0 mic=arming reason=arming at=1792529094893
+         1792529094.894 24184 24184 I HoloceneSpeech: start arming id=arm:50753162 memo=- seq=0 mic=arming reason=arming at=1792529094894
+         1792529094.896 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529094.922   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529096.893   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529096.893 24184 24184 I HoloceneWheel: tone START
+         1792529096.901   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529097.535 24184 24184 I HoloceneWheel: tone START out after 629 ms (244 ms long, presented, presented=5401/5401)
+         1792529097.537   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529097.537 24184 24184 I HoloceneSpeech: end arming id=arm:50753162 memo=- seq=0 mic=arming reason= at=1792529097537
+         1792529097.728 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529097728
+         1792529097.735   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1481 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:232 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529099.878 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50758147 memo=- seq=0 mic=recording reason=recording at=1792529099878
+         1792529099.921   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529099.925 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529099925
+         1792529099.926 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50758147 memo=- seq=0 mic=idle reason=waited_ms=48 at=1792529099926
+         1792529099.926 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529099.928   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529100.778 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50758147 memo=- seq=0 mic=idle reason= at=1792529100778
+         1792529100.781   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529102.361 24184 24184 I HoloceneSpeech: mic  id=arm:50760630 memo=- seq=0 mic=arming reason=arming at=1792529102361
+         1792529102.361 24184 24184 I HoloceneSpeech: start arming id=arm:50760630 memo=- seq=0 mic=arming reason=arming at=1792529102361
+         1792529102.361 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529102.362   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529103.899   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529103.899 24184 24184 I HoloceneWheel: tone START
+         1792529103.903   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529104.597 24184 24184 I HoloceneWheel: tone START out after 689 ms (244 ms long, presented, presented=5401/5401)
+         1792529104.598   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529104.598 24184 24184 I HoloceneSpeech: end arming id=arm:50760630 memo=- seq=0 mic=arming reason= at=1792529104598
+         1792529104.620 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529104619
+         1792529104.623   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1513 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:238 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529106.696 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50764965 memo=- seq=0 mic=recording reason=recording at=1792529106696
+         1792529106.737   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529106.739 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529106739
+         1792529106.739 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50764965 memo=- seq=0 mic=idle reason=waited_ms=43 at=1792529106739
+         1792529106.739 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529106.743   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529107.557   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529107.557 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50764965 memo=- seq=0 mic=idle reason= at=1792529107557
+         1792529109.211 24184 24184 I HoloceneSpeech: mic  id=arm:50767480 memo=- seq=0 mic=arming reason=arming at=1792529109211
+         1792529109.211 24184 24184 I HoloceneSpeech: start arming id=arm:50767480 memo=- seq=0 mic=arming reason=arming at=1792529109211
+         1792529109.211 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529109.213   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529110.846   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529110.846 24184 24184 I HoloceneWheel: tone START
+         1792529110.849   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529111.441 24184 24184 I HoloceneWheel: tone START out after 587 ms (244 ms long, presented, presented=5401/5401)
+         1792529111.442 24184 24184 I HoloceneSpeech: end arming id=arm:50767480 memo=- seq=0 mic=arming reason= at=1792529111442
+         1792529111.443   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529111.463 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529111463
+         1792529111.465   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1545 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:244 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529113.581 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50771851 memo=- seq=0 mic=recording reason=recording at=1792529113581
+         1792529113.624   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529113.626 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529113626
+         1792529113.626 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50771851 memo=- seq=0 mic=idle reason=waited_ms=45 at=1792529113626
+         1792529113.626 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529113.629   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529114.460   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529114.460 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50771851 memo=- seq=0 mic=idle reason= at=1792529114460
+         1792529116.066 24184 24184 I HoloceneSpeech: mic  id=arm:50774336 memo=- seq=0 mic=arming reason=arming at=1792529116066
+         1792529116.067 24184 24184 I HoloceneSpeech: start arming id=arm:50774336 memo=- seq=0 mic=arming reason=arming at=1792529116067
+         1792529116.067 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529116.071   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529117.598   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529117.598 24184 24184 I HoloceneWheel: tone START
+         1792529117.606   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529118.178 24184 24184 I HoloceneWheel: tone START out after 567 ms (244 ms long, presented, presented=5401/5401)
+         1792529118.179   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529118.179 24184 24184 I HoloceneSpeech: end arming id=arm:50774336 memo=- seq=0 mic=arming reason= at=1792529118179
+         1792529118.197   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1577 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:250 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529118.197 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529118197
+         1792529120.326 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50778595 memo=- seq=0 mic=recording reason=recording at=1792529120326
+         1792529120.361 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529120361
+         1792529120.361 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50778595 memo=- seq=0 mic=idle reason=waited_ms=36 at=1792529120361
+         1792529120.361 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529120.363   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529120.363   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529121.150 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50778595 memo=- seq=0 mic=idle reason= at=1792529121150
+         1792529121.151   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529123.008 24184 24184 I HoloceneSpeech: mic  id=arm:50781277 memo=- seq=0 mic=arming reason=arming at=1792529123008
+         1792529123.010 24184 24184 I HoloceneSpeech: start arming id=arm:50781277 memo=- seq=0 mic=arming reason=arming at=1792529123010
+         1792529123.012 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529123.025   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529124.657 24184 24184 I HoloceneWheel: tone START
+         1792529124.659   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529124.679   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529125.236 24184 24184 I HoloceneWheel: tone START out after 547 ms (244 ms long, presented, presented=5401/5401)
+         1792529125.238   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529125.238 24184 24184 I HoloceneSpeech: end arming id=arm:50781277 memo=- seq=0 mic=arming reason= at=1792529125238
+         1792529125.319   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1609 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:256 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529125.319 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529125319
+         1792529127.479 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50785748 memo=- seq=0 mic=recording reason=recording at=1792529127479
+         1792529127.526   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529127.529 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529127529
+         1792529127.530 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50785748 memo=- seq=0 mic=idle reason=waited_ms=51 at=1792529127530
+         1792529127.530 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529127.531   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529128.335   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529128.335 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50785748 memo=- seq=0 mic=idle reason= at=1792529128335
+         1792529129.999 24184 24184 I HoloceneSpeech: mic  id=arm:50788268 memo=- seq=0 mic=arming reason=arming at=1792529129999
+         1792529129.999 24184 24184 I HoloceneSpeech: start arming id=arm:50788268 memo=- seq=0 mic=arming reason=arming at=1792529129999
+         1792529129.999 24184 24184 I HoloceneWheel: say "Recording for Holocene."
+         1792529130.000   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529131.526   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529131.526 24184 24184 I HoloceneWheel: tone START
+         1792529131.529   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529132.120 24184 24184 I HoloceneWheel: tone START out after 588 ms (244 ms long, presented, presented=5401/5401)
+         1792529132.121 24184 24184 I HoloceneSpeech: end arming id=arm:50788268 memo=- seq=0 mic=arming reason= at=1792529132121
+         1792529132.122   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529132.143   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1641 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:262 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529132.143 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529132143
+         1792529134.243 24184 24184 I HoloceneSpeech: deferred cue id=cue:cancelled:50792513 memo=- seq=0 mic=recording reason=recording at=1792529134243
+         1792529134.278   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529134.285 24184 24184 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529134285
+         1792529134.285 24184 24184 I HoloceneSpeech: start cue id=cue:cancelled:50792513 memo=- seq=0 mic=idle reason=waited_ms=41 at=1792529134285
+         1792529134.285 24184 24184 I HoloceneWheel: say "Cancelled."
+         1792529134.286   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529135.140   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529135.140 24184 24184 I HoloceneSpeech: end cue id=cue:cancelled:50792513 memo=- seq=0 mic=idle reason= at=1792529135140
+         1792529215.372   643  1863 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529216.791   643   782 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529216.791   643   782 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529216.792   643   782 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792529235.678 25329 25329 I HoloceneSpeech: mic  id=arm:50893944 memo=- seq=0 mic=arming reason=arming at=1792529235678
+         1792529235.678 25329 25329 I HoloceneSpeech: start arming id=arm:50893944 memo=- seq=0 mic=arming reason=arming at=1792529235678
+         1792529235.678 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529235.686   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529237.565   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529237.565 25329 25329 I HoloceneWheel: tone START
+         1792529237.572   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529238.306 25329 25329 I HoloceneWheel: tone START out after 729 ms (244 ms long, presented, presented=5401/5401)
+         1792529238.308 25329 25329 I HoloceneSpeech: end arming id=arm:50893944 memo=- seq=0 mic=arming reason= at=1792529238308
+         1792529238.309   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529238.385   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1689 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:268 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529238.386 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529238386
+         1792529240.543 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50898812 memo=- seq=0 mic=recording reason=recording at=1792529240543
+         1792529240.578   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529240.580 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529240580
+         1792529240.580 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50898812 memo=- seq=0 mic=idle reason=waited_ms=36 at=1792529240580
+         1792529240.580 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529240.583   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529241.397 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50898812 memo=- seq=0 mic=idle reason= at=1792529241397
+         1792529241.398   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529243.029 25329 25329 I HoloceneSpeech: mic  id=arm:50901299 memo=- seq=0 mic=arming reason=arming at=1792529243029
+         1792529243.029 25329 25329 I HoloceneSpeech: start arming id=arm:50901299 memo=- seq=0 mic=arming reason=arming at=1792529243029
+         1792529243.030 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529243.031   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529244.573   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529244.573 25329 25329 I HoloceneWheel: tone START
+         1792529244.577   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529245.329 25329 25329 I HoloceneWheel: tone START out after 749 ms (244 ms long, presented, presented=5401/5401)
+         1792529245.330 25329 25329 I HoloceneSpeech: end arming id=arm:50901299 memo=- seq=0 mic=arming reason= at=1792529245330
+         1792529245.331   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529245.355   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1721 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:274 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529245.356 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529245356
+         1792529247.462 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50905732 memo=- seq=0 mic=recording reason=recording at=1792529247462
+         1792529247.502   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529247.504 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529247504
+         1792529247.505 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50905732 memo=- seq=0 mic=idle reason=waited_ms=42 at=1792529247505
+         1792529247.505 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529247.506   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529248.297   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529248.297 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50905732 memo=- seq=0 mic=idle reason= at=1792529248297
+         1792529249.972 25329 25329 I HoloceneSpeech: mic  id=arm:50908241 memo=- seq=0 mic=arming reason=arming at=1792529249971
+         1792529249.972 25329 25329 I HoloceneSpeech: start arming id=arm:50908241 memo=- seq=0 mic=arming reason=arming at=1792529249972
+         1792529249.972 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529249.973   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529251.500   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529251.500 25329 25329 I HoloceneWheel: tone START
+         1792529251.503   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529252.211 25329 25329 I HoloceneWheel: tone START out after 703 ms (244 ms long, presented, presented=5401/5401)
+         1792529252.242 25329 25329 I HoloceneSpeech: end arming id=arm:50908241 memo=- seq=0 mic=arming reason= at=1792529252241
+         1792529252.249   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529252.359 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529252359
+         1792529252.376   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1753 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:280 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529254.579 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50912848 memo=- seq=0 mic=recording reason=recording at=1792529254579
+         1792529254.610   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529254.618 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529254618
+         1792529254.619 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50912848 memo=- seq=0 mic=idle reason=waited_ms=40 at=1792529254619
+         1792529254.619 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529254.631   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529255.472 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50912848 memo=- seq=0 mic=idle reason= at=1792529255472
+         1792529255.473   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529257.145 25329 25329 I HoloceneSpeech: mic  id=arm:50915414 memo=- seq=0 mic=arming reason=arming at=1792529257145
+         1792529257.145 25329 25329 I HoloceneSpeech: start arming id=arm:50915414 memo=- seq=0 mic=arming reason=arming at=1792529257145
+         1792529257.145 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529257.150   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529258.693   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529258.693 25329 25329 I HoloceneWheel: tone START
+         1792529258.698   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529259.380 25329 25329 I HoloceneWheel: tone START out after 677 ms (244 ms long, presented, presented=5401/5401)
+         1792529259.412   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529259.413 25329 25329 I HoloceneSpeech: end arming id=arm:50915414 memo=- seq=0 mic=arming reason= at=1792529259413
+         1792529259.462 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529259462
+         1792529259.465   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1785 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:286 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529261.546 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50919815 memo=- seq=0 mic=recording reason=recording at=1792529261546
+         1792529261.584   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529261.588 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529261588
+         1792529261.588 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50919815 memo=- seq=0 mic=idle reason=waited_ms=43 at=1792529261588
+         1792529261.589   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529261.589 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529262.393 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50919815 memo=- seq=0 mic=idle reason= at=1792529262393
+         1792529262.395   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529264.067 25329 25329 I HoloceneSpeech: mic  id=arm:50922336 memo=- seq=0 mic=arming reason=arming at=1792529264067
+         1792529264.067 25329 25329 I HoloceneSpeech: start arming id=arm:50922336 memo=- seq=0 mic=arming reason=arming at=1792529264067
+         1792529264.067 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529264.069   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529265.631 25329 25329 I HoloceneWheel: tone START
+         1792529265.632   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529265.638   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529266.350 25329 25329 I HoloceneWheel: tone START out after 710 ms (244 ms long, presented, presented=5401/5401)
+         1792529266.351 25329 25329 I HoloceneSpeech: end arming id=arm:50922336 memo=- seq=0 mic=arming reason= at=1792529266351
+         1792529266.352   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529266.377 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529266377
+         1792529266.379   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1817 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:292 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529268.510 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50926779 memo=- seq=0 mic=recording reason=recording at=1792529268510
+         1792529268.554   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529268.558 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529268558
+         1792529268.558 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50926779 memo=- seq=0 mic=idle reason=waited_ms=48 at=1792529268558
+         1792529268.558 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529268.560   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529269.425   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529269.426 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50926779 memo=- seq=0 mic=idle reason= at=1792529269426
+         1792529271.048 25329 25329 I HoloceneSpeech: mic  id=arm:50929317 memo=- seq=0 mic=arming reason=arming at=1792529271048
+         1792529271.048 25329 25329 I HoloceneSpeech: start arming id=arm:50929317 memo=- seq=0 mic=arming reason=arming at=1792529271048
+         1792529271.048 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529271.050   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529272.587   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529272.587 25329 25329 I HoloceneWheel: tone START
+         1792529272.590   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529273.283 25329 25329 I HoloceneWheel: tone START out after 689 ms (244 ms long, presented, presented=5401/5401)
+         1792529273.284   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529273.284 25329 25329 I HoloceneSpeech: end arming id=arm:50929317 memo=- seq=0 mic=arming reason= at=1792529273284
+         1792529273.313   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1849 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:298 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529273.314 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529273314
+         1792529275.379 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50933649 memo=- seq=0 mic=recording reason=recording at=1792529275379
+         1792529275.417   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529275.419 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529275418
+         1792529275.419 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50933649 memo=- seq=0 mic=idle reason=waited_ms=39 at=1792529275419
+         1792529275.419 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529275.426   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529276.230   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529276.230 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50933649 memo=- seq=0 mic=idle reason= at=1792529276230
+         1792529277.898 25329 25329 I HoloceneSpeech: mic  id=arm:50936167 memo=- seq=0 mic=arming reason=arming at=1792529277898
+         1792529277.898 25329 25329 I HoloceneSpeech: start arming id=arm:50936167 memo=- seq=0 mic=arming reason=arming at=1792529277898
+         1792529277.898 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529277.900   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529279.441 25329 25329 I HoloceneWheel: tone START
+         1792529279.442   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529279.447   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529280.099 25329 25329 I HoloceneWheel: tone START out after 648 ms (244 ms long, presented, presented=5401/5401)
+         1792529280.100 25329 25329 I HoloceneSpeech: end arming id=arm:50936167 memo=- seq=0 mic=arming reason= at=1792529280100
+         1792529280.103   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529280.120 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529280120
+         1792529280.126   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1881 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:304 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529282.230 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50940499 memo=- seq=0 mic=recording reason=recording at=1792529282230
+         1792529282.268   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529282.277 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529282277
+         1792529282.277 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50940499 memo=- seq=0 mic=idle reason=waited_ms=48 at=1792529282277
+         1792529282.278 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529282.279   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529283.081 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50940499 memo=- seq=0 mic=idle reason= at=1792529283081
+         1792529283.082   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529284.861 25329 25329 I HoloceneSpeech: mic  id=arm:50943130 memo=- seq=0 mic=arming reason=arming at=1792529284861
+         1792529284.862 25329 25329 I HoloceneSpeech: start arming id=arm:50943130 memo=- seq=0 mic=arming reason=arming at=1792529284862
+         1792529284.862 25329 25329 I HoloceneWheel: say "Recording for Holocene."
+         1792529284.872   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529286.432 25329 25329 I HoloceneWheel: tone START
+         1792529286.434   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529286.448   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529287.106 25329 25329 I HoloceneWheel: tone START out after 648 ms (244 ms long, presented, presented=5401/5401)
+         1792529287.112   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529287.112 25329 25329 I HoloceneSpeech: end arming id=arm:50943130 memo=- seq=0 mic=arming reason= at=1792529287112
+         1792529287.165   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1913 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:310 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792529287.170 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792529287170
+         1792529289.377 25329 25329 I HoloceneSpeech: deferred cue id=cue:cancelled:50947646 memo=- seq=0 mic=recording reason=recording at=1792529289377
+         1792529289.440   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792529289.446 25329 25329 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792529289446
+         1792529289.447 25329 25329 I HoloceneSpeech: start cue id=cue:cancelled:50947646 memo=- seq=0 mic=idle reason=waited_ms=70 at=1792529289447
+         1792529289.447 25329 25329 I HoloceneWheel: say "Cancelled."
+         1792529289.448   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529290.270   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529290.270 25329 25329 I HoloceneSpeech: end cue id=cue:cancelled:50947646 memo=- seq=0 mic=idle reason= at=1792529290269
+         1792529426.497 25329 25329 I HoloceneSpeech: queued reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=0 mic=idle reason= at=1792529426497
+         1792529426.497 25329 25329 I HoloceneSpeech: start reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=0 mic=idle reason=waited_ms=1 at=1792529426497
+         1792529426.498 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=1 mic=idle reason=first at=1792529426498
+         1792529426.504   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529426.510 25329 25329 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792529430.243 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=2 mic=idle reason=buffered at=1792529430243
+         1792529431.870 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=2 mic=idle reason=next at=1792529431870
+         1792529434.884 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=3 mic=idle reason=buffered at=1792529434884
+         1792529437.540 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=3 mic=idle reason=next at=1792529437540
+         1792529441.124 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=4 mic=idle reason=buffered at=1792529441124
+         1792529444.287 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=4 mic=idle reason=next at=1792529444287
+         1792529454.050 25329 25329 I HoloceneSpeech: end reply id=replies/2026/10/20/205023Z-33god-pm-1daeac7f-45a0-5c18-bb6b-05c940db4d4c.ogg memo=1daeac7f-45a0-5c18-bb6b-05c940db4d4c seq=0 mic=idle reason=chunks=4 at=1792529454050
+         1792529454.059   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529680.207 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=1 mic=idle reason=first at=1792529680207
+         1792529680.207 25329 25329 I HoloceneSpeech: queued reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=0 mic=idle reason= at=1792529680206
+         1792529680.207 25329 25329 I HoloceneSpeech: start reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=0 mic=idle reason=waited_ms=0 at=1792529680207
+         1792529680.222   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529680.231 25329 25329 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792529685.081 25329 25329 I HoloceneSpeech: wait reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=2 mic=idle reason=chunk_2 at=1792529685081
+         1792529685.082   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792529685.876 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=2 mic=idle reason=waited_ms=795 at=1792529685876
+         1792529685.879   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792529685.880 25329 25329 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792529691.028 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=3 mic=idle reason=buffered at=1792529691028
+         1792529695.046 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=3 mic=idle reason=next at=1792529695046
+         1792529703.265 25329 25329 I HoloceneSpeech: end reply id=replies/2026/10/20/205437Z-33god-pm-fcd7fc86-33bd-5198-91ff-5773d3ee00f7.ogg memo=fcd7fc86-33bd-5198-91ff-5773d3ee00f7 seq=0 mic=idle reason=chunks=3 at=1792529703265
+         1792529703.271   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530004.826 25329 25329 I HoloceneSpeech: queued reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=0 mic=idle reason= at=1792530004826
+         1792530004.828 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=1 mic=idle reason=first at=1792530004828
+         1792530004.828 25329 25329 I HoloceneSpeech: start reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=0 mic=idle reason=waited_ms=0 at=1792530004828
+         1792530004.833   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530004.843 25329 25329 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792530009.916 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=2 mic=idle reason=buffered at=1792530009916
+         1792530010.891 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=3 mic=idle reason=buffered at=1792530010891
+         1792530012.832 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=2 mic=idle reason=next at=1792530012832
+         1792530017.150 25329 25329 I HoloceneSpeech: chunk reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=3 mic=idle reason=next at=1792530017150
+         1792530032.254 25329 25329 I HoloceneSpeech: end reply id=replies/2026/10/20/205951Z-33god-pm-0f6f1621-5dbb-5edf-9558-157c2550165c.ogg memo=0f6f1621-5dbb-5edf-9558-157c2550165c seq=0 mic=idle reason=chunks=3 at=1792530032254
+         1792530032.261   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530092.513   643  3504 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530093.706   643  1456 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530093.706   643  1456 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530093.707   643  1456 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530295.961   643  1100 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530297.091   643  3512 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530297.091   643  3512 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530297.092   643  3512 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530309.458   643  3512 D MediaSessionService: Sending KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=51967689000000, downTime=51967689000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530309.460   643  3512 D MediaSessionService: Sending KeyEvent { action=ACTION_UP, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=51967690000000, downTime=51967689000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530312.060 28369 28369 I HoloceneSpeech: mic  id=arm:51970329 memo=- seq=0 mic=arming reason=arming at=1792530312060
+         1792530312.061 28369 28369 I HoloceneSpeech: start arming id=arm:51970329 memo=- seq=0 mic=arming reason=arming at=1792530312061
+         1792530312.061 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530312.071   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530313.909   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530313.909 28369 28369 I HoloceneWheel: tone START
+         1792530313.917   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530314.408 28369 28369 I HoloceneWheel: tone START out after 481 ms (244 ms long, presented, presented=5401/5401)
+         1792530314.412   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530314.412 28369 28369 I HoloceneSpeech: end arming id=arm:51970329 memo=- seq=0 mic=arming reason= at=1792530314412
+         1792530314.827   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2057 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:326 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530314.828 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530314828
+         1792530316.431 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:51974699 memo=- seq=0 mic=recording reason=recording at=1792530316430
+         1792530316.476 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530316476
+         1792530316.476 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:51974699 memo=- seq=0 mic=idle reason=waited_ms=45 at=1792530316476
+         1792530316.476 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530316.480   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530316.483   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530317.329   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530317.329 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:51974699 memo=- seq=0 mic=idle reason= at=1792530317329
+         1792530318.919 28369 28369 I HoloceneSpeech: mic  id=arm:51977188 memo=- seq=0 mic=arming reason=arming at=1792530318919
+         1792530318.919 28369 28369 I HoloceneSpeech: start arming id=arm:51977188 memo=- seq=0 mic=arming reason=arming at=1792530318919
+         1792530318.919 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530318.921   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530320.509   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530320.509 28369 28369 I HoloceneWheel: tone START
+         1792530320.512   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530320.942 28369 28369 I HoloceneWheel: tone START out after 426 ms (244 ms long, presented, presented=5401/5401)
+         1792530320.943   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530320.943 28369 28369 I HoloceneSpeech: end arming id=arm:51977188 memo=- seq=0 mic=arming reason= at=1792530320943
+         1792530321.264 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530321264
+         1792530321.265   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2089 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:332 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530322.837 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:51981106 memo=- seq=0 mic=recording reason=recording at=1792530322837
+         1792530322.887   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530322.893 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530322893
+         1792530322.893 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:51981106 memo=- seq=0 mic=idle reason=waited_ms=56 at=1792530322893
+         1792530322.893 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530322.895   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530323.699   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530323.699 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:51981106 memo=- seq=0 mic=idle reason= at=1792530323699
+         1792530325.365 28369 28369 I HoloceneSpeech: mic  id=arm:51983634 memo=- seq=0 mic=arming reason=arming at=1792530325365
+         1792530325.365 28369 28369 I HoloceneSpeech: start arming id=arm:51983634 memo=- seq=0 mic=arming reason=arming at=1792530325365
+         1792530325.365 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530325.367   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530326.899   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530326.899 28369 28369 I HoloceneWheel: tone START
+         1792530326.903   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530327.292 28369 28369 I HoloceneWheel: tone START out after 385 ms (244 ms long, presented, presented=5401/5401)
+         1792530327.293   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530327.293 28369 28369 I HoloceneSpeech: end arming id=arm:51983634 memo=- seq=0 mic=arming reason= at=1792530327293
+         1792530327.611 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530327611
+         1792530327.614   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2121 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:338 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530329.206 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:51987470 memo=- seq=0 mic=recording reason=recording at=1792530329206
+         1792530329.250   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530329.255 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530329255
+         1792530329.255 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:51987470 memo=- seq=0 mic=idle reason=waited_ms=55 at=1792530329255
+         1792530329.255 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530329.257   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530330.110   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530330.110 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:51987470 memo=- seq=0 mic=idle reason= at=1792530330110
+         1792530331.722 28369 28369 I HoloceneSpeech: mic  id=arm:51989991 memo=- seq=0 mic=arming reason=arming at=1792530331722
+         1792530331.722 28369 28369 I HoloceneSpeech: start arming id=arm:51989991 memo=- seq=0 mic=arming reason=arming at=1792530331722
+         1792530331.722 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530331.723   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530333.254   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530333.254 28369 28369 I HoloceneWheel: tone START
+         1792530333.259   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530333.627 28369 28369 I HoloceneWheel: tone START out after 365 ms (244 ms long, presented, presented=5401/5401)
+         1792530333.628 28369 28369 I HoloceneSpeech: end arming id=arm:51989991 memo=- seq=0 mic=arming reason= at=1792530333628
+         1792530333.629   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530333.946   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2153 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:344 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530333.946 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530333946
+         1792530335.559 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:51993828 memo=- seq=0 mic=recording reason=recording at=1792530335559
+         1792530335.598   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530335.600 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530335600
+         1792530335.600 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:51993828 memo=- seq=0 mic=idle reason=waited_ms=42 at=1792530335600
+         1792530335.601 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530335.603   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530336.421 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:51993828 memo=- seq=0 mic=idle reason= at=1792530336421
+         1792530336.422   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530343.831   643  3512 D MediaSessionService: Sending KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=52002043000000, downTime=52002043000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530343.833   643  3512 D MediaSessionService: Sending KeyEvent { action=ACTION_UP, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=52002046000000, downTime=52002043000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530344.172 28369 28369 I HoloceneSpeech: mic  id=arm:52002442 memo=- seq=0 mic=arming reason=arming at=1792530344172
+         1792530344.173 28369 28369 I HoloceneSpeech: start arming id=arm:52002442 memo=- seq=0 mic=arming reason=arming at=1792530344173
+         1792530344.173 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530344.179   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530345.775   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530345.775 28369 28369 I HoloceneWheel: tone START
+         1792530345.782   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530346.254 28369 28369 I HoloceneWheel: tone START out after 468 ms (244 ms long, presented, presented=5401/5401)
+         1792530346.256   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530346.256 28369 28369 I HoloceneSpeech: end arming id=arm:52002442 memo=- seq=0 mic=arming reason= at=1792530346256
+         1792530346.609   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2185 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:350 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530346.615 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530346615
+         1792530348.214 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52006483 memo=- seq=0 mic=recording reason=recording at=1792530348214
+         1792530348.246   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530348.250 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530348250
+         1792530348.250 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52006483 memo=- seq=0 mic=idle reason=waited_ms=36 at=1792530348250
+         1792530348.250 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530348.256   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530349.044 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:52006483 memo=- seq=0 mic=idle reason= at=1792530349044
+         1792530349.045   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530356.378   643  3512 D MediaSessionService: Sending KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=52014642000000, downTime=52014642000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530356.379   643  3510 D MediaSessionService: Sending KeyEvent { action=ACTION_UP, keyCode=KEYCODE_MEDIA_STOP, scanCode=0, metaState=0, flags=0x0, repeatCount=0, eventTime=52014642000000, downTime=52014642000000, deviceId=-1, source=0x0, displayId=0 } to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792530379.290 28369 28369 I HoloceneSpeech: mic  id=arm:52037559 memo=- seq=0 mic=arming reason=arming at=1792530379290
+         1792530379.291 28369 28369 I HoloceneSpeech: start arming id=arm:52037559 memo=- seq=0 mic=arming reason=arming at=1792530379291
+         1792530379.291 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530379.339   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530380.980 28369 28369 I HoloceneWheel: tone START
+         1792530380.981   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530380.986   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530381.477 28369 28369 I HoloceneWheel: tone START out after 487 ms (244 ms long, presented, presented=5401/5401)
+         1792530381.479 28369 28369 I HoloceneSpeech: end arming id=arm:52037559 memo=- seq=0 mic=arming reason= at=1792530381479
+         1792530381.480   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530381.828 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530381828
+         1792530381.832   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2217 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:356 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530383.466 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52041735 memo=- seq=0 mic=recording reason=recording at=1792530383466
+         1792530383.507   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530383.513 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530383513
+         1792530383.513 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52041735 memo=- seq=0 mic=idle reason=waited_ms=47 at=1792530383513
+         1792530383.513 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530383.515   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530384.050 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52041735 memo=- seq=0 mic=idle reason=recording at=1792530384050
+         1792530384.053   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530384.053 28369 28369 I HoloceneSpeech: deferred arming id=arm:52042320 memo=- seq=0 mic=arming reason=drain at=1792530384053
+         1792530384.053 28369 28369 I HoloceneSpeech: mic  id=arm:52042320 memo=- seq=0 mic=arming reason=arming at=1792530384053
+         1792530384.411 28369 28369 I HoloceneSpeech: start arming id=arm:52042320 memo=- seq=0 mic=arming reason=arming at=1792530384411
+         1792530384.412 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530384.417   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530385.948 28369 28369 I HoloceneWheel: tone START
+         1792530385.949   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530385.959   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530386.431 28369 28369 I HoloceneWheel: tone START out after 468 ms (244 ms long, presented, presented=5401/5401)
+         1792530386.432   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530386.432 28369 28369 I HoloceneSpeech: end arming id=arm:52042320 memo=- seq=0 mic=arming reason= at=1792530386432
+         1792530386.749 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530386749
+         1792530386.750   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2249 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:362 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530388.312 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52046581 memo=- seq=0 mic=recording reason=recording at=1792530388312
+         1792530388.357   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530388.363 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530388363
+         1792530388.363 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52046581 memo=- seq=0 mic=idle reason=waited_ms=51 at=1792530388363
+         1792530388.364 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530388.366   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530388.883 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52046581 memo=- seq=0 mic=idle reason=recording at=1792530388883
+         1792530388.884   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530388.884 28369 28369 I HoloceneSpeech: deferred arming id=arm:52047152 memo=- seq=0 mic=arming reason=drain at=1792530388884
+         1792530388.884 28369 28369 I HoloceneSpeech: mic  id=arm:52047152 memo=- seq=0 mic=arming reason=arming at=1792530388884
+         1792530389.239 28369 28369 I HoloceneSpeech: start arming id=arm:52047152 memo=- seq=0 mic=arming reason=arming at=1792530389239
+         1792530389.239 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530389.241   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530390.792 28369 28369 I HoloceneWheel: tone START
+         1792530390.793   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530390.796   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530391.266 28369 28369 I HoloceneWheel: tone START out after 466 ms (244 ms long, presented, presented=5401/5401)
+         1792530391.267   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530391.267 28369 28369 I HoloceneSpeech: end arming id=arm:52047152 memo=- seq=0 mic=arming reason= at=1792530391267
+         1792530391.591   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2281 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:368 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530391.592 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530391591
+         1792530393.144 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52051414 memo=- seq=0 mic=recording reason=recording at=1792530393144
+         1792530393.179   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530393.182 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530393182
+         1792530393.183 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52051414 memo=- seq=0 mic=idle reason=waited_ms=38 at=1792530393183
+         1792530393.183 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530393.187   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530393.727 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52051414 memo=- seq=0 mic=idle reason=recording at=1792530393727
+         1792530393.730 28369 28369 I HoloceneSpeech: deferred arming id=arm:52051997 memo=- seq=0 mic=arming reason=drain at=1792530393730
+         1792530393.730 28369 28369 I HoloceneSpeech: mic  id=arm:52051997 memo=- seq=0 mic=arming reason=arming at=1792530393730
+         1792530393.731   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530394.087 28369 28369 I HoloceneSpeech: start arming id=arm:52051997 memo=- seq=0 mic=arming reason=arming at=1792530394087
+         1792530394.087 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530394.089   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530395.609   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530395.609 28369 28369 I HoloceneWheel: tone START
+         1792530395.612   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530396.082 28369 28369 I HoloceneWheel: tone START out after 467 ms (244 ms long, presented, presented=5401/5401)
+         1792530396.083   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530396.083 28369 28369 I HoloceneSpeech: end arming id=arm:52051997 memo=- seq=0 mic=arming reason= at=1792530396083
+         1792530396.404   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2313 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:374 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530396.404 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530396404
+         1792530397.979 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52056248 memo=- seq=0 mic=recording reason=recording at=1792530397979
+         1792530398.027   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530398.028 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530398028
+         1792530398.028 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52056248 memo=- seq=0 mic=idle reason=waited_ms=50 at=1792530398028
+         1792530398.028 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530398.030   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530398.543 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52056248 memo=- seq=0 mic=idle reason=recording at=1792530398543
+         1792530398.545   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530398.545 28369 28369 I HoloceneSpeech: deferred arming id=arm:52056813 memo=- seq=0 mic=arming reason=drain at=1792530398545
+         1792530398.545 28369 28369 I HoloceneSpeech: mic  id=arm:52056813 memo=- seq=0 mic=arming reason=arming at=1792530398545
+         1792530398.900 28369 28369 I HoloceneSpeech: start arming id=arm:52056813 memo=- seq=0 mic=arming reason=arming at=1792530398900
+         1792530398.900 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530398.902   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530400.486   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530400.486 28369 28369 I HoloceneWheel: tone START
+         1792530400.490   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530400.922 28369 28369 I HoloceneWheel: tone START out after 428 ms (244 ms long, presented, presented=5401/5401)
+         1792530400.924 28369 28369 I HoloceneSpeech: end arming id=arm:52056813 memo=- seq=0 mic=arming reason= at=1792530400924
+         1792530400.927   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530401.243 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530401243
+         1792530401.245   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2345 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:380 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530402.815 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52061084 memo=- seq=0 mic=recording reason=recording at=1792530402815
+         1792530402.851   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530402.856 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530402856
+         1792530402.857 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52061084 memo=- seq=0 mic=idle reason=waited_ms=42 at=1792530402857
+         1792530402.857 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530402.859   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530403.433 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52061084 memo=- seq=0 mic=idle reason=recording at=1792530403433
+         1792530403.440   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530403.440 28369 28369 I HoloceneSpeech: mic  id=arm:52061702 memo=- seq=0 mic=arming reason=arming at=1792530403440
+         1792530403.442 28369 28369 I HoloceneSpeech: deferred arming id=arm:52061702 memo=- seq=0 mic=arming reason=drain at=1792530403442
+         1792530403.798 28369 28369 I HoloceneSpeech: start arming id=arm:52061702 memo=- seq=0 mic=arming reason=arming at=1792530403798
+         1792530403.799 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530403.800   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530405.381 28369 28369 I HoloceneWheel: tone START
+         1792530405.382   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530405.394   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530405.772 28369 28369 I HoloceneWheel: tone START out after 366 ms (244 ms long, presented, presented=5401/5401)
+         1792530405.774   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530405.774 28369 28369 I HoloceneSpeech: end arming id=arm:52061702 memo=- seq=0 mic=arming reason= at=1792530405774
+         1792530406.161   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2377 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:386 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530406.186 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530406186
+         1792530407.882 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52066151 memo=- seq=0 mic=recording reason=recording at=1792530407882
+         1792530407.933   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530407.937 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530407937
+         1792530407.937 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52066151 memo=- seq=0 mic=idle reason=waited_ms=56 at=1792530407937
+         1792530407.937 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530407.944   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530408.420 28369 28369 I HoloceneSpeech: halt cue id=cue:cancelled:52066151 memo=- seq=0 mic=idle reason=recording at=1792530408420
+         1792530408.421 28369 28369 I HoloceneSpeech: deferred arming id=arm:52066689 memo=- seq=0 mic=arming reason=drain at=1792530408421
+         1792530408.421 28369 28369 I HoloceneSpeech: mic  id=arm:52066689 memo=- seq=0 mic=arming reason=arming at=1792530408421
+         1792530408.422   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530408.777 28369 28369 I HoloceneSpeech: start arming id=arm:52066689 memo=- seq=0 mic=arming reason=arming at=1792530408777
+         1792530408.777 28369 28369 I HoloceneWheel: say "Recording for Holocene."
+         1792530408.779   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530410.333   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530410.333 28369 28369 I HoloceneWheel: tone START
+         1792530410.340   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530410.690 28369 28369 I HoloceneWheel: tone START out after 345 ms (244 ms long, presented, presented=5401/5401)
+         1792530410.693   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530410.693 28369 28369 I HoloceneSpeech: end arming id=arm:52066689 memo=- seq=0 mic=arming reason= at=1792530410693
+         1792530411.022 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792530411022
+         1792530411.023   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:2409 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:392 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792530412.681 28369 28369 I HoloceneSpeech: deferred cue id=cue:cancelled:52070950 memo=- seq=0 mic=recording reason=recording at=1792530412681
+         1792530412.719   998  1475 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792530412.722 28369 28369 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792530412722
+         1792530412.722 28369 28369 I HoloceneSpeech: start cue id=cue:cancelled:52070950 memo=- seq=0 mic=idle reason=waited_ms=41 at=1792530412722
+         1792530412.724 28369 28369 I HoloceneWheel: say "Cancelled."
+         1792530412.725   998  1263 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792530413.522   998  1263 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792530413.522 28369 28369 I HoloceneSpeech: end cue id=cue:cancelled:52070950 memo=- seq=0 mic=idle reason= at=1792530413522

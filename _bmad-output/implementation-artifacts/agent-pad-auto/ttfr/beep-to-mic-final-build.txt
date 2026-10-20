@@ -1,0 +1,12 @@
+play 1792530313.909  beep audible 352..626 ms  tone over 499 ms  mic open 919 ms  => beep's last sound -> mic +293 ms
+play 1792530320.509  beep audible 398..651 ms  tone over 433 ms  mic open 755 ms  => beep's last sound -> mic +104 ms
+play 1792530326.899  beep audible 403..657 ms  tone over 393 ms  mic open 712 ms  => beep's last sound -> mic  +55 ms
+play 1792530333.254  beep audible 354..608 ms  tone over 373 ms  mic open 692 ms  => beep's last sound -> mic  +84 ms
+play 1792530345.775  beep audible 361..616 ms  tone over 479 ms  mic open 840 ms  => beep's last sound -> mic +224 ms
+play 1792530380.980  beep audible 326..590 ms  tone over 497 ms  mic open 848 ms  => beep's last sound -> mic +258 ms
+play 1792530385.948  beep audible 395..649 ms  tone over 483 ms  mic open 801 ms  => beep's last sound -> mic +152 ms
+play 1792530390.792  beep audible 310..564 ms  tone over 474 ms  mic open 800 ms  => beep's last sound -> mic +236 ms
+play 1792530395.609  beep audible 329..583 ms  tone over 473 ms  mic open 795 ms  => beep's last sound -> mic +212 ms
+play 1792530400.486  beep audible 403..657 ms  tone over 436 ms  mic open 757 ms  => beep's last sound -> mic +100 ms
+play 1792530405.381  beep audible 410..674 ms  tone over 391 ms  mic open 805 ms  => beep's last sound -> mic +131 ms
+play 1792530410.333  beep audible 395..649 ms  tone over 357 ms  mic open 689 ms  => beep's last sound -> mic  +40 ms

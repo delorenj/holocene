@@ -1,0 +1,97 @@
+intervals (device clock, epoch s):
+  1792530312.061   +2.351s  speech    arming arm:51970329                          - -> end 
+  1792530312.697   +1.306s  audio     speaker output                               rms<=610
+  1792530314.261   +0.274s  audio     speaker output                               rms<=656
+  1792530314.827   +1.656s  recording OS capture active                           
+  1792530314.828   +1.648s  recording app mic                                     
+  1792530316.476   +0.853s  speech    cue cue:cancelled:51974699                   - -> end 
+  1792530316.983   +0.434s  audio     speaker output                               rms<=442
+  1792530318.919   +2.024s  speech    arming arm:51977188                          - -> end 
+  1792530319.299   +1.371s  audio     speaker output                               rms<=601
+  1792530320.907   +0.254s  audio     speaker output                               rms<=659
+  1792530321.264   +1.629s  recording app mic                                     
+  1792530321.265   +1.622s  recording OS capture active                           
+  1792530322.893   +0.806s  speech    cue cue:cancelled:51981106                   - -> end 
+  1792530323.365   +0.424s  audio     speaker output                               rms<=442
+  1792530325.365   +1.928s  speech    arming arm:51983634                          - -> end 
+  1792530325.787   +1.277s  audio     speaker output                               rms<=596
+  1792530327.302   +0.254s  audio     speaker output                               rms<=658
+  1792530327.611   +1.644s  recording app mic                                     
+  1792530327.614   +1.636s  recording OS capture active                           
+  1792530329.255   +0.855s  speech    cue cue:cancelled:51987470                   - -> end 
+  1792530329.736   +0.435s  audio     speaker output                               rms<=445
+  1792530331.722   +1.906s  speech    arming arm:51989991                          - -> end 
+  1792530332.104   +1.277s  audio     speaker output                               rms<=598
+  1792530333.608   +0.254s  audio     speaker output                               rms<=658
+  1792530333.946   +1.654s  recording app mic                                     
+  1792530333.946   +1.652s  recording OS capture active                           
+  1792530335.600   +0.821s  speech    cue cue:cancelled:51993828                   - -> end 
+  1792530336.080   +0.435s  audio     speaker output                               rms<=422
+  1792530344.173   +2.083s  speech    arming arm:52002442                          - -> end 
+  1792530344.580   +1.299s  audio     speaker output                               rms<=597
+  1792530346.136   +0.254s  audio     speaker output                               rms<=657
+  1792530346.609   +1.637s  recording OS capture active                           
+  1792530346.615   +1.635s  recording app mic                                     
+  1792530348.250   +0.794s  speech    cue cue:cancelled:52006483                   - -> end 
+  1792530348.688   +0.424s  audio     speaker output                               rms<=437
+  1792530379.291   +2.188s  speech    arming arm:52037559                          - -> end 
+  1792530379.761   +1.318s  audio     speaker output                               rms<=598
+  1792530381.306   +0.264s  audio     speaker output                               rms<=655
+  1792530381.828   +1.685s  recording app mic                                     
+  1792530381.832   +1.675s  recording OS capture active                           
+  1792530383.513   +0.537s  speech    cue cue:cancelled:52041735                   - -> halt recording
+  1792530383.961   +0.435s  audio     speaker output                               rms<=440
+  1792530384.411   +2.021s  speech    arming arm:52042320                          - -> end 
+  1792530384.827   +1.258s  audio     speaker output                               rms<=601
+  1792530386.343   +0.254s  audio     speaker output                               rms<=659
+  1792530386.749   +1.614s  recording app mic                                     
+  1792530386.750   +1.607s  recording OS capture active                           
+  1792530388.363   +0.520s  speech    cue cue:cancelled:52046581                   - -> halt recording
+  1792530388.822   +0.445s  audio     speaker output                               rms<=423
+  1792530389.239   +2.028s  speech    arming arm:52047152                          - -> end 
+  1792530389.537   +1.328s  audio     speaker output                               rms<=625
+  1792530391.102   +0.274s  audio     speaker output                               rms<=658
+  1792530391.591   +1.591s  recording app mic                                     
+  1792530391.591   +1.588s  recording OS capture active                           
+  1792530393.183   +0.544s  speech    cue cue:cancelled:52051414                   - -> halt recording
+  1792530393.626   +0.444s  audio     speaker output                               rms<=407
+  1792530394.087   +1.996s  speech    arming arm:52051997                          - -> end 
+  1792530394.442   +1.257s  audio     speaker output                               rms<=601
+  1792530395.938   +0.274s  audio     speaker output                               rms<=657
+  1792530396.404   +1.624s  recording app mic                                     
+  1792530396.404   +1.623s  recording OS capture active                           
+  1792530398.028   +0.515s  speech    cue cue:cancelled:52056248                   - -> halt recording
+  1792530398.469   +0.435s  audio     speaker output                               rms<=448
+  1792530398.900   +2.024s  speech    arming arm:52056813                          - -> end 
+  1792530399.281   +1.350s  audio     speaker output                               rms<=621
+  1792530400.889   +0.254s  audio     speaker output                               rms<=656
+  1792530401.243   +1.613s  recording app mic                                     
+  1792530401.245   +1.606s  recording OS capture active                           
+  1792530402.857   +0.576s  speech    cue cue:cancelled:52061084                   - -> halt recording
+  1792530403.318   +0.448s  audio     speaker output                               rms<=408
+  1792530403.798   +1.976s  speech    arming arm:52061702                          - -> end 
+  1792530404.204   +1.319s  audio     speaker output                               rms<=610
+  1792530405.791   +0.264s  audio     speaker output                               rms<=657
+  1792530406.161   +1.772s  recording OS capture active                           
+  1792530406.186   +1.751s  recording app mic                                     
+  1792530407.937   +0.483s  speech    cue cue:cancelled:52066151                   - -> halt recording
+  1792530408.450   +0.364s  audio     speaker output                               rms<=450
+  1792530408.777   +1.916s  speech    arming arm:52066689                          - -> end 
+  1792530409.192   +1.296s  audio     speaker output                               rms<=609
+  1792530410.728   +0.254s  audio     speaker output                               rms<=657
+  1792530411.022   +1.700s  recording app mic                                     
+  1792530411.023   +1.696s  recording OS capture active                           
+  1792530412.722   +0.800s  speech    cue cue:cancelled:52070950                   - -> end 
+  1792530413.187   +0.444s  audio     speaker output                               rms<=413
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+        info: cue cue:cancelled:52046581 -> arming arm:52047152: the first still sounded 25 ms into the next, then 273 ms of silence before it
+        info: cue cue:cancelled:52056248 -> arming arm:52056813: the first still sounded 10 ms into the next, then 371 ms of silence before it
+        info: cue cue:cancelled:52066151 -> arming arm:52066689: the first still sounded 34 ms into the next, then 381 ms of silence before it
+      speaker output: 36 spans, 24.0 s of sound in the window
+RESULT ZERO OVERLAPS  (24 utterances, 12 app recordings, 12 OS capture windows, 36 HAL mix windows)

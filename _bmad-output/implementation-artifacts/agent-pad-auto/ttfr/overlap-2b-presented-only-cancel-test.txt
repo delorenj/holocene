@@ -1,0 +1,17 @@
+intervals (device clock, epoch s):
+  1792528366.774   +2.362s  speech    arming arm:50025038                          - -> end 
+  1792528367.384   +1.327s  audio     speaker output                               rms<=597
+  1792528368.948   +0.274s  audio     speaker output                               rms<=656
+  1792528369.236   +3.615s  recording app mic                                     
+  1792528369.243   +3.600s  recording OS capture active                           
+  1792528372.852   +0.842s  speech    cue cue:cancelled:50031079                   - -> end 
+  1792528373.234   +0.457s  audio     speaker output                               rms<=453
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+      speaker output: 3 spans, 2.1 s of sound in the window
+RESULT ZERO OVERLAPS  (2 utterances, 1 app recordings, 1 OS capture windows, 3 HAL mix windows)
