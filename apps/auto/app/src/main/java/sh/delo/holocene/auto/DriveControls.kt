@@ -324,6 +324,7 @@ object DriveSpeech {
         "selected" -> e.name.ifBlank { null }
         "sent" -> "Sent to ${e.name}".trim()
         "queued" -> "Not sent. Saved, will retry."
+        "rejected" -> if (e.name.isBlank()) "Not sent. The agent can't be reached." else "Not sent. ${e.name} can't be reached."
         "silent" -> "Nothing heard, not sent."
         "cancelled" -> "Cancelled."
         "stopped" -> if (e.reason == "auto") "Recording stopped. Sending." else null
@@ -342,7 +343,7 @@ object DriveSpeech {
         // START is played by the host between "Recording for X" and opening the mic, so it is never recorded.
         "stopped" -> Tone.STOP
         "sent" -> Tone.SENT
-        "queued", "silent", "failed" -> Tone.ERROR
+        "queued", "rejected", "silent", "failed" -> Tone.ERROR
         else -> null
     }
 
