@@ -201,10 +201,21 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         val c = current ?: return
         val s = streams[c.id] ?: return
         if (s.waitingSince < 0 || now() - s.waitingSince < CHUNK_WAIT_MS) return
-        streams.remove(c.id)
+        abandon(c.id, "chunk_timeout")
+    }
+
+    /**
+     * Give the playing chunked reply [id] up as a failure (a chunk that never came, audio focus lost or denied): the
+     * output reports it as an error, so the page's own retry limit applies, and the queue moves on.
+     */
+    fun abandon(id: String, reason: String) {
+        val c = current
+        val s = streams[id]
+        if (c == null || c.id != id || s == null) return
+        streams.remove(id)
         current = null
-        log("halt", c, "chunk_timeout", s.playing + 1)
-        out.streamDone(c, "chunk_timeout")
+        log("halt", c, reason.take(80), s.playing + (if (s.waitingSince >= 0) 1 else 0))
+        out.streamDone(c, reason)
         pump()
     }
 

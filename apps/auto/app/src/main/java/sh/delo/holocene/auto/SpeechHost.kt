@@ -20,6 +20,8 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     private var step = 0
     /** Seconds of the chunked reply played so far (its chunks' durations), reported with its end. */
     private var streamSeconds = 0.0
+    /** A chunk of the current chunked reply actually started (all of them failing is a failure, not "played"). */
+    private var streamStarted = false
 
     /** Reply playback phases for the page (started | ended | error | deferred), keyed by the page's reply id. */
     var onReplyPhase: ((id: String, phase: String, detail: String) -> Unit)? = null
@@ -39,11 +41,11 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
             val index = id.substring(cut + 1).toIntOrNull() ?: return
             if (cut <= 0 || id.substring(0, cut) != u.id) return
             when (phase) {
-                "started" -> if (index == 1) { streamSeconds = 0.0; onReplyPhase?.invoke(u.id, "started", "") }
+                "started" -> if (!streamStarted) { streamStarted = true; onReplyPhase?.invoke(u.id, "started", "") }
                 "ended" -> { streamSeconds += detail.toDoubleOrNull() ?: 0.0; arbiter.chunkEnded(u.id, index) }
-                // Another app took the focus for good: the whole reply stops (the page plays it again later); any other
-                // error skips that one chunk.
-                "error" -> if (detail == "focus_lost") arbiter.cancel(u.id, "focus_lost") else arbiter.chunkEnded(u.id, index, "error:$detail")
+                // No audio focus (another app took it for good, or a call refused it): the whole reply fails, and the page's
+                // retry limit decides what next. Any other error skips that one chunk.
+                "error" -> if (detail.startsWith("focus_")) arbiter.abandon(u.id, detail) else arbiter.chunkEnded(u.id, index, "error:$detail")
             }
             return
         }
@@ -70,14 +72,18 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     override fun playChunk(u: Utterance, index: Int, clip: SpeechPart.Clip) {
         step++
+        if (index == 1) { streamStarted = false; streamSeconds = 0.0 }
         // The reply keeps its audio focus from one chunk to the next: the radio stays ducked, no dip between sentences.
         player.play("${u.id}#$index", clip.bytes, clip.ext, keepFocus = index > 1)
     }
 
     override fun streamDone(u: Utterance, reason: String) {
         player.stop()
-        if (reason.isEmpty()) onReplyPhase?.invoke(u.id, "ended", streamSeconds.toString())
-        else onReplyPhase?.invoke(u.id, "error", reason)
+        when {
+            reason.isNotEmpty() -> onReplyPhase?.invoke(u.id, "error", reason)
+            !streamStarted -> onReplyPhase?.invoke(u.id, "error", "no_chunk_played")
+            else -> onReplyPhase?.invoke(u.id, "ended", streamSeconds.toString())
+        }
     }
 
     override fun waitChunk(u: Utterance, index: Int) {

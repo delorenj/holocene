@@ -1678,6 +1678,9 @@ class Watcher:
                 with self.mu:
                     if self._cancelled(m):
                         return None
+                for f in futures:  # an upload that already failed stops the renders now, not after all of them
+                    if f.done() and f.exception() is not None:
+                        raise f.exception()
                 d = tmp / f"c{i:02d}"
                 d.mkdir()
                 t0 = time.time()

@@ -411,4 +411,15 @@ class SpeechArbiterTest {
         endChunk(2)
         assertEquals(r.id, audible)
     }
+
+    @Test fun aChunkedReplyThatLosesItsAudioFocusFailsWhole_andTheQueueMovesOn() {
+        chunk(1); chunk(2)
+        a.offer(echo(memo2))
+        audible = null // the player stopped itself when the focus went
+        a.abandon(streamId, "focus_lost")
+        assertEquals(listOf(streamId to "focus_lost"), done)
+        assertEquals("echo:$memo2", audible)
+        a.abandon("not-current", "x") // ignored
+        assertEquals(1, done.size)
+    }
 }

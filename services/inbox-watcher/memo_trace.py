@@ -314,7 +314,9 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     done = next((h.ts for h in hops if h.name == "agent:invocation.done" and h.status == OK and h.ts), None)
     if line and done:
         after = []
-        for label, ts in (("first chunk up", first_chunk), ("reply up", replied), ("car speaking", played)):
+        # the car on the server's clock (its played beacon) like the agent's finish; the device clock only without one
+        car = next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None) or played
+        for label, ts in (("first chunk up", first_chunk), ("reply up", replied), ("car speaking", car)):
             if ts is not None:
                 after.append(f"{label} {(ts - done).total_seconds():+.1f}s")
         if after:

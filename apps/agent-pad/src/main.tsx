@@ -496,8 +496,11 @@ function App() {
   const units = useRef<Map<string, Unit>>(new Map())
   const chunkBlobs = useRef<Map<string, Blob>>(new Map()) // downloaded chunks, kept until the reply is done (a replay after a note)
   // The unit the host is playing chunk by chunk, and which chunks it has been handed.
-  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean } | null>(null)
+  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean; fails: number } | null>(null)
   const push = useRef({ heardAt: 0, nats: false })
+  // Chunked replies that stopped short (a chunk never came: vox failed mid-reply, a cancel took them back): parked, not
+  // done. Their chunks are ignored from here on, and the full file plays when (if) it lands. Unit key -> parked at.
+  const parked = useRef<Map<string, { at: number; checkedAt: number }>>(new Map())
   const playingProgress = useRef(false) // the audio element is on a progress clip, not a reply
   const refreshFlights = () => {
     const now = Date.now()
@@ -540,27 +543,42 @@ function App() {
     return null
   }
   const pollFlights = async () => {
-    for (const f of [...flights.current.values()]) {
-      if (f.finalAt) continue
-      const st = await readStatus(f)
-      if (!st) continue
-      f.status = st
-      f.fetchedAt = Date.now()
-      const n = nativeSpeech()
-      if (isFinal(st.stage)) { flightFinal(f.memoId); continue }
-      if (st.heard && !f.echoed) {
-        f.echoed = true
-        try { n?.speechEcho(f.memoId, f.agentName, st.heard) } catch { /* host bridge absent */ }
-      }
-      const due = (st.spoken_seq ?? st.progress_seq) > f.progressSeq
-      if (!due || Date.now() - f.listedAt < PROGRESS_LIST_MS) continue
-      f.listedAt = Date.now()
-      try {
-        const pick = newestProgress((await listPage(progressPrefix(f.day, f.memoId), '', null)).keys, f.day, f.memoId, f.progressSeq)
-        if (pick) await sayProgress(f, pick)
-      } catch { /* next poll */ }
-    }
+    for (const f of [...flights.current.values()]) await pollFlight(f)
     refreshFlights()
+  }
+  // One memo in flight: its status object (tile line, heard echo, final), then its newest progress clip if one is due.
+  const pollFlight = async (f: Flight) => {
+    if (f.finalAt) return
+    const st = await readStatus(f)
+    if (!st) return
+    f.status = st
+    f.fetchedAt = Date.now()
+    const n = nativeSpeech()
+    if (isFinal(st.stage)) { flightFinal(f.memoId); return }
+    if (st.heard && !f.echoed) {
+      f.echoed = true
+      try { n?.speechEcho(f.memoId, f.agentName, st.heard) } catch { /* host bridge absent */ }
+    }
+    const due = (st.spoken_seq ?? st.progress_seq) > f.progressSeq
+    if (!due || Date.now() - f.listedAt < PROGRESS_LIST_MS) return
+    f.listedAt = Date.now()
+    try {
+      const pick = newestProgress((await listPage(progressPrefix(f.day, f.memoId), '', null)).keys, f.day, f.memoId, f.progressSeq)
+      if (pick) await sayProgress(f, pick)
+    } catch { /* next poll */ }
+  }
+  // A push said this memo moved on: re-read just its status object, a moment later (the watcher publishes the fact
+  // just before its status writer uploads the new document), and once more after that in case the first was early.
+  const flightSoon = useRef<Map<string, number>>(new Map())
+  const pollFlightSoon = (memoId: string) => {
+    if (flightSoon.current.has(memoId)) return
+    const run = async (again: boolean) => {
+      const f = flights.current.get(memoId)
+      if (f && !f.finalAt) { try { await pollFlight(f) } catch { /* next poll */ } refreshFlights() }
+      if (again) flightSoon.current.set(memoId, window.setTimeout(() => void run(false), 1500))
+      else flightSoon.current.delete(memoId)
+    }
+    flightSoon.current.set(memoId, window.setTimeout(() => void run(true), 700))
   }
   // One progress clip for a memo in flight (from the listing above, or straight from the push channel's narrated event).
   const sayProgress = async (f: Flight, pick: { key: string; seq: number }) => {
@@ -603,11 +621,44 @@ function App() {
     pump.current()
   }, [])
 
+  // Park a chunked reply that cannot finish from its chunks: off the queue without moving lastDone, so its full file is
+  // still taken when it lands (push, or the per-unit check in the poll tick). Says so once in a playback-failed fact.
+  const park = (key: string, why: string) => {
+    if (playingKey.current === key) {
+      report('error', { error: `${why}; waiting for the full reply` })
+      playingKey.current = ''
+      speak({ t: 'failed', key })
+    } else beacon(key, 'error', { error: `${why}; waiting for the full reply` })
+    queue.current = queue.current.filter((k) => k !== key)
+    const u = units.current.get(key)
+    if (u) for (const ck of Object.values(u.chunks)) chunkBlobs.current.delete(ck)
+    units.current.delete(key)
+    if (streaming.current?.unit === key) streaming.current = null
+    parked.current.set(key, { at: Date.now(), checkedAt: Date.now() })
+    pump.current()
+  }
+  const checkParked = async () => {
+    for (const [key, p] of [...parked.current]) {
+      if (Date.now() - p.at > MAX_REPLY_AGE_MS) { parked.current.delete(key); continue }
+      if (Date.now() - p.checkedAt < 10_000) continue
+      p.checkedAt = Date.now()
+      try {
+        const page = await listPage(key.slice(0, -'.ogg'.length), '', null)
+        if (page.keys.includes(key) && ingestReply(key)) pump.current()
+      } catch { /* next tick */ }
+    }
+  }
+
   // One reply key from the listing or the push channel: it joins its unit (a new unit is queued in key order). A unit the
   // pad already finished, or one older than lastDone, is ignored; a stale one is skipped as before. True: news.
   const ingestReply = (key: string, firstRun = false): boolean => {
     const ref: ReplyRef | null = parseReplyKey(key)
-    if (!ref || ref.unit <= lastDone.current) return false
+    if (!ref) return false
+    if (parked.current.has(ref.unit)) {
+      if (ref.chunk) return false // its chunks failed once: only the full file brings it back
+      parked.current.delete(ref.unit)
+      enqueued.current.delete(ref.unit)
+    } else if (ref.unit <= lastDone.current) return false
     let u = units.current.get(ref.unit)
     if (!u) {
       if (enqueued.current.has(ref.unit)) return false // played (or skipped) already
@@ -656,10 +707,16 @@ function App() {
           if (streaming.current !== st || recordingRef.current || arming.current) return // stopped meanwhile
           host.playReplyChunk(st.unit, i, u.n, await blobToBase64(blob), 'opus')
           st.offered.add(i)
+          st.fails = 0
           replyBytes.current += blob.size
         }
       } while (st.again && streaming.current === st)
-    } catch { /* next tick or push */ } finally {
+    } catch {
+      // Next tick or push retries. Nothing handed to the host yet means nothing will ever end this attempt: after a few
+      // failed downloads of chunk 1 (taken back by a cancel, or a dead link) it is parked so the queue moves on. Once a
+      // chunk is playing, the host's own chunk wait ends it.
+      if (streaming.current === st && st.offered.size === 0 && ++st.fails >= 3) park(st.unit, 'its first chunk could not be downloaded')
+    } finally {
       st.busy = false
     }
   }
@@ -675,9 +732,9 @@ function App() {
     const plan = unit ? planUnit(unit, !!nativeChunks(), Date.now()) : 'full'
     if (plan === 'wait') return // its first chunk or its full file is on the way: the next tick or push brings it
     if (plan === 'give_up') {
-      // A chunked reply that never completed (cancelled: the watcher took its chunks back) must not hold the queue.
-      beacon(key, 'skipped', { error: 'the reply never completed: no full file, and this host cannot play its chunks' })
-      finish(key)
+      // A chunked reply that never completed (vox failed mid-reply, or a cancel took its chunks back) must not hold
+      // the queue; its full file still plays if it lands later.
+      park(key, nativeChunks() ? 'its first chunk never came' : 'no full file yet, and this host cannot play chunks')
       return
     }
     if (!unlockedRef.current) {
@@ -694,7 +751,7 @@ function App() {
       // after the last). Recording stops all of it; the next pump offers it again, the full file if it is up by then.
       replyBytes.current = 0
       setLastReply(key)
-      streaming.current = { unit: key, offered: new Set(), busy: false, again: false }
+      streaming.current = { unit: key, offered: new Set(), busy: false, again: false, fails: 0 }
       void feedStream()
       return
     }
@@ -752,8 +809,12 @@ function App() {
   useEffect(() => {
     ;(window as any).__hnPlayback = (key: string, phase: string, detail: string) => {
       if (key !== playingKey.current) return // a reply we already moved on from
+      const chunked = streaming.current?.unit === key
+      // A chunk never came: the rest of the reply is not there to play. Parked until its full file lands, not retried
+      // (a retry would only say the first sentences again).
+      if (chunked && phase === 'error' && detail === 'chunk_timeout' && !units.current.get(key)?.full) { park(key, 'a chunk never came'); return }
       // (a chunked reply's stream state is cleared by finish(), after the ended beacon has said how many chunks it had)
-      if ((phase === 'deferred' || phase === 'error') && streaming.current?.unit === key) streaming.current = null
+      if ((phase === 'deferred' || phase === 'error') && chunked) streaming.current = null
       if (phase === 'deferred') {
         // The host's speech queue stopped it (a note is starting): it stays at the head of the queue, not a failure.
         playingKey.current = ''
@@ -854,6 +915,7 @@ function App() {
         // A reply's chunks (replies/...-cNNofMM.opus) join its unit; parseReplyKey keeps only dated keys.
         const keys = (await listRepliesAfter(after)).filter((k) => parseReplyKey(k))
         for (const key of keys.sort()) ingestReply(key, firstRun)
+        if (parked.current.size) await checkParked()
         pump.current()
         void feedStream()
       } catch {
@@ -896,8 +958,8 @@ function App() {
       const pick = newestProgress([ev.progress_s3_key], f.day, f.memoId, f.progressSeq)
       if (pick) void sayProgress(f, pick).catch(() => { /* the poll lists it again */ })
     }
-    // Any other step of a memo in flight (heard, working, a progress line, a failure): re-read its status object now.
-    if (f && !f.finalAt) pollNow.current()
+    // Any other step of a memo in flight (heard, working, a progress line, a failure): re-read its status object.
+    if (f && !f.finalAt) pollFlightSoon(ev.memo_id)
   }
   useEffect(() => {
     if (typeof EventSource === 'undefined') return

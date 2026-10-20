@@ -922,8 +922,9 @@ export function memoTiming(startedAt: string, progress: ProgressLine[], narratio
     const a = ms(from), b = ms(to);
     return a !== undefined && b !== undefined ? Math.round((b - a) / 100) / 10 : undefined;
   };
-  // The car speaking: its arbiter's own start (device clock), else the pad's "started" beacon (server clock).
-  const carAt = started("reply") ?? reply.playedAt;
+  // The car speaking, on the server's clock like the agent's finish: the pad's "started" beacon, else the arbiter's own
+  // start (device clock, only when no beacon arrived).
+  const carAt = reply.playedAt ?? started("reply");
   const out: MemoTiming = {
     ackSeconds: since(started("ack")),
     heardEchoSeconds: since(started("heard")),

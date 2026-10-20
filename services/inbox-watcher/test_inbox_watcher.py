@@ -2827,6 +2827,29 @@ class ChunkedSpeech(MemoHarness, unittest.TestCase):
         self.assertTrue(failed, "the test reply must have three chunks")
         self.assertEqual(sorted(v["chunk"] for v in voiced), list(range(1, n + 1)))  # once each
 
+    def test_a_failed_chunk_upload_stops_the_renders_instead_of_finishing_them(self):
+        key, m = self.to_await("chunk-stop")
+        m["stage"], m["reply_text"] = "speak", ("One sentence here for the test. " * 30).strip()
+        parts = [f"Chunk number {i} of the reply." for i in range(1, 6)]
+        real_mc, real_syn = mc_.mc, iw.synthesize
+        renders = []
+
+        def slow(text, tmp, voice=None, steps=None):
+            renders.append(text)
+            time.sleep(0.15)
+            return real_syn(text, tmp, voice, steps)
+
+        def no_c01(*a, **k):
+            if a[0] == "cp" and "-c01of" in a[-1]:
+                return iw.subprocess.CompletedProcess(a, 1, "", "mc: <ERROR> network down")
+            return real_mc(*a, **k)
+        stamp = mc_.parse_iso(iw.iso(iw.now_utc()))
+        with unittest.mock.patch.object(mc_, "mc", side_effect=no_c01), unittest.mock.patch.object(iw, "synthesize", side_effect=slow):
+            with self.assertRaises(iw.StageError) as e:
+                self.w._voice_chunks(m, parts, stamp, Path(tempfile.mkdtemp()), time.time())
+        self.assertEqual(e.exception.stage, "reply_upload")
+        self.assertLess(len(renders), len(parts))
+
     def test_a_cancel_between_chunks_takes_every_uploaded_chunk_back(self):
         key, m = self.replied_memo("chunk-cancel")
         real = mc_.mc
