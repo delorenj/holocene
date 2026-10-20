@@ -1,7 +1,11 @@
 // Mirrors apps/api/src/voice-memos.ts. The API owns the grouping; this view only draws it.
-export type HopId = "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done" | "replied" | "played";
-export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing";
-export type MemoStatus = "complete" | "failed" | "running" | "stuck";
+export type HopId =
+  | "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done"
+  | "escalated" | "batch_started" | "batch_done"
+  | "replied" | "played";
+// timed_out: the interactive turn hit its wall clock and the memo was handed to the batch lane (not a failure). cancelled: `memo:cancel` (not an error).
+export type HopStatus = "ok" | "failed" | "waiting" | "stuck" | "pending" | "missing" | "timed_out" | "cancelled";
+export type MemoStatus = "complete" | "failed" | "running" | "stuck" | "cancelled";
 export type Lane = "interactive" | "batch";
 
 export type JourneyEvent = {
@@ -22,6 +26,10 @@ export type AudioLevel = { maxDbfs: number; meanDbfs?: number; durationSeconds?:
 /** What the device's own recorder saw (data.capture on the uploaded fact). */
 export type CaptureLevel = { peakDbfs?: number; rmsDbfs?: number; silent?: boolean };
 export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout; audio?: AudioLevel };
+/** From the audio.memo.replied fact: spoken late / from the escalated batch turn, and where the full text went next to the audio. */
+export type ReplyInfo = { late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string };
+/** From an audio.memo.failed fact with data.stage "cancelled". afterDispatch: the agent may still have run. */
+export type Cancellation = { eventId: string; at: string; afterDispatch: boolean; message?: string };
 
 export type Hop = {
   id: HopId;
@@ -37,6 +45,8 @@ export type Hop = {
   events: JourneyEvent[];
   audio?: AudioLevel;
   capture?: CaptureLevel;
+  reply?: ReplyInfo;
+  cancel?: Cancellation;
 };
 
 export type MemoSummary = {
@@ -52,6 +62,9 @@ export type MemoSummary = {
   stuckAt?: HopId;
   lane?: Lane;
   laneReason?: string;
+  escalated?: boolean;
+  late?: boolean;
+  cancelled?: Cancellation;
   transcriptPreview?: string;
   replyPreview?: string;
   error?: string;
@@ -59,7 +72,7 @@ export type MemoSummary = {
   capture?: CaptureLevel;
 };
 
-export type MemoDetail = MemoSummary & { commandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[] };
+export type MemoDetail = MemoSummary & { commandId?: string; escalatedFromCommandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[] };
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };
 export type LaneStatus = { pulling?: boolean; waiting?: number; inFlight?: number; queued?: number; slots?: number; error?: string };

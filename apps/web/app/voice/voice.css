@@ -61,6 +61,8 @@
 .hub-root .voice-row.is-running { border-left-color: var(--working); }
 .hub-root .voice-row.is-stuck { border-left-color: var(--stuck); }
 .hub-root .voice-row.is-failed { border-left-color: var(--fail); background: var(--fail-soft); }
+/* Cancelled is not an error: it stays grey, and its row does not shout. */
+.hub-root .voice-row.is-cancelled { border-left-color: var(--ink-3); border-left-style: dashed; }
 .hub-root .voice-row.is-selected {
   box-shadow: inset 0 0 0 2px var(--pop);
 }
@@ -112,6 +114,7 @@
 .hub-root .voice-stage { color: var(--ink-3); }
 .hub-root .voice-stage.is-failed { color: var(--fail); font-weight: 600; }
 .hub-root .voice-stage.is-stuck { color: var(--stuck); font-weight: 600; }
+.hub-root .voice-stage.is-cancelled { color: var(--ink-2); font-style: italic; }
 
 /* ---------- badges ---------- */
 
@@ -130,6 +133,9 @@
 .hub-root .voice-badge.is-stuck { color: var(--on-ink); background: var(--stuck); border-color: var(--stuck); }
 .hub-root .voice-badge.is-failed { color: #fff; background: var(--fail); border-color: var(--fail); }
 .hub-root .voice-badge.is-missing { border-style: dashed; }
+/* Outlined, not filled: the interactive turn ran out of time and the batch lane took over; nothing is broken. */
+.hub-root .voice-badge.is-timed_out { color: var(--stuck); }
+.hub-root .voice-badge.is-cancelled { color: var(--ink-2); background: var(--sunken); border-style: dashed; }
 
 /* Gateway lane a memo's command rode: interactive = reserved slots, batch = shared FIFO with grooming. */
 .hub-root .voice-lane {
@@ -150,6 +156,20 @@
 .hub-root .voice-level.is-silent { color: var(--fail); font-weight: 700; }
 .hub-root .voice-lane.is-interactive { color: var(--cleared); }
 .hub-root .voice-lane.is-fallback { color: var(--stuck); border-style: dashed; }
+/* Escalation is the watcher doing its job after a turn timeout, not the lane being down: solid, in the stuck hue. */
+.hub-root .voice-lane.is-escalated { color: var(--stuck); }
+/* Same chip shape as the lane, for facts about the reply. */
+.hub-root .voice-flag {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1.5px solid currentColor;
+  font: 700 9.5px/14px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.hub-root .voice-flag.is-late { color: var(--working); }
 
 /* ---------- detail ---------- */
 
@@ -190,6 +210,7 @@
 }
 .hub-root .voice-summary.is-failed .voice-summary-state { color: var(--fail); }
 .hub-root .voice-summary.is-stuck .voice-summary-state { color: var(--stuck); }
+.hub-root .voice-summary.is-cancelled .voice-summary-state { color: var(--ink-2); font-style: italic; }
 .hub-root .voice-ids {
   display: flex;
   flex-direction: column;
@@ -230,6 +251,22 @@
   color: var(--fail);
 }
 .hub-root .voice-alert p {
+  margin-top: 4px;
+  font: 400 12px/18px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* Informational, never red: a memo someone cancelled, or one that moved to the batch lane after a timeout. */
+.hub-root .voice-note {
+  padding: 10px 12px;
+  border: 2px solid var(--line-strong);
+  background: var(--sunken);
+  color: var(--ink);
+}
+.hub-root .voice-note.is-cancelled { border-style: dashed; }
+.hub-root .voice-note.is-escalated { border-color: var(--stuck); }
+.hub-root .voice-note.is-escalated .hub-label { color: var(--stuck); }
+.hub-root .voice-note p {
   margin-top: 4px;
   font: 400 12px/18px var(--font-mono);
   overflow-wrap: anywhere;
@@ -288,6 +325,8 @@
 .hub-root .voice-hop.is-failed .voice-rail svg { color: var(--fail); }
 .hub-root .voice-hop.is-pending .voice-hop-name,
 .hub-root .voice-hop.is-missing .voice-hop-name { color: var(--ink-3); font-weight: 400; }
+.hub-root .voice-hop.is-cancelled .voice-hop-name { color: var(--ink-2); }
+.hub-root .voice-hop.is-cancelled .voice-rail svg { color: var(--ink-2); }
 .hub-root .voice-hop-body {
   flex: 1 1 auto;
   min-width: 0;
@@ -338,6 +377,10 @@
 .hub-root .voice-error-code { font-weight: 700; color: var(--fail); }
 .hub-root .voice-error-msg { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .hub-root .voice-error-meta { color: var(--ink-3); }
+/* A timeout the watcher escalated past: same shape as an error, without the red. */
+.hub-root .voice-error.is-soft { border-left-color: var(--stuck); background: var(--sunken); }
+.hub-root .voice-error.is-soft .voice-error-code { color: var(--stuck); }
+.hub-root .voice-sidecar .hub-ref { font-size: 11px; }
 .hub-root .voice-attempts {
   margin: 6px 0 0;
   padding: 0;

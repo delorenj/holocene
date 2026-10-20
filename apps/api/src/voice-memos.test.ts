@@ -337,3 +337,225 @@ test("'send anyway' after a held-back recording: the later upload supersedes the
   assert.equal(d.hops[0].status, "ok");
   assert.equal(d.hops[0].failures.length, 1); // the held-back attempt stays visible
 });
+
+// ---- escalation to the batch lane ------------------------------------------------------------------------------
+
+const CMD_B = "9a1f5c2e-4b3d-4e6f-8a7b-00000000b001";
+const GW = "hermes-agent:holocene-pm";
+const interactiveDispatch = (s = 43) => fact("audio.memo.dispatched", s, { occurred_at: iso(s), command_id: CMD, lane: "interactive", command_subject: "bloodbank.cmd.agent.invocation.invoke" });
+const turnTimeout = (s = 71) => fact("agent.invocation.failed", s, {
+  command_id: CMD, error_code: "turn_timeout", error_message: "agent turn timed out after 20s on interactive lane (limit 20s)",
+  lane: "interactive", elapsed_seconds: 20.3, timeout_seconds: 20, timeout_source: "lane", turn_stopped: true
+}, MEMO, GW);
+const escalatedDispatch = (s = 73) => fact("audio.memo.dispatched", s, {
+  occurred_at: iso(s), command_id: CMD_B, lane: "batch", lane_reason: "turn_timeout_escalated", escalated_from_command_id: CMD,
+  command_subject: "bloodbank.cmd.agent.invocation.start"
+});
+const batchStarted = (s = 80) => fact("agent.invocation.started", s, { command_id: CMD_B }, MEMO, GW);
+const batchCompleted = (s = 300) => fact("agent.invocation.completed", s, { command_id: CMD_B }, MEMO, GW);
+const lateReplied = (s = 310) => fact("audio.memo.replied", s, {
+  occurred_at: iso(s), command_id: CMD_B, reply_text: "A long, full answer that the phone also gets as text.", tts_seconds: 4.2, tts_engine: "vibevoice",
+  reply_s3_key: "replies/x.ogg", late: true, escalated: true, earshot_key: "phone/2026/10/20/x.ogg", earshot_text_key: "phone/2026/10/20/x.txt"
+});
+const upToEscalation = () => [uploaded(), received(), transcribed(), interactiveDispatch(), started(50), turnTimeout(), escalatedDispatch()];
+const ids = (d: { hops: { id: string }[] }) => d.hops.map(h => h.id);
+const statuses = (d: { hops: { status: string }[] }) => d.hops.map(h => h.status);
+
+test("an escalated memo shows the batch dispatch as its own hop and is in progress, not failed, while the batch turn runs", () => {
+  const d = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted()], now(100))!;
+  assert.deepEqual(ids(d), ["uploaded", "received", "transcribed", "dispatched", "agent_started", "agent_done", "escalated", "batch_started", "batch_done", "replied", "played"]);
+  assert.deepEqual(statuses(d), ["ok", "ok", "ok", "ok", "ok", "timed_out", "ok", "ok", "waiting", "pending", "pending"]);
+  assert.equal(d.status, "running");
+  assert.equal(d.error, undefined);
+  assert.equal(d.stageLabel, "Escalated to batch · waiting for batch agent finished");
+  assert.equal(d.escalated, true);
+  assert.equal(toSummary(d).escalated, true);
+  assert.equal(d.lane, "batch");
+  assert.equal(d.laneReason, "turn_timeout_escalated");
+  assert.equal(d.commandId, CMD_B);
+  assert.equal(d.escalatedFromCommandId, CMD);
+
+  const [first, interactiveStart, interactiveDone, esc, batchStart] = [d.hops[3], d.hops[4], d.hops[5], d.hops[6], d.hops[7]];
+  assert.match(first.detail, new RegExp(`command ${CMD} · interactive lane`));
+  assert.equal(interactiveStart.label, "Interactive agent started");
+  assert.equal(interactiveDone.label, "Interactive agent finished");
+  // the interactive turn's timeout is kept, with its numbers, but it is the reason for the escalation and not the verdict
+  assert.equal(interactiveDone.error?.code, "turn_timeout");
+  assert.deepEqual(interactiveDone.error?.timeout, { elapsedSeconds: 20.3, limitSeconds: 20, lane: "interactive", source: "lane", stopped: true });
+  assert.match(interactiveDone.detail, /not a failure/);
+  assert.equal(esc.label, "Escalated to batch lane");
+  assert.equal(esc.detail, `command ${CMD_B} · batch lane · escalated from command ${CMD} (interactive turn timed out)`);
+  assert.equal(esc.sinceMs, 2000);
+  assert.ok(hopHasType(d, "escalated", "bloodbank.audio.memo.dispatched"));
+  assert.equal(first.events.length, 1, "the batch dispatch is not also the interactive dispatch");
+  // the batch turn's own agent facts are on the batch hops, the interactive turn's on the interactive hops
+  assert.ok(hopHasType(d, "batch_started", "bloodbank.agent.invocation.started"));
+  assert.equal(batchStart.events.length, 1);
+  assert.ok(hopHasType(d, "agent_done", "bloodbank.agent.invocation.failed"));
+  assert.equal(d.hops[8].waitedSeconds, 20);
+});
+
+test("an escalated memo that the batch turn finishes is complete, and its reply is marked late with its text sidecar", () => {
+  const d = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted(), batchCompleted(), lateReplied()], now(400))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Complete · late reply");
+  assert.deepEqual(statuses(d), ["ok", "ok", "ok", "ok", "ok", "timed_out", "ok", "ok", "ok", "ok", "pending"]);
+  const replied = d.hops.find(h => h.id === "replied")!;
+  assert.deepEqual(replied.reply, { late: true, escalated: true, earshotKey: "phone/2026/10/20/x.ogg", earshotTextKey: "phone/2026/10/20/x.txt" });
+  assert.match(replied.detail, /^late reply · tts 4.2 s/);
+  assert.equal(d.late, true);
+  assert.equal(toSummary(d).late, true);
+  assert.equal(d.replyText, "A long, full answer that the phone also gets as text.");
+  assert.equal(d.error, undefined);
+  assert.equal(d.totalSeconds, 310);
+});
+
+test("an escalated memo is in progress right after the batch dispatch, and a batch turn past its long budget is stuck", () => {
+  const justNow = buildMemoDetail(MEMO, upToEscalation(), now(75))!;
+  assert.equal(justNow.status, "running");
+  assert.equal(justNow.hops.find(h => h.id === "batch_started")!.status, "waiting");
+  assert.equal(justNow.stageLabel, "Escalated to batch · waiting for batch agent started");
+
+  // the batch lane queues behind ticket grooming: 20 minutes is inside the budget, 31 minutes is not
+  assert.equal(buildMemoDetail(MEMO, upToEscalation(), now(73 + 20 * 60))!.status, "running");
+  const stuck = buildMemoDetail(MEMO, upToEscalation(), now(73 + 31 * 60))!;
+  assert.equal(stuck.status, "stuck");
+  assert.equal(stuck.stuckAt, "batch_started");
+  assert.match(stuck.stageLabel, /^Escalated to batch · stuck before batch agent started/);
+
+  const running = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted(80)], now(80 + 3 * 3600))!;
+  assert.equal(running.status, "stuck");
+  assert.equal(running.stuckAt, "batch_done");
+});
+
+test("the watcher's own copy of the interactive timeout does not fail an escalated memo, even without the gateway fact", () => {
+  const watcherCopy = fact("audio.memo.failed", 72, {
+    occurred_at: iso(72), stage: "agent_reply", error_code: "turn_timeout", retryable: false, attempt: 1, command_id: CMD,
+    error_message: "agent turn timed out after 20s on interactive lane (limit 20s)", lane: "interactive", elapsed_seconds: 20.3, timeout_seconds: 20, turn_stopped: true
+  });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), interactiveDispatch(), started(50), watcherCopy, escalatedDispatch(), batchStarted()], now(100))!;
+  assert.equal(d.status, "running");
+  assert.equal(d.hops.find(h => h.id === "agent_done")!.status, "timed_out");
+  assert.equal(d.hops.find(h => h.id === "agent_done")!.at, iso(72));
+  assert.equal(d.hops.find(h => h.id === "batch_done")!.status, "waiting");
+  assert.equal(d.error, undefined);
+  assert.ok(hopHasType(d, "agent_done", "bloodbank.audio.memo.failed"));
+});
+
+test("an escalated memo whose batch turn fails is failed at the batch hop, with that turn's own error", () => {
+  const batchFailed = fact("agent.invocation.failed", 200, { command_id: CMD_B, error_code: "model_error", error_message: "provider 500" }, MEMO, GW);
+  const d = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted(), batchFailed], now(300))!;
+  assert.equal(d.status, "failed");
+  assert.equal(d.hops.find(h => h.id === "batch_done")!.status, "failed");
+  assert.equal(d.hops.find(h => h.id === "agent_done")!.status, "timed_out");
+  assert.equal(d.error, "model_error: provider 500");
+  assert.equal(d.stageLabel, "Failed at batch agent finished");
+
+  // a watcher-side failure after the escalation belongs to the batch turn, by its command id
+  const batchTimeout = fact("audio.memo.failed", 7400, { occurred_at: iso(7400), stage: "agent_reply", error_code: "turn_timeout", retryable: false, command_id: CMD_B,
+    error_message: "agent turn timed out after 7200s on batch lane", lane: "batch", elapsed_seconds: 7200.4, timeout_seconds: 7200 });
+  const t = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted(), batchTimeout], now(8000))!;
+  assert.equal(t.status, "failed");
+  assert.equal(t.hops.find(h => h.id === "batch_done")!.status, "failed");
+  assert.equal(t.hops.find(h => h.id === "agent_done")!.status, "timed_out");
+  assert.equal(t.stageLabel, "Batch agent turn timed out after 7200s");
+});
+
+test("without an escalation the timeout stays the memo's verdict and the hop list is unchanged", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), interactiveDispatch(), started(50), turnTimeout()], now(100))!;
+  assert.equal(d.status, "failed");
+  assert.equal(d.hops.length, 8);
+  assert.equal(d.escalated, undefined);
+  assert.equal(d.hops[5].status, "failed");
+  assert.equal(d.hops[4].label, "Agent started");
+});
+
+test("the escalation rides on the summaries the list view draws", () => {
+  const list = buildMemoSummaries([...upToEscalation(), batchStarted()], now(100));
+  assert.equal(list[0].escalated, true);
+  assert.equal(list[0].status, "running");
+  assert.equal(list[0].lane, "batch");
+  assert.equal(list[0].laneReason, "turn_timeout_escalated");
+});
+
+test("a reply carries its Earshot text sidecar whether or not it was escalated", () => {
+  const withText = fact("audio.memo.replied", 60, { occurred_at: iso(60), command_id: CMD, reply_text: "PONG", reply_s3_key: "replies/x.ogg", earshot_key: "phone/a.ogg", earshot_text_key: "phone/a.txt" });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), withText], now(120))!;
+  assert.deepEqual(d.hops.find(h => h.id === "replied")!.reply, { late: false, escalated: false, earshotKey: "phone/a.ogg", earshotTextKey: "phone/a.txt" });
+  assert.equal(d.late, undefined);
+  assert.equal(d.escalated, undefined);
+  assert.equal(d.stageLabel, "Complete");
+  // a reply from before the sidecar existed has none
+  const plain = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), replied()], now(120))!;
+  assert.equal(plain.hops.find(h => h.id === "replied")!.reply?.earshotTextKey, undefined);
+});
+
+// ---- memo:cancel -----------------------------------------------------------------------------------------------
+
+const cancelFact = (s: number, afterDispatch?: boolean) => fact("audio.memo.failed", s, {
+  occurred_at: iso(s), stage: "cancelled", error_code: "cancelled", error_message: "cancelled by memo:cancel", retryable: false, attempt: 1, after_dispatch: afterDispatch
+});
+
+test("a memo cancelled before dispatch is cancelled, not failed, and nothing after it is reached", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), cancelFact(44, false)], now(500))!;
+  assert.equal(d.status, "cancelled");
+  assert.equal(d.stageLabel, "Cancelled before dispatch");
+  assert.equal(d.error, undefined);
+  assert.deepEqual(d.cancelled, { eventId: d.events.find(e => e.type === "bloodbank.audio.memo.failed")!.id, at: iso(44), afterDispatch: false, message: "cancelled by memo:cancel" });
+  assert.deepEqual(statuses(d), ["ok", "ok", "ok", "cancelled", "pending", "pending", "pending", "pending"]);
+  const hop = d.hops[3];
+  assert.equal(hop.id, "dispatched");
+  assert.equal(hop.cancel?.afterDispatch, false);
+  assert.match(hop.detail, /before dispatch: nothing was sent/);
+  assert.equal(hop.sinceMs, 3000);
+  assert.ok(hopHasType(d, "dispatched", "bloodbank.audio.memo.failed"), "the cancel envelope is attached to its hop");
+  assert.equal(hop.failures.length, 0, "a cancel is not a failed attempt");
+  assert.equal(d.totalSeconds, 44, "the clock stops at the cancel");
+  assert.equal(toSummary(d).cancelled?.afterDispatch, false);
+  assert.equal(toSummary(d).error, undefined);
+});
+
+test("a memo cancelled after dispatch says the agent may still have run, and the agent finishing later does not revive it", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(50), cancelFact(52, true), completed(90)], now(500))!;
+  assert.equal(d.status, "cancelled");
+  assert.equal(d.stageLabel, "Cancelled after dispatch");
+  assert.equal(d.cancelled?.afterDispatch, true);
+  assert.equal(d.error, undefined);
+  // the agent hop shows what really happened; the cancel sits on the first hop it never produced: the reply
+  assert.equal(d.hops.find(h => h.id === "agent_done")!.status, "ok");
+  const hop = d.hops.find(h => h.status === "cancelled")!;
+  assert.equal(hop.id, "replied");
+  assert.match(hop.detail, /agent may still run/);
+  assert.equal(d.totalSeconds, 52);
+});
+
+test("a cancel without after_dispatch infers it from whether a dispatched fact came first", () => {
+  assert.equal(buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(43), cancelFact(44)], now(60))!.cancelled?.afterDispatch, true);
+  assert.equal(buildMemoDetail(MEMO, [uploaded(), received(), cancelFact(10)], now(60))!.cancelled?.afterDispatch, false);
+});
+
+test("a cancel is the only fact of a memo: still cancelled, not Unknown", () => {
+  const d = buildMemoDetail(MEMO, [cancelFact(1, false)], now(60))!;
+  assert.equal(d.status, "cancelled");
+  assert.equal(d.stageLabel, "Cancelled before dispatch");
+  assert.equal(d.hops[0].status, "cancelled");
+});
+
+test("an explicit memo:retry after a cancel supersedes it; the cancel stays in the record", () => {
+  const retried = [uploaded(), received(), transcribed(), cancelFact(44, false), received(100), transcribed(120), dispatched(121)];
+  const d = buildMemoDetail(MEMO, retried, now(130))!;
+  assert.equal(d.status, "running");
+  assert.equal(d.cancelled, undefined);
+  assert.equal(d.hops.some(h => h.status === "cancelled"), false);
+  assert.ok(d.events.some(e => e.data.stage === "cancelled"), "the cancel fact is still in the memo's events");
+  const done = buildMemoDetail(MEMO, [...retried, started(125), completed(140), replied(145)], now(200))!;
+  assert.equal(done.status, "complete");
+});
+
+test("an escalated memo that is then cancelled is cancelled after dispatch", () => {
+  const d = buildMemoDetail(MEMO, [...upToEscalation(), batchStarted(), cancelFact(120, true)], now(500))!;
+  assert.equal(d.status, "cancelled");
+  assert.equal(d.escalated, true);
+  assert.equal(d.hops.find(h => h.status === "cancelled")!.id, "batch_done");
+  assert.equal(d.hops.find(h => h.id === "agent_done")!.status, "timed_out");
+});
