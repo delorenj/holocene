@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memo_common as mc_  # noqa: E402
 from memo_common import (  # noqa: E402
     BB_EMIT, BUCKET, REPLIES_PREFIX, STATE_DIR, agent_from_key, iso, memo_id_for, now_utc,
+    resume_for, truncated_by_old_watcher,
 )
 
 SERVICE = "inbox-watcher"
@@ -91,9 +92,10 @@ HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watc
                   "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
 MAX_AGE_S = int(float(os.environ.get("MEMO_MAX_AGE_HOURS", "24")) * 3600)
 SPEAK_CHARS = int(os.environ.get("MEMO_SPEAK_CHARS", "500"))
-# A prompt is never shortened: a transcript over this many characters (about 40 hours of speech, far above any
-# real memo) is held with a clear error instead of being sent cut. The old 20000-char slice silently dropped the
-# tail of a long memo (about 2 hours of speech) and sent the agent half a sentence as if it were the whole ask.
+# A prompt is never shortened: a transcript over this many characters (about 3.7 hours of speech at roughly
+# 900 chars/min, far above any real memo) is held with a clear error instead of being sent cut. The old 20000-char
+# slice (about 22 minutes of speech) silently dropped the tail of a long memo and sent the agent half a sentence
+# as if it were the whole ask.
 MAX_TRANSCRIPT_CHARS = int(os.environ.get("MEMO_MAX_TRANSCRIPT_CHARS", "200000"))
 # Every spoken reply is also dropped into this Earshot channel (s3://earshot/<channel>/), so it plays on the phone
 # and its last hop (detected / started / finished on the device) shows up in memo:trace. Empty turns it off.
@@ -241,21 +243,7 @@ def compact(m: dict) -> None:
         m.pop(k, None)
 
 
-def resume_for(m: dict) -> str:
-    """Where `memo:retry` restarts a failed memo. A memo with no transcript cannot dispatch (it failed at receive,
-    for an unroutable agent, before any audio was heard): it starts over at receive."""
-    stage = m.get("resume_stage") or "receive"
-    if stage == "dispatch" and not m.get("transcript"):
-        return "receive"
-    return stage
-
-
-def truncated_by_old_watcher(m: dict) -> bool:
-    """A failed memo whose prompt was cut to exactly 300 characters by the old compact() and never carried a prompt
-    hash: its full text is gone, so retrying would send the agent half a prompt."""
-    return (m.get("status") == "failed" and not m.get("prompt_sha256") and isinstance(m.get("prompt"), str)
-            and len(m["prompt"]) == 300 and m.get("resume_stage") in ("dispatch", "await_agent"))
-
+# resume_for / truncated_by_old_watcher live in memo_common (shared with memo_trace) and are imported above.
 
 def transcribe_timeout(audio_s: float | None, timeouts_so_far: int) -> int:
     """Seconds allowed for one transcribe run: scales with the audio, grows after each timeout."""
@@ -540,8 +528,11 @@ class Watcher:
             elif m.get("agent") is None:
                 log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="no agent in the key path")
             elif truncated_by_old_watcher(m):
-                log("retry_refused", "warn", memo_id=mid, key=m["key"],
-                    reason="its prompt was cut to 300 characters by an older watcher: re-upload the recording instead")
+                # An old watcher cut this prompt to 300 characters, but the audio is still in the inbox:
+                # re-transcribe from it instead of refusing. The object and prompt-hash checks then apply normally.
+                for k in ("transcript", "prompt", "prompt_sha256"):
+                    m.pop(k, None)
+                self.revive(m, "transcribe", "memo:retry (re-transcribe: an old watcher cut the prompt)")
             else:
                 self.revive(m, resume_for(m), "memo:retry")
 
@@ -1086,7 +1077,7 @@ class Watcher:
             raise StageError("agent_reply", "no_reply_text",
                              f"turn completed but no assistant text in {m.get('profile')} session chat_id={m['thread_id']}"
                              f" ({'no session' if not found else 'session ' + found['session_id'] + ' has no assistant text'})")
-        m["reply_text"] = found["text"][:20000]
+        m["reply_text"] = found["text"]  # kept whole: compact() trims it to a preview once the memo is done
         m["session_id"] = found["session_id"]
         # Prove the agent was given exactly what we sent.
         sent = (m.get("prompt") or m.get("transcript") or "").strip()

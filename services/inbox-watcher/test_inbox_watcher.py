@@ -1077,17 +1077,57 @@ class PromptIntegrity(unittest.TestCase):
         self.assertEqual(seen, [m["prompt_sha256"]])
         self.assertTrue(seen[0])
 
-    def test_a_memo_with_a_prompt_cut_by_the_old_watcher_is_not_retried(self):
+    def test_a_memo_with_a_prompt_cut_by_the_old_watcher_retranscribes_on_retry(self):
         key = self.upload("oldcut")
         m = {"memo_id": mc_.memo_id_for(key), "key": key, "agent": "holocene-pm", "attempts": {}, "status": "failed",
              "stage": "agent", "failed_stage": "agent_reply", "failed_code": mc_.TURN_TIMEOUT, "resume_stage": "dispatch",
-             "prompt": "p" * 300, "transcript": "t" * 300}
+             "prompt": "p" * 300, "transcript": "t" * 300,
+             "size": len(b"OggS fake audio"), "etag": iw.hashlib.md5(b"OggS fake audio").hexdigest()}
         self.state.memos[key] = m
         ctl = Path(mc_.STATE_DIR) / "control"
         ctl.mkdir(parents=True, exist_ok=True)
         (ctl / f"retry-{m['memo_id']}").write_text("")
         self.w.tick(discover=False)
-        self.assertEqual(m["status"], "failed")
+        # not refused: the audio is still in the inbox, so the memo is revived at transcribe with the cut text dropped
+        self.assertEqual((m["status"], m["stage"]), ("active", "transcribe"))
+        for k in ("transcript", "prompt", "prompt_sha256"):
+            self.assertNotIn(k, m)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        self.assertEqual(self.sent_prompts(key), [iw.VOICE_PREFIX + "Summarize recent work."])
+        self.assertTrue(m["prompt_sha256"])
+
+    def test_memo_retry_cli_prints_the_real_resume_stage(self):
+        import argparse
+        import contextlib
+        import io
+        import memo_trace as mt
+        key = self.upload("oldcutcli")
+        mid = mc_.memo_id_for(key)
+        cut = {"memo_id": mid, "key": key, "agent": "holocene-pm", "attempts": {}, "status": "failed",
+               "stage": "agent", "failed_stage": "agent_reply", "failed_code": mc_.TURN_TIMEOUT,
+               "resume_stage": "dispatch", "prompt": "p" * 300, "transcript": "t" * 300}
+        key2 = self.upload("plainretry")
+        mid2 = mc_.memo_id_for(key2)
+        plain = {"memo_id": mid2, "key": key2, "agent": "holocene-pm", "attempts": {}, "status": "failed",
+                 "stage": "agent", "failed_stage": "agent_reply", "failed_code": mc_.TURN_TIMEOUT,
+                 "resume_stage": "dispatch", "prompt": "a full prompt", "transcript": "a full transcript"}
+        d = Path(tempfile.mkdtemp(prefix="memo-mt-"))
+        (d / "state.json").write_text(json.dumps({"memos": {key: cut, key2: plain}}))
+        real = mt.c.STATE_DIR
+        mt.c.STATE_DIR = d
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = mt.cmd_retry(argparse.Namespace(target=key))
+                rc2 = mt.cmd_retry(argparse.Namespace(target=key2))
+        finally:
+            mt.c.STATE_DIR = real
+        self.assertEqual((rc, rc2), (0, 0))
+        text = out.getvalue()
+        self.assertIn(f"retry requested for {mid} (resumes at transcribe; re-transcribe", text)
+        self.assertIn(f"retry requested for {mid2} (resumes at dispatch)", text)
+        self.assertTrue((d / "control" / f"retry-{mid}").exists())
+        self.assertTrue((d / "control" / f"retry-{mid2}").exists())
 
     # ---- 2. content integrity ----------------------------------------------------------------
 

@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -256,7 +257,7 @@ class HttpBehaviour(unittest.TestCase):
     BODY = b"OggS" + b"\0" * 100
 
     def _unroutable(self, agent="zz-gone"):
-        type(self).routes[agent] = {"ok": False, "reason": f"{agent!r} is not in agents-registry.yaml"}
+        type(self).routes[agent] = {"ok": False, "reason": f"{agent!r} is not in the pad roster"}
 
     def test_a_put_for_an_unroutable_agent_is_422_with_the_reason_and_not_stored(self):
         self._unroutable()
@@ -284,11 +285,11 @@ class HttpBehaviour(unittest.TestCase):
         d = env["data"]
         self.assertEqual((k, env["type"], d["stage"], d["error_code"], d["retryable"], d["target_agent_id"]),
                          (key, "bloodbank.audio.memo.failed", "upload", "unknown_agent", False, "zz-once"))
-        self.assertIn("not in agents-registry.yaml", d["error_message"])
+        self.assertIn("not in the pad roster", d["error_message"])
         self.assertEqual(env["correlationid"], mc.memo_id_for(key))
 
-    def test_an_unreadable_registry_fails_open_and_the_upload_is_accepted(self):
-        type(self).routes["zz-blind"] = {"ok": None, "reason": "registry unreadable: FileNotFoundError"}
+    def test_an_unreadable_roster_fails_open_and_the_upload_is_accepted(self):
+        type(self).routes["zz-blind"] = {"ok": None, "reason": "pad roster unreadable: /roster/roster.json"}
         n0 = len(self.published)
         out = self.put("inbox/zz-blind/2026/10/18/20261018T101502Z.ogg", self.BODY)
         self.assertIn(b" 200 ", out.split(b"\r\n")[0])
@@ -307,53 +308,67 @@ class HttpBehaviour(unittest.TestCase):
 
 
 class RoutableAgents(unittest.TestCase):
-    """agent_route reuses the watcher's registry_route and never blocks on a broken check."""
+    """agent_route reads the pad roster (a directory mount, re-read on change) and never blocks on a broken check."""
 
     def setUp(self):
-        self.mc = up._load_memo_common()
-        self.saved = self.mc.REGISTRY_PATH
-        self.reg = Path(tempfile.mkdtemp(prefix="up-reg-")) / "agents-registry.yaml"
-        self.reg.write_text("agents:\n"
-                            "  holocene-pm:\n    display_name: Holocene PM\n    profile_name: holocene-pm\n"
-                            "    bloodbank: {enabled: true, gateway_scope: fleet, target_agent_id: holocene-pm}\n"
-                            "  off-pm:\n    profile_name: off-pm\n"
-                            "    bloodbank: {enabled: false, gateway_scope: fleet, target_agent_id: off-pm}\n")
-        self.mc.REGISTRY_PATH = self.reg
+        self.dir = Path(tempfile.mkdtemp(prefix="up-roster-"))
+        self.saved = up.PAD_ROSTER_DIR
+        up.PAD_ROSTER_DIR = self.dir
+        self._write(agents=[{"id": "holocene-pm"}],
+                    skipped=[{"id": "off-pm", "reason": "'off-pm' has bloodbank.enabled=False (default-deny)"}])
 
     def tearDown(self):
-        self.mc.REGISTRY_PATH = self.saved
+        up.PAD_ROSTER_DIR = self.saved
+        up._roster_cache.update(stamp=None, roster=None)
 
-    def test_it_is_the_watchers_own_function(self):
-        self.assertTrue(up._load_memo_common().__file__.endswith("inbox-watcher/memo_common.py"))
+    def _write(self, agents=(), skipped=(), generated_at=None):
+        gen = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        (self.dir / "roster.json").write_text(json.dumps({"generated_at": gen, "agents": list(agents), "skipped": list(skipped)}))
 
-    def test_routable_unknown_and_disabled_agents(self):
-        try:
-            import yaml  # noqa: F401
-        except ImportError:
-            self.skipTest("PyYAML not installed")
-        self.assertIs(up.agent_route("holocene-pm")["ok"], True)
-        r = up.agent_route("zz-nonexistent")
+    def test_a_listed_agent_is_routable(self):
+        self.assertEqual(up.agent_route("holocene-pm"), {"ok": True, "reason": None})
+
+    def test_a_skipped_id_is_refused_with_its_reason(self):
+        r = up.agent_route("off-pm")
         self.assertIs(r["ok"], False)
-        self.assertIn("not in", r["reason"])
+        self.assertIn("bloodbank.enabled=False", r["reason"])
+
+    def test_an_id_absent_from_a_fresh_roster_is_refused(self):
+        r = up.agent_route("zz-new-hire")
+        self.assertIs(r["ok"], False)
+        self.assertIn("not in the pad roster", r["reason"])
+
+    def test_an_id_absent_from_a_stale_roster_fails_open(self):
+        old = (datetime.now(timezone.utc) - timedelta(seconds=up.ROSTER_FRESH_S + 60)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        self._write(agents=[{"id": "holocene-pm"}], generated_at=old)
+        r = up.agent_route("zz-new-hire")
+        self.assertIs(r["ok"], None)
+        self.assertIn("stale", r["reason"])
+        # ...but a skipped entry is positive knowledge and still refuses
+        self._write(agents=[{"id": "holocene-pm"}], skipped=[{"id": "off-pm", "reason": "disabled"}], generated_at=old)
         self.assertIs(up.agent_route("off-pm")["ok"], False)
 
-    def test_an_unreadable_registry_is_unknown_not_unroutable(self):
-        self.mc.REGISTRY_PATH = self.reg.with_name("missing.yaml")
+    def test_a_missing_or_unreadable_roster_fails_open(self):
+        (self.dir / "roster.json").unlink()
         r = up.agent_route("holocene-pm")
-        self.assertIsNone(r["ok"])
+        self.assertIs(r["ok"], None)
         self.assertIn("unreadable", r["reason"])
+        (self.dir / "roster.json").write_text("not json")
+        self.assertIs(up.agent_route("holocene-pm")["ok"], None)
+        (self.dir / "roster.json").write_text(json.dumps({"agents": "oops"}))
+        self.assertIs(up.agent_route("holocene-pm")["ok"], None)
 
-    def test_a_missing_memo_common_is_unknown_not_unroutable(self):
-        def boom():
-            raise ImportError("memo_common.py not found")
-        real = up._load_memo_common
-        up._load_memo_common = boom
-        try:
-            r = up.agent_route("holocene-pm")
-        finally:
-            up._load_memo_common = real
-        self.assertIsNone(r["ok"])
-        self.assertIn("route check unavailable", r["reason"])
+    def test_a_replaced_roster_file_is_picked_up(self):
+        # the roster writer os.replace()s roster.json: a new inode, which the old single-file registry mount hid
+        self.assertIs(up.agent_route("zz-new-hire")["ok"], False)
+        tmp = self.dir / "roster.json.tmp"
+        gen = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        tmp.write_text(json.dumps({"generated_at": gen,
+                                   "agents": [{"id": "holocene-pm"}, {"id": "zz-new-hire"}, {"id": "off-pm"}], "skipped": []}))
+        import os
+        os.replace(tmp, self.dir / "roster.json")
+        self.assertIs(up.agent_route("zz-new-hire")["ok"], True)
+        self.assertIs(up.agent_route("off-pm")["ok"], True)  # no longer skipped, and now listed, in the new roster
 
 
 EKEY = "phone/2026/10/19/120000123Z-hello.ogg"

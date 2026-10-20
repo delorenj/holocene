@@ -611,10 +611,17 @@ def cmd_retry(args) -> int:
     if rec.get("status") not in ("failed", "skipped"):
         print(f"memo is {rec.get('status')} at {rec.get('stage')}: only failed or skipped memos can be retried")
         return 1
+    # The watcher's own resume rules (memo_common): a memo an old watcher cut to a 300-char prompt is revived at
+    # transcribe (the audio is still in the inbox and is re-transcribed), everything else at resume_for. Print the
+    # stage the watcher will really use, so the operator is not told "dispatch" for a re-transcribe.
+    if c.truncated_by_old_watcher(rec):
+        stage, note = "transcribe", "re-transcribe: an old watcher cut the prompt to 300 characters"
+    else:
+        stage, note = c.resume_for(rec), None
     ctl = c.STATE_DIR / "control"
     ctl.mkdir(parents=True, exist_ok=True)
     (ctl / f"retry-{mid}").write_text("")
-    print(f"retry requested for {mid} (resumes at {rec.get('resume_stage') or 'receive'}); watch it with: mise run memo:trace {mid}")
+    print(f"retry requested for {mid} (resumes at {stage}{'; ' + note if note else ''}); watch it with: mise run memo:trace {mid}")
     return 0
 
 
