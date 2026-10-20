@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AVATAR_RETRY_MS, ROSTER_STALE_MS, ageText, restoreSelection, rosterGeneratedAt, rosterStaleness, savedAgentId, stalenessText, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
+import { AVATAR_RETRY_MS, ROSTER_FAIL_GRACE_MS, ROSTER_STALE_MS, ageText, restoreSelection, rosterGeneratedAt, rosterStaleness, savedAgentId, serverClockOffset, stalenessText, REPLY_DUE_WINDOW_MS, REPLY_POLL_FAST_MS, REPLY_POLL_IDLE_MS, avatarRetryDelay, driveTiles, normRoster, replyAgent, replyPollMs, sameRoster, speakNext, step, type Agent } from './roster.ts'
 
 const A = (id: string, avatar?: string): Agent => ({ id, name: id.toUpperCase(), color: '#112233', ...(avatar ? { avatar } : {}) })
 
@@ -98,15 +98,28 @@ test('generated_at is read from the roster JSON, parsed or raw', () => {
   for (const raw of ['', 'nope', '{}', { generated_at: 5 }, { generated_at: 'yesterday' }, null]) assert.equal(rosterGeneratedAt(raw), null)
 })
 
-test('a roster is stale when it is older than 15 minutes or the last fetch failed, never otherwise', () => {
+test('a roster is stale when it is older than 15 minutes, or the refresh keeps failing', () => {
   const now = Date.UTC(2026, 9, 19, 12, 0, 0)
-  assert.equal(rosterStaleness({ generatedAt: now - 60_000, failed: false }, now), null)
-  assert.equal(rosterStaleness({ generatedAt: now - ROSTER_STALE_MS, failed: false }, now), null)
-  assert.deepEqual(rosterStaleness({ generatedAt: now - ROSTER_STALE_MS - 1, failed: false }, now), { why: 'old', ageMs: ROSTER_STALE_MS + 1 })
-  assert.deepEqual(rosterStaleness({ generatedAt: now - 60_000, failed: true }, now), { why: 'failed', ageMs: 60_000 })
-  assert.deepEqual(rosterStaleness({ generatedAt: null, failed: true }, now), { why: 'failed', ageMs: null })
-  assert.equal(rosterStaleness({ generatedAt: null, failed: false }, now), null, 'no stamp and no failure: still loading')
-  assert.equal(rosterStaleness({ generatedAt: now + 5 * 60_000, failed: false }, now), null, 'a clock ahead of the server is not old')
+  const meta = (generatedAt: number | null, failures: number) => ({ generatedAt, failures, clockOffset: 0 })
+  assert.equal(rosterStaleness(meta(now - 60_000, 0), now), null)
+  assert.equal(rosterStaleness(meta(now - ROSTER_STALE_MS, 0), now), null)
+  assert.deepEqual(rosterStaleness(meta(now - ROSTER_STALE_MS - 1, 0), now), { why: 'old', ageMs: ROSTER_STALE_MS + 1 })
+  // one failed fetch of a young list is a blip (a cellular dead spot), not 'not refreshing'
+  assert.equal(rosterStaleness(meta(now - 60_000, 1), now), null)
+  assert.equal(rosterStaleness(meta(now - ROSTER_FAIL_GRACE_MS, 1), now), null)
+  assert.deepEqual(rosterStaleness(meta(now - ROSTER_FAIL_GRACE_MS - 1, 1), now), { why: 'failed', ageMs: ROSTER_FAIL_GRACE_MS + 1 }, 'a failed refresh of an already old list flags')
+  assert.deepEqual(rosterStaleness(meta(now - 60_000, 2), now), { why: 'failed', ageMs: 60_000 }, 'two consecutive failures flag even a young list')
+  assert.deepEqual(rosterStaleness(meta(null, 2), now), { why: 'failed', ageMs: null })
+  assert.deepEqual(rosterStaleness(meta(null, 1), now), { why: 'failed', ageMs: null }, 'no stamp: the age is unknown, so one failure flags')
+  assert.equal(rosterStaleness(meta(null, 0), now), null, 'no stamp and no failure: still loading')
+  assert.equal(rosterStaleness(meta(now + 5 * 60_000, 0), now), null, 'a clock ahead of the server is not old')
+})
+
+test('the server clock offset comes from the Date header, else zero', () => {
+  const device = Date.UTC(2026, 9, 19, 12, 20, 0) // a head unit running 20 min fast
+  assert.equal(serverClockOffset('Mon, 19 Oct 2026 12:00:00 GMT', device), -20 * 60_000)
+  assert.equal(serverClockOffset('Mon, 19 Oct 2026 12:20:00 GMT', device), 0)
+  for (const h of [null, '', 'garbage']) assert.equal(serverClockOffset(h, device), 0)
 })
 
 test('the staleness wording is about the list and never says online', () => {
