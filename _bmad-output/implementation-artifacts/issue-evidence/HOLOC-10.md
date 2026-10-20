@@ -40,3 +40,11 @@
 ## Close Recommendation
 
 - Do not close HOLOC-10 yet. The real emulator speech/audio diagnostic is now demonstrated, but parent review should verify the source repairs and decide whether partial AC4/AC5 evidence is sufficient for this diagnostic ticket or whether a separate on-screen/restriction ticket is required.
+
+## Closure (2026-10-19)
+
+- **Closed as answered** by operator decision. The diagnostic's question (does speech travel injected mic -> real on-device recognizer -> result-gated platform-local TTS -> guest audio output on the Honda API33 image?) is answered yes by AC1-AC3.
+- AC4 accepted on the key-stop proof (`KEYCODE_MEDIA_STOP` -> teardown in 21 ms); screen-button teardown not re-run.
+- AC5 accepted as source/JVM-proved; the Honda user image cannot simulate a restriction transition, so a runtime proof is not obtainable on this emulator.
+- Superseded path: the shipped car app no longer uses on-device ASR/TTS. The Agent Pad records through `NativeRecorder` and replies are rendered server-side by vox and played in the car and through Earshot.
+- Source repairs (`f7b364a`) are on `main`; the `holoc-10-isolated-speech-audio` branch/worktree is retired.
