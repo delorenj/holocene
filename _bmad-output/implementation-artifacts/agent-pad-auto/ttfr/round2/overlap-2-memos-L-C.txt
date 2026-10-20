@@ -1,0 +1,43 @@
+intervals (device clock, epoch s):
+  1792536825.302   +3.676s  speech    arming arm:94128                             - -> end 
+  1792536827.245   +1.327s  audio     speaker output                               rms<=597
+  1792536828.830   +0.274s  audio     speaker output                               rms<=656
+  1792536829.705  +13.673s  recording app mic                                     
+  1792536829.706  +13.649s  recording OS capture active                           
+  1792536843.379   +2.976s  speech    ack ack:stopped:112243                       - -> end 
+  1792536843.659   +0.256s  audio     speaker output                               rms<=661
+  1792536844.575   +0.344s  audio     speaker output                               rms<=456
+  1792536845.268   +0.953s  audio     speaker output                               rms<=552
+  1792536846.356   +0.486s  speech    ack ack:sent:112615                          - -> end 
+  1792536846.710   +0.304s  audio     speaker output                               rms<=659
+  1792536850.811   +3.515s  speech    echo echo:8d240058-a9fb-5839-a72f-f1867b4f.. 8d240058-a9fb-5839-a72f-f1867b4f9693 -> halt recording
+  1792536851.270   +0.806s  audio     speaker output                               rms<=498
+  1792536852.464   +1.188s  audio     speaker output                               rms<=567
+  1792536853.890   +0.807s  audio     speaker output                               rms<=667
+  1792536854.681   +2.033s  speech    arming arm:123224                            - -> end 
+  1792536855.045   +1.297s  audio     speaker output                               rms<=606
+  1792536856.579   +0.254s  audio     speaker output                               rms<=659
+  1792536857.102  +31.440s  recording app mic                                     
+  1792536857.108  +31.422s  recording OS capture active                           
+  1792536888.547   +5.261s  speech    echo echo:8d240058-a9fb-5839-a72f-f1867b4f.. 8d240058-a9fb-5839-a72f-f1867b4f9693 -> end 
+  1792536889.253   +0.816s  audio     speaker output                               rms<=508
+  1792536890.465   +1.200s  audio     speaker output                               rms<=588
+  1792536891.902   +1.487s  audio     speaker output                               rms<=670
+  1792536893.810   +2.627s  speech    ack ack:stopped:157411                       - -> end 
+  1792536894.203   +0.254s  audio     speaker output                               rms<=659
+  1792536894.755   +0.374s  audio     speaker output                               rms<=461
+  1792536895.427   +0.904s  audio     speaker output                               rms<=556
+  1792536896.438   +4.531s  speech    echo echo:9c1d19c0-f1f3-5441-b34c-562f38f1.. 9c1d19c0-f1f3-5441-b34c-562f38f10ef2 -> end 
+  1792536897.171   +0.785s  audio     speaker output                               rms<=515
+  1792536898.304   +0.815s  audio     speaker output                               rms<=481
+  1792536899.396   +1.186s  audio     speaker output                               rms<=576
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+        info: echo echo:8d240058-a9fb-5839-a -> arming arm:123224: the first still sounded 13 ms into the next, then 351 ms of silence before it
+      speaker output: 20 spans, 15.6 s of sound in the window
+RESULT ZERO OVERLAPS  (8 utterances, 2 app recordings, 2 OS capture windows, 8 HAL mix windows)

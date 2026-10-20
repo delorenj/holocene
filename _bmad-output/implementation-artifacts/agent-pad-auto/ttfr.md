@@ -284,3 +284,232 @@ native changes with the next Play release; the pad, proxy, watcher and /voice ch
   - `ttfr/traces/*.txt`: memo:trace output.
   - Review round: `ttfr/speech-logcat-review-fixes.txt`, `ttfr/speaker-tap-review-fixes.jsonl.gz` (offset -718 ms),
     `ttfr/overlap-5-review-fixes.txt`.
+
+## Round 2: full memos on the final build, with an overlap torture
+
+Date: 2026-10-20, 22:44-23:36 UTC. Debug app from holocene `main` at `f249890` (code of `f5b460e`), installed by
+`mise run auto:dev` with the Play installer of record, version not bumped (0.2.9-internal). Evidence in
+[`ttfr/round2/`](ttfr/round2/). This closes the gap in the round 1 verdict: replies, progress clips and echoes now ran
+on the final build, with real memos.
+
+### Verdict
+
+1. **Time to first response holds on the final build.** After Stop & Send the STOP tone sounds at +0.38-0.44 s and
+   the spoken ack at +1.04-1.05 s. The heard echo comes at +7.3 s (driving) and +15.7 s (parked, under host load).
+2. **Zero overlaps.** 50 utterances and 11 recordings, checked by the speaker-level audit (all 6 checks) and,
+   separately, by a new server-side check of the pad's speech events. Nothing played into a recording. Nothing
+   played over another utterance. That includes a recording over an echo, progress arriving during a recording and
+   during a reply, and a reply arriving during another reply and during a progress clip.
+3. **New defect: after a recording, the STOP confirmation can be lost.** A progress clip or echo of an earlier memo
+   that was held back by the recording plays first, and the new memo's STOP tone and ack wait behind it. Memo Y got
+   no STOP tone, no ack and no SENT tone at all. See "Findings".
+4. **A gateway outage cost two memos.** From 22:50 to 23:22 every Bloodbank command was closed in 0.1 s with no
+   agent turn. Another session's `systemctl --user reload hermes-gateway` started a drain that waited on a 2-hour
+   skillex-pm turn. Memos L and C failed with `no_reply_text`, and the car said nothing about it.
+
+### Preconditions
+
+| check | result |
+|---|---|
+| sim | `emulator-5554` windowed; `mise run auto:dev`, installer `com.android.vending` (DO honoured while driving) |
+| `mise run auto:sim:mic-check` | `OK (rms 26.6 peak 145)`; after the cold boot `OK (rms 24.9 peak 116)`; at the end, after restoring the mic route, `OK (rms 25.5 peak 106)` |
+| watcher | `holocene-inbox-watcher.service` active |
+| gateway lanes | both pulling; interactive ack_pending 0, batch 1-2 (a long skillex-pm turn on the batch lane); memos ride interactive |
+| clocks | device = host - 720 ms before the crash; -57 ms after the cold boot, drifting to -88 ms (adb samples in `runs/clock-*.txt`) |
+| host load | load average 21-24 on 32 cores during memos A and B (another agent's kokoro TTS at ~1400% CPU), about 7 at the end |
+| Earshot | every reply: `not mirrored to the phone: the car that sent the memo was connected` (`earshot_skipped=car_live`). Only the sim played replies; Jarad's car was not connected |
+
+**Memo input changed after a crash.** gRPC `injectAudio` stalled on memo L's second clip (`deadline_exceeded`, then
+`There can be only one microphone active`) and the emulator crashed. That is the third crash from gRPC injection; the
+attempt uploaded nothing (`record_failed`). After the cold boot I routed the emulator's capture stream to a
+PulseAudio null sink (`pactl move-source-output <qemu> holo_testmic.monitor`) and played each phrase into it with
+`paplay` ([`drive_memo_pa.py`](ttfr/round2/drive_memo_pa.py)). At the end I moved the stream back to the default
+source *before* unloading the sink, and `mic-check` passed with no restart.
+
+### The memos
+
+All went to holocene-pm, phrase spoken by flite `slt`.
+
+| memo | id | how | what it shows |
+|---|---|---|---|
+| A | `7d33527d` | parked, tap | timeline (round 1 phrase: date + board, two sentences) |
+| B | `e2928012` | driving (`sim_drive.sh drive`), wheel `playpause` | timeline; static driving tile |
+| L | `8d240058` | parked, tap | the agent's turn being worked on during recording C; failed (gateway drain) |
+| C | `9c1d19c0` | parked, tap, held 31 s | recording started during L's echo; failed (gateway drain) |
+| X, Y | `868a91aa`, `94127309` | parked, tap; Y recorded 13-42 s after X's Stop | X `sleep 40` (49 s turn): its progress arrives during recording Y; Y's reply arrives during X's reply |
+| R, P | `bd75bd2d`, `fc42f9ac` | parked, tap | R's reply arrives during recording P; P's echo arrives during R's reply |
+| S, Q | `d23a5e96`, `dafbd8b6` | parked, tap | S's 27 s reply (4 chunks); Q's progress and echo arrive during it |
+
+Full tables: [`round2/timelines.md`](ttfr/round2/timelines.md). Traces: [`round2/traces/`](ttfr/round2/traces/).
+
+### Time to first response
+
+Timed from Stop & Send (the adb input). "Audible" is the first speaker-tap packet above silence.
+
+| step | A parked | B driving | round 1 A2 / B | baseline (Oct 19-20) |
+|---|---|---|---|---|
+| STOP tone audible | **+0.44 s** | **+0.38 s** | +0.40 / +0.35 s | none |
+| spoken ack audible ("Got it, Holocene's on it.") | **+1.05 s** | **+1.04 s** | +1.15 / +0.94 s | none |
+| upload fact | +1.37 s | +0.32 s | +0.30 / +0.22 s | < 2 s with pickup and dispatch |
+| transcribed | +11.02 s | +6.06 s | +7.49 / +5.61 s | 5-6 s (21-43 s on CPU) |
+| heard echo audible | **+15.73 s** | **+7.27 s** | +8.84 / +7.00 s | none |
+| agent turn | 19.4 s | 17.4 s | 11.5 / 16.6 s | 102-231 s |
+| progress | line 1 at 12.5 s into the turn; its clip was rendered from 15 s and dropped when the turn ended (`narration_dropped turn_finished`) | line 1 at 13.2 s; turn over before 15 s | none | none |
+| agent done | +30.67 s | +23.77 s | +19.26 / +22.46 s | |
+| reply chunk 1 up | +42.05 s (done +11.4 s) | +30.74 s (done +7.0 s) | done +4.9 / +5.6 s | full reply only, after 8-19 s TTS |
+| **reply audible** | **+44.28 s (done +13.6 s)** | **+31.81 s (done +8.0 s)** | done +5.5 / +6.2 s | done + 8-19 s TTS + 0.9-8.4 s car lag |
+| chunk 1 up to audible | 2.2 s | 1.1 s | 0.6 s | 0.9-8.4 s after the replied fact |
+| reply ended | +61.78 s (3 chunks) | +48.89 s (2 chunks) | | |
+
+**Spoken progress** (from the memos with longer turns):
+- **P** (`sleep 30`, 41.6 s turn): the agent's line 1 came 9.0 s into the turn. Its clip was up at +27.95 s and audible
+  at +30.10 s, after 1.5 s behind P's own echo.
+- **X** (`sleep 40`): the clip was up 19.4 s after dispatch, while recording Y was open. It was held back and played
+  when the mic closed.
+- The parked tile read "Working 0:29 · I'll check the system..." for A (shot 01). Driving shows the static "Working 0:05"
+  (shot 03) and the REPLY banner during the reply (shot 04). No animation; only the clock text changes.
+
+**Compared with round 1 and the baseline:**
+- The ack is unchanged: the first sound comes under half a second after the press.
+- B matches round 1. A ran during the worst of the host load, and every server step was slower. The watcher noticed
+  the upload 2.1 s late, and the 42 KB download took 1.7 s. The echo came 4.0 s after the transcribed fact (B: 0.6 s).
+- **A's reply lag was not vox.** vox's own log has chunk 1 rendered at done +4.2 s (`synth.completed text_len=78` at
+  22:47:08.27). The voiced fact came 6 s after that. Chunks 2 and 3 show the same 6-9 s gap between render and upload.
+  With less load (R, S) chunk 1 was up 3.8-4.7 s after the agent finished, and on B the gap was 0.6 s. Under heavy
+  load, the chunk upload/publish step is where time is lost.
+- Against the baseline, the fixed costs are gone. There is an ack at about 1 s, an echo at 7 s, and the reply starts
+  4-14 s after the agent finishes. Before, the reply came after the whole render plus up to 8 s of car lag. The agent's
+  turn is still most of the wait.
+
+### Overlap torture
+
+Queue decisions from HoloceneSpeech (device epoch seconds, memo ids shortened), from
+[`round2/speech-logcat.txt`](ttfr/round2/speech-logcat.txt).
+
+1. **A recording started during an echo (C over L's echo).** Arming halts the echo. The prompt waits out the drain
+   (328 ms), and the mic opens after the beep:
+   ```
+   854.326 halt echo id=echo:8d240058 reason=recording
+   854.353 deferred arming reason=drain
+   854.681 start arming
+   857.102 mic recording            (until 888.542)
+   ```
+   On the speakers, the echo's last sound ended 13 ms into the arming start. There were 351 ms of silence before the
+   prompt, and the beep ended 269 ms before the mic opened.
+2. **Progress arrives during a recording (X's clip during Y).** It is held back for the whole note, then played:
+   ```
+   805.639 mic recording
+   816.319 deferred progress id=progress:868a91aa:1 reason=recording
+   831.500 mic idle
+   831.501 start progress id=progress:868a91aa:1 waited_ms=15183
+   ```
+3. **A reply arrives during a recording (R's chunk 1 during P).** It was up at 23:29:47.1 while P was recording. It
+   started only after the mic closed and P's STOP ack ended (`989.851 queued reply ... behind_ack`, `992.258 start
+   reply`).
+4. **A reply arrives while another reply plays (Y during X).** Y's reply was up at 23:27:55.4, inside X's reply
+   (23:27:45.8-23:28:13.4). It started 0.1 s after X's ended (`893.488 end reply 868a91aa chunks=3`, `893.594 start
+   reply 94127309`).
+5. **Progress arrives during a reply (Q's clip during S's reply).** It never cut the reply:
+   ```
+   1104.691 start reply 233139Z-...-d23a5e96 (4 chunks)
+   1111.928 queued echo id=echo:dafbd8b6 reason=behind_reply
+   1130.617 queued progress id=progress:dafbd8b6:1 reason=behind_reply
+   1131.722 end reply d23a5e96 chunks=4
+   1131.733 start echo dafbd8b6 waited_ms=19805
+   1135.789 start progress dafbd8b6:1 waited_ms=5172
+   ```
+6. **A reply arrives during another memo's progress (X's reply behind Y's clip).** Nothing preempts a playing clip.
+   The reply waited 5.07 s (`860.476 queued reply ... behind_progress`).
+7. **An echo arrives during a reply.** P's echo waited 15.6 s behind R's reply, and Q's waited 19.8 s behind S's.
+
+### Overlap check output
+
+Two independent checks:
+- `apps/auto/tools/speech_overlap.py`, the speaker-level audit with 6 checks: queue, app mic and OS capture, HAL mix,
+  and speaker tap.
+- [`round2/proxy_overlap.py`](ttfr/round2/proxy_overlap.py), new. It rebuilds utterances and mic windows from the
+  `speech` events the pad posted to the upload proxy, on the device's monotonic clock. It is a second path, so it also
+  shows the server-side record is complete.
+
+| window | memos | speech_overlap.py | proxy_overlap.py |
+|---|---|---|---|
+| before the crash | A, B, the crashed L attempt | **ZERO OVERLAPS**, 6/6 PASS (12 utterances, 3 recordings, 12 HAL windows) [`overlap-1`](ttfr/round2/overlap-1-memos-A-B.txt) | **ZERO OVERLAPS** (12 utterances, 3 mic windows) |
+| after the cold boot | L, C | **ZERO OVERLAPS**, 6/6 PASS (8 utterances, 2 recordings) [`overlap-2`](ttfr/round2/overlap-2-memos-L-C.txt) | **ZERO OVERLAPS**, combined with the torture window: 38 utterances, 8 mic windows [`overlap-proxy-side`](ttfr/round2/overlap-proxy-side.txt) |
+| torture | X, Y, R, P, S, Q | **ZERO OVERLAPS**, 6/6 PASS (30 utterances, 6 recordings, 29 HAL windows, 130 s of sound) [`overlap-3`](ttfr/round2/overlap-3-torture-X-Y-R-P-S-Q.txt); the same at offsets -40 and -130 ms | (see above) |
+
+```
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+      speaker output: 98 spans, 130.1 s of sound in the window
+RESULT ZERO OVERLAPS  (30 utterances, 6 app recordings, 6 OS capture windows, 29 HAL mix windows)
+```
+
+To rerun:
+```bash
+E=_bmad-output/implementation-artifacts/agent-pad-auto/ttfr/round2
+zcat $E/speaker-tap-2-after-cold-boot.jsonl.gz > /tmp/tap2.jsonl
+python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat.txt --tap /tmp/tap2.jsonl --offset-ms=-88 --from 1792538770 --to 1792539165
+docker logs agent-pad-upload 2>&1 | python3 $E/proxy_overlap.py --since 2026-10-20T22:52:30 --until 2026-10-20T23:36:00   # while the container's log still holds that window
+```
+
+### Findings (not fixed in this round)
+
+1. **The stopping memo's STOP tone and ack lose to stale speech from an earlier memo.** In the arbiter, rank is
+   reply > cue > echo > progress > ack, and the ack expires after 6 s (`ACK_WAIT_MS`). A recording holds back
+   whatever arrives during it. When the mic closes, that backlog outranks the new memo's ack, and the STOP tone is
+   part of that ack:
+   - **Y:** X's progress clip, held back for 15.2 s, played first. Y's `ack:stopped` and `ack:sent` were then
+     `drop ... reason=expired`. On the speakers, the first sound after Stop was X's clip at +0.93 s. There was no STOP
+     earcon (`segments.py` in timelines.md). The driver had no audible sign that the note stopped and was sent.
+   - **C:** L's echo had been cut by C's arming and was requeued. It played again in full after C (waited 34.2 s).
+     C's ack waited 5.3 s behind it, and C's SENT tone expired.
+   - **Suggested fix** (SpeechArbiter, pure and JUnit-testable): when the mic closes, start the stopping memo's ack
+     before any backlog. Drop a held-back progress clip older than a few seconds, since it is newest-wins and already
+     stale. Drop an echo that was cut by a recording instead of replaying it.
+2. **A reply waits behind another memo's progress clip.** X's reply waited 5.07 s behind Y's clip. This is not an
+   overlap. A reply could cut a progress clip of a different memo the same way it cuts its own.
+3. **A failed memo is silent in the car.** L and C ended `failed / no_reply_text`. Nothing was spoken, and the tile went
+   back to "sent → Holocene" (shot 06). While driving, a failure looks the same as a slow agent.
+4. **Gateway drain outage, 22:50:04-23:22:42 UTC.**
+   - **Cause:** another session ran `systemctl --user reload hermes-gateway.service` (ExecReload = SIGUSR1 = a drained
+     restart) while hiring `marge-simpson`. The drain waited on a skillex-pm batch turn that had been running since
+     21:05 (`gateway_state.json`: `draining`, `active_work` = that turn). It waited until Hermes' own
+     `restart_after_turn_timeout` (default 1800 s) ran out.
+   - **Effect:** during the drain, the Bloodbank adapter closed every command as `completed/success` in about 0.1 s
+     with no Hermes session.
+   - **Recovery:** the gateway relaunched itself at 23:21:35 and Bloodbank reconnected at 23:22:42. I did not restart
+     it. Any real car memo in that window failed the same way.
+   - **Fix needed:** `reload` must not mean "refuse every command for up to 30 minutes", or fleet tooling must not use it.
+5. **gRPC mic injection is not safe under load.** It crashed the emulator a third time. The PulseAudio route works,
+   and it leaves the mic healthy if the stream is moved back before the sink is unloaded. DEV.md now says so.
+
+### Side effects
+
+- **Ten real memos to holocene-pm:** A, B, L, C, X, Y, R, P, S and Q. L and C failed in the gateway drain.
+  No reply reached the phone (all `earshot_skipped=car_live`), and Jarad's car was not connected.
+- **The sim is left running:** windowed, parked, app open, Holocene selected (shot 09). Host mic passthrough is on,
+  the capture stream is back on the default source, and the null sink is removed.
+
+### Screenshots
+
+| | |
+|---|---|
+| ![parked working](ttfr/round2/shots/01-parked-a-working.png) parked, A: "Working 0:29 · I'll check the system.." | ![driving recording](ttfr/round2/shots/02-driving-b-recording.png) driving, B recording (wheel) |
+| ![driving working](ttfr/round2/shots/03-driving-b-working-0-05.png) driving: static "Working 0:05" | ![driving reply](ttfr/round2/shots/04-driving-b-reply.png) driving: REPLY banner while B's reply plays |
+| ![recording C](ttfr/round2/shots/05-parked-recording-c.png) recording C (L's echo was cut by its arming) | ![after failures](ttfr/round2/shots/06-after-gateway-failures.png) after L and C failed: no failure line, nothing spoken |
+| ![X working](ttfr/round2/shots/07-parked-x-working.png) X working, before recording Y | ![recording Y](ttfr/round2/shots/08-parked-recording-y-over-x.png) recording Y while X's progress clip waits |
+| ![left parked](ttfr/round2/shots/09-left-parked-app-open.png) left parked, app open | |
+
+### Files (round 2)
+
+- `ttfr/round2/speech-logcat.txt`: HoloceneSpeech, Wheel, Reply and NativeRec lines, plus the OS capture and HAL lines.
+- `ttfr/round2/speaker-tap-1-before-crash.jsonl.gz` (offset -720 ms) and `speaker-tap-2-after-cold-boot.jsonl.gz`
+  (offset -57 to -88 ms).
+- `ttfr/round2/runs/*.json`: host times of each press and clip; `runs/gateway-drain-poll.txt` is the drain poll.
+- `ttfr/round2/traces/*.txt`: memo:trace for every memo, including the two failures.
+- Helpers (they expect `/tmp/ttfr2` paths): `drive_memo_pa.py` (paplay input), `timeline.py` / `timeline2.py`,
+  `segments.py` (tone versus speech onsets), `proxy_overlap.py` and `wait_gateway.sh`.

@@ -1,0 +1,21 @@
+{
+ "start_pressed": 1792538803.0470378,
+ "mic_recording_seen": 1792538805.7618716,
+ "mic_line": "         1792538805.639  4557  4557 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792538805639",
+ "inject": [
+  {
+   "wav": "utt/y1.wav",
+   "began": 1792538806.2075381,
+   "ended": 1792538809.8851347,
+   "result": "{\"paplay_rc\": 0, \"err\": \"\", \"played_s\": 3.377}"
+  },
+  {
+   "wav": "utt/y2.wav",
+   "began": 1792538809.8851433,
+   "ended": 1792538813.0457585,
+   "result": "{\"paplay_rc\": 0, \"err\": \"\", \"played_s\": 3.161}"
+  }
+ ],
+ "stop_pressed": 1792538831.4284272,
+ "mic_idle_seen": 1792538831.5986512
+}

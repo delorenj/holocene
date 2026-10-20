@@ -1,0 +1,27 @@
+{
+ "start_pressed": 1792536562.1834826,
+ "mic_recording_seen": 1792536564.8745034,
+ "mic_line": "         1792536564.114  8482  8482 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792536564114",
+ "inject": [
+  {
+   "wav": "utt/b1.wav",
+   "began": 1792536565.338329,
+   "ended": 1792536568.4446073,
+   "result": "{\"packets\": 198, \"bytes\": 126240, \"cancelled\": false, \"elapsed_s\": 3.014, \"lead_ms\": 300, \"tail_ms\": 250, \"input_stats\": {\"samples\": 54320, \"rms\": 5406.2, \"peak\": 21548, \"nonzero\": 53912}, \"injected_at_epoch\": 1792536568.426}"
+  },
+  {
+   "wav": "utt/b2.wav",
+   "began": 1792536568.444613,
+   "ended": 1792536569.8486323,
+   "result": "{\"packets\": 110, \"bytes\": 69920, \"cancelled\": false, \"elapsed_s\": 1.307, \"lead_ms\": 0, \"tail_ms\": 250, \"input_stats\": {\"samples\": 30960, \"rms\": 5765.6, \"peak\": 24060, \"nonzero\": 30676}, \"injected_at_epoch\": 1792536569.824}"
+  },
+  {
+   "wav": "utt/b3.wav",
+   "began": 1792536569.8486388,
+   "ended": 1792536572.97577,
+   "result": "{\"packets\": 199, \"bytes\": 127200, \"cancelled\": false, \"elapsed_s\": 3.037, \"lead_ms\": 0, \"tail_ms\": 1000, \"input_stats\": {\"samples\": 47600, \"rms\": 6650.8, \"peak\": 26015, \"nonzero\": 47285}, \"injected_at_epoch\": 1792536572.956}"
+  }
+ ],
+ "stop_pressed": 1792536572.97579,
+ "mic_idle_seen": 1792536573.173654
+}

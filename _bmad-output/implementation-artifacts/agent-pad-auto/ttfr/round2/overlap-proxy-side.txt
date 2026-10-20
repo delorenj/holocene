@@ -1,0 +1,76 @@
+== window 1: memos A, B and the crashed L attempt (app session before the emulator crash)
+speech decisions: 50   utterances: 12   mic-busy windows: 3   recordings: 3
+  mono   974.873 s    2.11 s  arming   end    -
+  mono   985.868 s    2.62 s  ack      end    7d33527d
+  mono   988.493 s    0.55 s  ack      end    7d33527d
+  mono  1000.758 s    4.43 s  echo     end    7d33527d
+  mono  1029.307 s   18.18 s  reply    end    7d33527d
+  mono  1154.552 s    2.09 s  arming   end    -
+  mono  1165.401 s    2.63 s  ack      end    e2928012
+  mono  1168.031 s    0.55 s  ack      end    e2928012
+  mono  1171.907 s    4.58 s  echo     end    e2928012
+  mono  1196.308 s   17.84 s  reply    end    e2928012
+  mono  1258.137 s    2.09 s  arming   end    -
+  mono  1294.030 s    2.65 s  ack      end    459db3cd
+  mono   974.872 s   10.99 s  MIC BUSY (arming + recording)
+  mono  1154.552 s   10.85 s  MIC BUSY (arming + recording)
+  mono  1258.137 s   35.89 s  MIC BUSY (arming + recording)
+
+check 1 speech x speech: PASS 0 overlaps
+check 2 speech x mic busy: PASS 0 overlaps
+check 3 arming prompt x recording: PASS 0 overlaps
+RESULT ZERO OVERLAPS
+
+== window 2: L, C, then the torture memos X, Y, R, P, S, Q (after the cold boot)
+speech decisions: 158   utterances: 38   mic-busy windows: 8   recordings: 8
+  mono    94.245 s    3.67 s  arming   end    -
+  mono   112.322 s    2.98 s  ack      end    8d240058
+  mono   115.299 s    0.49 s  ack      end    8d240058
+  mono   119.754 s    3.52 s  echo     halt   8d240058
+  mono   123.624 s    2.03 s  arming   end    -
+  mono   157.490 s    5.26 s  echo     end    8d240058
+  mono   162.753 s    2.63 s  ack      end    9c1d19c0
+  mono   165.381 s    4.53 s  echo     end    9c1d19c0
+  mono  2045.288 s    2.10 s  arming   end    -
+  mono  2058.624 s    2.62 s  ack      end    868a91aa
+  mono  2061.249 s    0.55 s  ack      end    868a91aa
+  mono  2066.226 s    4.08 s  echo     end    868a91aa
+  mono  2071.999 s    2.14 s  arming   end    -
+  mono  2100.444 s    6.52 s  progress end    868a91aa
+  mono  2108.595 s    4.09 s  echo     end    94127309
+  mono  2129.300 s    5.19 s  progress end    94127309
+  mono  2134.493 s   27.94 s  reply    end    868a91aa
+  mono  2162.537 s    4.91 s  reply    end    94127309
+  mono  2225.886 s    2.06 s  arming   end    -
+  mono  2236.754 s    2.58 s  ack      end    bd75bd2d
+  mono  2239.335 s    0.54 s  ack      end    bd75bd2d
+  mono  2244.063 s    4.90 s  echo     end    bd75bd2d
+  mono  2249.181 s    2.00 s  arming   end    -
+  mono  2258.579 s    2.62 s  ack      end    fc42f9ac
+  mono  2261.201 s   22.76 s  reply    end    bd75bd2d
+  mono  2283.976 s    4.08 s  echo     end    fc42f9ac
+  mono  2288.055 s    4.32 s  progress end    fc42f9ac
+  mono  2313.145 s    4.12 s  reply    end    fc42f9ac
+  mono  2337.961 s    2.07 s  arming   end    -
+  mono  2349.178 s    2.63 s  ack      end    d23a5e96
+  mono  2351.805 s    0.54 s  ack      end    d23a5e96
+  mono  2356.658 s    4.79 s  echo     end    d23a5e96
+  mono  2361.596 s    2.03 s  arming   end    -
+  mono  2370.916 s    2.71 s  ack      end    dafbd8b6
+  mono  2373.634 s   27.03 s  reply    end    d23a5e96
+  mono  2400.676 s    4.06 s  echo     end    dafbd8b6
+  mono  2404.732 s    4.71 s  progress end    dafbd8b6
+  mono  2424.433 s    4.77 s  reply    end    dafbd8b6
+  mono    94.240 s   18.08 s  MIC BUSY (arming + recording)
+  mono   123.296 s   34.19 s  MIC BUSY (arming + recording)
+  mono  2045.287 s   13.34 s  MIC BUSY (arming + recording)
+  mono  2071.998 s   28.45 s  MIC BUSY (arming + recording)
+  mono  2225.884 s   10.87 s  MIC BUSY (arming + recording)
+  mono  2249.181 s    9.40 s  MIC BUSY (arming + recording)
+  mono  2337.960 s   11.22 s  MIC BUSY (arming + recording)
+  mono  2361.596 s    9.32 s  MIC BUSY (arming + recording)
+
+check 1 speech x speech: PASS 0 overlaps
+check 2 speech x mic busy: PASS 0 overlaps
+check 3 arming prompt x recording: PASS 0 overlaps
+RESULT ZERO OVERLAPS

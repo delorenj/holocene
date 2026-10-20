@@ -1,0 +1,5 @@
+offset_ms -708 rtt_ms 70
+offset_ms -724 rtt_ms 28
+offset_ms -718 rtt_ms 31
+offset_ms -720 rtt_ms 25
+offset_ms -724 rtt_ms 18

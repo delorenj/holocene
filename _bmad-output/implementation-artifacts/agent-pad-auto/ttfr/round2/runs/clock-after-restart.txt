@@ -1,0 +1,13 @@
+offset_ms -20 rtt_ms 103
+offset_ms -67 rtt_ms 46
+offset_ms -58 rtt_ms 22
+offset_ms -56 rtt_ms 26
+offset_ms -57 rtt_ms 23
+offset_ms -85 rtt_ms 22
+offset_ms -98 rtt_ms 27
+offset_ms -87 rtt_ms 12
+1792539169 offset_ms -90 rtt_ms 13
+1792539169 offset_ms -91 rtt_ms 12
+1792539169 offset_ms -88 rtt_ms 16
+1792539169 offset_ms -83 rtt_ms 25
+1792539169 offset_ms -85 rtt_ms 22

@@ -62,7 +62,11 @@ the guest mic is exact zeros, there is no qemu stream and `hostmicon` changes no
 emulator twice) leave every later capture stream CORKED. Plain use (record, probe, `mic-check` over and over) stays healthy.
 A repeatable way to feed speech without gRPC: `pactl load-module module-null-sink sink_name=holo_testmic`, start the
 recording, `pactl move-source-output <qemu id> holo_testmic.monitor`, `paplay --device=holo_testmic utt.wav`, stop; then
-restart the sim (`auto:sim:stop && auto:sim`) before trusting the mic again.
+restart the sim (`auto:sim:stop && auto:sim`) before trusting the mic again. The qemu stream lives as long as the emulator
+(corked between recordings), so it can stay on the null sink for a whole session; to undo it without a restart, move it
+back FIRST (`pactl move-source-output <qemu id> "$(pactl get-default-source)"`), then unload the sink: `mic-check` was OK
+right after (2026-10-20, ttfr.md round 2). gRPC `injectAudio` wedged and crashed the emulator a third time under host load
+(load avg ~23); the paplay route (`ttfr/round2/drive_memo_pa.py`) carried every round-2 memo without a hitch.
 
 ## Injecting a known utterance (end-to-end proof)
 
