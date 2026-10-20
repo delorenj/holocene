@@ -4,6 +4,7 @@ import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
+import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -108,11 +109,11 @@ async function memoIdFor(key: string): Promise<string | null> {
 type ListPage = { keys: string[]; next: string | null }
 // A request that hangs on a flaky car link must fail, so the next poll runs instead of waiting minutes for it. The
 // deadline covers the body too: headers can arrive and the body then stall.
-async function fetchWithin<T>(url: string, ms: number, read: (r: Response) => Promise<T>): Promise<T> {
+async function fetchWithin<T>(url: string, ms: number, read: (r: Response) => Promise<T>, init: RequestInit = {}): Promise<T> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), ms)
   try {
-    const res = await fetch(url, { signal: ctl.signal })
+    const res = await fetch(url, { ...init, signal: ctl.signal })
     if (!res.ok) throw new Error(`${res.status} ${url.split('?')[0]}`)
     return await read(res)
   } finally {
@@ -236,7 +237,7 @@ const agentDbSet = (id: string) => rosterDb('readwrite', (s) => s.put(id, 'agent
 // ---- client events: what only the device can see (record start/stop/failure, upload failure) ----
 // The proxy logs each one; failures also become audio.memo.failed(stage record|upload) facts keyed by the
 // key the memo would have had, so a memo that never reached S3 still shows up in memo:trace and /voice.
-type ClientEvent = { event: string; key: string; error?: string; code?: string; bytes?: number; duration_ms?: number; attempts?: number; retryable?: boolean; capture?: Capture }
+type ClientEvent = { event: string; key: string; error?: string; code?: string; bytes?: number; duration_ms?: number; attempts?: number; retryable?: boolean; capture?: Capture; speech?: unknown }
 function postEvent(ev: ClientEvent): Promise<boolean> {
   return fetch('/upload/client-event', {
     method: 'POST',
@@ -263,6 +264,12 @@ async function flushEvents() {
   const left: ClientEvent[] = []
   for (const ev of q) if (!(await postEvent(ev))) left.push(ev)
   lsSet(LS_EVENTS, JSON.stringify(left))
+}
+
+// Every decision of the host's speech queue (start / end / halt / drop / deferred, with device timestamps), so an
+// overlap can be audited from the server. Fire and forget, never queued: the outbox of events is for failures.
+function speechEvent(key: string, d: unknown) {
+  void postEvent({ event: 'speech', key, speech: d })
 }
 
 // Playback beacon: the pad is the only place that knows whether the driver was actually spoken to.
@@ -326,6 +333,28 @@ function nativeReply(): NativeReply | null {
   const n = (window as any).HoloceneNative
   return n && typeof n.playReply === 'function' ? (n as NativeReply) : null
 }
+// The host's one speech queue (SpeechArbiter): heard echo, progress narration, and "this memo is final". Absent on an
+// older host; then progress plays through the page's own single audio element (no echo, no overlap either way).
+type NativeSpeech = {
+  speechEcho(memoId: string, name: string, heard: string): void
+  speechProgress(memoId: string, seq: number, b64: string, ext: string): void
+  speechMemoFinal(memoId: string): void
+}
+function nativeSpeech(): NativeSpeech | null {
+  const n = (window as any).HoloceneNative
+  return n && typeof n.speechProgress === 'function' && typeof n.speechEcho === 'function' ? (n as NativeSpeech) : null
+}
+const REPLY_MEMO = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[a-z0-9]+$/
+// A memo is followed (status line, echo, progress) for this long after it was sent, and a failed one stays on its
+// tile for a minute.
+const FLIGHT_MAX_MS = 20 * 60 * 1000
+const FAILED_SHOW_MS = 60 * 1000
+const PROGRESS_LIST_MS = 4000 // at most one listing of a memo's progress clips this often
+type Flight = {
+  memoId: string; agentId: string; agentName: string; key: string; day: string; sentAt: number
+  status: MemoStatus | null; fetchedAt: number; echoed: boolean; progressSeq: number; listedAt: number; finalAt: number
+}
+type FlightView = { memoId: string; status: MemoStatus | null; fetchedAt: number; sentAt: number }
 function blobToBase64(b: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
@@ -448,6 +477,88 @@ function App() {
   const replyBytes = useRef(0) // size of the reply now playing: bounds how long it can legitimately play
   const noteSent = () => { lastSentAt.current = Date.now(); pollNow.current() }
 
+  // ---- memos in flight: the watcher's status object drives the tile line, the heard echo and progress narration ----
+  // Followed on the reply poll's cadence (2 s for ten minutes after a send). Everything audible goes to the host's
+  // speech queue; without one, progress clips wait in the page's own queue (one audio element, after any reply).
+  const flights = useRef<Map<string, Flight>>(new Map())
+  const [flightView, setFlightView] = useState<Record<string, FlightView>>({})
+  const progressQ = useRef<{ memoId: string; seq: number; key: string; blob: Blob }[]>([])
+  const playingProgress = useRef(false) // the audio element is on a progress clip, not a reply
+  const refreshFlights = () => {
+    const now = Date.now()
+    const view: Record<string, FlightView> = {}
+    for (const f of [...flights.current.values()]) {
+      // Done (the reply speaks for itself) or too old: forgotten. Failed: says so on its tile for a minute.
+      const failed = f.status?.stage === 'failed'
+      if (now - f.sentAt > FLIGHT_MAX_MS || (f.finalAt && (!failed || now - f.finalAt > FAILED_SHOW_MS))) {
+        flights.current.delete(f.memoId)
+        continue
+      }
+      const cur = view[f.agentId]
+      if (!cur || cur.sentAt < f.sentAt) view[f.agentId] = { memoId: f.memoId, status: f.status, fetchedAt: f.fetchedAt, sentAt: f.sentAt }
+    }
+    setFlightView(view)
+  }
+  const trackMemo = async (agentId: string, agentName: string, key: string) => {
+    const memoId = await memoIdFor(key)
+    const day = keyDay(key)
+    if (!memoId || !day || flights.current.has(memoId)) return
+    flights.current.set(memoId, { memoId, agentId, agentName, key, day, sentAt: Date.now(), status: null, fetchedAt: 0, echoed: false, progressSeq: 0, listedAt: 0, finalAt: 0 })
+    refreshFlights()
+  }
+  const flightFinal = (memoId: string) => {
+    const f = flights.current.get(memoId)
+    if (f && !f.finalAt) f.finalAt = Date.now()
+    progressQ.current = progressQ.current.filter((p) => p.memoId !== memoId)
+    try { nativeSpeech()?.speechMemoFinal(memoId) } catch { /* host bridge absent */ }
+  }
+  // The status object is dated by the memo's inbox key; a watcher that dates it by the day it ran is found too.
+  const readStatus = async (f: Flight): Promise<MemoStatus | null> => {
+    const days = [f.day, todayPrefix()].filter((d, i, a) => a.indexOf(d) === i)
+    for (const day of days) {
+      try {
+        const text = await fetchWithin(`${BUCKET_BASE}/${statusKey(day, f.memoId)}`, 8000, (r) => r.text(), { cache: 'no-store' })
+        f.day = day
+        return normStatus(text, f.memoId)
+      } catch { /* not there (yet) */ }
+    }
+    return null
+  }
+  const pollFlights = async () => {
+    for (const f of [...flights.current.values()]) {
+      if (f.finalAt) continue
+      const st = await readStatus(f)
+      if (!st) continue
+      f.status = st
+      f.fetchedAt = Date.now()
+      const n = nativeSpeech()
+      if (isFinal(st.stage)) { flightFinal(f.memoId); continue }
+      if (st.heard && !f.echoed) {
+        f.echoed = true
+        try { n?.speechEcho(f.memoId, f.agentName, st.heard) } catch { /* host bridge absent */ }
+      }
+      const due = (st.spoken_seq ?? st.progress_seq) > f.progressSeq
+      if (!due || Date.now() - f.listedAt < PROGRESS_LIST_MS) continue
+      f.listedAt = Date.now()
+      try {
+        const pick = newestProgress((await listPage(progressPrefix(f.day, f.memoId), '', null)).keys, f.day, f.memoId, f.progressSeq)
+        if (!pick) continue
+        f.progressSeq = pick.seq
+        const blob = await getBlob(`${BUCKET_BASE}/${pick.key}`)
+        if (f.finalAt) continue // the reply landed while the clip downloaded
+        if (n) n.speechProgress(f.memoId, pick.seq, await blobToBase64(blob), replyExt(pick.key))
+        else {
+          // Newest wins: an older clip for the same memo that has not played yet is dropped.
+          progressQ.current = [...progressQ.current.filter((p) => p.memoId !== f.memoId), { memoId: f.memoId, seq: pick.seq, key: pick.key, blob }]
+          pump.current()
+        }
+      } catch { /* next poll */ }
+    }
+    refreshFlights()
+  }
+  const pollFlightsRef = useRef(pollFlights)
+  pollFlightsRef.current = pollFlights
+
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
     const key = playingKey.current
     if (key && phase === 'started') speak({ t: 'started', key }) // before the dedupe: a replay after a note bounces again
@@ -469,9 +580,10 @@ function App() {
 
   pump.current = async () => {
     const el = audioRef.current
-    if (!el || playingKey.current || queue.current.length === 0) return
+    if (!el || playingKey.current) return
     // A reply must never play into the microphone: wait until the note is done.
     if (recordingRef.current || arming.current) return
+    if (queue.current.length === 0) { playProgress(el); return }
     const key = queue.current[0]
     if (!unlockedRef.current) {
       if (!beaconsSent.current.has(`${key}:blocked`)) {
@@ -499,6 +611,23 @@ function App() {
     }
   }
 
+  // Browser (no host speech queue): a progress clip plays in the same audio element, only when no reply is waiting.
+  const playProgress = (el: HTMLAudioElement) => {
+    if (!unlockedRef.current || nativeReply()) return
+    const p = progressQ.current.shift()
+    if (!p) return
+    if (flights.current.get(p.memoId)?.finalAt) { pump.current(); return }
+    playingKey.current = p.key
+    playingProgress.current = true
+    el.src = URL.createObjectURL(p.blob)
+    el.play().catch(() => endProgress())
+  }
+  const endProgress = () => {
+    playingKey.current = ''
+    playingProgress.current = false
+    pump.current()
+  }
+
   // A reply that could not be played: retry a couple of times, then give it up so it never blocks the queue.
   const playFailed = (key: string, text: string) => {
     const n = (loadFails.current[key] = (loadFails.current[key] || 0) + 1)
@@ -519,12 +648,25 @@ function App() {
   useEffect(() => {
     ;(window as any).__hnPlayback = (key: string, phase: string, detail: string) => {
       if (key !== playingKey.current) return // a reply we already moved on from
+      if (phase === 'deferred') {
+        // The host's speech queue stopped it (a note is starting): it stays at the head of the queue, not a failure.
+        playingKey.current = ''
+        speak({ t: 'interrupted' })
+        return
+      }
       if (phase === 'started') { report('started'); setStatus('playing reply') }
       else if (phase === 'ended') { report('ended', { seconds: Number(detail) || undefined }); setStatus('reply played'); finish(key) }
       else playFailed(key, `play failed: ${detail || 'host player'}`)
     }
     return () => { delete (window as any).__hnPlayback }
   })
+  useEffect(() => {
+    ;(window as any).__hnSpeech = (d: { memo_id?: string } | null) => {
+      const f = d?.memo_id ? flights.current.get(d.memo_id) : undefined
+      speechEvent(f?.key || '', d)
+    }
+    return () => { delete (window as any).__hnSpeech }
+  }, [])
 
   // A player that never reports the end (native host died, focus lost with no event) must not hold the queue or
   // keep a tile saying a reply is playing.
@@ -550,6 +692,12 @@ function App() {
   // again when the note is done.
   const interruptReply = () => {
     if (!playingKey.current) return
+    if (playingProgress.current) {
+      try { audioRef.current?.pause() } catch { /* nothing playing */ }
+      playingKey.current = ''
+      playingProgress.current = false
+      return
+    }
     try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
     try { audioRef.current?.pause() } catch { /* nothing playing */ }
     playingKey.current = ''
@@ -606,11 +754,14 @@ function App() {
             continue
           }
           queue.current.push(key)
+          const memo = REPLY_MEMO.exec(key)?.[1]
+          if (memo && flights.current.has(memo)) flightFinal(memo)
         }
         pump.current()
       } catch {
         // network blip, next poll
       }
+      if (flights.current.size) await pollFlightsRef.current()
     }
     let t = 0
     let stopped = false
@@ -682,7 +833,9 @@ function App() {
       await outboxDel(p.key)
       clientEvent({ event: 'upload_recovered', key: p.key, attempts: p.attempts + 1 })
       setStatus(`sent → ${p.agentName} (after a retry)`)
-      emitHost({ t: 'sent', name: p.agentName })
+      emitHost({ t: 'sent', name: p.agentName, reason: 'retry' })
+      const agentId = /^inbox\/([^/]+)\//.exec(p.key)?.[1]
+      if (agentId) void trackMemo(agentId, p.agentName, p.key)
     } catch (e) {
       if (e instanceof UploadRejected) await holdRejected(p, e, undefined, false)
       else await outboxPut({ ...p, attempts: p.attempts + 1 })
@@ -741,6 +894,7 @@ function App() {
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
           emitHost({ t: 'sent', id: agent.id, name: agent.name })
+          void trackMemo(agent.id, agent.name, key)
           if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
           return
         } catch (e) {
@@ -1075,10 +1229,24 @@ function App() {
   useEffect(() => {
     if (!recording && phase !== 'arming') pump.current()
   }, [recording, phase])
+  // The tile line's clock: a once-a-second text change while a memo is in flight (no motion, so fine while driving).
+  const [tick, setTick] = useState(Date.now)
+  const anyFlight = Object.keys(flightView).length > 0
+  useEffect(() => {
+    if (!anyFlight) return
+    const t = window.setInterval(() => setTick(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [anyFlight])
+  const progressMax = host.noText ? 0 : host.driving ? (host.maxLabel > 0 ? Math.min(28, host.maxLabel) : 28) : 60
+  const workLine = (agentId: string): string | null => {
+    const v = flightView[agentId]
+    return v ? statusLine(v.status, elapsedSeconds(v.status, v.fetchedAt, v.sentAt, tick), progressMax) : null
+  }
+  const workingAgent = Object.entries(flightView).sort((x, y) => y[1].sentAt - x[1].sentAt)[0]?.[0]
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
-  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent) : agents
+  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : agents
   const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
   // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
@@ -1105,6 +1273,7 @@ function App() {
       <div className="tiles" role="radiogroup" aria-label="Agent" ref={tilesRef}>
         {tiles.map((a) => {
           const on = selected?.id === a.id
+          const work = workLine(a.id)
           return (
             <button
               key={a.id}
@@ -1118,6 +1287,7 @@ function App() {
             >
               <Swatch a={a} />
               <span className="name">{label(a.name)}</span>
+              {work && <span className="work">{work}</span>}
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
           )
@@ -1167,8 +1337,9 @@ function App() {
       <audio
         ref={audioRef}
         style={{ display: 'none' }}
-        onPlaying={() => { if (playingKey.current) { report('started'); setStatus('playing reply') } }}
+        onPlaying={() => { if (playingKey.current && !playingProgress.current) { report('started'); setStatus('playing reply') } }}
         onEnded={(e) => {
+          if (playingProgress.current) { endProgress(); return }
           const key = playingKey.current
           if (!key) return
           report('ended', { seconds: (e.currentTarget as HTMLAudioElement).duration })
@@ -1176,6 +1347,7 @@ function App() {
           finish(key)
         }}
         onError={(e) => {
+          if (playingProgress.current) { endProgress(); return }
           const key = playingKey.current
           if (!key) return
           const err = (e.currentTarget as HTMLAudioElement).error
@@ -1204,6 +1376,7 @@ const CSS = `
 .tile.on { border:5px solid var(--c); background:color-mix(in srgb, var(--c) 22%, #141a24); padding:5px; }
 .tile .swatch.pic { padding:0; overflow:hidden; border-radius:50%; background:#0b1020; text-shadow:none; }
 .tile .swatch.pic img { width:100%; height:100%; object-fit:cover; display:block; }
+.tile .work { max-width:100%; font-size:clamp(16px,1.8vw,22px); font-weight:600; line-height:1.15; text-align:center; color:#cfe0ff; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
 .tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
 /* The agent whose reply is playing: a bouncy border in its colour (HOLOC-14). */
 .tile.speaking { border:5px solid var(--c); padding:5px; animation:speak-bounce .9s ease-in-out infinite; }
@@ -1249,6 +1422,8 @@ const CSS = `
 .drive .tile.speaking .swatch { box-shadow:0 0 0 4px #fff, 0 0 0 7px rgba(0,0,0,.55); }
 .drive .tile .swatch { width:clamp(64px,16vh,140px); height:clamp(64px,16vh,140px); font-size:clamp(30px,7vh,64px); }
 .drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
+.drive .tile .work { font-size:clamp(18px,3vh,26px); font-weight:700; }
+.drive .tile.speaking .work { color:#fff; text-shadow:0 1px 2px #000; }
 .drive .bar { flex:1.25 1 0; min-height:0; }
 .drive .rec { flex:1 1 100%; height:100%; min-height:0; border-radius:36px; font-size:clamp(36px,9vh,84px); }
 .drive .rec.live { background:#d93a2b; }

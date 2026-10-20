@@ -322,12 +322,14 @@ object DriveSpeech {
     /** Spoken for the event itself. Recording start is announced before the mic opens (see [recordingStart]). */
     fun forEvent(e: PadEvent): String? = when (e.type) {
         "selected" -> e.name.ifBlank { null }
-        "sent" -> "Sent to ${e.name}".trim()
+        // The instant ack was said at "stopped"; a send that only went through on a later retry is news of its own.
+        "sent" -> if (e.reason == "retry") "Sent to ${e.name}".trim() else null
         "queued" -> "Not sent. Saved, will retry."
         "rejected" -> if (e.name.isBlank()) "Not sent. The agent can't be reached." else "Not sent. ${e.name} can't be reached."
         "silent" -> "Nothing heard, not sent."
         "cancelled" -> "Cancelled."
-        "stopped" -> if (e.reason == "auto") "Recording stopped. Sending." else null
+        // The instant ack (no server): said the moment the note ends, so the driver knows it went.
+        "stopped" -> if (e.reason == "auto") "Recording stopped. ${ack(e.name)}" else ack(e.name)
         "failed" -> if (e.reason.startsWith("permission")) "Microphone permission needed. Open Holocene Auto when parked." else "Microphone unavailable."
         "refused" -> when (e.reason) {
             "recording" -> "Recording. Stop first."
@@ -338,6 +340,17 @@ object DriveSpeech {
     }
 
     fun recordingStart(name: String): String = if (name.isBlank()) "Recording." else "Recording for $name."
+
+    fun ack(name: String): String = if (name.isBlank()) "Got it, sending." else "Got it, ${name.trim()}'s on it."
+
+    /** "<Agent> heard: <first ~8 words>", spoken once when the transcript is back; null when there is nothing to say. */
+    fun heardEcho(name: String, heard: String, words: Int = 8): String? {
+        val w = heard.replace(Regex("""\s+"""), " ").trim().split(' ').filter { it.isNotBlank() }
+        if (w.isEmpty()) return null
+        val head = w.take(words).joinToString(" ").trimEnd(',', ';', ':', '-')
+        val who = name.trim().ifBlank { "Agent" }
+        return "$who heard: $head"
+    }
 
     fun toneFor(e: PadEvent): Tone? = when (e.type) {
         // START is played by the host between "Recording for X" and opening the mic, so it is never recorded.

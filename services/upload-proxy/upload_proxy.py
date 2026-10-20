@@ -301,6 +301,27 @@ CLIENT_EVENTS = ("record_started", "record_stopped", "record_failed", "record_si
 KEY_RE = re.compile(r"^inbox/[^/]+/\d{4}/\d{2}/\d{2}/[^/]+\.(ogg|webm|m4a|mp3|wav|opus|mp4)$")
 
 
+SPEECH_ACTIONS = ("queued", "deferred", "start", "end", "halt", "drop", "ignored", "mic")
+SPEECH_MEMO_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def speech_decision(raw):
+    """A speech-queue decision from the car, bounded and typed, or None."""
+    if not isinstance(raw, dict) or raw.get("action") not in SPEECH_ACTIONS:
+        return None
+    clean = lambda v, n: re.sub(r"[\x00-\x1f\x7f]", " ", v)[:n] if isinstance(v, str) else None
+    out = {"speech_action": raw["action"], "speech_kind": clean(raw.get("kind"), 20), "speech_id": clean(raw.get("id"), 200),
+           "speech_reason": clean(raw.get("reason"), 80), "mic": clean(raw.get("mic"), 12)}
+    for k in ("seq", "at", "mono_ms"):
+        v = raw.get(k)
+        if isinstance(v, int) and not isinstance(v, bool):
+            out["device_at" if k == "at" else k] = v
+    memo = raw.get("memo_id")
+    if isinstance(memo, str) and SPEECH_MEMO_RE.match(memo):
+        out["memo_id"] = memo
+    return out
+
+
 def build_client_envelope(ev: dict, user_agent: str):
     """failed(stage record|upload) for a device-side failure, or None for log-only events / bad input."""
     key = ev.get("key")
@@ -629,6 +650,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ua = self.headers.get("User-Agent", "")
         if ev.get("event") == "wheel_keys":
             return self._wheel_keys(ev, ua)
+        if ev.get("event") == "speech":
+            return self._speech(ev, ua)
         key, kind = ev.get("key"), ev.get("event")
         capture = parse_capture(ev.get("capture"))
         ok = isinstance(key, str) and KEY_RE.match(key) and kind in CLIENT_EVENTS
@@ -642,6 +665,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         env = build_client_envelope(ev, ua) if ok else None
         if env:
             publish_async(env, key)
+
+    def _speech(self, ev: dict, ua: str):
+        """One decision of the car's speech queue (SpeechArbiter): logged only, never a fact. With the device's wall
+        clock `at` on every start/end/halt, overlap between utterances (or with a recording) is auditable from here."""
+        d = speech_decision(ev.get("speech"))
+        key = ev.get("key")
+        key = key if isinstance(key, str) and KEY_RE.match(key) else None
+        log("speech", status=200 if d else 202, key=key, memo_id=(d or {}).get("memo_id") or (memo_id_for(key) if key else None),
+            remote=self.client_address[0], ua=ua[:120], **(d or {}))
+        self.send_response(200 if d else 202)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _heard(self):
         """Earshot device beacon: POST /upload/heard {channel,key?,phase,at,last_modified?,device,

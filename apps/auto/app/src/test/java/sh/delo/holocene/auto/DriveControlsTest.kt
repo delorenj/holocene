@@ -260,14 +260,23 @@ class DriveSpeechTest {
         assertEquals("Holocene", DriveSpeech.forEvent(PadEvent("selected", "holocene-pm", "Holocene")))
         assertEquals("Recording for Holocene.", DriveSpeech.recordingStart("Holocene"))
         assertEquals("Recording.", DriveSpeech.recordingStart(""))
-        assertEquals("Sent to Holocene", DriveSpeech.forEvent(PadEvent("sent", name = "Holocene")))
+        assertNull(DriveSpeech.forEvent(PadEvent("sent", name = "Holocene"))) // the ack already said it
+        assertEquals("Sent to Holocene", DriveSpeech.forEvent(PadEvent("sent", name = "Holocene", reason = "retry")))
         assertEquals("Not sent. Saved, will retry.", DriveSpeech.forEvent(PadEvent("queued", name = "Holocene")))
         assertEquals("Not sent. Holocene can't be reached.", DriveSpeech.forEvent(PadEvent("rejected", name = "Holocene", reason = "422")))
         assertEquals("Not sent. The agent can't be reached.", DriveSpeech.forEvent(PadEvent("rejected", reason = "422")))
         assertEquals("Nothing heard, not sent.", DriveSpeech.forEvent(PadEvent("silent")))
         assertEquals("Recording. Stop first.", DriveSpeech.forEvent(PadEvent("refused", reason = "recording")))
         assertNull(DriveSpeech.forEvent(PadEvent("recording")))
-        assertNull(DriveSpeech.forEvent(PadEvent("stopped")))
+        assertEquals("Got it, sending.", DriveSpeech.forEvent(PadEvent("stopped")))
+        assertEquals("Got it, Holocene's on it.", DriveSpeech.forEvent(PadEvent("stopped", name = "Holocene")))
+    }
+
+    @Test fun heardEchoIsTheFirstEightWords() {
+        assertEquals("Grolf heard: please check the build on big chungus and", DriveSpeech.heardEcho("Grolf", "  please check the build on big chungus and tell me why it broke "))
+        assertEquals("Grolf heard: ship it", DriveSpeech.heardEcho("Grolf", "ship it,"))
+        assertEquals("Agent heard: hi", DriveSpeech.heardEcho("", "hi"))
+        assertNull(DriveSpeech.heardEcho("Grolf", "   "))
     }
 
     @Test fun tonesMarkStopAndOutcome() {
@@ -360,9 +369,9 @@ class EarconsTest {
 }
 
 class DriveSpeechPauseTest {
-    @Test fun autoStopIsAnnouncedAndPlainStopIsNot() {
-        assertEquals("Recording stopped. Sending.", DriveSpeech.forEvent(PadEvent("stopped", reason = "auto")))
-        assertNull(DriveSpeech.forEvent(PadEvent("stopped", name = "Holocene")))
+    @Test fun everyStopIsAckedAndAutoStopSaysSo() {
+        assertEquals("Recording stopped. Got it, sending.", DriveSpeech.forEvent(PadEvent("stopped", reason = "auto")))
+        assertEquals("Got it, Holocene's on it.", DriveSpeech.forEvent(PadEvent("stopped", name = "Holocene")))
         assertEquals(DriveSpeech.Tone.STOP, DriveSpeech.toneFor(PadEvent("stopped", reason = "auto")))
     }
 

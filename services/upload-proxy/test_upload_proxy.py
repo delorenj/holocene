@@ -631,3 +631,19 @@ class WheelKeyLines(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpeechDecisions(unittest.TestCase):
+    def test_a_decision_is_bounded_and_typed(self):
+        d = up.speech_decision({"action": "start", "kind": "reply", "id": "replies/x\n.ogg", "seq": 0, "reason": "waited_ms=3",
+                                "mic": "idle", "at": 1760000000000, "mono_ms": 12, "memo_id": "11111111-1111-5111-8111-111111111111"})
+        self.assertEqual(d["speech_action"], "start")
+        self.assertEqual(d["speech_id"], "replies/x .ogg")
+        self.assertEqual(d["device_at"], 1760000000000)
+        self.assertEqual(d["memo_id"], "11111111-1111-5111-8111-111111111111")
+
+    def test_junk_is_refused(self):
+        self.assertIsNone(up.speech_decision({"action": "explode"}))
+        self.assertIsNone(up.speech_decision("start"))
+        self.assertNotIn("memo_id", up.speech_decision({"action": "drop", "memo_id": "../etc"}))
+        self.assertNotIn("seq", up.speech_decision({"action": "drop", "seq": True}))

@@ -61,7 +61,9 @@ class MainActivity : Activity() {
     private lateinit var settings: DriveSettings
     private lateinit var inspector: KeyInspector
     private val controls = DriveControls()
-    private val feedback by lazy { DriveFeedback(this) }
+    // Every sound the app makes goes through this one queue (SpeechArbiter): wheel cues, the instant ack, the heard
+    // echo, progress narration and replies. Created in onCreate and shared with the pad.
+    private lateinit var voice: SpeechHost
     private var wheelSession: WheelSession? = null
     private var resumed = false
     private var lastWheelAt = 0L
@@ -91,7 +93,8 @@ class MainActivity : Activity() {
         // Debug builds only: a validated localhost dev-server origin from the launch intent, never persisted.
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val devUrl = AgentPadPolicy.devPadUrlOrNull(intent.getStringExtra(EXTRA_PAD_URL), debuggable)
-        pad = AgentPadHost(this, content, devUrl)
+        voice = SpeechHost(this)
+        pad = AgentPadHost(this, content, devUrl, voice)
         settings = DriveSettings(this)
         controls.mapping = settings.mapping
         inspector = KeyInspector(this).also {
@@ -100,6 +103,7 @@ class MainActivity : Activity() {
         }
         pad.onPadEvent = { ev -> onPadEvent(ev) }
         pad.beforeRecord = { name, go -> announceRecording(name, go) }
+        pad.echoAllowed = { speaking() }
         tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(11, 16, 32))
@@ -699,26 +703,39 @@ class MainActivity : Activity() {
             return
         }
         if (r.refusal == Refusal.RECORDING_LOCKED && speaking()) {
-            feedback.tone(DriveSpeech.Tone.ERROR) { feedback.say("Recording. Stop first.") }
+            // Never deferred: said after the note it would be nonsense, said during it, it would be in the memo.
+            voice.cue("cue:locked:${SystemClock.elapsedRealtime()}", SpeechKind.CUE,
+                listOf(SpeechPart.Tone(DriveSpeech.Tone.ERROR), SpeechPart.Say("Recording. Stop first.")), 2_000L, group = "locked", deferrable = false)
         }
     }
 
     private fun onPadEvent(ev: PadEvent) {
         controls.onPadEvent(ev.type)
         if (!speaking()) return
-        val tone = DriveSpeech.toneFor(ev)
-        val words = DriveSpeech.forEvent(ev)
-        when {
-            tone != null && words != null -> feedback.tone(tone) { feedback.say(words) }
-            tone != null -> feedback.tone(tone)
-            words != null -> feedback.say(words)
+        val parts = ArrayList<SpeechPart>()
+        DriveSpeech.toneFor(ev)?.let { parts += SpeechPart.Tone(it) }
+        DriveSpeech.forEvent(ev)?.let { parts += SpeechPart.Say(it) }
+        if (parts.isEmpty()) return
+        val id = "${ev.type}:${SystemClock.elapsedRealtime()}"
+        when (ev.type) {
+            // The instant ack: queued while the mic is still closing, said the moment it is closed (no server).
+            "stopped" -> voice.cue("ack:$id", SpeechKind.ACK, parts, SpeechArbiter.ACK_WAIT_MS)
+            "sent" -> voice.cue("ack:$id", SpeechKind.ACK, parts, SpeechArbiter.ACK_WAIT_MS)
+            // A newer selection replaces an older one that has not been said yet; a stale name is dropped.
+            "selected" -> voice.cue("cue:$id", SpeechKind.CUE, parts, SpeechArbiter.SELECT_WAIT_MS, group = "select")
+            // "Recording. Stop first." belongs to the moment; it is never said into or after the note.
+            "refused" -> voice.cue("cue:$id", SpeechKind.CUE, parts, 2_000L, group = "refused", deferrable = ev.reason != "recording")
+            else -> voice.cue("cue:$id", SpeechKind.CUE, parts, SpeechArbiter.CUE_WAIT_MS)
         }
     }
 
-    /** Say "Recording for X" and beep, then let the page open the mic: the announcement must not end up in the memo. */
+    /**
+     * Say "Recording for X" and beep, then let the page open the mic: the announcement must not end up in the memo.
+     * Either way the speech queue is held (anything playing stops) from now until the mic closes.
+     */
     private fun announceRecording(name: String, go: () -> Unit): Boolean {
-        if (!speaking()) return false
-        feedback.say(DriveSpeech.recordingStart(name)) { feedback.tone(DriveSpeech.Tone.START) { go() } }
+        val prompt = if (speaking()) listOf(SpeechPart.Say(DriveSpeech.recordingStart(name)), SpeechPart.Tone(DriveSpeech.Tone.START)) else null
+        voice.arm(prompt, go)
         return true
     }
 
@@ -827,7 +844,7 @@ class MainActivity : Activity() {
         pad.onResume()
         refreshPad()
         syncWheel()
-        if (carHost != null && settings.spokenFeedback) feedback.prepare()
+        if (carHost != null && settings.spokenFeedback) voice.feedback.prepare()
         // Permission prompts are "setup": ask once while parked so a first recording never needs one while driving.
         if (carHost != null && mode() == PadMode.PARKED && !askedMic && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             askedMic = true
@@ -838,7 +855,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         resumed = false
         syncWheel() // hands the media keys back to the radio
-        feedback.stop()
+        voice.dropFeedback()
         pad.interruptStart()
         // Leaving the screen (a wheel "Source" key opening the car's own UI, say) must not strand the lines just
         // pressed: send them now instead of waiting for a timer that onPause would cancel.
@@ -862,7 +879,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         wheelSession?.release()
-        feedback.shutdown()
+        voice.shutdown()
         inspector.shutdown()
         pad.destroy()
         session.cancel()

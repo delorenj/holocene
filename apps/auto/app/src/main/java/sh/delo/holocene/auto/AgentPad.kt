@@ -137,6 +137,8 @@ class AgentPadHost(
     private val container: FrameLayout,
     /** Debug-only validated dev-server origin from [AgentPadPolicy.devPadUrlOrNull]; null in release. */
     private val devUrl: String? = null,
+    /** The one speech queue of the app: replies, progress, echo and every cue go through it (see [SpeechArbiter]). */
+    private val speech: SpeechHost = SpeechHost(activity.applicationContext),
 ) {
     private var web: WebView? = null
     private var held: PermissionRequest? = null
@@ -154,9 +156,13 @@ class AgentPadHost(
      * `go` once it is safe to record; return false to start immediately.
      */
     var beforeRecord: ((name: String, go: () -> Unit) -> Boolean)? = null
+
+    /** Whether local TTS feedback (the heard echo) may speak right now; the host's spoken-feedback rule. */
+    var echoAllowed: () -> Boolean = { true }
     private val state = PadState()
-    private val player = ReplyPlayer(activity.applicationContext).also { p ->
-        p.onPhase = { id, phase, detail -> js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'$phase',${org.json.JSONObject.quote(detail)})") }
+    init {
+        speech.onReplyPhase = { id, phase, detail -> js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'$phase',${org.json.JSONObject.quote(detail)})") }
+        speech.onDecision = { json -> js("window.__hnSpeech&&window.__hnSpeech($json)") }
     }
     private val prefs = PadPrefs.forContext(activity)
     private val recorder = NativeRecorder(activity.applicationContext).also { rec ->
@@ -215,7 +221,7 @@ class AgentPadHost(
         announcing = false
         state.reset()
         recorder.cancel()
-        player.stop()
+        speech.reset()
         held?.let { try { it.deny() } catch (e: RuntimeException) { Log.i(TAG, "Held request already gone") } }
         held = null
         web?.let {
@@ -288,7 +294,7 @@ class AgentPadHost(
     private fun resolve(request: PermissionRequest, micGranted: Boolean, padAlive: Boolean = visible && web != null) {
         val ok = AgentPadPolicy.mayGrantAudio(request.origin.toString(), audioOnly(request), micGranted, padAlive, devUrl)
         try {
-            if (ok) { state.micLive = true; request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
+            if (ok) { state.micLive = true; speech.recordingStarted(); request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) } else request.deny()
         } catch (e: RuntimeException) { Log.i(TAG, "Permission request already resolved") }
     }
 
@@ -315,6 +321,7 @@ class AgentPadHost(
         if (!announcing) return
         announcing = false
         startToken++
+        speech.recordingEnded()
         js("window.__hnStarted && window.__hnStarted(false, 'interrupted')")
     }
 
@@ -322,6 +329,7 @@ class AgentPadHost(
         startToken++
         val err = recorder.start()
         state.micLive = err == null
+        if (err == null) speech.recordingStarted() else speech.recordingEnded()
         js("window.__hnStarted && window.__hnStarted(${err == null}, '${err ?: ""}')")
     }
 
@@ -336,9 +344,10 @@ class AgentPadHost(
                 if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                     val token = ++startToken
                     val go = { if (web != null && startToken == token) { announcing = false; startNative() } }
-                    // The announcement is spoken first so it is never recorded into the memo.
+                    // The announcement is spoken first so it is never recorded into the memo, and the speech queue is
+                    // held from here until the mic closes: nothing may play into a note.
                     announcing = true
-                    if (beforeRecord?.invoke(name, go) != true) go()
+                    if (beforeRecord?.invoke(name, go) != true) speech.arm(null, go)
                 } else if (driving) {
                     // A permission dialog is a setup flow: never while the car moves. It is asked once while parked.
                     announcing = false
@@ -363,12 +372,36 @@ class AgentPadHost(
             activity.runOnUiThread {
                 if (web == null) return@runOnUiThread
                 if (bytes == null || bytes.isEmpty()) js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'error','bad_audio')")
-                else player.play(id, bytes, ext)
+                else speech.reply(id, bytes, ext)
             }
         }
 
         @JavascriptInterface fun stopReply() {
-            activity.runOnUiThread { player.stop() }
+            activity.runOnUiThread { speech.stopReply(null) }
+        }
+
+        /** Speech queue protocol version; the page feature-detects the calls below with it. */
+        @JavascriptInterface fun speechVersion(): Int = 1
+
+        /** The transcript is back: "<Agent> heard: <first words>", once per memo, through the speech queue. */
+        @JavascriptInterface fun speechEcho(memoId: String, name: String, heard: String) {
+            if (!SpeechArbiter.validMemoId(memoId)) return
+            val text = DriveSpeech.heardEcho(name.take(60), heard.take(400)) ?: return
+            activity.runOnUiThread { if (web != null && echoAllowed()) speech.echo(memoId, text) }
+        }
+
+        /** A progress narration clip for an in-flight memo (newest wins, dropped once the memo has its reply). */
+        @JavascriptInterface fun speechProgress(memoId: String, seq: Int, b64: String, ext: String) {
+            if (!SpeechArbiter.validMemoId(memoId)) return
+            val bytes = try { Base64.decode(b64, Base64.DEFAULT) } catch (e: IllegalArgumentException) { null }
+            if (bytes == null || bytes.isEmpty()) return
+            activity.runOnUiThread { if (web != null) speech.progress(memoId, seq, bytes, ReplyFocus.ext(ext)) }
+        }
+
+        /** The memo has its reply (or failed): nothing more about its progress is said. */
+        @JavascriptInterface fun speechMemoFinal(memoId: String) {
+            if (!SpeechArbiter.validMemoId(memoId)) return
+            activity.runOnUiThread { speech.memoFinal(memoId) }
         }
 
         /** The layout and UX flags for this moment, as JSON; the page also receives later changes through __hnHost. */
@@ -391,13 +424,14 @@ class AgentPadHost(
 
         /** Fallback getUserMedia path: the page reports its stream closed so backgrounding stops reloading it. */
         @JavascriptInterface fun micClosed() {
-            activity.runOnUiThread { state.micLive = false }
+            activity.runOnUiThread { state.micLive = false; speech.recordingEnded() }
         }
     }
 
     private fun finishNative() {
         val bytes = recorder.stop()
         state.micLive = false
+        speech.recordingEnded()
         val b64 = if (bytes == null) "" else Base64.encodeToString(bytes, Base64.NO_WRAP)
         // Third argument: peak/rms in dBFS so the page can refuse a recording that heard nothing.
         val capture = recorder.lastSummary?.toJson() ?: "null"
