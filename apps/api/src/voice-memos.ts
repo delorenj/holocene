@@ -501,7 +501,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     }
   }
   if (status === "complete" && playedHop.status === "pending") {
-    playedHop.detail = "no playback report from the pad yet (it polls every 15 s; a parked car reports nothing)";
+    playedHop.detail = "no playback report from the pad yet (it polls every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)";
   }
   // Hops behind the frontier that never happened (not the optional first one) are holes in the record.
   for (const [i, hop] of hops.entries()) {

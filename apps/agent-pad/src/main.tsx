@@ -106,20 +106,26 @@ async function memoIdFor(key: string): Promise<string | null> {
 }
 
 type ListPage = { keys: string[]; next: string | null }
-// A request that hangs on a flaky car link must fail, so the next poll runs instead of waiting minutes for it.
-async function fetchWithin(url: string, ms: number): Promise<Response> {
+// A request that hangs on a flaky car link must fail, so the next poll runs instead of waiting minutes for it. The
+// deadline covers the body too: headers can arrive and the body then stall.
+async function fetchWithin<T>(url: string, ms: number, read: (r: Response) => Promise<T>): Promise<T> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), ms)
-  try { return await fetch(url, { signal: ctl.signal }) } finally { clearTimeout(timer) }
+  try {
+    const res = await fetch(url, { signal: ctl.signal })
+    if (!res.ok) throw new Error(`${res.status} ${url.split('?')[0]}`)
+    return await read(res)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function listPage(prefix: string, startAfter: string, token: string | null): Promise<ListPage> {
   let url = `${BUCKET_BASE}?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=1000`
   if (token) url += `&continuation-token=${encodeURIComponent(token)}`
   else if (startAfter) url += `&start-after=${encodeURIComponent(startAfter)}`
-  const res = await fetchWithin(url, 10000)
-  if (!res.ok) throw new Error(`LIST ${res.status}`)
-  const doc = new DOMParser().parseFromString(await res.text(), 'application/xml')
+  const text = await fetchWithin(url, 10000, (r) => r.text())
+  const doc = new DOMParser().parseFromString(text, 'application/xml')
   const keys = Array.from(doc.querySelectorAll('Contents > Key')).map((k) => k.textContent || '')
   const trunc = doc.querySelector('IsTruncated')?.textContent === 'true'
   return { keys, next: trunc ? doc.querySelector('NextContinuationToken')?.textContent || null : null }
@@ -158,9 +164,7 @@ async function putObject(key: string, blob: Blob, capture?: Capture): Promise<vo
 }
 
 async function getBlob(url: string): Promise<Blob> {
-  const res = await fetchWithin(url, 30000)
-  if (!res.ok) throw new Error(`GET ${url}: ${res.status}`)
-  return res.blob()
+  return fetchWithin(url, 30000, (r) => r.blob())
 }
 
 // ---- upload outbox (IndexedDB): a recording that could not be sent is KEPT and retried ----
@@ -408,6 +412,7 @@ function App() {
   const speak = useCallback((ev: SpeakEvent) => setSpeakingState((cur) => speakNext(cur, ev)), [])
   const lastSentAt = useRef(0) // last successful upload: replies are polled fast for a while after it
   const pollNow = useRef<() => void>(() => {})
+  const replyBytes = useRef(0) // size of the reply now playing: bounds how long it can legitimately play
   const noteSent = () => { lastSentAt.current = Date.now(); pollNow.current() }
 
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
@@ -446,6 +451,7 @@ function App() {
     playingKey.current = key // claim before any await so a second pump cannot start another reply
     try {
       const blob = await getBlob(`${BUCKET_BASE}/${key}`)
+      replyBytes.current = blob.size
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began while it downloaded
       setLastReply(key)
       const np = nativeReply()
@@ -489,13 +495,21 @@ function App() {
 
   // A player that never reports the end (native host died, focus lost with no event) must not hold the queue or
   // keep a tile saying a reply is playing.
+  // The limit is the reply's own length: from the element when it knows the duration, else bounded from its size
+  // (vox Ogg/Opus runs ~30 kbit/s; 12 kbit/s is a safe floor), plus a minute.
   useEffect(() => {
     if (!speaking) return
+    const el = audioRef.current
+    const known = el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration * 1000 : 0
+    const bySize = (replyBytes.current * 8) / 12000 * 1000
+    const limit = Math.max(known || bySize, 30000) + 60000
     const t = window.setTimeout(() => {
       if (playingKey.current !== speaking.key) return
+      try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
+      try { audioRef.current?.pause() } catch { /* nothing playing */ }
       speak({ t: 'watchdog' })
-      playFailed(speaking.key, 'play failed: no end reported in 3 min')
-    }, 180000)
+      playFailed(speaking.key, `play failed: no end reported in ${Math.round(limit / 1000)} s`)
+    }, limit)
     return () => window.clearTimeout(t)
   }, [speaking])
 
@@ -532,7 +546,7 @@ function App() {
     // The native player needs no autoplay unlock, and the silent clip would take (and keep) audio focus from the radio.
     if (nativeReply()) { unlockedRef.current = true; setSoundUnlocked(true); return }
     el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA='
-    el.play().then(() => { unlockedRef.current = true; setSoundUnlocked(true); setStatus('sound on') }, () => {})
+    el.play().then(() => { unlockedRef.current = true; setSoundUnlocked(true); setStatus('sound on'); pump.current() }, () => {})
   }, [])
 
   // Poll for replies newer than lastDone (across UTC midnight and any number of keys), queue the fresh ones in
@@ -966,7 +980,7 @@ function App() {
       {host.driving && (
         <div className="hero" data-phase={phase} style={{ ['--c' as string]: selected?.color ?? '#5a6275' }} aria-live="polite">
           <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
-          <div className="hstate">{speaking && !recording ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
+          <div className="hstate">{speaking && (phase === 'idle' || phase === 'sent') ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
           {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
         </div>
       )}
@@ -1114,8 +1128,9 @@ const CSS = `
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
 /* Driving is motion-free (.still): the replying agent's tile is filled with its colour instead of bouncing. */
-.drive .tile.speaking, .drive .tile.on.speaking { background:var(--c); border-color:#fff; }
-.drive .tile.speaking .name { color:#0b1020; }
+.drive .tile.speaking, .drive .tile.on.speaking { background:var(--c); border-color:#fff; opacity:1; }
+.drive .tile.speaking .name { color:#fff; text-shadow:0 1px 2px #000, 0 0 6px rgba(0,0,0,.85); }
+.drive .tile.speaking .swatch { box-shadow:0 0 0 4px #fff, 0 0 0 7px rgba(0,0,0,.55); }
 .drive .tile .swatch { width:clamp(64px,16vh,140px); height:clamp(64px,16vh,140px); font-size:clamp(30px,7vh,64px); }
 .drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
 .drive .bar { flex:1.25 1 0; min-height:0; }
