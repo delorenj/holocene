@@ -5,9 +5,11 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -86,8 +88,28 @@ class DriveFeedback(context: Context) {
             finished(id)
             return
         }
-        // A silent engine must never hold the recording start hostage.
-        main.postDelayed({ finished(id) }, SPEECH_MAX_MS)
+        // A silent engine must never hold the recording start hostage, and one still talking must never have the next
+        // sound started over it (SpeechTail.speechGuard).
+        val began = SystemClock.uptimeMillis()
+        val guard = object : Runnable {
+            override fun run() {
+                if (id !in callbacks) return
+                val elapsed = SystemClock.uptimeMillis() - began
+                val speaking = try { t.isSpeaking } catch (e: RuntimeException) { false }
+                when (SpeechTail.speechGuard(elapsed, speaking)) {
+                    SpeechTail.Guard.WAIT -> main.postDelayed(this, SpeechTail.SPEECH_RECHECK_MS)
+                    SpeechTail.Guard.DONE -> { Log.w(TAG, "no end reported after $elapsed ms, engine idle; going on"); finished(id) }
+                    SpeechTail.Guard.CUT -> {
+                        Log.w(TAG, "still speaking after $elapsed ms; cut")
+                        val cb = callbacks.remove(id)
+                        t.stop()
+                        releaseFocus()
+                        cb?.invoke()
+                    }
+                }
+            }
+        }
+        main.postDelayed(guard, SpeechTail.SPEECH_CHECK_MS)
     }
 
     private fun guard(then: () -> Unit) {
@@ -126,11 +148,28 @@ class DriveFeedback(context: Context) {
             requestFocus()
             t.play()
             track = t
-            main.postDelayed({
-                if (track === t) { t.release(); track = null }
-                releaseFocus()
-                then()
-            }, Earcons.durationMs(pcm) + 40)
+            // Over when its last frame reached the speaker, not when play() + its length has passed: the output path is
+            // ~0.3 s long, and the START tone used to sound into the first 0.2 s of the recording (SpeechTail).
+            val began = SystemClock.uptimeMillis()
+            val duration = Earcons.durationMs(pcm)
+            val stamp = AudioTimestamp()
+            var sawStamp = false
+            val check = object : Runnable {
+                override fun run() {
+                    val presented = try { if (t.getTimestamp(stamp)) stamp.framePosition else null } catch (e: RuntimeException) { null }
+                    if (presented != null) sawStamp = true
+                    val elapsed = SystemClock.uptimeMillis() - began
+                    if (!SpeechTail.toneDone(elapsed, duration, pcm.size, presented, sawStamp)) {
+                        main.postDelayed(this, SpeechTail.POLL_MS)
+                        return
+                    }
+                    Log.i(TAG, "tone ${tone.name} out after $elapsed ms (${duration} ms long, presented=${presented ?: "n/a"}/${pcm.size})")
+                    if (track === t) { t.release(); track = null }
+                    releaseFocus()
+                    then()
+                }
+            }
+            main.postDelayed(check, duration)
         } catch (e: Exception) {
             Log.w(TAG, "tone failed: ${e.javaClass.simpleName}")
             then()
@@ -175,7 +214,6 @@ class DriveFeedback(context: Context) {
 
     private companion object {
         const val TAG = "HoloceneWheel"
-        const val SPEECH_MAX_MS = 4000L
         const val INIT_MAX_MS = 2500L
     }
 }

@@ -145,7 +145,11 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     /** Stop what plays, say [prompt] (if any), then [ready]: the mic opens after the last sound ended. */
     fun arm(prompt: List<SpeechPart>?, ready: () -> Unit) {
         val id = "arm:${SystemClock.elapsedRealtime()}"
-        arbiter.arm(prompt?.let { Utterance(id, SpeechKind.ARMING, it) }, ready)
+        // Halting a sound does not unplay what is already in the output path (~0.3 s on the sim). A prompt covers that
+        // (its own speech starts later still); with no prompt the mic waits it out, so the cut sound is not in the note.
+        val drain = prompt == null && arbiter.current != null
+        val go: () -> Unit = if (drain) ({ main.postDelayed({ ready() }, SpeechTail.DRAIN_MS) }) else ready
+        arbiter.arm(prompt?.let { Utterance(id, SpeechKind.ARMING, it) }, go)
         // A prompt that never reports its end must not leave the queue frozen in "arming" forever.
         main.postDelayed({ if (arbiter.mic == SpeechArbiter.Mic.ARMING && (arbiter.current == null || arbiter.current?.id == id)) {
             Log.w(TAG, "arming never finished; releasing the queue")
