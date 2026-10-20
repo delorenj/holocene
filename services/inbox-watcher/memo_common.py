@@ -176,6 +176,33 @@ def truncated_by_old_watcher(m: dict) -> bool:
             and len(m["prompt"]) == 300 and m.get("resume_stage") in ("dispatch", "await_agent"))
 
 
+# ---------------------------------------------------------------- escalation + cancel (shared by the watcher and memo_trace)
+
+# lane_reason on a command the watcher re-dispatched on the batch lane after the interactive turn hit its wall clock.
+ESCALATED_REASON = "turn_timeout_escalated"
+# data.stage / data.error_code of the failed fact that ends a memo the operator cancelled (`memo:cancel`).
+CANCELLED = "cancelled"
+
+
+def memo_escalated(m: dict) -> bool:
+    """True while the memo's command in flight (or about to be published) is the batch re-dispatch that followed an
+    interactive turn timeout. A fresh command (memo:retry) clears lane_reason, so it is no longer an escalated one."""
+    return m.get("lane_reason") == ESCALATED_REASON
+
+
+def cancel_after_dispatch(m: dict) -> bool:
+    """Has this memo's command been (or may it have been) published? Then a cancel cannot undo it: the agent may still
+    run and only its reply is held back. Before that (stage receive/transcribe/dispatch with no publish attempted) a
+    cancel means nothing is ever sent."""
+    return bool(m.get("publish_attempted")) or m.get("stage") in ("await_agent", "reply", "speak")
+
+
+def rescue_open(m: dict) -> bool:
+    """A failed memo whose agent deadline passed but whose command the watcher still watches for a late reply."""
+    return bool(m.get("status") == "failed" and m.get("failed_stage") == "agent_reply" and m.get("failed_code") == "timeout"
+                and m.get("command_id") and not m.get("rescue_closed"))
+
+
 # ---------------------------------------------------------------- audio probe
 
 def probe_audio(path: Path) -> dict:

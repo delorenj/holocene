@@ -41,13 +41,14 @@ import tempfile
 import threading
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memo_common as mc_  # noqa: E402
 from memo_common import (  # noqa: E402
-    BB_EMIT, BUCKET, REPLIES_PREFIX, STATE_DIR, agent_from_key, iso, memo_id_for, now_utc,
-    resume_for, truncated_by_old_watcher,
+    BB_EMIT, BUCKET, CANCELLED, ESCALATED_REASON, REPLIES_PREFIX, STATE_DIR, agent_from_key, cancel_after_dispatch,
+    iso, memo_escalated, memo_id_for, now_utc, rescue_open, resume_for, truncated_by_old_watcher,
 )
 
 SERVICE = "inbox-watcher"
@@ -78,6 +79,11 @@ QUEUE_MAX_WAIT_S = int(os.environ.get("MEMO_QUEUE_MAX_WAIT_S", "3600"))
 # A memo that timed out may still finish later; keep watching its command this long and speak the
 # reply late rather than lose work the agent already did.
 RESCUE_WINDOW_S = int(os.environ.get("MEMO_RESCUE_WINDOW_S", "7200"))
+# An interactive turn the gateway stopped at its wall clock (turn_timeout) is not the end of the memo: the same prompt is
+# re-dispatched once on the BATCH lane, which has no wall clock. This is how long the watcher then waits for that turn.
+BATCH_TURN_TIMEOUT_S = int(os.environ.get("MEMO_BATCH_TURN_TIMEOUT_S", "7200"))
+# A reply older than the escalated command (minus this slack) is the stopped turn's partial output, never an answer.
+REPLY_FRESH_SLACK_S = 2.0
 # Floor for the transcribe timeout; the real timeout scales with the audio (see transcribe_timeout()).
 TRANSCRIBE_TIMEOUT_S = int(os.environ.get("MEMO_TRANSCRIBE_TIMEOUT_S", "420"))
 TRANSCRIBE_RATIO = float(os.environ.get("MEMO_TRANSCRIBE_RATIO", "8"))  # CPU large-v3 measured ~5x realtime
@@ -101,6 +107,9 @@ MAX_TRANSCRIPT_CHARS = int(os.environ.get("MEMO_MAX_TRANSCRIPT_CHARS", "200000")
 # and its last hop (detected / started / finished on the device) shows up in memo:trace. Empty turns it off.
 EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
+# The phone also gets the FULL reply text (not the 500-char spoken digest) as a sibling object of the audio, same key
+# with a .txt extension, uploaded first so it is already there when the audio arrives.
+EARSHOT_TEXT_TYPE = "text/plain; charset=utf-8"
 WAIT_LOG_EVERY_S = 30
 # How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
 # between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
@@ -493,7 +502,8 @@ class Watcher:
             m.pop("lane", None)             # a fresh command id may pick a fresh lane
             m.pop("lane_reason", None)
         if stage == "await_agent":
-            m["deadline_ts"] = time.time() + AGENT_TIMEOUT_S
+            # an escalated command is a batch turn: it is waited for as long as it was the first time
+            m["deadline_ts"] = time.time() + (BATCH_TURN_TIMEOUT_S if memo_escalated(m) else AGENT_TIMEOUT_S)
         if m.get("failed_code") == "object_changed" and m.get("observed_object"):
             # The operator asked for this memo again: take the object as it is now as the one to transcribe.
             obs = m.pop("observed_object")
@@ -501,40 +511,97 @@ class Watcher:
         if failed:
             m["attempts"].pop(failed, None)
             m.get("first_fail", {}).pop(failed, None)
-        for k in ("failed_stage", "failed_code", "resume_stage"):
+        for k in ("failed_stage", "failed_code", "resume_stage", "cancelled_ts", "cancelled_stage", "cancelled_after_dispatch"):
             m.pop(k, None)
         m.update(status="active", stage=stage, next_at=0.0)
         log("memo_revived", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage, why=why)
         self.s.save()
 
     def process_control(self) -> None:
-        """`memo:retry <memo>` drops a file here; the watcher owns state.json, so it does the reset."""
+        """`memo:retry <memo>` and `memo:cancel <memo>` drop a file here; the watcher owns state.json, so it does the
+        work. Files are taken in the order they were written, so a cancel followed by a retry means what it says."""
         cdir = STATE_DIR / "control"
         if not cdir.is_dir():
             return
-        for f in sorted(cdir.glob("retry-*")):
-            mid = f.name[len("retry-"):]
+        files = []
+        for f in cdir.iterdir():
+            if f.name.startswith(("retry-", "cancel-")):
+                try:
+                    files.append((f.stat().st_mtime_ns, f.name, f))
+                except OSError:
+                    continue  # taken by another reader between the listing and the stat
+        for _, name, f in sorted(files):
+            verb, _, mid = name.partition("-")
             m = next((x for x in self.s.memos.values() if x["memo_id"] == mid), None)
             try:
                 f.unlink()
             except OSError:
                 pass
-            if m is None:
-                log("retry_refused", "warn", memo_id=mid, reason="unknown memo")
-            elif m["key"] in self.running or m.get("status") == "active":
-                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo is {m.get('status')} at {m.get('stage')}, not failed")
-            elif m.get("status") not in ("failed", "skipped"):
-                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo status is {m.get('status')}")
-            elif m.get("agent") is None:
-                log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="no agent in the key path")
-            elif truncated_by_old_watcher(m):
-                # An old watcher cut this prompt to 300 characters, but the audio is still in the inbox:
-                # re-transcribe from it instead of refusing. The object and prompt-hash checks then apply normally.
-                for k in ("transcript", "prompt", "prompt_sha256"):
-                    m.pop(k, None)
-                self.revive(m, "transcribe", "memo:retry (re-transcribe: an old watcher cut the prompt)")
+            if verb == "cancel":
+                self._control_cancel(m, mid)
             else:
-                self.revive(m, resume_for(m), "memo:retry")
+                self._control_retry(m, mid)
+
+    def _control_retry(self, m: dict | None, mid: str) -> None:
+        if m is None:
+            log("retry_refused", "warn", memo_id=mid, reason="unknown memo")
+        elif m["key"] in self.running or m.get("status") == "active":
+            log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo is {m.get('status')} at {m.get('stage')}, not failed")
+        elif m.get("status") not in ("failed", "skipped", "cancelled"):
+            log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo status is {m.get('status')}")
+        elif m.get("agent") is None:
+            log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="no agent in the key path")
+        elif truncated_by_old_watcher(m):
+            # An old watcher cut this prompt to 300 characters, but the audio is still in the inbox:
+            # re-transcribe from it instead of refusing. The object and prompt-hash checks then apply normally.
+            for k in ("transcript", "prompt", "prompt_sha256"):
+                m.pop(k, None)
+            self.revive(m, "transcribe", "memo:retry (re-transcribe: an old watcher cut the prompt)")
+        else:
+            self.revive(m, resume_for(m), "memo:retry")
+
+    def _control_cancel(self, m: dict | None, mid: str) -> None:
+        if m is None:
+            log("cancel_refused", "warn", memo_id=mid, reason="unknown memo")
+        elif m.get("status") == "active" or rescue_open(m):
+            # active: stopped at once, wherever it is. A failed memo still watched for a late reply is cancelled too,
+            # so that late reply is never spoken.
+            self.cancel_memo(m)
+        else:
+            log("cancel_refused", "warn", memo_id=mid, key=m["key"],
+                reason=f"memo is {m.get('status')} at {m.get('stage')}: only a memo still in flight can be cancelled")
+
+    def cancel_memo(self, m: dict) -> None:
+        """End a memo the operator cancelled. Honest about what that can mean: before the command is published nothing
+        is ever sent; after it, the agent may still run, and the watcher only refuses to speak or mirror the reply.
+        Facts and state are written under the caller's lock; a worker mid-step sees the status and stops at its next
+        side effect (see _cancelled)."""
+        stage = m.get("stage")
+        after = cancel_after_dispatch(m)
+        m["cancelled_stage"], m["cancelled_after_dispatch"], m["cancelled_ts"] = stage, after, time.time()
+        m["resume_stage"] = resume_for({**m, "resume_stage": stage})  # `memo:retry` restarts where it stopped
+        m.update(status=CANCELLED, failed_stage=CANCELLED, failed_code=CANCELLED, next_at=0.0)
+        if after:
+            msg = (f"cancelled at {stage} by memo:cancel after the command was published: the agent may still run, "
+                   "its reply is not spoken")
+        elif memo_escalated(m):
+            msg = f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the batch command was not sent"
+        else:
+            msg = f"cancelled at {stage} by memo:cancel before the command was published: nothing was sent to the agent"
+        data = {"stage": CANCELLED, "error_code": CANCELLED, "error_message": msg, "retryable": False, "attempt": 1,
+                "after_dispatch": after}
+        if m.get("command_id") and after:
+            data["command_id"] = m["command_id"]
+        self.fact("failed", m, data)
+        log("memo_cancelled", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
+            after_dispatch=after, command_id=m.get("command_id") if after else None,
+            retry_with=f"mise run memo:retry {m['memo_id']}")
+        self.s.save()
+
+    @staticmethod
+    def _cancelled(m: dict) -> bool:
+        """Checked by worker steps (under the lock) before each side effect: a cancelled memo publishes nothing more."""
+        return m.get("status") == CANCELLED
 
     def rescue_late(self) -> None:
         """A memo that hit the agent deadline may still complete (the command stayed queued). Speak it late."""
@@ -542,8 +609,7 @@ class Watcher:
             return
         self.last_rescue = time.time()
         for m in list(self.s.memos.values()):
-            if (m.get("status") != "failed" or m.get("failed_stage") != "agent_reply" or m.get("failed_code") != "timeout"
-                    or not m.get("command_id") or m.get("rescue_closed") or m["key"] in self.running):
+            if not rescue_open(m) or m["key"] in self.running:
                 continue
             if time.time() - m.get("dispatched_ts", 0) > RESCUE_WINDOW_S:
                 m["rescue_closed"] = True
@@ -556,7 +622,14 @@ class Watcher:
                     waited_s=int(time.time() - m["dispatched_ts"]), note="agent finished after the deadline; replying late")
                 self.revive(m, "reply", "late completion")
             elif st["state"] == "failed":
-                m["rescue_closed"] = True
+                if st.get("code") == mc_.TURN_TIMEOUT and self.can_escalate(m):
+                    # The watcher gave up first (the command sat queued past its deadline), then the gateway ran it and
+                    # stopped it at its wall clock: still an interactive turn that timed out, so it escalates the same way.
+                    log("late_turn_timeout", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
+                        command_id=m["command_id"], note="the queued command ran after the deadline and hit the turn wall clock; escalating")
+                    self.revive(m, "await_agent", "late turn timeout: escalating to the batch lane")
+                else:
+                    m["rescue_closed"] = True
 
     # ---- step machinery --------------------------------------------------
 
@@ -619,10 +692,10 @@ class Watcher:
             step(m)
         except StageError as e:
             with self.mu:
-                self.on_error(m, e)
+                self._settle_error(m, e)
         except Exception as e:  # noqa: BLE001
             with self.mu:
-                self.on_error(m, StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True))
+                self._settle_error(m, StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True))
         finally:
             WAKE.set()  # a step ended: let the main loop pick up what it unblocked (first, so a failing save cannot skip it)
             with self.mu:
@@ -630,6 +703,14 @@ class Watcher:
                 m.pop("step_started_ts", None)
                 self.running.discard(m["key"])
                 self.s.save()
+
+    def _settle_error(self, m: dict, e: StageError) -> None:
+        if m.get("status") == CANCELLED:
+            # A worker step that was already running when the memo was cancelled: its failure is not the memo's outcome.
+            log("stage_failed_after_cancel", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
+                code=e.code, error=e.message[:300])
+            return
+        self.on_error(m, e)
 
     def on_error(self, m: dict, e: StageError) -> None:
         n = m["attempts"][e.stage] = m["attempts"].get(e.stage, 0) + 1
@@ -707,6 +788,9 @@ class Watcher:
                     m["observed_object"] = getattr(e, "observed", None)  # adopted if the operator retries
             raise
         with self.mu:
+            if self._cancelled(m):  # cancelled while Whisper ran: the transcript is dropped, no fact, nothing dispatched
+                log("step_dropped_after_cancel", "warn", memo_id=m["memo_id"], key=key, agent=agent, stage="transcribe")
+                return
             self._transcribe_apply(m, work)
 
     def _transcribe_work(self, key: str, mid: str, agent: str, timeouts: int, want: dict | None = None) -> dict:
@@ -850,7 +934,6 @@ class Watcher:
         return prompt
 
     def step_dispatch(self, m: dict) -> None:
-        import uuid
         with self.mu:
             self._prompt_for_send(m)  # before the lane probe (it sleeps): a memo with nothing to send is held at once
         # Pick the lane once per command id and keep it: the idempotency key, the envelope digest and the
@@ -874,6 +957,11 @@ class Watcher:
                              "which drains first when the gateway reconnects")
         lane = m["lane"]
         with self.mu:
+            if self._cancelled(m):
+                # Cancelled while the lane was being probed: this is the last point before the publish where nothing has
+                # left the building. (After publish_attempted is set below, a cancel is "after dispatch".)
+                log("step_dropped_after_cancel", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch")
+                return
             m.setdefault("command_id", str(uuid.uuid4()))
             cid = m["command_id"]
             # A crash between publish and bookkeeping must not double-dispatch: if the
@@ -891,11 +979,15 @@ class Watcher:
                 raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
             m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
             prompt = self._prompt_for_send(m)
+            escalated = memo_escalated(m)
+            context = {"memo_id": m["memo_id"], "memo_key": m["key"],
+                       "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"}
+            if escalated:
+                context["escalated_from_command_id"] = m.get("escalated_from_command_id")
             data = {
                 "target_agent_id": m["agent"], "prompt": prompt, "thread_id": m["thread_id"],
                 "turn_id": None,
-                "context": {"memo_id": m["memo_id"], "memo_key": m["key"],
-                            "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"},
+                "context": context,
             }
             cmd = [BB_EMIT, "--strict", "--print-ids", "--kind", "command",
                    "--type", mc_.LANE_COMMAND_TYPES[lane],
@@ -903,8 +995,11 @@ class Watcher:
                    "--actor-type", "service", "--actor-id", SERVICE,
                    "--correlation", m["memo_id"], "--command-id", cid,
                    "--ordering-key", f"turn:{m['thread_id']}"]
-            if m.get("last_fact_id"):
-                cmd += ["--causation", m["last_fact_id"]]
+            # An escalation is caused by the command that timed out (its envelope id when known); anything else by the
+            # last fact the watcher published for this memo.
+            cause = (m.get("escalation_causation") if escalated else None) or m.get("last_fact_id")
+            if cause:
+                cmd += ["--causation", cause]
             m["publish_attempted"] = True
             self.s.save()
             memo_id, key, agent = m["memo_id"], m["key"], m["agent"]
@@ -928,9 +1023,11 @@ class Watcher:
     def _mark_dispatched(self, m: dict, cid: str, ids: dict | None, ms: float, prompt_chars: int | None = None) -> None:
         ids = ids or {}
         prompt = m.get("prompt") or m.get("transcript", "")
+        escalated = memo_escalated(m)
         m["command_envelope_id"] = ids.get("id")
         m["dispatched_ts"] = time.time()
-        m["deadline_ts"] = m["dispatched_ts"] + AGENT_TIMEOUT_S
+        # An escalated command is a batch turn with no gateway wall clock: the watcher waits for it much longer.
+        m["deadline_ts"] = m["dispatched_ts"] + (BATCH_TURN_TIMEOUT_S if escalated else AGENT_TIMEOUT_S)
         m.pop("dropped_since", None)
         self.fact("dispatched", m, {
             "command_id": cid, "idempotency_key": ids.get("idempotency_key"),
@@ -938,7 +1035,13 @@ class Watcher:
             "lane": memo_lane(m), "lane_reason": m.get("lane_reason"),
             "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(prompt),
             "prompt_sha256": m.get("prompt_sha256") or hashlib.sha256(prompt.encode()).hexdigest(),
-            "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms)})
+            "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms),
+            **({"escalated_from_command_id": m.get("escalated_from_command_id")} if escalated else {})})
+        if self._cancelled(m):
+            # The operator cancelled while the publish was in flight: the command is out (the fact above says so), the
+            # memo stays cancelled and its reply will not be spoken.
+            log("dispatched_after_cancel", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], command_id=cid)
+            return
         self.done_stage(m, "dispatched", "await_agent", ms=ms, command_id=cid, target=m["agent"],
                         lane=memo_lane(m))
 
@@ -1003,16 +1106,51 @@ class Watcher:
             m["live"], m["live_ts"] = mc_.gateway_liveness(lane), time.time()
         return m["live"]
 
+    def can_escalate(self, m: dict) -> bool:
+        """An interactive turn the gateway stopped may be re-dispatched on the batch lane, once per memo. A batch turn
+        that times out (an envelope deadline), a memo that already escalated, and MEMO_BATCH_TURN_TIMEOUT_S=0 (the
+        off switch) all fail the memo as a turn timeout, as before."""
+        return BATCH_TURN_TIMEOUT_S > 0 and not m.get("escalated") and memo_lane(m) == "interactive"
+
+    def escalate(self, m: dict, st: dict, waited: float) -> None:
+        """The interactive turn hit the gateway's wall clock: send the SAME prompt once more on the batch lane.
+
+        The memo is not failed and nothing is said aloud. A fresh command id is persisted BEFORE the publish (step_dispatch
+        saves it ahead of bb-emit, and it is saved here too, so a crash cannot mint a second one); the thread id stays the
+        memo id, so the Hermes session keeps its context; the prompt is re-checked against its sha256 at send. The
+        `dispatched` fact that follows carries lane=batch, lane_reason=turn_timeout_escalated and
+        escalated_from_command_id."""
+        old = m["command_id"]
+        m["escalated"] = True
+        m["escalated_from_command_id"] = old
+        m["escalation_causation"] = m.get("command_envelope_id") or old  # the timed-out command is the cause
+        m["escalated_ts"] = time.time()
+        m["command_id"] = str(uuid.uuid4())
+        for k in ("publish_attempted", "command_envelope_id", "dropped_since", "last_wait_log"):
+            m.pop(k, None)
+        m["lane"], m["lane_reason"] = "batch", ESCALATED_REASON
+        self.s.save()
+        t = st.get("timeout") or {}
+        log("memo_escalated", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
+            from_command_id=old, command_id=m["command_id"], from_lane="interactive", lane="batch",
+            elapsed_s=t.get("elapsed_seconds"), timeout_s=t.get("timeout_seconds"), detail=st["detail"],
+            note="interactive turn hit the gateway wall clock; re-dispatching the same prompt on the batch lane (late reply)")
+        self.done_stage(m, "agent", "dispatch", ms=waited * 1000, command_id=old, outcome="turn_timeout_escalated")
+
     def step_await_agent(self, m: dict) -> None:
         st = self.agent_status(m)
         waited = time.time() - m["dispatched_ts"]
         if st["state"] == "done":
             m["profile"] = st.get("profile") or m["agent"]
             m["agent_seconds"] = round(waited, 2)
+            if memo_escalated(m):
+                m["late"] = True  # the answer to a long ask comes back on the batch lane: it is spoken as a late reply
             return self.done_stage(m, "agent", "reply", ms=waited * 1000, command_id=m["command_id"],
                                    source=st["source"], profile=m["profile"])
         if st["state"] == "failed":
             if st.get("code") == mc_.TURN_TIMEOUT:
+                if self.can_escalate(m):
+                    return self.escalate(m, st, waited)
                 # Not "agent failed": the agent was still working when the gateway ran out its per-turn
                 # wall clock and stopped it. Reported on the agent_reply stage (no reply will ever arrive).
                 t = st.get("timeout") or {}
@@ -1044,7 +1182,8 @@ class Watcher:
                 m.pop("dropped_since", None)
 
         if time.time() >= m["deadline_ts"]:
-            if waited < QUEUE_MAX_WAIT_S:
+            # An escalated batch turn already has its long deadline: it is not stretched further.
+            if waited < QUEUE_MAX_WAIT_S and not memo_escalated(m):
                 live = live or mc_.gateway_liveness(lane)
                 ahead = (live.get("num_pending") or 0) + (live.get("num_ack_pending") or 0)
                 if st["state"] == "running" or (st["state"] == "pending" and live.get("ok") and ahead > 0):
@@ -1077,6 +1216,13 @@ class Watcher:
             raise StageError("agent_reply", "no_reply_text",
                              f"turn completed but no assistant text in {m.get('profile')} session chat_id={m['thread_id']}"
                              f" ({'no session' if not found else 'session ' + found['session_id'] + ' has no assistant text'})")
+        ts = found.get("timestamp")
+        if memo_escalated(m) and isinstance(ts, (int, float)) and ts < m.get("dispatched_ts", 0) - REPLY_FRESH_SLACK_S:
+            # The escalated turn shares the stopped turn's thread id, so a batch turn that wrote no text leaves the
+            # stopped turn's partial output as the newest assistant message. That is not an answer: never speak it.
+            raise StageError("agent_reply", "no_reply_text",
+                             f"the batch turn completed but wrote no assistant text: the newest one in {m.get('profile')} session "
+                             f"chat_id={m['thread_id']} predates the escalated command (the stopped turn's partial output)")
         m["reply_text"] = found["text"]  # kept whole: compact() trims it to a preview once the memo is done
         m["session_id"] = found["session_id"]
         # Prove the agent was given exactly what we sent.
@@ -1095,6 +1241,7 @@ class Watcher:
         with self.mu:
             reply_text, agent, mid, key = m["reply_text"], m["agent"], m["memo_id"], m["key"]
             late = bool(m.get("late"))
+            escalated = memo_escalated(m)
             name = m.get("display_name") or mc_.spoken_name(agent)
             # One reply key per memo: a retry after a half-finished upload overwrites instead of
             # leaving a second object that the pad would play as a second reply.
@@ -1110,6 +1257,12 @@ class Watcher:
             tts_s = time.time() - t0
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken))
+            with self.mu:
+                if self._cancelled(m):
+                    # Cancelled while the voice was being made: nothing has been uploaded yet, so nothing is spoken.
+                    log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
+                        note="the reply is neither spoken nor mirrored")
+                    return
             rkey = f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}.ogg"
             t1 = time.time()
             # The phone copy goes up alongside the car's, not after it: it is the faster path to an ear.
@@ -1125,6 +1278,11 @@ class Watcher:
                     with self.mu:
                         m["earshot_key"] = want
                         self.s.save()
+                    twant = earshot_key_for(stamp, agent, mid, ext="txt")
+                    if not m.get("earshot_text_key") and earshot_exists(twant):  # it went up first, so it is there too
+                        with self.mu:
+                            m["earshot_text_key"] = twant
+                            self.s.save()
                 else:
                     with self.mu:
                         m["earshot_attempted"] = want
@@ -1135,8 +1293,16 @@ class Watcher:
                             with self.mu:
                                 m["earshot_key"] = f.result()
                                 self.s.save()
+
+                    def record_text(tkey, m=m):
+                        with self.mu:
+                            m["earshot_text_key"] = tkey
+                            self.s.save()
+                    # The full text goes up ahead of the audio, inside the mirror thread, so the phone already has it
+                    # when the audio shows up. Not again if an earlier attempt already left it there.
+                    text = None if m.get("earshot_text_key") else reply_text
                     mirror = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="earshot")
-                    mirrored = mirror.submit(mirror_to_earshot, audio, stamp, agent, mid, key)
+                    mirrored = mirror.submit(mirror_to_earshot, audio, stamp, agent, mid, key, text, record_text)
                     mirrored.add_done_callback(record)
             try:
                 r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
@@ -1160,6 +1326,11 @@ class Watcher:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         with self.mu:
+            if self._cancelled(m):
+                # The cancel landed while the uploads were running: the memo stays cancelled and says nothing more.
+                log("speak_cancelled", "warn", memo_id=mid, key=key, agent=agent, reply_key=rkey, earshot_key=ekey,
+                    note="cancelled while the reply was uploading; no replied fact")
+                return
             m["reply_key"] = rkey
             journey = time.time() - m.get("received_ts", m.get("detected_ts", time.time()))
             self.fact("replied", m, {
@@ -1168,7 +1339,8 @@ class Watcher:
                 "session_id": m.get("session_id"), "agent_seconds": m.get("agent_seconds"),
                 "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": VOICE,
                 "audio_bytes": stat["size"], "journey_seconds": round(journey, 2),
-                "prompt_match": m.get("prompt_match"), "late": late, "earshot_key": ekey})
+                "prompt_match": m.get("prompt_match"), "late": late, "escalated": escalated,
+                "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key")})
             m["status"] = "done"
             compact(m)
             self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
@@ -1177,11 +1349,11 @@ class Watcher:
 
 # ------------------------------------------------------------------ earshot mirror
 
-def earshot_key_for(stamp: datetime, agent: str, mid: str, channel: str = "") -> str:
+def earshot_key_for(stamp: datetime, agent: str, mid: str, channel: str = "", ext: str = "ogg") -> str:
     """The Earshot object for a memo's reply: dated like the reply, carrying agent and memo id so the device's
-    beacons for it join back to the memo."""
+    beacons for it join back to the memo. ext="txt" is its sibling holding the full reply text."""
     ch = channel or EARSHOT_CHANNEL
-    return f"{ch}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}{stamp.microsecond // 1000:03d}Z-{agent}-{mid}.ogg"
+    return f"{ch}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}{stamp.microsecond // 1000:03d}Z-{agent}-{mid}.{ext}"
 
 
 def earshot_exists(ekey: str) -> bool:
@@ -1191,11 +1363,43 @@ def earshot_exists(ekey: str) -> bool:
         return False
 
 
-def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: str) -> str | None:
-    """Drop the reply into the Earshot channel. Fail-open: the car's replies/ object is the reply of record, so a
-    mirror failure is logged and never fails the memo."""
+def upload_earshot_text(text: str, stamp: datetime, agent: str, mid: str, key: str) -> str | None:
+    """Drop the FULL reply text next to where its audio will land: same key, .txt, text/plain; charset=utf-8. Fail-open
+    like the audio mirror: the phone still gets the audio without it."""
+    tkey = earshot_key_for(stamp, agent, mid, ext="txt")
+    t0 = time.time()
+    try:
+        with tempfile.TemporaryDirectory(prefix="memo-etext-") as d:
+            f = Path(d) / "reply.txt"
+            f.write_text(text, encoding="utf-8")
+            # mc splits --attr on ";", so the value is quoted to keep "; charset=utf-8" in one piece
+            r = mc_.mc("cp", "--quiet", "--attr", f'Content-Type="{EARSHOT_TEXT_TYPE}"', str(f),
+                       f"{mc_.S3_ALIAS}/{EARSHOT_BUCKET}/{tkey}", timeout=60)
+    except Exception as e:  # noqa: BLE001 - fail-open
+        log("earshot_text_failed", memo_id=mid, key=key, earshot_key=tkey, error=str(e)[:200])
+        return None
+    if r.returncode != 0:
+        log("earshot_text_failed", memo_id=mid, key=key, earshot_key=tkey,
+            error=f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
+        return None
+    log("earshot_text_mirrored", memo_id=mid, key=key, earshot_key=tkey, chars=len(text), ms=int((time.time() - t0) * 1000))
+    return tkey
+
+
+def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: str,
+                      text: str | None = None, on_text=None) -> str | None:
+    """Drop the reply into the Earshot channel: the full text first (when given), then the audio. Fail-open: the car's
+    replies/ object is the reply of record, so a mirror failure is logged and never fails the memo. A text that
+    uploaded is reported through on_text(key) at once, so it is recorded even if the audio then fails."""
     if not EARSHOT_CHANNEL:
         return None
+    if text:
+        tkey = upload_earshot_text(text, stamp, agent, mid, key)
+        if tkey and on_text is not None:
+            try:
+                on_text(tkey)
+            except Exception as e:  # noqa: BLE001 - bookkeeping must not stop the audio
+                log("earshot_text_unrecorded", "warn", memo_id=mid, key=key, earshot_key=tkey, error=str(e)[:200])
     ekey = earshot_key_for(stamp, agent, mid)
     t0 = time.time()
     try:

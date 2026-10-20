@@ -3,11 +3,15 @@
 
   memo_trace.py trace [<memo_id>|<s3 key>|<file name>|latest] [--logs]
   memo_trace.py list  [-n 15]
-  memo_trace.py retry <memo_id|key>   revive a failed memo at the stage it died in
+  memo_trace.py retry <memo_id|key>   revive a failed, skipped or cancelled memo at the stage it stopped in
+  memo_trace.py cancel <memo_id|key|latest>   stop a memo: before dispatch nothing is sent; after it the agent may still
+                                              run, but its reply is not spoken
 
 Every hop reports OK / MISSING / FAILED / UNKNOWN with a timestamp and the
 latency since the previous hop, and the run ends with ONE verdict line:
-  STOPPED AT <hop>: <why>     or     COMPLETE in <N>s
+  STOPPED AT <hop>: <why>     or     COMPLETE in <N>s     or     CANCELLED before|after dispatch
+A memo whose interactive turn timed out and was re-dispatched on the batch lane shows both dispatches and both turns
+(the first turn's hops are marked superseded and never decide the verdict).
 
 Evidence sources (all read-only): S3 (mc), `docker logs agent-pad-upload`,
 Candystore /events?correlationid=<memo_id>, the gateway journal by command id,
@@ -39,8 +43,9 @@ def paint(status: str, text: str) -> str:
 
 
 class Hop:
-    def __init__(self, name, status, ts=None, detail="", optional=False):
+    def __init__(self, name, status, ts=None, detail="", optional=False, superseded=False):
         self.name, self.status, self.ts, self.detail, self.optional = name, status, ts, detail, optional
+        self.superseded = superseded  # a hop of an earlier turn that the memo moved past (escalated to the batch lane)
 
 
 # ------------------------------------------------------------------ evidence
@@ -172,11 +177,20 @@ def phone_time(b: dict):
     return c.parse_iso(b.get("ts")) or at
 
 
-def earshot_hops(ekey: str | None) -> list[Hop]:
+def earshot_hops(ekey: str | None, tkey: str | None = None) -> list[Hop]:
     if not ekey:
         return [Hop("phone_object", UNKNOWN, detail="no Earshot mirror recorded for this reply (MEMO_EARSHOT_CHANNEL off, "
                                                   "or the reply predates the mirror)", optional=True)]
     hops = []
+    # The full reply text goes up before the audio, so its hop comes first. Optional: the upload is fail-open.
+    if tkey:
+        ts_ = earshot_stat(tkey)
+        hops.append(Hop("phone_text", OK if ts_ else MISSING, ts_["last_modified"] if ts_ else None,
+                        f"s3://{EARSHOT_BUCKET}/{tkey}  {ts_['size']} bytes (the full reply text)" if ts_
+                        else f"s3://{EARSHOT_BUCKET}/{tkey} not in bucket", optional=not ts_))
+    else:
+        hops.append(Hop("phone_text", UNKNOWN, detail="no full-text sidecar recorded for this reply (it predates the sidecar, "
+                                                      "or its upload failed open)", optional=True))
     st = earshot_stat(ekey)
     hops.append(Hop("phone_object", OK if st else MISSING, st["last_modified"] if st else None,
                     f"s3://{EARSHOT_BUCKET}/{ekey}  {st['size']} bytes" if st else f"s3://{EARSHOT_BUCKET}/{ekey} not in bucket",
@@ -283,102 +297,136 @@ def build(key: str) -> tuple[list[Hop], dict]:
         hops.append(Hop("audio_level", FAILED if silent else OK, evt_ts(lvl_src),
                         f"{level_of(ld)}  -> {'SILENT: no sound reached the recording' if silent else 'audible'}"
                         + (f" | {dev}" if dev else ""), optional=True))
-    add_fact_hop("fact:dispatched", "dispatched",
-                 lambda d: f"command {d.get('command_id')} -> {d.get('command_subject')} "
-                           f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}"
-                           + (f" (fallback: {d.get('lane_reason')})" if d.get("lane_reason") else ""))
+    def describe_dispatch(d: dict) -> str:
+        base = (f"command {d.get('command_id')} -> {d.get('command_subject')} "
+                f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}")
+        if d.get("lane_reason") == c.ESCALATED_REASON:
+            return (base + f" ESCALATED: the interactive turn (command {d.get('escalated_from_command_id')}) hit the "
+                    "gateway's wall clock, so the same prompt was re-dispatched on the batch lane")
+        return base + (f" (fallback: {d.get('lane_reason')})" if d.get("lane_reason") else "")
 
-    disp = fact("dispatched")
-    command_id = (disp or {}).get("data", {}).get("command_id") or (rec or {}).get("command_id")
+    # 4/5/5b. one command's journal row, agent turn and (for the current one) what the agent was given
+    def turn_hops(command_id, disp, prior: int = 0):
+        """gateway_journal + agent:invocation.* (+ hermes_session) for ONE command. prior=N numbers an EARLIER turn of a
+        memo that was re-dispatched (escalated): its hops are history, named turnN:..., and never decide the verdict."""
+        start = len(hops)
+        row = None
+        lane = lane_of(disp, rec)
+        if not prior:
+            ctx["lane"] = lane
+        # 4. gateway journal (by command id, never 'latest')
+        if command_id:
+            try:
+                row = c.journal_row(command_id)
+            except Exception as e:  # noqa: BLE001
+                hops.append(Hop("gateway_journal", UNKNOWN, detail=str(e)[:140]))
+            else:
+                if row:
+                    bad = row["state"].startswith("rejected") or (row["state"] == "completed" and row.get("outcome") not in ("success", None))
+                    lane = lane_of(disp, rec, row)
+                    if not prior:
+                        ctx["lane"] = lane
+                    detail = (f"lane={row.get('lane') or lane} profile={row['profile']} state={row['state']} "
+                              f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}"
+                              + (f" failure_code={row['failure_code']}" if row.get("failure_code") else ""))
+                    if bad:
+                        detail += f" reason={c.terminal_error(row)}"
+                    hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
+                else:
+                    live = c.gateway_liveness(lane)
+                    detail = (f"gateway never created an execution row for {command_id} (lane={lane}); "
+                              f"{c.gateway_liveness_text(live, lane)}")
+                    if live.get("ok") and not live.get("num_pending") and not live.get("num_ack_pending"):
+                        detail += (f"  <- {lane} consumer is EMPTY: the gateway consumed this command and dropped it without a row "
+                                   "(unroutable target or bad envelope); see gateway_log below")
+                    hops.append(Hop("gateway_journal", MISSING, detail=detail))
+                    glines = c.gateway_log_lines([command_id, agent])
+                    if glines:
+                        hops.append(Hop("gateway_log", FAILED, detail=glines[-1][:300]))
+                    route = c.registry_route(agent) if agent else None
+                    if route and route["ok"] is False:
+                        hops.append(Hop("agent_route", FAILED, detail=route["reason"]))
+        else:
+            hops.append(Hop("gateway_journal", MISSING, detail="no command id yet (not dispatched)"))
+
+        # 5. agent turn
+        inv = [e for t in ("bloodbank.agent.invocation.started", "bloodbank.agent.invocation.completed", "bloodbank.agent.invocation.failed")
+               for e in by_type.get(t, []) if (e.get("data") or {}).get("command_id") == command_id]
+        inv.sort(key=lambda e: e["time"])
+        started = next((e for e in inv if e["type"].endswith(".started")), None)
+        done = next((e for e in inv if e["type"].endswith(".completed")), None)
+        failed = next((e for e in inv if e["type"].endswith(".failed")), None)
+        if started:
+            hops.append(Hop("agent:invocation.started", OK, evt_ts(started), f"producer={started.get('producer')}"))
+        else:
+            hops.append(Hop("agent:invocation.started", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
+                            detail="no bloodbank.agent.invocation.started for this command in Candystore"))
+        if failed:
+            d = failed.get("data") or {}
+            hops.append(Hop("agent:invocation.done", FAILED, evt_ts(failed),
+                            f"invocation.failed {d.get('error_code')}: {d.get('error_message')}"))
+        elif done:
+            hops.append(Hop("agent:invocation.done", OK, evt_ts(done), "invocation.completed"))
+        elif row and row["state"] == "completed" and row.get("outcome") == "success":
+            hops.append(Hop("agent:invocation.done", OK, c.parse_iso(row["updated_at"]), "journal completed/success (fact not in Candystore)"))
+        else:
+            hops.append(Hop("agent:invocation.done", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
+                            detail="no invocation.completed/failed for this command"))
+
+        # 5b. what the agent actually received (Hermes session, keyed by chat_id = memo_id)
+        if row and row["state"] == "completed" and not prior:
+            sent_chars = ((disp or {}).get("data") or {}).get("prompt_chars")
+            sent_hash = ((disp or {}).get("data") or {}).get("prompt_sha256")
+            try:
+                found = c.find_reply(row["profile"], ctx["memo_id"])
+            except Exception as e:  # noqa: BLE001
+                hops.append(Hop("hermes_session", UNKNOWN, detail=str(e)[:140], optional=True))
+            else:
+                got = (found or {}).get("prompt")
+                if got is None:
+                    hops.append(Hop("hermes_session", MISSING if found is None else UNKNOWN,
+                                    detail=f"no session with source=bloodbank chat_id={ctx['memo_id']} in profile {row['profile']}", optional=True))
+                else:
+                    import hashlib
+                    same_len = sent_chars is None or len(got.strip()) == int(sent_chars)
+                    same_hash = sent_hash is None or hashlib.sha256(got.strip().encode()).hexdigest() == sent_hash or hashlib.sha256(got.encode()).hexdigest() == sent_hash
+                    ok = same_len and same_hash
+                    hops.append(Hop("hermes_session", OK if ok else FAILED, c.parse_iso(row["created_at"]),
+                                    (f"agent was given exactly what the watcher sent ({len(got)} chars): {got[:90]!r}" if ok else
+                                     f"PROMPT MISMATCH: watcher sent {sent_chars} chars, the agent saw {len(got)}: {got[:120]!r}"), optional=ok))
+        if prior:
+            for h in hops[start:]:
+                h.name, h.superseded = f"turn{prior}:{h.name}", True
+
+    # 3b. dispatches. A memo whose interactive turn timed out is re-dispatched on the batch lane (or retried by hand):
+    # every dispatch gets its own hops, and the earlier ones are marked superseded.
+    disps = by_type.get("bloodbank.audio.memo.dispatched", [])
+    last_cmd = ((disps[-1].get("data") or {}).get("command_id") if disps else None)
+    rec_cmd = (rec or {}).get("command_id")
+    # the escalation is minted (new command id saved) but its dispatched fact has not landed yet
+    pending_esc = bool(rec and c.memo_escalated(rec) and rec_cmd and rec_cmd != last_cmd)
+    for i, ev in enumerate(disps if pending_esc else disps[:-1], 1):
+        d = ev.get("data") or {}
+        hops.append(Hop(f"fact:dispatched({i})", OK, evt_ts(ev), describe_dispatch(d), optional=True))
+        turn_hops(d.get("command_id"), ev, prior=i)
+    if pending_esc:
+        disp, command_id = None, rec_cmd
+        hops.append(Hop("fact:dispatched", MISSING,
+                        detail=f"escalating: the interactive turn timed out; batch command {rec_cmd} is not published yet"))
+    else:
+        add_fact_hop("fact:dispatched", "dispatched", describe_dispatch)
+        disp = fact("dispatched")
+        command_id = (disp or {}).get("data", {}).get("command_id") or rec_cmd
     ctx["command_id"] = command_id
-    lane = lane_of(disp, rec)
-    ctx["lane"] = lane
-
-    # 4. gateway journal (by command id, never 'latest')
-    row = None
-    if command_id:
-        try:
-            row = c.journal_row(command_id)
-        except Exception as e:  # noqa: BLE001
-            hops.append(Hop("gateway_journal", UNKNOWN, detail=str(e)[:140]))
-        else:
-            if row:
-                ok = row["state"] in ("completed",) and row.get("outcome") in ("success", None)
-                bad = row["state"].startswith("rejected") or (row["state"] == "completed" and row.get("outcome") not in ("success", None))
-                lane = lane_of(disp, rec, row)
-                ctx["lane"] = lane
-                detail = (f"lane={row.get('lane') or lane} profile={row['profile']} state={row['state']} "
-                          f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}"
-                          + (f" failure_code={row['failure_code']}" if row.get("failure_code") else ""))
-                if bad:
-                    detail += f" reason={c.terminal_error(row)}"
-                hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
-            else:
-                live = c.gateway_liveness(lane)
-                detail = (f"gateway never created an execution row for {command_id} (lane={lane}); "
-                          f"{c.gateway_liveness_text(live, lane)}")
-                if live.get("ok") and not live.get("num_pending") and not live.get("num_ack_pending"):
-                    detail += (f"  <- {lane} consumer is EMPTY: the gateway consumed this command and dropped it without a row "
-                               "(unroutable target or bad envelope); see gateway_log below")
-                hops.append(Hop("gateway_journal", MISSING, detail=detail))
-                glines = c.gateway_log_lines([command_id, agent])
-                if glines:
-                    hops.append(Hop("gateway_log", FAILED, detail=glines[-1][:300]))
-                route = c.registry_route(agent) if agent else None
-                if route and route["ok"] is False:
-                    hops.append(Hop("agent_route", FAILED, detail=route["reason"]))
-    else:
-        hops.append(Hop("gateway_journal", MISSING, detail="no command id yet (not dispatched)"))
-
-    # 5. agent turn
-    inv = [e for t in ("bloodbank.agent.invocation.started", "bloodbank.agent.invocation.completed", "bloodbank.agent.invocation.failed")
-           for e in by_type.get(t, []) if (e.get("data") or {}).get("command_id") == command_id]
-    inv.sort(key=lambda e: e["time"])
-    started = next((e for e in inv if e["type"].endswith(".started")), None)
-    done = next((e for e in inv if e["type"].endswith(".completed")), None)
-    failed = next((e for e in inv if e["type"].endswith(".failed")), None)
-    if started:
-        hops.append(Hop("agent:invocation.started", OK, evt_ts(started), f"producer={started.get('producer')}"))
-    else:
-        hops.append(Hop("agent:invocation.started", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
-                        detail="no bloodbank.agent.invocation.started for this command in Candystore"))
-    if failed:
-        d = failed.get("data") or {}
-        hops.append(Hop("agent:invocation.done", FAILED, evt_ts(failed),
-                        f"invocation.failed {d.get('error_code')}: {d.get('error_message')}"))
-    elif done:
-        hops.append(Hop("agent:invocation.done", OK, evt_ts(done), "invocation.completed"))
-    elif row and row["state"] == "completed" and row.get("outcome") == "success":
-        hops.append(Hop("agent:invocation.done", OK, c.parse_iso(row["updated_at"]), "journal completed/success (fact not in Candystore)"))
-    else:
-        hops.append(Hop("agent:invocation.done", MISSING if ctx["candystore"] == "ok" else UNKNOWN,
-                        detail="no invocation.completed/failed for this command"))
-
-    # 5b. what the agent actually received (Hermes session, keyed by chat_id = memo_id)
-    if row and row["state"] == "completed":
-        sent_chars = ((disp or {}).get("data") or {}).get("prompt_chars")
-        sent_hash = ((disp or {}).get("data") or {}).get("prompt_sha256")
-        try:
-            found = c.find_reply(row["profile"], ctx["memo_id"])
-        except Exception as e:  # noqa: BLE001
-            hops.append(Hop("hermes_session", UNKNOWN, detail=str(e)[:140], optional=True))
-        else:
-            got = (found or {}).get("prompt")
-            if got is None:
-                hops.append(Hop("hermes_session", MISSING if found is None else UNKNOWN,
-                                detail=f"no session with source=bloodbank chat_id={ctx['memo_id']} in profile {row['profile']}", optional=True))
-            else:
-                import hashlib
-                same_len = sent_chars is None or len(got.strip()) == int(sent_chars)
-                same_hash = sent_hash is None or hashlib.sha256(got.strip().encode()).hexdigest() == sent_hash or hashlib.sha256(got.encode()).hexdigest() == sent_hash
-                ok = same_len and same_hash
-                hops.append(Hop("hermes_session", OK if ok else FAILED, c.parse_iso(row["created_at"]),
-                                (f"agent was given exactly what the watcher sent ({len(got)} chars): {got[:90]!r}" if ok else
-                                 f"PROMPT MISMATCH: watcher sent {sent_chars} chars, the agent saw {len(got)}: {got[:120]!r}"), optional=ok))
+    ctx["escalated_from"] = ((disp or {}).get("data") or {}).get("escalated_from_command_id") or (
+        (rec or {}).get("escalated_from_command_id") if c.memo_escalated(rec or {}) else None)
+    turn_hops(command_id, disp)
 
     # 6. reply
     add_fact_hop("fact:replied", "replied",
-                 lambda d: f"{d.get('reply_chars')} chars, tts {d.get('tts_seconds')}s ({d.get('tts_engine')}) -> {d.get('reply_s3_key')}")
+                 lambda d: f"{d.get('reply_chars')} chars, tts {d.get('tts_seconds')}s ({d.get('tts_engine')}) -> {d.get('reply_s3_key')}"
+                           + (", spoken as a late reply" if d.get("late") else "")
+                           + (" (after escalating to the batch lane)" if d.get("escalated") else ""))
     rep = fact("replied")
     reply_key = ((rep or {}).get("data") or {}).get("reply_s3_key") or (rec or {}).get("reply_key")
     ctx["reply_key"] = reply_key
@@ -410,12 +458,13 @@ def build(key: str) -> tuple[list[Hop], dict]:
         hops.append(Hop("played_on_pad", UNKNOWN,
                         detail="no playback report from the pad yet (it polls replies/ every 2 s for 10 min after a send, else 15 s; a parked car reports nothing)", optional=True))
 
-    # 7. the phone: the same reply mirrored into the Earshot channel, and the device's own beacons for it
+    # 7. the phone: the same reply mirrored into the Earshot channel (its full text first), and the device's own beacons for it
     ekey = ((rep or {}).get("data") or {}).get("earshot_key") or (rec or {}).get("earshot_key")
-    ctx["earshot_key"] = ekey
+    tkey = ((rep or {}).get("data") or {}).get("earshot_text_key") or (rec or {}).get("earshot_text_key")
+    ctx["earshot_key"], ctx["earshot_text_key"] = ekey, tkey
     if reply_key:
         try:
-            hops.extend(earshot_hops(ekey))
+            hops.extend(earshot_hops(ekey, tkey))
         except Exception as e:  # noqa: BLE001
             hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
 
@@ -423,7 +472,8 @@ def build(key: str) -> tuple[list[Hop], dict]:
     for ev in by_type.get("bloodbank.audio.memo.failed", []):
         d = ev.get("data") or {}
         hops.append(Hop(f"fact:failed[{d.get('stage')}]", FAILED, evt_ts(ev),
-                        f"{d.get('error_code')}: {str(d.get('error_message'))[:200]} (retryable={d.get('retryable')}, attempt={d.get('attempt')})",
+                        f"{d.get('error_code')}: {str(d.get('error_message'))[:200]} (retryable={d.get('retryable')}, attempt={d.get('attempt')}"
+                        + (f", after_dispatch={d.get('after_dispatch')}" if "after_dispatch" in d else "") + ")",
                         optional=bool(d.get("retryable"))))
     ctx["events"] = events
     return hops, ctx
@@ -458,6 +508,16 @@ def silent_verdict(h: Hop, hops: list[Hop]) -> str | None:
     return f"STOPPED AT transcribe: SILENT MICROPHONE - {msg}" + (f" [{dev}]" if dev else "")
 
 
+def cancel_verdict(h: Hop) -> str | None:
+    """`memo:cancel` ended this memo. Say whether anything had been sent: before dispatch nothing was; after it the agent
+    may still have run, and only its reply was held back."""
+    if h.name != f"fact:failed[{c.CANCELLED}]":
+        return None
+    if "after_dispatch=True" in h.detail:
+        return "CANCELLED after dispatch; reply not spoken"
+    return "CANCELLED before dispatch"
+
+
 def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     rec = ctx.get("watcher_record") or {}
     # a terminal failed fact (retryable=false) always wins
@@ -466,6 +526,10 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
     # all ("send anyway"): from there the watcher's facts decide. Any other terminal failure still always wins.
     superseded = lambda h: "silent_capture" in h.detail and up is not None and h.ts is not None and up.ts >= h.ts  # noqa: E731
     terminal = [h for h in hops if h.name.startswith("fact:failed") and not h.optional and not superseded(h)]
+    # A failure (a cancel, a held memo) that `memo:retry` later got past is history: the reply that went out after it decides.
+    spoken = next((h for h in hops if h.name == "fact:replied" and h.status == OK and h.ts), None)
+    if spoken:
+        terminal = [h for h in terminal if not (h.ts and h.ts < spoken.ts)]
     if not terminal:
         # the gateway's own invocation.failed can land before the watcher's memo.failed fact does
         timed = next((h for h in hops if h.name == "agent:invocation.done" and h.status == FAILED and timeout_verdict(h)), None)
@@ -473,6 +537,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
             return timeout_verdict(timed), False
     if terminal:
         h = terminal[-1]
+        if cancel_verdict(h):
+            return cancel_verdict(h), False
         if timeout_verdict(h):
             return timeout_verdict(h), False
         if silent_verdict(h, hops):
@@ -482,6 +548,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
             return f"STOPPED AT record: SILENT MICROPHONE - {msg} (the pad held the recording back; nothing was uploaded)", False
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
+        if h.superseded:
+            continue  # an earlier turn the memo moved past (escalated to the batch lane): history, not a stop
         if h.name.startswith("fact:failed"):
             continue  # a retryable failure is annotation; the stage hop it belongs to decides the verdict
         if h.optional and h.status != FAILED:
@@ -506,6 +574,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         pad = next((h for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None)
         tail = (f"; played on the pad {ctx.get('pad_age_s', (pad.ts - end.ts).total_seconds()):.1f}s after the reply was rendered"
                 if pad else "; playback on the pad not reported")
+        if ctx.get("escalated_from"):
+            tail = "; escalated to the batch lane after the interactive turn timed out (spoken as a late reply)" + tail
         phone = next((h for h in hops if h.name == "phone_started" and h.status == OK and h.ts), None)
         if phone:
             tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the reply was rendered "
@@ -540,6 +610,9 @@ def render(hops: list[Hop], ctx: dict) -> None:
     print(f"key      {ctx['key']}")
     print(f"agent    {ctx['agent']}")
     print(f"command  {ctx.get('command_id') or '-'}")
+    if ctx.get("escalated_from"):
+        print(f"escalated from {ctx['escalated_from']}: the interactive turn hit the gateway's wall clock; "
+              "the same prompt was re-dispatched on the batch lane")
     print(f"lane     {ctx.get('lane') or '-'}   queues: {c.gateway_lanes_text()}")
     print(f"query    curl -s '{c.CANDYSTORE_URL}/events?correlationid={ctx['memo_id']}&limit=100'")
     print()
@@ -553,7 +626,8 @@ def render(hops: list[Hop], ctx: dict) -> None:
             prev = h.ts
         tag = paint(h.status, f"{h.status:<7}")
         opt = " (optional)" if h.optional and h.status != OK else ""
-        print(f"  {tag} {h.name:<26} {ts:<25} {lat:<8} {h.detail}{opt}")
+        sup = " (superseded: the memo was re-dispatched)" if h.superseded and h.status != OK else ""
+        print(f"  {tag} {h.name:<26} {ts:<25} {lat:<8} {h.detail}{opt}{sup}")
 
 
 def resolve_key(arg: str) -> str:
@@ -601,15 +675,15 @@ def cmd_trace(args) -> int:
 
 
 def cmd_retry(args) -> int:
-    """Ask the running watcher to revive a failed/skipped memo at the stage it died in."""
+    """Ask the running watcher to revive a failed/skipped/cancelled memo at the stage it stopped in."""
     key = resolve_key(args.target)
     mid = c.memo_id_for(key)
     rec = watcher_record(key)
     if rec is None:
         print(f"watcher has no record of {key}; nothing to retry (re-record it, or restart the watcher after fixing S3)")
         return 1
-    if rec.get("status") not in ("failed", "skipped"):
-        print(f"memo is {rec.get('status')} at {rec.get('stage')}: only failed or skipped memos can be retried")
+    if rec.get("status") not in ("failed", "skipped", "cancelled"):
+        print(f"memo is {rec.get('status')} at {rec.get('stage')}: only failed, skipped or cancelled memos can be retried")
         return 1
     # The watcher's own resume rules (memo_common): a memo an old watcher cut to a 300-char prompt is revived at
     # transcribe (the audio is still in the inbox and is re-transcribed), everything else at resume_for. Print the
@@ -625,11 +699,50 @@ def cmd_retry(args) -> int:
     return 0
 
 
+def cmd_cancel(args) -> int:
+    """Ask the running watcher to cancel a memo that is still in flight (or failed but still watched for a late reply).
+
+    Before the command is published nothing is ever sent. After it the agent may still run: the watcher cannot recall a
+    published command, it only refuses to speak or mirror the reply. The same file mechanism as `retry`."""
+    key = resolve_key(args.target)
+    mid = c.memo_id_for(key)
+    rec = watcher_record(key)
+    if rec is None:
+        print(f"watcher has no record of {key}; nothing to cancel")
+        return 1
+    if rec.get("status") == c.CANCELLED:
+        print(f"memo {mid} is already cancelled (`mise run memo:retry {mid}` revives it)")
+        return 1
+    if rec.get("status") != "active" and not c.rescue_open(rec):
+        print(f"memo is {rec.get('status')} at {rec.get('stage')}: only a memo still in flight can be cancelled")
+        return 1
+    after = c.cancel_after_dispatch(rec)
+    ctl = c.STATE_DIR / "control"
+    ctl.mkdir(parents=True, exist_ok=True)
+    (ctl / f"cancel-{mid}").write_text("")
+    what = ("after dispatch: the command is already out, so the agent may still run, but its reply will not be spoken"
+            if after else "before dispatch: nothing will be sent to the agent")
+    print(f"cancel requested for {mid} ({what}); watch it with: mise run memo:trace {mid}")
+    return 0
+
+
+def terminal_failure(events: list[dict]) -> dict | None:
+    """The last non-retryable failed fact, unless a reply went out after it (a retry got past it)."""
+    last = None
+    for e in events:  # oldest first
+        if e["type"].endswith("memo.failed") and not (e.get("data") or {}).get("retryable"):
+            last = e
+        elif e["type"].endswith("audio.memo.replied"):
+            last = None
+    return last
+
+
 def furthest(events: list[dict], rec: dict | None) -> str:
     types = {e["type"].replace("bloodbank.", "") for e in events}
-    failed = [e for e in events if e["type"].endswith("memo.failed") and not (e.get("data") or {}).get("retryable")]
+    failed = terminal_failure(events)
     if failed:
-        return f"FAILED@{(failed[-1].get('data') or {}).get('stage')}"
+        stage = (failed.get("data") or {}).get("stage")
+        return "CANCELLED" if stage == c.CANCELLED else f"FAILED@{stage}"
     for t, label in (("audio.memo.played", "played on pad"), ("audio.memo.replied", "replied"), ("agent.invocation.completed", "agent done"),
                      ("agent.invocation.started", "agent running"), ("audio.memo.dispatched", "dispatched"),
                      ("audio.memo.transcribed", "transcribed"), ("audio.memo.received", "received"),
@@ -653,6 +766,8 @@ def cmd_list(args) -> int:
         rec = watcher_record(o["key"])
         disp = next((e for e in reversed(events) if e["type"].endswith("audio.memo.dispatched")), None)
         lane = lane_of(disp, rec) if (disp or (rec or {}).get("lane")) else "-"
+        if ((disp or {}).get("data") or {}).get("lane_reason") == c.ESCALATED_REASON:
+            lane = f"{lane} (esc.)"  # the interactive turn timed out; this is the batch re-dispatch
         print(f"{c.iso(o['last_modified'])[:19]:<21} {str(c.agent_from_key(o['key'])):<16} {mid[:8]:<10} {lane:<12} "
               f"{furthest(events, rec):<26} {o['key']}")
     return 0
@@ -666,6 +781,8 @@ def main() -> int:
     t.add_argument("--logs", action="store_true", help="always print the watcher's log lines for this memo")
     r = sub.add_parser("retry")
     r.add_argument("target")
+    x = sub.add_parser("cancel")
+    x.add_argument("target")
     l = sub.add_parser("list")
     l.add_argument("-n", type=int, default=15)
     args = ap.parse_args()
@@ -673,6 +790,8 @@ def main() -> int:
         return cmd_list(args)
     if args.cmd == "retry":
         return cmd_retry(args)
+    if args.cmd == "cancel":
+        return cmd_cancel(args)
     if args.cmd is None:
         args = ap.parse_args(["trace"])
     return cmd_trace(args)
