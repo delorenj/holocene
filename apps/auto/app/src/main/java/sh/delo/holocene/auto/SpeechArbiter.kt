@@ -9,7 +9,8 @@ package sh.delo.holocene.auto
  * - Nothing starts while a note is being armed or recorded; arming stops whatever is playing. The only thing that
  *   may play while arming is the arming prompt itself ("Recording for X" + the start tone), which ends before the
  *   mic opens.
- * - The next utterance is the highest [SpeechKind.rank], oldest first among equals.
+ * - The next utterance is the highest [SpeechKind.rank] (reply > cue > echo > progress > ack), oldest first among
+ *   equals.
  * - A playing reply is never cut by anything except a recording start (and an explicit stop).
  * - A reply for a memo makes that memo's progress and echo stale: queued ones are dropped and a playing progress
  *   clip for the same memo is cut.
@@ -24,9 +25,11 @@ package sh.delo.holocene.auto
 enum class SpeechKind(val rank: Int, val wire: String) {
     ARMING(100, "arming"),
     REPLY(40, "reply"),
+    // A cue answers something the driver just did (cancelled, not sent, the agent name on the wheel): it goes before
+    // narration the driver did not ask for, never before (or over) a reply.
+    CUE(35, "cue"),
     ECHO(30, "echo"),
     PROGRESS(20, "progress"),
-    CUE(15, "cue"),
     ACK(10, "ack"),
 }
 

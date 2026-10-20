@@ -158,6 +158,22 @@ class SpeechArbiterTest {
         assertEquals(listOf(r.id, "echo:$memo2", "progress:$memo2:1", "ack"), played)
     }
 
+    @Test fun aCueAnswersTheDriverBeforeNarrationButNeverBeforeAReply() {
+        a.recordingStarted()
+        a.offer(progress(memo2, 1))
+        a.offer(Utterance("cancelled", SpeechKind.CUE, say("Cancelled.")))
+        a.recordingEnded()
+        assertEquals("cancelled", audible)
+        end("cancelled")
+        val r = reply(memo1)
+        a.offer(r)
+        end("progress:$memo2:1")
+        a.offer(Utterance("sel", SpeechKind.CUE, say("Grolf")))
+        assertEquals(r.id, audible) // not cut
+        end(r.id)
+        assertEquals("sel", audible)
+    }
+
     @Test fun anAckThatCouldNotBeSaidInTimeIsDropped() {
         a.offer(reply(memo1))
         a.offer(ack())
