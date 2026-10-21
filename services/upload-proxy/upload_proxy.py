@@ -331,8 +331,8 @@ CLAIM_SETTLE_S = float(os.environ.get("CLAIM_SETTLE_S", "10"))
 CLAIM_STATE_FILE = os.environ.get("CLAIM_STATE_FILE", "")  # empty: memory only
 CLAIM_KEEP_S = 2 * 86400  # a claim this old is not read back (the car never plays a reply that old)
 CLAIM_MEMOS = 2000
-CLAIM_ACTIONS = {"car": ("hold", "start", "end"), "watcher": ("offer", "take")}
-CLAIM_FIELDS = ("owner", "car", "lease_until", "held_at", "started_at", "device", "offered_at", "phone_at", "touched")
+CLAIM_ACTIONS = {"car": ("hold", "start", "end", "release"), "watcher": ("offer", "take", "release")}
+CLAIM_FIELDS = ("owner", "car", "lease_until", "held_at", "started_at", "device", "offered_at", "phone_at", "released_at", "touched")
 
 
 class ReplyClaims:
@@ -401,6 +401,7 @@ class ReplyClaims:
         return {"memo_id": memo_id, "owner": st.get("owner"), "car": st.get("car"), "car_holds": left > 0,
                 "lease_left_s": round(max(0.0, left), 1), "held_ever": st.get("held_at") is not None,
                 "device": st.get("device"), "offered": st.get("offered_at") is not None,
+                "released": st.get("released_at") is not None,
                 "since_offer_s": round(now - st["offered_at"], 1) if st.get("offered_at") else None,
                 "settling_s": round(max(0.0, self.boot_at + self.settle_s - now), 1)}
 
@@ -429,6 +430,12 @@ class ReplyClaims:
             elif action == "end":
                 st["car"] = "ended"
                 st["started_at"] = st["started_at"] or now
+            elif action == "release":
+                # The car gives the reply up before it started it (playback failed, or it will not play it): the hold
+                # ends now, so the phone may take it at once instead of after the lease lapses. A reply the car started
+                # is not released: it was heard.
+                if st["car"] not in ("started", "ended"):
+                    st["car"], st["lease_until"], st["owner"] = None, None, None
             st["touched"] = now
             self._save()
             return {**self._view(memo_id, st, now), "ok": True}
@@ -451,6 +458,17 @@ class ReplyClaims:
             st = self._state(memo_id)
             if not st["offered_at"]:
                 st["offered_at"] = st["touched"] = now
+                self._save()
+            return {**self._view(memo_id, st, now), "ok": True}
+
+    def release(self, memo_id: str, now: float | None = None) -> dict:
+        """The watcher gives the phone's take back (the Earshot drop failed, so the phone has nothing to play): the car may
+        hold and start the reply again. Only the phone's take is released; a reply the car owns is left as it is."""
+        now = time.time() if now is None else now
+        with self._lock:
+            st = self._state(memo_id)
+            if st["owner"] == "phone":
+                st["owner"], st["phone_at"], st["released_at"], st["touched"] = None, None, now, now
                 self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
@@ -492,6 +510,13 @@ def claim_request(body, claims: "ReplyClaims" = None, presence: "Presence" = Non
         return 200, claims.car(memo_id, action, device)
     if action == "take":
         return 200, claims.take(memo_id)
+    if action == "release":
+        ans = claims.release(memo_id)
+        if parsed and ans.get("owner") is None:
+            # the car that left the reply to the phone listens for this: it plays the reply after all
+            (hub or PUSH).publish({"fact": "released", "memo_id": memo_id, "at": now_iso(), "reply_s3_key": reply_key,
+                                   **({"agent": parsed[1][:80]} if parsed[1] else {})})
+        return 200, ans
     ans = claims.offer(memo_id)
     key = body.get("key") if isinstance(body.get("key"), str) and KEY_RE.match(body.get("key")) else None
     device, host = memo_sender(memo_id, key, presence, lookup)

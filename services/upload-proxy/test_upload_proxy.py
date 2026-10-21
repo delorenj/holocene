@@ -1038,6 +1038,44 @@ class ReplyClaims(unittest.TestCase):
         self.assertEqual((code, ans["ok"], ans["owner"], ans["device"]), (200, True, "car", self.DEV))
         self.assertFalse(up.claim_request({"by": "watcher", "action": "take", "memo_id": PUSH_MEMO}, c)[1]["ok"])
 
+    def test_the_watcher_gives_the_phones_take_back_and_the_car_may_hold_the_reply_again(self):
+        # Finding 1: the phone took the reply, then its Earshot drop failed: nobody would ever play it.
+        c, hub = up.ReplyClaims(boot_at=0), up.PushHub()
+        c.offer(PUSH_MEMO, now=100)
+        self.assertTrue(c.take(PUSH_MEMO, now=112)["ok"])
+        self.assertFalse(c.car(PUSH_MEMO, "hold", self.DEV, now=113)["ok"], "the car gave way")
+        ans = c.release(PUSH_MEMO, now=120)
+        self.assertEqual((ans["ok"], ans["owner"], ans["released"]), (True, None, True))
+        self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=121)["ok"], "released: the car holds it again")
+        self.assertFalse(c.take(PUSH_MEMO, now=122)["ok"], "and its live hold keeps the phone out")
+        # a reply the car owns (started) is never released by the watcher
+        other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+        c.car(other, "start", self.DEV, now=100)
+        self.assertEqual(c.release(other, now=101)["owner"], "car")
+        self.assertEqual(c.view(other, now=101)["car"], "started")
+        # over HTTP: validated, answers, and tells the car (push) that the reply is its again
+        c2 = up.ReplyClaims(boot_at=0)
+        c2.take(PUSH_MEMO, now=1)
+        code, ans = up.claim_request({"by": "watcher", "action": "release", "reply_key": self.RKEY}, c2, hub=hub)
+        self.assertEqual((code, ans["ok"], ans["owner"]), (200, True, None))
+        [(_, _, ev)] = hub._ring
+        self.assertEqual((ev["fact"], ev["memo_id"], ev["reply_s3_key"]), ("released", PUSH_MEMO, self.RKEY))
+        self.assertEqual(up.claim_request({"by": "car", "action": "release", "memo_id": PUSH_MEMO}, c2)[0], 200)
+
+    def test_a_car_that_cannot_play_the_reply_releases_its_hold_and_the_phone_takes_it_at_once(self):
+        # Finding 3: the car held the reply, then playback failed before any audio: the phone must not wait out the lease.
+        c = up.ReplyClaims(boot_at=0, settle_s=0)
+        c.car(PUSH_MEMO, "hold", self.DEV, now=100)
+        self.assertFalse(c.take(PUSH_MEMO, now=105)["ok"], "a live hold keeps the phone out")
+        ans = c.car(PUSH_MEMO, "release", self.DEV, now=106)
+        self.assertEqual((ans["ok"], ans["car"], ans["car_holds"], ans["owner"], ans["held_ever"]), (True, None, False, None, True))
+        self.assertTrue(c.take(PUSH_MEMO, now=107)["ok"], "no lease left to wait for")
+        # a reply the car already started cannot be released: it was heard
+        other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+        c.car(other, "start", self.DEV, now=100)
+        self.assertEqual(c.car(other, "release", self.DEV, now=101)["car"], "started")
+        self.assertFalse(c.take(other, now=900)["ok"])
+
     def test_a_restart_forgets_nothing_a_take_or_a_start(self):
         # The review's double play: claims lived only in memory, so a restart let the phone take a reply the car was
         # speaking, or let a car that came back speak one the phone had already played.

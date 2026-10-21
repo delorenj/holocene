@@ -86,6 +86,24 @@ export const HOPS: readonly Spec[] = [
   { id: "played", label: "Played on car", budgetSeconds: 60, optional: true }
 ];
 
+/** The watcher's MEMO_EARSHOT_HOLD_MAX_S (300 s) plus a margin: how long a reply that is already up may wait for its replied fact. */
+export const REPLY_DECISION_BUDGET_SECONDS = 330;
+
+/** When the reply's first audio went up (voiced chunk 1), epoch ms: the car could start from here. */
+export function firstAudioUpMs(facts: readonly JourneyEvent[]): number | undefined {
+  const t = facts.filter((e) => e.type === "bloodbank.audio.memo.voiced").map((e) => ms(e.at)).filter((x): x is number => x !== undefined);
+  return t.length ? Math.min(...t) : undefined;
+}
+
+/** When the car really started speaking the reply (the pad's played fact, else its speech arbiter's start), epoch ms. */
+export function carStartedMs(facts: readonly JourneyEvent[]): number | undefined {
+  const t = facts.filter((e) =>
+    (e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")
+    || (e.type === "bloodbank.audio.memo.notified" && e.data.utterance === "reply" && (e.data.decision === "start" || e.data.decision === "started"))
+  ).map((e) => ms(e.at)).filter((x): x is number => x !== undefined);
+  return t.length ? Math.min(...t) : undefined;
+}
+
 /** The batch lane has no wall clock but queues behind ticket grooming, so the batch turn may wait a long time before it starts. */
 export const BATCH_START_BUDGET_SECONDS = 1800;
 /** Same as the watcher's MEMO_BATCH_TURN_TIMEOUT_S default: the watcher gives the batch turn this long. */
@@ -779,12 +797,27 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     status = "failed";
   } else {
     const waiting = hops[nextIdx];
-    const since = ms(lastHappened?.at);
+    let since = ms(lastHappened?.at);
+    let budget = waiting?.budgetSeconds ?? 0;
+    // The replied fact waits for the watcher's phone decision (a car that holds the reply keeps it for minutes), so it is
+    // the wrong clock for "is the reply rendered?": once the first audio is up (voiced chunk 1) the reply is rendered and
+    // the car can speak it. The wait is then counted from that audio, with the decision's own allowance, and a car that
+    // really started the reply (the pad's played fact, or its speech arbiter's start) is not waiting on anything.
+    let carHasIt = false;
+    if (waiting?.id === "replied") {
+      const audioUp = firstAudioUpMs(memoFacts);
+      if (audioUp !== undefined) {
+        since = Math.max(since ?? 0, audioUp);
+        budget += REPLY_DECISION_BUDGET_SECONDS;
+      }
+      carHasIt = carStartedMs(memoFacts) !== undefined;
+    }
     const waited = since !== undefined ? Math.max(0, (now - since) / 1000) : 0;
     status = "running";
     if (waiting) {
-      waiting.status = waited > waiting.budgetSeconds ? "stuck" : "waiting";
+      waiting.status = waited > budget && !carHasIt ? "stuck" : "waiting";
       waiting.waitedSeconds = waited;
+      if (carHasIt) waiting.detail = "the car is speaking this reply; the replied fact waits for the watcher's phone decision";
       if (waiting.failures.length) {
         const last = waiting.failures.at(-1)!;
         waiting.error = last;

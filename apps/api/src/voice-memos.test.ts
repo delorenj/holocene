@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMemoDetail, buildMemoSummaries, replyInfoOf, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
+import { buildMemoDetail, carStartedMs, firstAudioUpMs, buildMemoSummaries, replyInfoOf, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
 import { EventStore } from "./event-store.js";
 
 const MEMO = "d84f8cb5-ad88-5bc9-a573-cf2e297e1b4d";
@@ -676,4 +676,34 @@ test("an escalated memo keeps its first turn's progress as history and reports t
 test("progress of another command on the same correlation id is not this memo's", () => {
   const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), progressed(1, 60, "somebody else", "0b8a0c1e-0000-4000-8000-000000000000")], now(70))!;
   assert.deepEqual(d.progress, []);
+});
+
+// The replied fact waits for the watcher's phone decision (a car that holds the reply keeps it for minutes): the stuck
+// verdict counts from the first audio up, and a car that really started the reply is not waiting on anything.
+const voicedChunk = (n: number, of: number, s: number) => fact("audio.memo.voiced", s, { occurred_at: iso(s), chunk: n, chunks: of, chunk_s3_key: `replies/x-c0${n}of0${of}.opus`, reply_s3_key: "replies/x.ogg" });
+const notifiedReply = (s: number) => fact("audio.memo.notified", s, { occurred_at: iso(s), utterance: "reply", decision: "start" }, MEMO, "agent-pad-upload");
+
+test("a reply whose first audio is up is not stuck while its replied fact waits for the phone decision", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55)];
+  // no audio up: 61 s after the agent finished is the old verdict
+  const before = buildMemoDetail(MEMO, base, now(55 + 61))!;
+  assert.equal(before.status, "stuck");
+  assert.equal(before.stuckAt, "replied");
+  // chunk 1 went up at 70: counted from there, with the decision's allowance, not from the agent's finish
+  const audioUp = buildMemoDetail(MEMO, [...base, voicedChunk(1, 3, 70)], now(70 + 200))!;
+  assert.equal(audioUp.status, "running");
+  assert.equal(audioUp.hops.find((h) => h.id === "replied")!.status, "waiting");
+  const lost = buildMemoDetail(MEMO, [...base, voicedChunk(1, 3, 70)], now(70 + 60 + 331))!;
+  assert.equal(lost.status, "stuck");
+  assert.equal(lost.stuckAt, "replied");
+});
+
+test("a car that started the reply is not waiting on the replied fact", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55), voicedChunk(1, 3, 70), notifiedReply(72)];
+  const d = buildMemoDetail(MEMO, base, now(72 + 900))!;
+  assert.notEqual(d.status, "stuck");
+  assert.equal(d.hops.find((h) => h.id === "replied")!.status, "waiting");
+  assert.match(d.hops.find((h) => h.id === "replied")!.detail, /car is speaking/);
+  assert.equal(carStartedMs(base), T0 + 72 * 1000);
+  assert.equal(firstAudioUpMs(base), T0 + 70 * 1000);
 });

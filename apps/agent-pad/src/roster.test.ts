@@ -75,6 +75,15 @@ test('replies are polled fast while one is due, slowly otherwise', () => {
   assert.equal(replyPollMs(0, now, true), REPLY_POLL_IDLE_MS)
 })
 
+test('a memo still in flight keeps the fast poll past the ten-minute window: a long agent turn must not leave a live car on the 15 s idle poll', () => {
+  const now = 1_000_000_000
+  const old = now - REPLY_DUE_WINDOW_MS - 60_000
+  assert.equal(replyPollMs(old, now), REPLY_POLL_IDLE_MS)
+  assert.equal(replyPollMs(old, now, false, true), REPLY_POLL_FAST_MS)
+  assert.equal(replyPollMs(old, now, true, true), REPLY_POLL_PUSHED_MS)
+  assert.equal(replyPollMs(0, now, false, true), REPLY_POLL_FAST_MS, 'a pad that restarted with a memo in flight')
+})
+
 test('driving always shows the selected agent and the one replying', () => {
   const list = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => A(x))
   assert.deepEqual(driveTiles(list, 'g', 3, 'f').map((a) => a.id), ['a', 'f', 'g'])

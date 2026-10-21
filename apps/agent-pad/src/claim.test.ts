@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CLAIM_CONFIRM_MAX_MS, CLAIM_LEASE_MS, CLAIM_MARGIN_MS, CLAIM_RENEW_MS, claimAnswer, confirmDue, holdDue, noteClaim, startPlan, startVerdict } from './claim.ts'
+import { CLAIM_CONFIRM_MAX_MS, CLAIM_LEASE_MS, CLAIM_MARGIN_MS, CLAIM_RENEW_MS, claimAnswer, confirmDue, holdDue, noteClaim, phoneRecheckDue, phoneStillHas, startPlan, startVerdict, PHONE_RECHECK_EVERY_MS, PHONE_RECHECK_MAX_MS } from './claim.ts'
 
 const T = 1_000_000
 
@@ -59,4 +59,20 @@ test('an unanswered start made on a hold is re-sent for ten minutes', () => {
   assert.equal(confirmDue(T, T), true)
   assert.equal(confirmDue(T, T + CLAIM_CONFIRM_MAX_MS - 1), true)
   assert.equal(confirmDue(T, T + CLAIM_CONFIRM_MAX_MS), false)
+})
+
+test('a reply left to the phone is looked at again until the phone has really got it, then no more', () => {
+  assert.equal(phoneRecheckDue(T, 0, T + 1000), true)
+  assert.equal(phoneRecheckDue(T, T + 1000, T + 1000 + PHONE_RECHECK_EVERY_MS - 1), false, 'not more often than every few seconds')
+  assert.equal(phoneRecheckDue(T, T + 1000, T + 1000 + PHONE_RECHECK_EVERY_MS), true)
+  assert.equal(phoneRecheckDue(T, 0, T + PHONE_RECHECK_MAX_MS), false, 'the watcher gave up on the drop long before')
+})
+
+test('the proxy says whether the phone still has the reply: only a clear answer frees it', () => {
+  const memo = 'a1b2c3d4-0000-5000-8000-000000000001'
+  assert.equal(phoneStillHas(200, { memo_id: memo, owner: 'phone' }), 'phone')
+  assert.equal(phoneStillHas(200, { memo_id: memo, owner: null }), 'free', 'released by the watcher')
+  assert.equal(phoneStillHas(200, { memo_id: memo, owner: 'car' }), 'free')
+  assert.equal(phoneStillHas(502, { memo_id: memo, owner: null }), 'unknown', 'no answer is not a release')
+  assert.equal(phoneStillHas(200, null), 'unknown')
 })

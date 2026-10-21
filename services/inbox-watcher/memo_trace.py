@@ -184,6 +184,8 @@ EARSHOT_SKIPPED = {
     "car_live": "the car that sent the memo was connected and spoke the reply itself",
     "no_answer": ("the upload proxy could not be asked who speaks it for minutes: left to the car, which speaks a reply "
                   "only with the proxy's yes (look for the car's played hop)"),
+    "car_released": ("the phone took it, but its Earshot drop failed on every try, so the take was given back: the car may "
+                     "play it (look for the car's played hop)"),
 }
 EARSHOT_MIRRORED = {
     "no_car_claim": "no car claimed it within the grace window after its first audio was up (switched off, or out of reach)",
@@ -198,6 +200,8 @@ def earshot_hops(ekey: str | None, tkey: str | None = None, skipped: str | None 
     if not ekey and skipped:
         why = EARSHOT_SKIPPED.get(skipped, skipped)
         # no_answer: nobody knows whether the car spoke it, so the hop does not say OK
+        if skipped == "car_released":
+            return [Hop("phone_object", UNKNOWN, detail=f"not mirrored to the phone: {why}", optional=True)]
         return [Hop("phone_object", UNKNOWN if skipped == "no_answer" else OK, detail=f"not mirrored to the phone: {why} (a paired phone plays through the car's "
                                                "speakers: the same reply twice, or into a recording)", optional=True)]
     if not ekey:
@@ -341,9 +345,18 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     rel("first narration", min((h.ts for h in hops if "car:narrated#" in h.name and h.ts), default=None))
     rel("progress played", first_at(sp, "progress"))
     first_chunk = ctx.get("first_chunk_ts")
+    # The replied fact waits for the phone decision (a car that holds the reply keeps it for minutes), so it is neither
+    # when the audio was up nor when the car could start: the reply object's own LastModified is (the car's copy goes up
+    # before the decision begins), and the chunk announcements for a chunked reply. The fact is shown as the decision.
+    obj = next((h.ts for h in hops if h.name == "reply_object" and h.status == OK and h.ts), None)
     replied = next((h.ts for h in hops if h.name == "fact:replied" and h.status == OK and h.ts), None)
-    rel("first chunk up", first_chunk)
-    rel("reply up", replied)
+    reply_up = obj or replied
+    first_audio = first_chunk or reply_up
+    rel("first audio up", first_audio)
+    if first_chunk is not None:
+        rel("full reply up", reply_up)
+    if replied is not None and reply_up is not None and (replied - reply_up).total_seconds() > 2:
+        rel("phone decided", replied)
     played = first_at(sp, "reply") or next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK), None)
     rel("reply played", played)
     line = "since upload (server clock): " + " | ".join(bits) if bits else None
@@ -353,7 +366,8 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
         after = []
         # the car on the server's clock (its played beacon) like the agent's finish; the device clock only without one
         car = next((h.ts for h in hops if h.name == "played_on_pad" and h.status == OK and h.ts), None) or played
-        for label, ts in (("first chunk up", first_chunk), ("reply up", replied), ("car speaking", car)):
+        for label, ts in (("first audio up", first_audio), ("full reply up", reply_up if first_chunk is not None else None),
+                          ("car speaking", car)):
             if ts is not None:
                 after.append(f"{label} {(ts - done).total_seconds():+.1f}s")
         if after:

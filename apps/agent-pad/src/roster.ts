@@ -150,8 +150,11 @@ export const REPLY_DUE_WINDOW_MS = 10 * 60 * 1000
 // With the push channel live (/upload/events, see push.ts) a new reply or chunk arrives by push the moment it is up, so
 // the fast poll is only the safety net and can run slower. A stale or absent push channel keeps the 2 s cadence.
 export const REPLY_POLL_PUSHED_MS = 6000
-export function replyPollMs(lastSentAt: number, now: number, pushLive = false): number {
-  if (!(lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS)) return REPLY_POLL_IDLE_MS
+// A memo still in flight (its status object is not final yet) keeps the fast cadence however long the agent takes: the idle
+// 15 s poll was the slowest a live car looked for a reply it missed by push, longer than the watcher waited for a car to
+// claim it (the phone took such replies). The watcher's grace (MEMO_EARSHOT_CAR_GRACE_S) is at least the idle poll anyway.
+export function replyPollMs(lastSentAt: number, now: number, pushLive = false, owed = false): number {
+  if (!owed && !(lastSentAt > 0 && now - lastSentAt < REPLY_DUE_WINDOW_MS)) return REPLY_POLL_IDLE_MS
   return pushLive ? REPLY_POLL_PUSHED_MS : REPLY_POLL_FAST_MS
 }
 

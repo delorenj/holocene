@@ -2230,7 +2230,7 @@ class DecisionReviewFixes(MemoHarness, unittest.TestCase):
 
         def spy(*a, **k):
             r = real(*a, **k)
-            if a[0] == "cp" and "/replies/" in a[-1] and not fired:  # the car's copy is up: the operator cancels right now
+            if a[0] == "cp" and "/earshot/" in a[-1] and a[-1].endswith(".ogg") and not fired:  # the phone's audio is up: the operator cancels right now
                 fired.append(1)
                 with self.w.mu:
                     self.w.cancel_memo(m)
@@ -2346,6 +2346,7 @@ class TextSidecar(MemoHarness, unittest.TestCase):
         self.state.memos[key] = m
         n0 = len(mc_cps())
         self.w.step_speak(m)  # an earlier attempt left the text on the phone channel; the audio had failed
+        self.w.step_mirror(m)
         dst = [c["dst"] for c in mc_cps()[n0:] if "/earshot/" in c["dst"]]
         self.assertEqual([d.split("/earshot/")[1] for d in dst], [iw.earshot_key_for(stamp, "holocene-pm", mid)])
         self.assertEqual(self.of_type("replied", key)[-1]["earshot_text_key"], tkey)
@@ -3158,6 +3159,7 @@ class EarshotMirror(unittest.TestCase):
         try:
             with unittest.mock.patch.object(iw.mc_, "mc", side_effect=spy):
                 w.step_speak(m)
+                w.step_mirror(m)
         finally:
             EMITS.write_text(before)  # the Pipeline tests count every fact in this shared log
         self.assertEqual(m["earshot_key"], want)
@@ -3329,6 +3331,246 @@ class ChunkedSpeech(MemoHarness, unittest.TestCase):
         self.assertTrue(gone and all(g.endswith(".opus") for g in gone), gone)
         self.assertEqual([p for p in BUCKET_DIR.rglob("*") if m["memo_id"] in p.name], [])
         self.assertNotIn("earshot_key", m)  # the phone never got anything
+
+
+class PostV12Fixes(MemoHarness, unittest.TestCase):
+    """The phone decision as its own stage: a failed Earshot drop gives the phone's take back, a stop does not hang on a
+    held reply and the decision resumes after the restart, a held reply never blocks another memo's voice."""
+
+    def reply_ready(self, name, reply="A short reply."):
+        key, m = self.to_await(name)
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], reply, ts=time.time())
+        return key, m
+
+    @staticmethod
+    def proxy(script, seen):
+        def call(mid, body=None):
+            seen.append((mid, body))
+            return script(mid, body or {})
+        return call
+
+    def test_a_drop_that_fails_every_try_gives_the_phones_take_back_and_says_why(self):
+        key, m = self.reply_ready("v12-drop-fails")
+        seen = []
+        taken = {"phone": False}
+
+        def script(mid, body):
+            if body.get("action") == "take":
+                taken["phone"] = True
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            if body.get("action") == "release":
+                taken["phone"] = False
+                return {"ok": True, "owner": None}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car", "settling_s": 0}
+        drops = []
+
+        def failing(audio, stamp, agent, mid, k, text=None, on_text=None):
+            drops.append(1)
+            return None
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.01), \
+                unittest.mock.patch.object(iw, "EARSHOT_SETTLE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_DROP_BACKOFF_S", (0.01,)), \
+                unittest.mock.patch.object(iw, "mirror_to_earshot", side_effect=failing), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, seen)):
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(len(drops), iw.EARSHOT_DROP_TRIES, "retried within its budget, then given up")
+        self.assertFalse(taken["phone"], "the take was released: the car may play the reply")
+        actions = [b.get("action") for _, b in seen if b]
+        self.assertEqual(actions[-1], "release")
+        self.assertEqual(actions.count("release"), 1)
+        rel = [b for _, b in seen if b and b.get("action") == "release"][0]
+        self.assertEqual(rel["by"], "watcher")
+        self.assertEqual(rel["reply_key"], m["reply_key"])
+        replied = self.of_type("replied", key)[-1]
+        self.assertEqual((replied["earshot_key"], replied["earshot_skipped"], replied["earshot_reason"]),
+                         (None, "car_released", "drop_failed"))
+        self.assertNotIn("earshot_key", m)
+
+    def test_a_drop_that_lands_on_a_retry_keeps_the_take(self):
+        key, m = self.reply_ready("v12-drop-retry")
+        seen = []
+        tries = []
+        real = iw.mirror_to_earshot
+
+        def flaky(audio, stamp, agent, mid, k, text=None, on_text=None):
+            tries.append(1)
+            return None if len(tries) < 3 else real(audio, stamp, agent, mid, k, text, on_text)
+
+        def script(mid, body):
+            if body.get("action") == "take":
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car", "settling_s": 0}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.01), \
+                unittest.mock.patch.object(iw, "EARSHOT_SETTLE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_DROP_BACKOFF_S", (0.01,)), \
+                unittest.mock.patch.object(iw, "mirror_to_earshot", side_effect=flaky), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, seen)):
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(len(tries), 3)
+        self.assertNotIn("release", [b.get("action") for _, b in seen if b])
+        replied = self.of_type("replied", key)[-1]
+        self.assertTrue(replied["earshot_key"])
+        self.assertIsNone(replied["earshot_skipped"])
+
+    def test_a_drop_that_failed_here_but_landed_is_not_dropped_again(self):
+        key, m = self.reply_ready("v12-drop-landed")
+        seen = []
+        tries = []
+        real = iw.mirror_to_earshot
+
+        def lands_but_reports_failure(audio, stamp, agent, mid, k, text=None, on_text=None):
+            tries.append(1)
+            real(audio, stamp, agent, mid, k, text, on_text)  # mc committed, then the client timed out
+            return None
+
+        def script(mid, body):
+            if body.get("action") == "take":
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car", "settling_s": 0}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.01), \
+                unittest.mock.patch.object(iw, "EARSHOT_SETTLE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_DROP_BACKOFF_S", (0.01,)), \
+                unittest.mock.patch.object(iw, "mirror_to_earshot", side_effect=lands_but_reports_failure), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, seen)):
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(len(tries), 1, "one object on the phone channel: a second drop would play the reply twice")
+        self.assertNotIn("release", [b.get("action") for _, b in seen if b])
+        self.assertTrue(self.of_type("replied", key)[-1]["earshot_key"])
+
+    def test_a_proxy_that_cannot_take_the_release_fails_the_stage_and_it_is_retried(self):
+        key, m = self.reply_ready("v12-release-down")
+        released = []
+
+        def script(mid, body):
+            if body.get("action") == "take":
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            if body.get("action") == "release":
+                if len(released) < 1:
+                    released.append(1)
+                    raise OSError("proxy down")
+                released.append(2)
+                return {"ok": True, "owner": None}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car", "settling_s": 0}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.01), \
+                unittest.mock.patch.object(iw, "EARSHOT_SETTLE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_DROP_BACKOFF_S", (0.01,)), \
+                unittest.mock.patch.object(iw, "EARSHOT_RELEASE_BUDGET_S", 0.0), \
+                unittest.mock.patch.object(iw, "mirror_to_earshot", return_value=None), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, [])):
+            self.tick_until(lambda: m["status"] == "done", n=400)
+        self.assertEqual(released, [1, 2])
+        self.assertEqual(self.of_type("replied", key)[-1]["earshot_skipped"], "car_released")
+        self.assertEqual([f["error_code"] for f in self.of_type("failed", key)], ["earshot_release_failed"])
+
+    def test_a_stop_ends_a_held_decision_at_once_and_the_next_start_resumes_it(self):
+        key, m = self.reply_ready("v12-restart")
+        stage = {"holds": True}
+        seen = []
+
+        def script(mid, body):
+            if not stage["holds"]:
+                return {"car": "started", "owner": "car", "held_ever": True, "sender_host": "car"}
+            return {"car": "held", "car_holds": True, "held_ever": True, "owner": "car", "sender_host": "car"}
+        patches = [unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.05),
+                   unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, seen))]
+        for p in patches:
+            p.start()
+        try:
+            self.tick_until(lambda: m["stage"] == "mirror" and key in self.w.running)
+            up = dict(m["reply_up"])
+            time.sleep(0.3)
+            t0 = time.time()
+            iw.STOP = True
+            try:
+                while key in self.w.running and time.time() - t0 < 5:
+                    time.sleep(0.02)
+                took = time.time() - t0
+            finally:
+                iw.STOP = False
+            self.assertNotIn(key, self.w.running, "the decision honoured the stop")
+            self.assertLess(took, 2.0)
+            self.assertEqual(m["stage"], "mirror")
+            self.assertEqual(m["status"], "active")
+            self.assertEqual(self.of_type("replied", key), [], "no verdict was reached")
+            self.assertEqual(m["reply_up"], up, "everything the decision needs is in the record")
+            # the next start: a new watcher over the same state resumes the stage; the car has played it meanwhile
+            self.w.shutdown(wait=False)
+            state2 = iw.State(self.state.dir)
+            w2 = iw.Watcher(state2)
+            m2 = state2.memos[key]
+            self.assertEqual((m2["stage"], m2["reply_up"]), ("mirror", up))
+            stage["holds"] = False
+            for _ in range(100):
+                w2.tick(discover=False)
+                if m2["status"] == "done":
+                    break
+                time.sleep(0.05)
+            self.assertEqual(m2["status"], "done")
+            w2.shutdown(wait=False)
+        finally:
+            for p in patches:
+                p.stop()
+        replied = self.of_type("replied", key)[-1]
+        self.assertEqual((replied["earshot_skipped"], replied["earshot_reason"]), ("car_spoke", "car_started"))
+        self.assertEqual(replied["reply_up_at"], up["up_at"], "the clock of the decision did not restart")
+        self.assertGreaterEqual(replied["earshot_wait_seconds"], 0.3)
+
+    def test_a_held_reply_does_not_hold_up_the_next_memos_voice(self):
+        free = set()  # replies the car plays at once; every other one is held by a live car
+
+        def script(mid, body):
+            if mid not in free:
+                return {"car": "held", "car_holds": True, "held_ever": True, "owner": "car", "sender_host": "car"}
+            return {"car": "started", "owner": "car", "held_ever": True, "sender_host": "car"}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.05), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, [])):
+            memos = [self.reply_ready(f"v12-held-{i}", reply=f"Reply number {i}.") for i in range(4)]
+            self.tick_until(lambda: all(m["stage"] == "mirror" and k in self.w.running for k, m in memos[:3]), n=300)
+            # the speak pool has three workers: before the stage split, these three held replies sat on all of them
+            free.add(memos[3][1]["memo_id"])
+            try:
+                self.tick_until(lambda: memos[3][1]["status"] == "done", n=300)
+                self.assertTrue(all(m["stage"] == "mirror" and m["status"] == "active" for _, m in memos[:3]),
+                                [(m["stage"], m["status"]) for _, m in memos])
+                self.assertEqual(iw.car_stage(memos[0][1]), "replying")
+            finally:
+                free.update(m["memo_id"] for _, m in memos)  # the car lets go of the others: they finish
+            self.tick_until(lambda: all(m["status"] == "done" for _, m in memos), n=300)
+
+    def test_the_trace_times_the_first_audio_and_the_car_not_the_delayed_replied_fact(self):
+        import memo_trace as mt
+        t0 = mc_.parse_iso("2026-10-21T02:00:00Z")
+        at = lambda secs: t0 + __import__("datetime").timedelta(seconds=secs)
+        hops = [mt.Hop("fact:uploaded", mt.OK, at(0), ""), mt.Hop("agent:invocation.done", mt.OK, at(30), ""),
+                mt.Hop("reply_object", mt.OK, at(33), "replies/x"),                      # the car's copy: audio up at +33
+                mt.Hop("fact:replied", mt.OK, at(93), ""),                                # the phone decision took a minute
+                mt.Hop("played_on_pad", mt.OK, at(35), "")]                               # the car really started at +35
+        line = mt.timing_line({"speech": []}, hops)
+        self.assertIn("first audio up +33.0s", line)
+        self.assertIn("phone decided +93.0s", line)
+        self.assertNotIn("reply up +93", line)
+        self.assertIn("after the agent finished: first audio up +3.0s | car speaking +5.0s", line)
+        # a chunked reply: the first chunk is the first audio, the full file comes later
+        hops2 = hops[:2] + [mt.Hop("reply_object", mt.OK, at(40), ""), mt.Hop("fact:replied", mt.OK, at(41), ""),
+                            mt.Hop("played_on_pad", mt.OK, at(33), "")]
+        line2 = mt.timing_line({"speech": [], "first_chunk_ts": at(32)}, hops2)
+        self.assertIn("first audio up +32.0s | full reply up +40.0s", line2)
+        self.assertNotIn("phone decided", line2)
+
+    def test_the_grace_covers_the_pads_idle_poll(self):
+        # apps/agent-pad/src/roster.ts REPLY_POLL_IDLE_MS (15 s) is the slowest a live car looks for a reply it missed.
+        text = (Path(__file__).resolve().parents[2] / "apps/agent-pad/src/roster.ts").read_text()
+        idle_s = int(re.search(r"REPLY_POLL_IDLE_MS = (\d+)", text).group(1)) / 1000
+        self.assertGreaterEqual(float(os.environ.get("MEMO_EARSHOT_CAR_GRACE_S", iw.EARSHOT_CAR_GRACE_S)), idle_s + 3)
 
 
 if __name__ == "__main__":

@@ -154,17 +154,33 @@ off right after the agent finished heard it nowhere while the rule was "the car 
 car's push stream open for minutes). The upload proxy decides who, atomically (`POST /upload/claim`, `ReplyClaims` in
 `services/upload-proxy`):
 - **The car** (the pad page, host `car`) holds every reply it means to play as soon as it learns of it, renews the hold
-  every 5 s while the reply waits in its queue (behind a recording, another reply), and claims its start when it plays
-  it. A hold is a 20 s lease: a car that is switched off lets go within 20 s. Its playback beacon and its speech queue's
+  every 5 s while the reply waits in its queue (behind a recording, another reply) **and until its audio really starts**
+  (the host's `started`), and claims its **start at that moment**, not when the page hands the reply to the host. A
+  playback that fails before any audio **releases** the hold, so the phone may take the reply at once. A hold is a 20 s
+  lease: a car that is switched off lets go within 20 s. Its playback beacon and its speech queue's
   `start` also count as its start (a page from before claims).
 - **The watcher**, once the car's copy is up, offers the reply (a one-file reply is pushed to the car right then, as
   `offered`, so the car does not wait for the `replied` fact) and asks to take it for the phone. The take is refused
   while the car holds or has started the reply; it is granted when no car claimed it within `MEMO_EARSHOT_CAR_GRACE_S`
-  (12) of its first audio being up (chunk 1, or the one file), or when the car's lease lapsed. A live car that keeps
+  (20: the pad's 15 s idle poll plus a margin; it was 12, shorter than that poll, and a live car that missed a push
+  lost its reply to the phone) of its first audio being up (chunk 1, or the one file), or when the car's lease lapsed.
+  The pad now also keeps its fast reply poll for as long as a memo is in flight. A live car that keeps
   holding it is waited for, at most `MEMO_EARSHOT_HOLD_MAX_S` (300), then left to it.
-- **A granted take is final.** A car that comes back later (an ignition, a reconnect) is refused its hold and its start
-  and leaves the reply to the phone (the page logs nothing; the proxy logs the refused `claim`). The car is the one that
-  gives way because the pad page is deployed live, and Earshot plays whatever lands in its channel.
+- **A granted take is final, unless the drop fails.** A car that comes back later (an ignition, a reconnect) is refused
+  its hold and its start and leaves the reply to the phone (the page logs nothing; the proxy logs the refused `claim`).
+  The car is the one that gives way because the pad page is deployed live, and Earshot plays whatever lands in its
+  channel. But a reply the phone took and whose Earshot drop then fails would be heard nowhere: the watcher retries the
+  drop `MEMO_EARSHOT_DROP_TRIES` (4) times (backoff `MEMO_EARSHOT_DROP_BACKOFF_S` 2,5,10; an attempt that landed
+  despite an error is found by a stat, never dropped twice), and if it ultimately fails it **releases the take**
+  (`POST /upload/claim` `by: watcher, action: release`): the proxy pushes `released` to the cars, the pad that left the
+  reply to the phone plays it after all (it also looks every 5 s for 3 min), and the replied fact says
+  `earshot_skipped: car_released`, `earshot_reason: drop_failed` (log `earshot_released`; memo:trace shows an UNKNOWN
+  `phone_object` hop). A proxy that cannot take the release fails the stage (`earshot_release_failed`), which retries.
+- **The phone decision is its own stage, `mirror`** (after `speak`, which renders the voice and puts the car's copy up).
+  It runs on a pool of its own, so replies held by a car never queue another memo's voice behind them (the speak pool
+  has three workers), and everything it needs is in the memo record (`reply_up`: the moment the car could start, the
+  object key, the facts for the replied fact). On SIGTERM the decision loop ends within about a second
+  (`step_stopped`), the memo stays at `mirror`, and the next start resumes the same decision from the same clock.
 - The `replied` fact waits for the decision and records it: `earshot_skipped: car_spoke | car_holds | no_answer` (left
   out, a `phone_object` hop in memo:trace) or `earshot_key` (mirrored, with a `phone_decision` hop saying why), and
   `earshot_reason: car_started | car_holds | claim_failed` (left out) or `no_car_claim | car_let_go | browser_sender |
@@ -207,7 +223,9 @@ Why the old "car started 10-22 s after the reply was rendered" number was wrong:
 key's stamp, which the watcher takes BEFORE vox renders, so it contained the whole TTS time. Against the replied fact
 the car's real lag on 2026-10-19/20 was 0.9-8.4 s (median 2.6 s), the 2 s poll plus a listing, a download and the
 native prepare. memo:trace and /voice now measure the car from the first audio it could play (first chunk, else the
-replied fact) and add an "after the agent finished" line: first chunk up, reply up, car speaking.
+reply object's own time) and add an "after the agent finished" line: first audio up, full reply up, car speaking. The
+replied fact (which waits for the phone decision) is shown as "phone decided"; /voice counts a waiting replied hop from
+the first audio up with the decision's allowance, and not at all once the car has started the reply.
 
 One id ties it together: **memo_id**. It is the Bloodbank `correlationid` of
 every `audio.memo.*` fact, of the invocation command, and (inherited from the

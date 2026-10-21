@@ -225,7 +225,7 @@ def cancel_after_dispatch(m: dict) -> bool:
     (dispatched_ts survives a revive). Only a memo that never sent anything (stage receive/transcribe/dispatch, no
     publish attempted, no earlier dispatch) is cancelled with nothing sent."""
     return (bool(m.get("publish_attempted")) or bool(m.get("escalated")) or bool(m.get("dispatched_ts"))
-            or m.get("stage") in ("await_agent", "reply", "speak"))
+            or m.get("stage") in ("await_agent", "reply", "speak", "mirror"))
 
 
 def rescue_open(m: dict) -> bool:

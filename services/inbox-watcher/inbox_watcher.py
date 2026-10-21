@@ -127,8 +127,18 @@ EARSHOT_SKIP_CAR = os.environ.get("MEMO_EARSHOT_SKIP_CAR", "1") != "0"
 CLAIM_URL = os.environ.get("MEMO_PAD_CLAIM_URL", "https://agent-pad.delo.sh/upload/claim")
 CLAIM_TIMEOUT_S = float(os.environ.get("MEMO_PAD_CLAIM_TIMEOUT_S", "4"))
 # How long after the reply's first audio is up (chunk 1, or the one file) a car that never claimed it is waited for. A
-# live car claims it within about a second of the push; the poll behind a dead push stream is 2-15 s.
-EARSHOT_CAR_GRACE_S = float(os.environ.get("MEMO_EARSHOT_CAR_GRACE_S", "12"))
+# live car claims it within about a second of the push; the poll behind a dead or missed push is 2 s while a memo is in
+# flight (the pad keeps its fast poll for as long as one is) and at the slowest the pad's idle poll, 15 s
+# (apps/agent-pad/src/roster.ts REPLY_POLL_IDLE_MS), plus the listing and the hold's round trip. So the grace is the idle
+# poll plus a margin: a live car that missed a push still holds the reply before the phone may take it (12 s was shorter
+# than the idle poll, and such a car lost its reply to the phone). A car that is off costs the phone these seconds.
+EARSHOT_CAR_GRACE_S = float(os.environ.get("MEMO_EARSHOT_CAR_GRACE_S", "20"))
+# The Earshot drop is retried this many times (backoff EARSHOT_DROP_BACKOFF_S between tries) before the phone's take is
+# given back: a reply the phone took and that never landed in Earshot would be heard nowhere (the car is refused for good).
+EARSHOT_DROP_TRIES = int(os.environ.get("MEMO_EARSHOT_DROP_TRIES", "4"))
+EARSHOT_DROP_BACKOFF_S = tuple(float(x) for x in os.environ.get("MEMO_EARSHOT_DROP_BACKOFF_S", "2,5,10").split(",") if x.strip()) or (2.0,)
+# How long the release of the phone's take is tried (the proxy may be down as well) before the stage is retried.
+EARSHOT_RELEASE_BUDGET_S = float(os.environ.get("MEMO_EARSHOT_RELEASE_BUDGET_S", "30"))
 # A live car that holds the reply (it is recording, or another reply plays) is waited for this long, then left to it.
 EARSHOT_HOLD_MAX_S = float(os.environ.get("MEMO_EARSHOT_HOLD_MAX_S", "300"))
 EARSHOT_POLL_S = float(os.environ.get("MEMO_EARSHOT_POLL_S", "1"))
@@ -210,11 +220,18 @@ if _budget is not None:
 RESUME_STAGE = {"receive": "receive", "download": "transcribe", "transcribe": "transcribe", "dispatch": "dispatch",
                 "agent": "dispatch", "agent_reply": "reply", "tts": "speak", "reply_upload": "speak"}
 FAIL_STAGE = {"receive": "receive", "transcribe": "transcribe", "dispatch": "dispatch", "await_agent": "agent",
-              "reply": "agent_reply", "speak": "tts"}
-# run off the tick thread; speak has its own workers: it can wait minutes on a car that holds its reply (phone copy)
-SLOW_STAGES = {"transcribe": "transcribe", "dispatch": "io", "speak": "speak"}
+              "reply": "agent_reply", "speak": "tts", "mirror": "reply_upload"}
+# run off the tick thread. speak renders and uploads the car's copy (three workers); mirror is the phone decision that
+# follows: it can wait minutes on a car that holds its reply, and it must not sit on a speak worker (three held replies
+# would then queue the next memo's voice behind them), so it has a pool of its own, wide enough that holds never queue.
+SLOW_STAGES = {"transcribe": "transcribe", "dispatch": "io", "speak": "speak", "mirror": "decide"}
 
 STOP = False
+
+
+class WatcherStopping(Exception):
+    """The service was told to stop while a worker waited (the phone decision): the step ends where it is, the memo stays
+    at its stage with everything the next start needs in state.json, and the decision resumes there."""
 
 
 # ------------------------------------------------------------------ logging
@@ -323,6 +340,7 @@ def compact(m: dict) -> None:
                 m[k] = m[k][:n]
         m.pop("progress_full", None)  # the status object keeps the short line; the full one is in Candystore
         m.pop("voiced_keys", None)    # the chunk keys only matter while a cancel could still retract them
+        m.pop("reply_up", None)
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
 
@@ -505,7 +523,7 @@ def car_stage(m: dict) -> str:
         return "working" if m.get("escalated") else "heard"
     if stage == "await_agent":
         return "working"
-    if stage in ("reply", "speak"):
+    if stage in ("reply", "speak", "mirror"):
         return "replying"
     return "received"
 
@@ -577,6 +595,7 @@ class Watcher:
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
                       "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io"),
                       "speak": concurrent.futures.ThreadPoolExecutor(3, thread_name_prefix="speak"),
+                      "decide": concurrent.futures.ThreadPoolExecutor(32, thread_name_prefix="decide"),
                       # spoken progress renders on its own worker: a 2 s vox call never holds up a stage
                       "narrate": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="narrate")}
         self.last_rescue = 0.0
@@ -751,6 +770,8 @@ class Watcher:
 
     def revive(self, m: dict, stage: str, why: str) -> None:
         failed = m.get("failed_stage")
+        if stage == "speak":
+            m.pop("reply_up", None)  # a retry renders the voice again
         if stage in ("receive", "transcribe"):
             # A new prompt is a new ask: nothing of the old command, or of the escalation it went through, carries over.
             self.drop_command(m)
@@ -852,7 +873,7 @@ class Watcher:
         m["resume_stage"] = resume_for({**m, "resume_stage": stage})  # `memo:retry` restarts where it stopped
         m.update(status=CANCELLED, failed_stage=CANCELLED, failed_code=CANCELLED, next_at=0.0)
         m["failed_message"] = "cancelled by memo:cancel"
-        if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak"):
+        if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak", "mirror"):
             # after_dispatch stays true (the interactive command went out and ran); only the message is about the batch one
             msg = (f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the interactive command was "
                    "sent and may still be running, the batch command was not sent")
@@ -960,10 +981,13 @@ class Watcher:
     def _exec(self, m: dict, stage: str) -> None:
         step = {"receive": self.step_receive, "transcribe": self.step_transcribe,
                 "dispatch": self.step_dispatch, "await_agent": self.step_await_agent,
-                "reply": self.step_reply, "speak": self.step_speak}[stage]
+                "reply": self.step_reply, "speak": self.step_speak, "mirror": self.step_mirror}[stage]
         t0 = time.time()
         try:
             step(m)
+        except WatcherStopping:
+            log("step_stopped", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
+                note="the service is stopping: the memo stays at this stage and resumes there on the next start")
         except StageError as e:
             with self.mu:
                 self._settle_error(m, e)
@@ -1572,10 +1596,18 @@ class Watcher:
                 if field == "earshot_key":
                     m.pop("earshot_attempted", None)
         m.pop("voiced_keys", None)
+        m.pop("reply_up", None)
         self.s.save()
 
     def step_speak(self, m: dict) -> None:
+        """Render the reply and put the car's copy up (replies/...). The phone decision and the replied fact are the next
+        stage (step_mirror), on a worker of their own: a reply that waits for a car does not hold up the next voice."""
         with self.mu:
+            if m.get("reply_up"):
+                # An earlier attempt got the car's copy up and only the phone decision failed (or the service restarted
+                # between the two): nothing to render again.
+                self.done_stage(m, "tts", "mirror", ms=0, reply_key=m["reply_up"].get("rkey"), resumed=True)
+                return
             reply_text, agent, mid, key = m["reply_text"], m["agent"], m["memo_id"], m["key"]
             late = bool(m.get("late"))
             escalated = memo_escalated(m)
@@ -1618,10 +1650,6 @@ class Watcher:
                     return
             rkey = reply_key_for(stamp, agent, mid)
             t1 = time.time()
-            with self.mu:
-                # decided again on every attempt: the car may be gone by a retry
-                m.pop("earshot_skipped", None)
-                m.pop("earshot_reason", None)
             r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
             if r.returncode != 0:
                 raise StageError("reply_upload", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
@@ -1629,9 +1657,54 @@ class Watcher:
             if not stat:
                 raise StageError("reply_upload", "not_visible", f"uploaded {rkey} but mc stat cannot see it")
             journey = time.time() - m.get("received_ts", m.get("detected_ts", time.time()))
-            up_at, t_decide = iso(now_utc()), time.time()
-            ekey = self._phone_copy(m, audio, stamp, rkey, chunked=len(parts) > 1, t_up=(
-                m.get("voiced_first_ts") if len(parts) > 1 else None) or time.time())
+            t_up = time.time()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        with self.mu:
+            if self._cancelled(m):
+                # The cancel landed while the uploads were running: the memo stays cancelled and says nothing more.
+                log("speak_cancelled", "warn", memo_id=mid, key=key, agent=agent, reply_key=rkey, earshot_key=None,
+                    note="cancelled while the reply was uploading; no replied fact")
+                self.retract_reply(m, rkey, None)
+                return
+            m["reply_key"] = rkey
+            # Everything the phone decision and the replied fact need, persisted with the stage: the decision survives a
+            # restart (it resumes from `up_ts`, the moment the car could start), and its audio is fetched back from the
+            # car's copy only if the phone is to get one.
+            m["reply_up"] = {
+                "rkey": rkey, "up_at": iso(now_utc()), "up_ts": (m.get("voiced_first_ts") if len(parts) > 1 else None) or t_up,
+                "uploaded_ts": t_up, "audio_bytes": stat["size"], "tts_seconds": round(tts_s, 2), "tts_engine": engine,
+                "spoken_chars": len(spoken), "chunks": len(parts), "journey_seconds": round(journey, 2), "t_speak": t_speak,
+                "late": late, "escalated": escalated}
+            self.done_stage(m, "tts", "mirror", ms=(t_up - t1) * 1000, reply_key=rkey, journey_s=round(journey, 1))
+
+    def step_mirror(self, m: dict) -> None:
+        """Who speaks the reply, the car or the phone (the Earshot copy), then the replied fact. Resumable: a restart
+        mid-decision re-enters here with the same `reply_up`, and the decision picks up where the clock says it is."""
+        with self.mu:
+            up = m.get("reply_up")
+            agent, mid, key = m["agent"], m["memo_id"], m["key"]
+            if not up:
+                log("mirror_without_reply", "warn", memo_id=mid, key=key, agent=agent,
+                    note="no car copy recorded for this reply: rendering it again")
+                m["stage"], m["next_at"] = "speak", 0.0
+                self.s.save()
+                WAKE.set()
+                return
+            stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
+            # decided again on every attempt: the car may be gone by a retry
+            m.pop("earshot_skipped", None)
+            m.pop("earshot_reason", None)
+            rkey, late, escalated = up["rkey"], up["late"], up["escalated"]
+        tmp = Path(tempfile.mkdtemp(prefix="memo-mirror-"))
+        try:
+            def car_copy() -> Path:
+                out = tmp / "reply.ogg"
+                r = mc_.mc("cp", "--quiet", mc_.s3_url(rkey), str(out), timeout=60)
+                if r.returncode != 0 or not out.exists():
+                    raise RuntimeError(f"mc cp of the car's copy rc={r.returncode}: {r.stderr.strip()[-200:]}")
+                return out
+            ekey = self._phone_copy(m, car_copy, stamp, rkey, chunked=up["chunks"] > 1, t_up=up["up_ts"])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         with self.mu:
@@ -1641,43 +1714,45 @@ class Watcher:
                     note="cancelled while the reply was uploading; no replied fact")
                 self.retract_reply(m, rkey, ekey)
                 return
-            m["reply_key"] = rkey
+            parts_n = up["chunks"]
             self.fact("replied", m, {
                 "reply_s3_key": rkey, "reply_text": m["reply_text"], "reply_chars": len(m["reply_text"]),
-                "spoken_chars": len(spoken), "command_id": m.get("command_id"), "profile": m.get("profile"),
+                "spoken_chars": up["spoken_chars"], "command_id": m.get("command_id"), "profile": m.get("profile"),
                 "session_id": m.get("session_id"), "agent_seconds": m.get("agent_seconds"),
-                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": VOICE,
-                "audio_bytes": stat["size"], "journey_seconds": round(journey, 2),
+                "tts_seconds": up["tts_seconds"], "tts_engine": up["tts_engine"], "voice": VOICE,
+                "audio_bytes": up["audio_bytes"], "journey_seconds": up["journey_seconds"],
                 "prompt_match": m.get("prompt_match"), "late": late, "escalated": escalated,
                 "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
                 # why the phone copy was left out: car_spoke (the car that sent the memo started or finished it) |
                 # car_holds (it still held it, live, after MEMO_EARSHOT_HOLD_MAX_S) | no_answer (the upload proxy could
-                # not be asked for MEMO_EARSHOT_HOLD_MAX_S: left to the car); null when it was mirrored
+                # not be asked for MEMO_EARSHOT_HOLD_MAX_S: left to the car) | car_released (the phone took it, its
+                # Earshot drop failed on every try, and the take was given back so the car may play it); null when mirrored
                 "earshot_skipped": m.get("earshot_skipped"),
                 # why it went the way it did (phone_copy_decision): car_started | car_holds | claim_failed (left out) or
-                # no_car_claim | car_let_go | browser_sender | skip_off (mirrored)
+                # no_car_claim | car_let_go | browser_sender | skip_off (mirrored) | drop_failed (released)
                 "earshot_reason": m.get("earshot_reason"),
                 # the car's copy was up at reply_up_at; this fact waits for the phone decision (a car that holds it)
-                "reply_up_at": up_at, "earshot_wait_seconds": round(time.time() - t_decide, 2),
+                "reply_up_at": up["up_at"], "earshot_wait_seconds": round(time.time() - up["uploaded_ts"], 2),
                 # chunked speech: how many chunks the car could start from, and when the first and the last went up
                 # (seconds after the reply text was found); null for a reply spoken as one file
-                "reply_chunks": len(parts) if len(parts) > 1 else None,
-                "first_chunk_seconds": m.get("voiced_first_s") if len(parts) > 1 else None,
-                "last_chunk_seconds": m.get("voiced_last_s") if len(parts) > 1 else None,
-                "full_seconds": round(time.time() - t_speak, 2)})
+                "reply_chunks": parts_n if parts_n > 1 else None,
+                "first_chunk_seconds": m.get("voiced_first_s") if parts_n > 1 else None,
+                "last_chunk_seconds": m.get("voiced_last_s") if parts_n > 1 else None,
+                "full_seconds": round(time.time() - up["t_speak"], 2)})
             m["status"] = "done"
             compact(m)
-            self.done_stage(m, "replied", "done", ms=(time.time() - t1) * 1000, reply_key=rkey,
-                            journey_s=round(journey, 1))
+            self.done_stage(m, "replied", "done", ms=(time.time() - up["uploaded_ts"]) * 1000, reply_key=rkey,
+                            journey_s=round(up["journey_seconds"], 1))
 
-    # -- the phone copy (worker thread, inside step_speak) --
+    # -- the phone copy (worker thread, inside step_mirror) --
 
-    def _phone_copy(self, m: dict, audio: Path, stamp: datetime, rkey: str, chunked: bool, t_up: float) -> str | None:
+    def _phone_copy(self, m: dict, audio, stamp: datetime, rkey: str, chunked: bool, t_up: float) -> str | None:
         """The reply's Earshot phone copy, once per memo, after the car's copy is up: dropped unless the car that sent the
         memo speaks the reply itself (phone_copy_decision; it may wait out the car's grace window, its hold, or an upload
-        proxy that cannot be asked). The Earshot key, or None when it was left out (or the drop failed). Re-dropping the
-        same key would give it a new LastModified, and Earshot plays that again: an earlier attempt that landed
-        unrecorded is recorded instead."""
+        proxy that cannot be asked). `audio` fetches the car's copy (called only when the phone is to get one). The Earshot
+        key, or None when it was left out (or the drop failed for good: then the phone's take is given back to the car,
+        see release_phone). Re-dropping the same key would give it a new LastModified, and Earshot plays that again: an
+        earlier attempt that landed unrecorded is recorded instead. WatcherStopping: the service is stopping."""
         with self.mu:
             agent, mid, key, ekey = m["agent"], m["memo_id"], m["key"], m.get("earshot_key")
             reply_text = m["reply_text"]
@@ -1702,6 +1777,8 @@ class Watcher:
             with self.mu:
                 return self._cancelled(m)
         skip, why = phone_copy_decision(mid, key, rkey, t_up, chunked, cancelled)
+        if skip == "stopped":
+            raise WatcherStopping()
         with self.mu:
             m["earshot_reason"] = why
             if skip:
@@ -1715,14 +1792,79 @@ class Watcher:
             with self.mu:
                 m["earshot_text_key"] = tkey
                 self.s.save()
-        # The full text goes up ahead of the audio, so the phone already has it when the audio shows up. Not again if
-        # an earlier attempt already left it there.
-        ekey = mirror_to_earshot(audio, stamp, agent, mid, key, None if m.get("earshot_text_key") else reply_text, record_text)
+        ekey, tries = None, 0
+        try:
+            path = audio() if callable(audio) else audio
+        except Exception as e:  # noqa: BLE001 - the car's copy could not be fetched back: counts as a failed drop
+            log("earshot_audio_unavailable", "warn", memo_id=mid, key=key, error=str(e)[:200])
+            path = None
+        while path is not None and tries < max(1, EARSHOT_DROP_TRIES):
+            if tries:
+                # An attempt that failed on our side may still have landed (mc timed out after the commit): a second
+                # drop would give the key a new LastModified and the phone would play the reply twice.
+                if earshot_exists(want):
+                    ekey = want
+                    break
+                delay = EARSHOT_DROP_BACKOFF_S[min(tries - 1, len(EARSHOT_DROP_BACKOFF_S) - 1)]
+                log("earshot_drop_retry", "warn", memo_id=mid, key=key, attempt=tries + 1, of=EARSHOT_DROP_TRIES, in_s=delay)
+                if not self._pause(delay, cancelled):
+                    break
+            tries += 1
+            # The full text goes up ahead of the audio, so the phone already has it when the audio shows up. Not again
+            # if an earlier attempt already left it there.
+            with self.mu:
+                send_text = None if m.get("earshot_text_key") else reply_text
+            ekey = mirror_to_earshot(path, stamp, agent, mid, key, send_text, record_text)
+            if ekey:
+                break
         if ekey:
             with self.mu:
                 m["earshot_key"] = ekey  # recorded even if the replied fact fails, so a retry does not re-drop
                 self.s.save()
-        return ekey
+            return ekey
+        with self.mu:
+            if self._cancelled(m):
+                return None
+        # Every try failed: the phone took the reply and has nothing to play, and the car was refused for good. Give the
+        # take back so the car may play it, and say so.
+        self.release_phone(m, rkey, tries)
+        return None
+
+    @staticmethod
+    def _pause(seconds: float, cancelled=None) -> bool:
+        """Sleep that the service stopping (WatcherStopping) or a cancel ends early; False: cancelled."""
+        end = time.time() + seconds
+        while time.time() < end:
+            if STOP:
+                raise WatcherStopping()
+            if cancelled is not None and cancelled():
+                return False
+            time.sleep(min(0.25, max(0.0, end - time.time())))
+        return True
+
+    def release_phone(self, m: dict, rkey: str, tries: int) -> None:
+        """The Earshot drop failed on every try after the phone took the reply: hand the take back to the upload proxy
+        (it pushes `released` to the car, which then plays the reply it had left to the phone) and record why. A proxy
+        that cannot be reached for EARSHOT_RELEASE_BUDGET_S fails the stage, which is retried (the take stays until then)."""
+        mid, key = m["memo_id"], m["key"]
+        t0, err = time.time(), ""
+        while True:
+            try:
+                ans = claim_call(mid, {"by": "watcher", "action": "release", "reply_key": rkey})
+                if ans.get("ok"):
+                    break
+                err = f"the proxy answered {json.dumps(ans)[:160]}"
+            except Exception as e:  # noqa: BLE001
+                err = str(e)[:200]
+            if time.time() - t0 >= EARSHOT_RELEASE_BUDGET_S:
+                raise StageError("reply_upload", "earshot_release_failed",
+                                 f"the Earshot drop failed {tries} times and the phone's take could not be given back: {err}")
+            self._pause(2.0)
+        with self.mu:
+            m["earshot_skipped"], m["earshot_reason"] = "car_released", "drop_failed"
+            self.s.save()
+        log("earshot_released", "warn", memo_id=mid, key=key, tries=tries, took_s=round(time.time() - t0, 1),
+            note=EARSHOT_REASONS["drop_failed"])
 
     # -- chunked reply speech (worker thread, inside step_speak) --
 
@@ -2050,6 +2192,8 @@ EARSHOT_REASONS = {
     "claim_failed": (f"the upload proxy could not be asked who speaks it for {int(EARSHOT_HOLD_MAX_S)} s: left to the car, "
                      "which speaks a reply only with the proxy's yes"),
     "skip_off": "MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply",
+    "drop_failed": (f"the phone took it, but its Earshot drop failed {EARSHOT_DROP_TRIES} times: the take was given back so the "
+                    "car may play it"),
 }
 
 
@@ -2094,7 +2238,7 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
 
     def done(skip, why, st=None):
         waited = round(clock() - t_up, 1)
-        if skip and skip != "cancelled":
+        if skip and skip not in ("cancelled", "stopped"):
             log("earshot_skipped", memo_id=mid, key=key, reason=skip, why=why, waited_s=waited, device=(st or {}).get("device"),
                 proxy_fails=link["fails"] or None, note=EARSHOT_REASONS.get(why, why))
         elif not skip:
@@ -2105,11 +2249,20 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
     def gone() -> bool:
         return cancelled is not None and cancelled()
 
+    def halted():
+        """The service is stopping (or the memo was cancelled): the decision ends now, whatever it waits for. A stop is
+        not a verdict: the stage resumes the decision on the next start from the same t_up."""
+        if STOP:
+            return done("stopped", "stopped")
+        if gone():
+            return done("cancelled", "cancelled")
+        return None
+
     offer = {"by": "watcher", "action": "offer", "reply_key": rkey, "key": key, "announce": not chunked}
     st = ask(offer)
     while st is None:  # the offer (and with it the one-file reply's push to the car) waits for the proxy
-        if gone():
-            return done("cancelled", "cancelled")
+        if (h := halted()) is not None:
+            return h
         if clock() - t_up >= EARSHOT_HOLD_MAX_S:
             return done("no_answer", "claim_failed")
         sleep(EARSHOT_POLL_S)
@@ -2117,8 +2270,8 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
     if st.get("sender_host") == "browser" and not st.get("car"):
         return done(None, "browser_sender", st)
     while True:
-        if gone():
-            return done("cancelled", "cancelled")
+        if (h := halted()) is not None:
+            return h
         if st.get("car") in ("started", "ended"):
             return done("car_spoke", "car_started", st)
         waited = clock() - t_up

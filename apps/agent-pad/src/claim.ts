@@ -6,6 +6,11 @@
 // A reply the phone took is the phone's: the car skips it (a paired phone plays through the car's own speakers, so the
 // same reply twice, or one over a recording, would break "nothing speaks over anything"). The car is the one that gives
 // way because this page is deployed live; Earshot plays whatever lands in its channel.
+// The car claims the reply's START when its audio really starts (the host's 'started' phase, the audio element's
+// 'playing'), not when the page hands the reply to the host: until then it only HOLDS it, renewing the lease while the
+// host's speech queue (or a recording) delays the start, and it RELEASES the hold when playback fails before any audio,
+// so the phone can take the reply at once. And a reply the phone took is the phone's only while the phone has it: if its
+// Earshot drop failed the watcher gives the take back (the proxy pushes `released`), and the car plays the reply after all.
 // Neither side speaks a reply without the proxy's yes. No answer is no yes: a car without a live hold leaves the reply at
 // the head of its queue until the proxy answers (the watcher waits for it too, and never mirrors blind). A live hold IS
 // a yes: the proxy refuses the phone while it lives, so the car plays on it, looks at its start's answer before the
@@ -77,4 +82,24 @@ export function startVerdict(plan: 'play' | 'claim', answer: ClaimAnswer): 'play
 /** Is a start the proxy never answered (this car played the reply on its hold meanwhile) still re-sent? */
 export function confirmDue(since: number, now: number): boolean {
   return now - since < CLAIM_CONFIRM_MAX_MS
+}
+
+/** What the car asks the proxy: hold (renewed while the reply waits or the host has not started it), start (the audio is
+ *  really playing), release (it gave the reply up before any audio). */
+export type ClaimAction = 'hold' | 'start' | 'release'
+
+/** A reply the car left to the phone is looked at again this often, for this long (the watcher's Earshot drop retries
+ *  take well under a minute; the push `released` makes the common case immediate, this is the safety net behind it). */
+export const PHONE_RECHECK_EVERY_MS = 5_000
+export const PHONE_RECHECK_MAX_MS = 3 * 60_000
+
+export function phoneRecheckDue(since: number, checkedAt: number, now: number): boolean {
+  return now - since < PHONE_RECHECK_MAX_MS && now - checkedAt >= PHONE_RECHECK_EVERY_MS
+}
+
+/** The proxy's answer to GET /upload/claim?memo=: does the phone still have the reply? 'unknown': no usable answer. */
+export function phoneStillHas(status: number, body: unknown): 'phone' | 'free' | 'unknown' {
+  const b = (body && typeof body === 'object' ? body : {}) as { owner?: unknown; memo_id?: unknown }
+  if (status !== 200 || typeof b.memo_id !== 'string') return 'unknown'
+  return b.owner === 'phone' ? 'phone' : 'free'
 }
