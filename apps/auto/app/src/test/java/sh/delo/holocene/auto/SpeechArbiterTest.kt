@@ -107,7 +107,9 @@ class SpeechArbiterTest {
         assertNull(audible)
         assertEquals(listOf(r.id, "arm"), played)
         a.recordingEnded()
-        assertEquals("echo:$memo2", audible) // highest priority deferred item first
+        assertEquals("ack", audible) // the note just recorded is answered first
+        end("ack")
+        assertEquals("echo:$memo2", audible) // then the highest priority deferred item
     }
 
     // The real order on the car: the page stops its reply (stopReply -> cancel) a few ms before it asks to record, so
@@ -266,18 +268,19 @@ class SpeechArbiterTest {
     }
 
     @Test fun priorityOrderIsReplyEchoProgressAck() {
-        a.recordingStarted()
+        // Everything queued behind a cue (no note involved: an ack offered long after any recording keeps its rank).
+        a.offer(Utterance("cue", SpeechKind.CUE, say("Holocene")))
         a.offer(ack())
         a.offer(progress(memo2, 1))
         a.offer(echo(memo2))
         val r = reply(memo1)
         a.offer(r)
-        a.recordingEnded()
+        end("cue")
         end(r.id)
         end("echo:$memo2")
         end("progress:$memo2:1")
         end("ack")
-        assertEquals(listOf(r.id, "echo:$memo2", "progress:$memo2:1", "ack"), played)
+        assertEquals(listOf("cue", r.id, "echo:$memo2", "progress:$memo2:1", "ack"), played)
     }
 
     @Test fun aCueAnswersTheDriverBeforeNarrationButNeverBeforeAReply() {
@@ -534,5 +537,206 @@ class SpeechArbiterTest {
         assertEquals("echo:$memo2", audible)
         a.abandon("not-current", "x") // ignored
         assertEquals(1, done.size)
+    }
+
+    // ---- the note just recorded is answered first (ttfr.md round 2, memos Y and C) ----
+
+    private fun stopAck(n: Int = 1) = Utterance("ack:stopped:$n", SpeechKind.ACK,
+        listOf(SpeechPart.Tone(DriveSpeech.Tone.STOP), SpeechPart.Say("Got it, Holocene's on it.")), maxWaitMs = SpeechArbiter.ACK_WAIT_MS)
+    private fun sentAck(n: Int = 1) = Utterance("ack:sent:$n", SpeechKind.ACK, listOf(SpeechPart.Tone(DriveSpeech.Tone.SENT)),
+        maxWaitMs = SpeechArbiter.ACK_WAIT_MS)
+
+    /** Memo X works while memo Y is recorded: X's progress clip is held back by the note. */
+    private fun recordOver(held: () -> Unit) {
+        var ready = false
+        a.arm(Utterance("arm", SpeechKind.ARMING, say("Recording for Holocene.")), { ready = true })
+        if (audible == null && wakes.isNotEmpty()) drain()
+        end("arm")
+        assertTrue(ready)
+        a.recordingStarted()
+        held()
+    }
+
+    @Test fun memoY_theStoppingNotesStopToneAndAckPlayFirst_thenTheHeldBackProgress() {
+        recordOver {
+            t += 10_700
+            a.offer(progress(memo1, 1)) // X's clip, 10.7 s into recording Y
+            t += 15_000
+            a.offer(stopAck()) // Stop pressed: the ack is decided while the mic is still closing
+        }
+        assertNull(audible)
+        a.recordingEnded()
+        assertEquals("ack:stopped:1", audible) // the first sound after Stop is Y's STOP tone + ack, not X's clip
+        t += 400
+        a.offer(sentAck()) // the upload landed while the ack speaks
+        t += 1_200
+        end("ack:stopped:1")
+        assertEquals("ack:sent:1", audible) // the SENT tone answers the same note, still before the backlog
+        t += 300
+        end("ack:sent:1")
+        assertEquals("progress:$memo1:1", audible) // X's clip, still the newest thing about X, comes after
+        assertTrue(dropped("ack:stopped:1").isEmpty() && dropped("ack:sent:1").isEmpty()) // neither expired
+        assertEquals(listOf("arm", "ack:stopped:1", "ack:sent:1", "progress:$memo1:1"), played)
+    }
+
+    @Test fun memoY_heldBackProgressThatANewerClipOrTheReplyReplacedIsNeverSaid() {
+        recordOver {
+            a.offer(progress(memo1, 1))
+            t += 5_000
+            a.offer(progress(memo1, 2)) // newer: the held-back clip 1 is dropped
+            a.offer(progress(memo2, 1))
+            a.memoFinal(memo2, "memo_final") // memo 2's turn finished during the note: its clip is dropped too
+            a.offer(stopAck())
+        }
+        assertEquals(listOf("superseded"), dropped("progress:$memo1:1"))
+        assertEquals(listOf("memo_final"), dropped("progress:$memo2:1"))
+        a.recordingEnded()
+        end("ack:stopped:1")
+        end("progress:$memo1:2")
+        assertNull(audible)
+        assertEquals(listOf("arm", "ack:stopped:1", "progress:$memo1:2"), played)
+    }
+
+    @Test fun anAckLongAfterTheNoteKeepsItsRank() {
+        a.recordingStarted()
+        a.recordingEnded()
+        t += SpeechArbiter.NOTE_ACK_WINDOW_MS + 1
+        a.offer(Utterance("cue", SpeechKind.CUE, say("Holocene")))
+        a.offer(ack())
+        a.offer(progress(memo1, 1))
+        end("cue")
+        assertEquals("progress:$memo1:1", audible) // not a note's ack: lowest rank, as before
+    }
+
+    @Test fun memoC_anEchoCutByTheRecordingComesBackAfterTheNotesAck_onlyWhileStillNewest() {
+        a.offer(echo(memo1)) // L's echo plays
+        recordOver {
+            t += 31_000
+            a.offer(stopAck())
+        }
+        assertEquals(listOf("echo:$memo1" to "recording"), halted)
+        a.recordingEnded()
+        assertEquals("ack:stopped:1", audible) // C's ack first, not L's echo
+        a.offer(sentAck())
+        end("ack:stopped:1")
+        assertEquals("ack:sent:1", audible) // C's SENT tone does not expire behind L's echo
+        end("ack:sent:1")
+        assertEquals("echo:$memo1", audible) // nothing newer about L: its echo is said once more, after C's acks
+    }
+
+    @Test fun memoC_anEchoCutByTheRecordingIsDroppedOnceItsMemoMovedOn() {
+        a.offer(echo(memo1))
+        recordOver {
+            a.offer(progress(memo1, 1)) // L's agent says what it is doing: the cut echo is old news
+            a.offer(stopAck())
+        }
+        assertEquals(listOf("superseded"), dropped("echo:$memo1"))
+        a.recordingEnded()
+        end("ack:stopped:1")
+        end("progress:$memo1:1")
+        assertEquals(listOf("echo:$memo1", "arm", "ack:stopped:1", "progress:$memo1:1"), played)
+    }
+
+    @Test fun anEchoCutByTheRecordingIsDroppedWhenTheReplyLandsDuringTheNote() {
+        a.offer(echo(memo1))
+        recordOver { a.memoFinal(memo1, "memo_final"); a.offer(stopAck()) }
+        assertEquals(listOf("memo_final"), dropped("echo:$memo1"))
+        a.recordingEnded()
+        end("ack:stopped:1")
+        assertNull(audible)
+    }
+
+    @Test fun anEchoCutWhileANewerClipForItsMemoAlreadyWaitsIsNotRequeued() {
+        a.offer(echo(memo1))
+        a.offer(progress(memo1, 1)) // queued behind the echo
+        a.arm(null) {}
+        assertEquals(listOf("superseded"), dropped("echo:$memo1"))
+        a.recordingStarted()
+        a.recordingEnded()
+        drain()
+        assertEquals("progress:$memo1:1", audible)
+    }
+
+    // ---- a call takes the audio focus ----
+
+    @Test fun anEchoCutByACallIsSaidOnceMoreWhenTheFocusComesBack() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2")
+        assertEquals(listOf("echo:$memo1" to "focus_lost:-2"), halted)
+        audible = null
+        drain()
+        assertNull(audible) // not before the retry period
+        t += SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertEquals("echo:$memo1", audible) // the host asks for the focus again
+        a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) // the call is still on: refused, nothing sounded
+        audible = null
+        t += SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertEquals("echo:$memo1", audible) // the call ended: said again
+        end("echo:$memo1")
+        t += SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertNull(audible)
+        assertEquals(3, played.count { it == "echo:$memo1" })
+    }
+
+    @Test fun anEchoCutByACallIsGivenUpWhenTheFocusDoesNotReturnInTime() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-1")
+        audible = null
+        var tries = 0
+        while (t < SpeechArbiter.FOCUS_RETURN_MS + 5_000) {
+            t += SpeechArbiter.FOCUS_RETRY_MS
+            a.tick()
+            if (audible != null) { tries++; audible = null; a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) }
+        }
+        assertTrue(tries in 3..5)
+        assertEquals(listOf("expired"), dropped("echo:$memo1"))
+        assertTrue(a.queued.isEmpty())
+    }
+
+    @Test fun anEchoCutTwiceByACallOrSupersededMeanwhileIsDropped() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2")
+        audible = null
+        t += SpeechArbiter.HALT_DRAIN_MS + SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertEquals("echo:$memo1", audible)
+        a.focusLost("echo:$memo1", "focus_lost:-2") // cut again: said again at most once
+        audible = null
+        t += 10 * SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertNull(audible)
+        assertTrue(a.queued.isEmpty())
+
+        a.offer(echo(memo2))
+        a.focusLost("echo:$memo2", "focus_lost:-2")
+        audible = null
+        a.offer(progress(memo2, 1)) // something newer about memo 2 while the call is on
+        assertEquals(listOf("superseded"), dropped("echo:$memo2"))
+    }
+
+    @Test fun anAckCutByACallIsDroppedNotRequeued() {
+        a.offer(stopAck())
+        a.focusLost("ack:stopped:1", "focus_lost:-2")
+        assertEquals(listOf("ack:stopped:1" to "focus_lost:-2"), halted)
+        audible = null
+        t += 20_000
+        a.tick()
+        assertNull(audible)
+        assertTrue(a.queued.isEmpty())
+    }
+
+    @Test fun anEchoRefusedTheFocusOutrightIsRetriedInTheSameWindow() {
+        a.offer(echo(memo1))
+        audible = null
+        a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) // a call was on before it could start
+        assertEquals(listOf("echo:$memo1"), a.queued.map { it.id })
+        t += SpeechArbiter.FOCUS_RETRY_MS
+        a.tick()
+        assertEquals("echo:$memo1", audible)
+        end("echo:$memo1")
+        assertEquals(2, played.size)
     }
 }

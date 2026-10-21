@@ -43,11 +43,12 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     init {
         player.onPhase = { id, phase, detail -> onClip(id, phase, detail) }
         // A call (or the car's own assistant) took the focus a phrase was spoken under: that utterance ends now, through
-        // the queue, instead of talking over it.
+        // the queue, instead of talking over it. A heard echo comes back once if the focus returns within
+        // SpeechArbiter.FOCUS_RETURN_MS and nothing newer was said about its memo; an ack or a cue is dropped.
         feedback.onFocusLost = { change ->
             val c = arbiter.current
             if (c != null && c.kind != SpeechKind.ARMING && c.chunks == 0 && c.parts.none { it is SpeechPart.Clip }) {
-                arbiter.cancel(c.id, "focus_lost:$change")
+                arbiter.focusLost(c.id, "focus_lost:$change")
             }
         }
     }
