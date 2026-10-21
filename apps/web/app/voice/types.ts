@@ -27,7 +27,13 @@ export type AudioLevel = { maxDbfs: number; meanDbfs?: number; durationSeconds?:
 export type CaptureLevel = { peakDbfs?: number; rmsDbfs?: number; silent?: boolean };
 export type HopFailure = { eventId: string; at: string; stage?: string; code?: string; message?: string; retryable: boolean; attempt?: number; timeout?: TurnTimeout; audio?: AudioLevel };
 /** From the audio.memo.replied fact: spoken late / from the escalated batch turn, and where the full text went next to the audio. */
-export type ReplyInfo = { late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string; earshotSkipped?: string };
+export type ReplyInfo = {
+  late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string;
+  /** Why the phone copy was left out: car_spoke | car_holds (car_live: the older presence rule). */
+  earshotSkipped?: string;
+  /** Why it went the way it did: car_started | car_holds | no_car_claim | car_let_go | browser_sender | claim_failed | skip_off. */
+  earshotReason?: string;
+};
 /** From an audio.memo.failed fact with data.stage "cancelled". afterDispatch: the agent may still have run. */
 export type Cancellation = { eventId: string; at: string; afterDispatch: boolean; message?: string };
 

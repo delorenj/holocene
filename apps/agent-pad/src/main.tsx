@@ -8,6 +8,7 @@ import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normS
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
+import { type Claim, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, holdDue, noteClaim, startPlan } from './claim'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -569,6 +570,23 @@ function App() {
   // done. Their chunks are ignored from here on, and the full file plays when (if) it lands. Unit key -> parked at.
   const parked = useRef<Map<string, { at: number; checkedAt: number }>>(new Map())
   const playingProgress = useRef(false) // the audio element is on a progress clip, not a reply
+  // ---- who speaks a reply in the cabin: this car, or the phone's Earshot copy (claim.ts). Cars only: a browser is not
+  // in the cabin, and the watcher mirrors a browser's memo at once. Unit key -> the proxy's last answer.
+  const claims = useRef<Map<string, Claim>>(new Map())
+  const claimReply = async (key: string, action: 'hold' | 'start'): Promise<ClaimAnswer> => {
+    if (HOST_KIND !== 'car') return 'none'
+    const sent = Date.now() // the lease runs from the proxy's receipt: counting it from the send is on the safe side
+    let answer: ClaimAnswer = 'none'
+    try {
+      answer = await fetchWithin('/upload/claim', CLAIM_WAIT_MS, async (r) => claimAnswer(r.status, await r.json()), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ by: 'car', action, reply_key: key, ...(DEVICE.id ? { device: DEVICE.id } : {}) }),
+      })
+    } catch { /* no answer is no refusal: an older proxy, or the network */ }
+    const c = noteClaim(claims.current.get(key), answer, sent)
+    if (c) claims.current.set(key, c)
+    return answer
+  }
   const refreshFlights = () => {
     const now = Date.now()
     const view: Record<string, FlightView> = {}
@@ -685,6 +703,7 @@ function App() {
   const finish = useCallback((key: string) => {
     settle(key)
     queue.current = queue.current.filter((k) => k !== key)
+    claims.current.delete(key)
     playingKey.current = ''
     const u = units.current.get(key)
     if (u) for (const ck of Object.values(u.chunks)) chunkBlobs.current.delete(ck)
@@ -751,6 +770,7 @@ function App() {
       units.current.set(ref.unit, u)
       setLedger(openUnit(ledger.current, ref.unit, Date.now()))
       queue.current = [...queue.current, ref.unit].sort()
+      void claimReply(ref.unit, 'hold') // this car means to say it: the phone leaves it alone while the hold lives
       const memo = memoOfReply(ref.unit)
       if (memo && flights.current.has(memo)) flightFinal(memo)
     }
@@ -840,6 +860,15 @@ function App() {
       return
     }
     playingKey.current = key // claim before any await so a second pump cannot start another reply
+    if (HOST_KIND === 'car') {
+      // Exactly one of this car and the phone says it. A live hold covers the start; without one the start is claimed
+      // first, and a reply the phone took (this car was off, or out of reach, when it was up) is left to the phone.
+      const how = startPlan(claims.current.get(key), Date.now())
+      if (how === 'skip' || (how === 'claim' && (await claimReply(key, 'start')) === 'phone')) { leaveToPhone(key); return }
+      if (how === 'play') void claimReply(key, 'start')
+      if (playingKey.current !== key) return // interrupted while the claim was out
+      if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began meanwhile
+    }
     if (plan === 'chunks') {
       // The host plays chunk after chunk as ONE reply and answers through __hnPlayback (started on chunk 1, ended
       // after the last). Recording stops all of it; the next pump offers it again, the full file if it is up by then.
@@ -882,6 +911,26 @@ function App() {
     playingProgress.current = false
     pump.current()
   }
+
+  // The phone took this reply (this car did not hold it in time): it is the phone's to say, never this car's as well.
+  const leaveToPhone = (key: string) => {
+    playingKey.current = ''
+    setStatus('reply left to the phone')
+    finish(key)
+  }
+
+  // A waiting reply renews this car's hold, so the phone copy stays out while the car still means to say it. A car that
+  // was switched off stops renewing, and the phone takes it once the lease lapses.
+  useEffect(() => {
+    if (HOST_KIND !== 'car') return
+    const t = window.setInterval(() => {
+      const now = Date.now()
+      for (const key of queue.current) {
+        if (key !== playingKey.current && units.current.has(key) && holdDue(claims.current.get(key), now)) void claimReply(key, 'hold')
+      }
+    }, CLAIM_RENEW_MS / 2)
+    return () => window.clearInterval(t)
+  }, [])
 
   // A reply that could not be played: retry a couple of times, then give it up so it never blocks the queue.
   const playFailed = (key: string, text: string) => {
@@ -1063,7 +1112,9 @@ function App() {
   const onPushRef = useRef<(ev: PushEvent) => void>(() => {})
   onPushRef.current = (ev) => {
     const f = flights.current.get(ev.memo_id)
-    if (ev.fact === 'voiced' || ev.fact === 'replied') {
+    // offered: the proxy pushes a one-file reply the moment it is up, before the watcher's replied fact (which waits to
+    // know who speaks it).
+    if (ev.fact === 'voiced' || ev.fact === 'replied' || ev.fact === 'offered') {
       const key = ev.fact === 'voiced' ? ev.chunk_s3_key : ev.reply_s3_key
       if (f) flightFinal(ev.memo_id)
       if (key && ingestReply(key)) pump.current()

@@ -142,19 +142,42 @@ object. Polling stays the fallback; with the stream live the fast reply poll rel
 that is silent for 45 s is dropped and reopened. `docker logs agent-pad-upload | grep '"event":"push'` shows streams
 opening and closing and NATS going up or down.
 
-**Only the sending pad plays a reply, and a live car's reply is not mirrored to the phone.** A pad keeps the ids of
+**Only the sending pad plays a reply, and exactly one of the car and the phone speaks it.** A pad keeps the ids of
 the memos it uploaded (IndexedDB, it survives the car's cold start) and plays only their replies (`?replies=all` in a
 browser opts back into every reply). It names its device (a random id) and host (`car` or `browser`) on the PUT
 (`X-Holocene-Device`, `X-Holocene-Host`, kept as S3 metadata on the inbox object and as `device_id` / `device_host` on
-`audio.memo.uploaded`) and on its push stream (`/upload/events?device=&host=`). Before the watcher drops a reply into
-Earshot it asks: did the car's speech queue already start this reply (`audio.memo.notified` reply/start), or did the
-memo come from a car whose push stream is open now (`GET https://agent-pad.delo.sh/upload/presence?memo=&key=`,
-`MEMO_PAD_PRESENCE_URL`)? Then the phone copy is left out (logged `earshot_skipped`, `earshot_skipped: car_spoke |
-car_live` on `replied`, an OK `phone_object` hop in memo:trace): a phone paired with that car plays through the same
-speakers, 10+ s into the car's own playback or into the driver's next recording. Anything unknown or unreachable
-mirrors as before; `MEMO_EARSHOT_SKIP_CAR=0` mirrors every reply. While a note is armed or recorded the car app also
-holds exclusive transient audio focus, so the head unit pauses other media (the phone's Bluetooth stream, the radio)
-for the length of the note.
+`audio.memo.uploaded`) and on its push stream (`/upload/events?device=&host=`).
+
+The phone's Earshot copy plays through the car's speakers when the phone is paired with it, so a reply the car speaks
+must not go to the phone (twice, or into the next recording), and a reply the car does NOT speak must (a car switched
+off right after the agent finished heard it nowhere while the rule was "the car is connected": an edge keeps a dead
+car's push stream open for minutes). The upload proxy decides who, atomically (`POST /upload/claim`, `ReplyClaims` in
+`services/upload-proxy`):
+- **The car** (the pad page, host `car`) holds every reply it means to play as soon as it learns of it, renews the hold
+  every 5 s while the reply waits in its queue (behind a recording, another reply), and claims its start when it plays
+  it. A hold is a 20 s lease: a car that is switched off lets go within 20 s. Its playback beacon and its speech queue's
+  `start` also count as its start (a page from before claims).
+- **The watcher**, once the car's copy is up, offers the reply (a one-file reply is pushed to the car right then, as
+  `offered`, so the car does not wait for the `replied` fact) and asks to take it for the phone. The take is refused
+  while the car holds or has started the reply; it is granted when no car claimed it within `MEMO_EARSHOT_CAR_GRACE_S`
+  (12) of its first audio being up (chunk 1, or the one file), or when the car's lease lapsed. A live car that keeps
+  holding it is waited for, at most `MEMO_EARSHOT_HOLD_MAX_S` (300), then left to it.
+- **A granted take is final.** A car that comes back later (an ignition, a reconnect) is refused its hold and its start
+  and leaves the reply to the phone (the page logs nothing; the proxy logs the refused `claim`). The car is the one that
+  gives way because the pad page is deployed live, and Earshot plays whatever lands in its channel.
+- The `replied` fact waits for the decision and records it: `earshot_skipped: car_spoke | car_holds` (left out, an OK
+  `phone_object` hop in memo:trace) or `earshot_key` (mirrored, with a `phone_decision` hop saying why), and
+  `earshot_reason: car_started | car_holds | no_car_claim | car_let_go | browser_sender | claim_failed | skip_off`, plus
+  `reply_up_at` (when the car's copy was up) and `earshot_wait_seconds`. /voice says the same under the replied hop.
+  Logged `earshot_skipped` or `earshot_mirror_decided`.
+- Fail-open: a proxy that cannot be asked (5 failed polls in a row) mirrors, as before claims; a car whose claim gets
+  no answer plays. Both happen only with the proxy down, which also stops memos from uploading. The claims live in the
+  proxy's memory: a proxy restart between a take and a car coming back could let both speak it, minutes apart.
+- `MEMO_EARSHOT_SKIP_CAR=0` mirrors every reply; `MEMO_PAD_CLAIM_URL` (default
+  `https://agent-pad.delo.sh/upload/claim`) points at the proxy.
+
+While a note is armed or recorded the car app also holds exclusive transient audio focus, so the head unit pauses other
+media (the phone's Bluetooth stream, the radio) for the length of the note.
 
 **On the car.** With a host that has the chunk player (`HoloceneNative.speechVersion() >= 2`, `playReplyChunk`) the pad
 hands the chunks over in order as they download; the speech arbiter plays them back to back as ONE reply (audio focus
@@ -228,6 +251,7 @@ the lane as `batch (esc.)`. The phone hops start with `phone_text` (the full-tex
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
 | reply_object | the TTS audio | `mc stat delo/holocene-auto/<reply_s3_key>` |
+| phone_decision | why the reply went to the phone (`earshot_reason`: no car claimed it in time, the car let go, a browser sent it, fail-open) | `docker logs agent-pad-upload \| grep '"event":"claim"' \| grep <memo_id>` |
 | phone_text / phone_object | the full reply text (`earshot_text_key`, uploaded first) and the phone audio (`earshot_key`) in the Earshot channel | `mc stat delo/earshot/<earshot_text_key>`, `mc stat delo/earshot/<earshot_key>` |
 | audio level | loudest/mean sample in dBFS, measured before transcribing (`audio_max_dbfs`, `audio_mean_dbfs` on `transcribed` and on every transcribe-stage `failed`); `audio_level` hop in `memo:trace`; `device heard peak ...` from the pad when it sends `data.capture` | `ffmpeg -i <file> -af volumedetect -f null -` |
 | device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |

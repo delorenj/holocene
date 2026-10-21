@@ -969,3 +969,119 @@ class PresenceHttp(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(f"http://127.0.0.1:{self.port}/upload/presence?memo=nope", timeout=5)
         self.assertEqual(e.exception.code, 400)
+
+
+class ReplyClaims(unittest.TestCase):
+    """Who speaks a reply in the cabin: the car that sent the memo, or the phone's Earshot copy. Exactly one."""
+    DEV = "6f1c2a9e-1b2c-4d5e-8f90-0a1b2c3d4e5f"
+    RKEY = f"replies/2026/10/21/101500Z-holocene-pm-{PUSH_MEMO}.ogg"
+
+    def test_a_car_that_holds_the_reply_keeps_the_phone_out_until_its_lease_lapses(self):
+        c = up.ReplyClaims(lease_s=20)
+        self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=100)["ok"])
+        self.assertFalse(c.take(PUSH_MEMO, now=110)["ok"], "the car holds it (queued behind a recording)")
+        self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=115)["ok"], "renewed")
+        self.assertFalse(c.take(PUSH_MEMO, now=130)["ok"])
+        v = c.view(PUSH_MEMO, now=130)
+        self.assertEqual((v["car"], v["car_holds"], v["held_ever"], v["lease_left_s"]), ("held", True, True, 5.0))
+        # switched off: no renewal, the lease lapses and the phone takes it
+        self.assertTrue(c.take(PUSH_MEMO, now=136)["ok"])
+        self.assertEqual(c.view(PUSH_MEMO, now=136)["owner"], "phone")
+        # the car comes back: its hold and its start are refused, it leaves the reply to the phone
+        self.assertFalse(c.car(PUSH_MEMO, "hold", self.DEV, now=200)["ok"])
+        self.assertFalse(c.car(PUSH_MEMO, "start", self.DEV, now=201)["ok"])
+
+    def test_a_car_that_started_the_reply_owns_it_for_good(self):
+        c = up.ReplyClaims(lease_s=20)
+        c.car(PUSH_MEMO, "hold", now=100)
+        c.car(PUSH_MEMO, "start", now=101)
+        self.assertFalse(c.take(PUSH_MEMO, now=500)["ok"], "a start is final, whatever the lease")
+        c.car(PUSH_MEMO, "end", now=130)
+        self.assertEqual(c.view(PUSH_MEMO, now=500)["car"], "ended")
+        self.assertFalse(c.take(PUSH_MEMO, now=900)["ok"])
+
+    def test_nobody_claimed_the_phone_takes_it_and_a_late_beacon_is_a_conflict(self):
+        c = up.ReplyClaims()
+        self.assertTrue(c.offer(PUSH_MEMO, now=100)["ok"])
+        self.assertTrue(c.take(PUSH_MEMO, now=112)["ok"])
+        self.assertTrue(c.take(PUSH_MEMO, now=113)["ok"], "a second take is the same answer")
+        self.assertFalse(c.played(PUSH_MEMO, "start", now=120), "a page from before claims played it anyway")
+        c2 = up.ReplyClaims()
+        self.assertTrue(c2.played(PUSH_MEMO, "start", now=100), "an unclaimed reply the car plays is the car's")
+        self.assertFalse(c2.take(PUSH_MEMO, now=200)["ok"])
+
+    def test_the_claims_are_bounded(self):
+        c = up.ReplyClaims(memos_max=3)
+        for i in range(5):
+            c.car(f"{i:08d}-0000-5000-8000-000000000000", "start")
+        self.assertIsNone(c.view("00000000-0000-5000-8000-000000000000")["owner"])
+        self.assertEqual(c.view("00000004-0000-5000-8000-000000000000")["owner"], "car")
+
+    def test_claim_request_validates_and_the_offer_names_the_sender_and_pushes_a_one_file_reply(self):
+        c, hub, p = up.ReplyClaims(), up.PushHub(), up.Presence()
+        p.sent(PUSH_MEMO, self.DEV, "car")
+        self.assertEqual(up.claim_request("x", c)[0], 400)
+        self.assertEqual(up.claim_request({"by": "car", "action": "take", "memo_id": PUSH_MEMO}, c)[0], 400)
+        self.assertEqual(up.claim_request({"by": "car", "action": "hold", "memo_id": "nope"}, c)[0], 400)
+        other = f"replies/2026/10/21/101500Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg"
+        self.assertEqual(up.claim_request({"by": "car", "action": "hold", "memo_id": PUSH_MEMO, "reply_key": other}, c)[0], 400)
+        code, ans = up.claim_request({"by": "watcher", "action": "offer", "reply_key": self.RKEY, "key": KEY, "announce": True},
+                                     c, p, lookup=lambda k: None, hub=hub)
+        self.assertEqual((code, ans["ok"], ans["sender_host"], ans["sender_device"], ans["announced"]), (200, True, "car", self.DEV, True))
+        hub2 = up.PushHub()
+        code, ans = up.claim_request({"by": "watcher", "action": "offer", "reply_key": self.RKEY}, c, p, lookup=lambda k: None, hub=hub2)
+        self.assertNotIn("announced", ans, "a chunked reply was already pushed chunk by chunk")
+        self.assertEqual(hub2.published, 0)
+        [(_, _, ev)] = hub._ring
+        self.assertEqual((ev["fact"], ev["memo_id"], ev["reply_s3_key"], ev["agent"]), ("offered", PUSH_MEMO, self.RKEY, "holocene-pm"))
+        code, ans = up.claim_request({"by": "car", "action": "hold", "reply_key": self.RKEY, "device": self.DEV}, c)
+        self.assertEqual((code, ans["ok"], ans["owner"], ans["device"]), (200, True, "car", self.DEV))
+        self.assertFalse(up.claim_request({"by": "watcher", "action": "take", "memo_id": PUSH_MEMO}, c)[1]["ok"])
+
+
+class ReplyClaimsHttp(unittest.TestCase):
+    """POST /upload/claim and GET /upload/claim?memo= over HTTP, and the playback beacon counting as the car's start."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        cls.old = (up.CLAIMS, up.EMIT_FACTS)
+        up.CLAIMS = up.ReplyClaims()
+        up.EMIT_FACTS = False
+        cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        up.CLAIMS, up.EMIT_FACTS = cls.old
+
+    def call(self, path, body=None):
+        import urllib.request, urllib.error
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method="POST" if body is not None else "GET",
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                raw = r.read()
+                return r.status, json.loads(raw) if raw else None
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    def test_claim_round_trip(self):
+        memo = "a1b2c3d4-0000-5000-8000-000000000001"
+        rkey = f"replies/2026/10/21/101500Z-holocene-pm-{memo}.ogg"
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}")[1]["owner"], None)
+        code, ans = self.call("/upload/claim", {"by": "car", "action": "hold", "reply_key": rkey})
+        self.assertEqual((code, ans["ok"], ans["car_holds"]), (200, True, True))
+        self.assertFalse(self.call("/upload/claim", {"by": "watcher", "action": "take", "memo_id": memo})[1]["ok"])
+        self.assertEqual(self.call("/upload/claim", {"by": "nobody", "action": "take", "memo_id": memo})[0], 400)
+        self.assertEqual(self.call("/upload/claim?memo=nope")[0], 400)
+
+    def test_a_playback_beacon_is_the_cars_start(self):
+        memo = "a1b2c3d4-0000-5000-8000-000000000002"
+        rkey = f"replies/2026/10/21/101600Z-holocene-pm-{memo}.ogg"
+        self.assertEqual(self.call("/upload/played", {"reply_key": rkey, "phase": "started"})[0], 200)
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}")[1]["car"], "started")
+        self.assertFalse(self.call("/upload/claim", {"by": "watcher", "action": "take", "memo_id": memo})[1]["ok"])

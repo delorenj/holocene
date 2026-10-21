@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, statement } from "./model";
+import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, phoneCopyText, statement } from "./model";
 import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
@@ -436,9 +436,9 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
           ) : null}
         </div>
         {hop.detail ? <p className="voice-hop-detail">{hop.detail}</p> : null}
-        {hop.reply?.earshotSkipped ? (
-          <p className="voice-hop-detail" title="A paired phone plays through the car's speakers: the same reply twice, or into a recording">
-            Not mirrored to the phone: the car that sent it {hop.reply.earshotSkipped === "car_spoke" ? "was already speaking it" : "was connected and spoke it itself"}.
+        {phoneCopyText(hop.reply) ? (
+          <p className="voice-hop-detail" title="Exactly one of the car and the phone speaks a reply: a paired phone plays through the car's speakers (the same reply twice, or into a recording)">
+            {phoneCopyText(hop.reply)}
           </p>
         ) : null}
         {hop.reply?.earshotTextKey ? (

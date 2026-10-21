@@ -657,6 +657,14 @@ test("a chunked reply lists its chunks once each and times the first response fr
   assert.deepEqual(one.chunks, []);
   assert.equal(one.timing.carLagSeconds, 2.5);
   assert.equal(one.timing.firstChunkSeconds, undefined);
+  // the replied fact waited for the phone decision (the car started it first): its reply_up_at is when it was up
+  const waited = fact("audio.memo.replied", 63.4, { occurred_at: iso(63.4), command_id: CMD, reply_text: "PONG", reply_s3_key: "replies/x.ogg",
+    reply_up_at: iso(60), earshot_skipped: "car_spoke", earshot_reason: "car_started" });
+  const late = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), waited, played("started", 61.2)], now(120))!;
+  assert.equal(late.timing.carLagSeconds, 1.2);
+  assert.equal(late.timing.replyUpSeconds, 60);
+  assert.deepEqual(late.hops.find(h => h.id === "replied")!.reply, { late: false, escalated: false, earshotKey: undefined, earshotTextKey: undefined,
+    earshotSkipped: "car_spoke", earshotReason: "car_started" });
 });
 
 test("an escalated memo keeps its first turn's progress as history and reports the batch turn's newest line", () => {

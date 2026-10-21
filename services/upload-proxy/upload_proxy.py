@@ -66,9 +66,13 @@ Who sent a memo, and is that car live: the pad names its device (X-Holocene-Devi
 (X-Holocene-Host: car | browser) on the PUT and on its push stream (/upload/events?device=&host=). The proxy keeps them
 with the memo (in memory, and as S3 metadata on the inbox object, so a restart loses nothing) and in the
 audio.memo.uploaded fact (device_id, device_host). GET /upload/presence?memo=<memo_id>&key=<inbox key> answers whether
-the memo came from a car whose push stream is open right now: the inbox watcher then leaves the reply's Earshot phone
-copy out, because the car speaks it itself and a paired phone plays through the same speakers (the same reply twice,
-or a reply into the next recording). See Presence below.
+the memo came from a car whose push stream is open right now. See Presence below.
+
+Who speaks a reply in the cabin, the car or the phone's Earshot copy: POST /upload/claim (ReplyClaims below). The car
+holds the reply on a renewed lease while it waits and claims its start; the inbox watcher takes it for the phone only
+when no car holds it after a grace window. Exactly one of them speaks it (a paired phone plays through the car's
+speakers: the same reply twice, or a reply into the next recording), and a car switched off right after the agent
+finished lets go within the lease, so the phone still speaks it.
 """
 import re
 
@@ -296,6 +300,143 @@ class Presence:
 PRESENCE = Presence()
 
 
+# ---------------------------------------------------------------- reply claims: who speaks a reply in the cabin
+
+# The car that sent a memo speaks its reply itself, and a phone paired with that car plays the reply's Earshot copy
+# through the same speakers. Exactly one of them may speak it, so both ask here and the answer is atomic:
+# - The car (the pad page, host "car") HOLDS the reply as soon as it knows of it and renews the hold every few seconds
+#   while it waits in its queue (behind a recording or another reply); it STARTS it when it plays it. A hold is a
+#   lease: it lapses CLAIM_LEASE_S after the last renewal, so a car that was switched off lets go within that time
+#   (presence could not tell: an edge keeps a dead car's push stream open for minutes).
+# - The inbox watcher OFFERS the reply when its audio is up (a one-file reply is also pushed to the car right then),
+#   and TAKES it for the phone once the car's grace window passed with no live hold. A take is refused while the car
+#   holds or has started the reply. Granted, it is final: a car that comes back later is refused its hold and its
+#   start, and leaves the reply to the phone. The car is the one that skips, because the page is deployed live here
+#   and the phone (Earshot) plays whatever lands in its channel.
+# The car's playback beacons and speech-queue starts also count as a start: a page from before claims still wins.
+CLAIM_LEASE_S = float(os.environ.get("CLAIM_LEASE_S", "20"))
+CLAIM_MEMOS = 2000
+CLAIM_ACTIONS = {"car": ("hold", "start", "end"), "watcher": ("offer", "take")}
+
+
+class ReplyClaims:
+    """Per memo: who owns its reply (car | phone | nobody yet), and the car's hold lease. In memory, bounded."""
+
+    def __init__(self, lease_s: float = CLAIM_LEASE_S, memos_max: int = CLAIM_MEMOS):
+        self._lock = threading.Lock()
+        self._m: dict = {}   # memo_id -> state (insertion ordered, bounded)
+        self.lease_s = lease_s
+        self._max = memos_max
+
+    def _state(self, memo_id: str) -> dict:
+        st = self._m.get(memo_id)
+        if st is None:
+            st = {"owner": None, "car": None, "lease_until": None, "held_at": None, "started_at": None, "device": None,
+                  "offered_at": None, "phone_at": None}
+            self._m[memo_id] = st
+            while len(self._m) > self._max:
+                self._m.pop(next(iter(self._m)))
+        return st
+
+    def _view(self, memo_id: str, st: dict | None, now: float) -> dict:
+        st = st or {}
+        left = (st["lease_until"] - now) if st.get("car") == "held" and st.get("lease_until") else 0.0
+        return {"memo_id": memo_id, "owner": st.get("owner"), "car": st.get("car"), "car_holds": left > 0,
+                "lease_left_s": round(max(0.0, left), 1), "held_ever": st.get("held_at") is not None,
+                "device": st.get("device"), "offered": st.get("offered_at") is not None,
+                "since_offer_s": round(now - st["offered_at"], 1) if st.get("offered_at") else None}
+
+    def view(self, memo_id: str, now: float | None = None) -> dict:
+        now = time.time() if now is None else now
+        with self._lock:
+            return self._view(memo_id, self._m.get(memo_id), now)
+
+    def car(self, memo_id: str, action: str, device=None, now: float | None = None) -> dict:
+        """The car holds (renews its lease), starts or ends the reply. ok False: the phone took it, the car leaves it."""
+        now = time.time() if now is None else now
+        with self._lock:
+            st = self._state(memo_id)
+            if st["owner"] == "phone":
+                return {**self._view(memo_id, st, now), "ok": False}
+            st["owner"] = "car"
+            st["device"] = device or st["device"]
+            st["held_at"] = st["held_at"] or now
+            if action == "hold":
+                if st["car"] not in ("started", "ended"):
+                    st["car"], st["lease_until"] = "held", now + self.lease_s
+            elif action == "start":
+                if st["car"] != "ended":
+                    st["car"] = "started"
+                st["started_at"] = st["started_at"] or now
+            elif action == "end":
+                st["car"] = "ended"
+                st["started_at"] = st["started_at"] or now
+            return {**self._view(memo_id, st, now), "ok": True}
+
+    def played(self, memo_id: str, phase: str, device=None, now: float | None = None) -> bool:
+        """The car reports it played the reply (beacon / speech start): recorded as its start or end. False: the phone
+        had taken it (a page from before claims, or a car that ignored the refusal): the reply was heard twice."""
+        if phase not in ("start", "end"):
+            return True
+        now = time.time() if now is None else now
+        with self._lock:
+            st = self._state(memo_id)
+            if st["owner"] == "phone":
+                return False
+        return self.car(memo_id, phase, device, now)["ok"]
+
+    def offer(self, memo_id: str, now: float | None = None) -> dict:
+        now = time.time() if now is None else now
+        with self._lock:
+            st = self._state(memo_id)
+            st["offered_at"] = st["offered_at"] or now
+            return {**self._view(memo_id, st, now), "ok": True}
+
+    def take(self, memo_id: str, now: float | None = None) -> dict:
+        """The phone takes the reply: granted unless the car holds a live lease on it, or started (or ended) it."""
+        now = time.time() if now is None else now
+        with self._lock:
+            st = self._state(memo_id)
+            if st["owner"] != "phone":
+                if st["car"] in ("started", "ended") or (st["car"] == "held" and (st["lease_until"] or 0) > now):
+                    return {**self._view(memo_id, st, now), "ok": False}
+                st["owner"], st["phone_at"] = "phone", now
+            return {**self._view(memo_id, st, now), "ok": True}
+
+
+CLAIMS = ReplyClaims()
+
+
+def claim_request(body, claims: "ReplyClaims" = None, presence: "Presence" = None, lookup=None, hub=None):
+    """POST /upload/claim, pure: (status, answer). See ReplyClaims. The watcher's offer also answers who sent the memo
+    (sender_host car | browser | null) and, with announce, pushes a one-file reply to the car at once."""
+    claims = claims or CLAIMS
+    if not isinstance(body, dict):
+        return 400, {"error": "not an object"}
+    by, action = body.get("by"), body.get("action")
+    if action not in CLAIM_ACTIONS.get(by, ()):
+        return 400, {"error": "bad by/action"}
+    reply_key = body.get("reply_key") if isinstance(body.get("reply_key"), str) else None
+    parsed = parse_reply_key(reply_key) if reply_key else None
+    memo_id = body.get("memo_id") if isinstance(body.get("memo_id"), str) else (parsed[0] if parsed else None)
+    if not memo_id or not MEMO_UUID_RE.match(memo_id) or (parsed and parsed[0] != memo_id):
+        return 400, {"error": "bad memo id or reply key"}
+    if by == "car":
+        device, _ = clean_device(body.get("device"), None)
+        return 200, claims.car(memo_id, action, device)
+    if action == "take":
+        return 200, claims.take(memo_id)
+    ans = claims.offer(memo_id)
+    key = body.get("key") if isinstance(body.get("key"), str) and KEY_RE.match(body.get("key")) else None
+    device, host = memo_sender(memo_id, key, presence, lookup)
+    ans.update({"sender_host": host, "sender_device": device})
+    if body.get("announce") is True and parsed:
+        (hub or PUSH).publish({"fact": "offered", "memo_id": memo_id, "at": now_iso(), "reply_s3_key": reply_key,
+                               **({"agent": parsed[1][:80]} if parsed[1] else {})})
+        ans["announced"] = True
+    return 200, ans
+
+
 def stored_sender(key: str):
     """(device, host) from the inbox object's S3 metadata (the PUT stores them), for a memo uploaded before a restart."""
     try:
@@ -308,17 +449,27 @@ def stored_sender(key: str):
     return (d, h) if d or h else None
 
 
-def presence_answer(memo_id: str, key: str | None, presence: "Presence" = None, lookup=stored_sender) -> dict:
-    """GET /upload/presence: did this memo come from a car whose push stream is live? Unknown sender: car_live false."""
+def memo_sender(memo_id: str, key: str | None, presence: "Presence" = None, lookup=None, source: list | None = None):
+    """(device, host) that uploaded the memo: from this process's memory, else the inbox object's S3 metadata."""
     presence = presence or PRESENCE
     who = presence.sender(memo_id)
-    source = "upload" if who else None
+    src = "upload" if who else None
     if not who and key:
-        who = lookup(key)
+        who = (lookup or stored_sender)(key)
         if who:
-            source = "s3_metadata"
+            src = "s3_metadata"
             presence.sent(memo_id, *who)
-    device, host = who or (None, None)
+    if source is not None:
+        source.append(src)
+    return who or (None, None)
+
+
+def presence_answer(memo_id: str, key: str | None, presence: "Presence" = None, lookup=None) -> dict:
+    """GET /upload/presence: did this memo come from a car whose push stream is live? Unknown sender: car_live false."""
+    presence = presence or PRESENCE
+    src: list = []
+    device, host = memo_sender(memo_id, key, presence, lookup, src)
+    source = src[0]
     state = presence.live(device) if device else {"live": False, "host": None, "streams": 0, "since": None}
     return {"memo_id": memo_id, "device": device, "host": host, "source": source, **state,
             "car_live": host == "car" and state["live"]}
@@ -1037,6 +1188,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         env = build_speech_envelope(d, memo_id, key, ua) if d and memo_id else None
         if env:
             publish_async(env, key or memo_id)
+        if d and memo_id and d.get("speech_kind") == "reply" and d.get("speech_action") in ("start", "end"):
+            if not CLAIMS.played(memo_id, d["speech_action"]):
+                log("claim_conflict", memo_id=memo_id, by="car", action=d["speech_action"], source="speech",
+                    note="the car spoke a reply the phone had taken: it was heard twice")
 
     def _heard(self):
         """Earshot device beacon: POST /upload/heard {channel,key?,phase,at,last_modified?,device,
@@ -1088,12 +1243,45 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _json_reply(self, code: int, body: dict) -> None:
+        raw = json.dumps(body, separators=(",", ":")).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _claim(self):
+        """POST /upload/claim {by: car|watcher, action: hold|start|end|offer|take, memo_id | reply_key, device?, key?,
+        announce?}: who speaks the reply in the cabin (ReplyClaims). GET /upload/claim?memo=<id>: where it stands."""
+        if self.command == "GET":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            memo = (q.get("memo") or [""])[0]
+            if not MEMO_UUID_RE.match(memo):
+                return self.send_error(400, "bad memo id")
+            return self._json_reply(200, CLAIMS.view(memo))
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            body = None
+        code, ans = claim_request(body)
+        b = body if isinstance(body, dict) else {}
+        log("claim", status=code, memo_id=ans.get("memo_id"), by=str(b.get("by"))[:10], action=str(b.get("action"))[:10],
+            ok=ans.get("ok"), owner=ans.get("owner"), car=ans.get("car"), lease_left_s=ans.get("lease_left_s"),
+            device=ans.get("device"), sender_host=ans.get("sender_host"), announced=ans.get("announced"),
+            error=ans.get("error"), remote=self.client_address[0])
+        self._json_reply(code, ans)
+
     def do_POST(self):
         """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""
         if self.path == "/upload/client-event":
             return self._client_event()
         if self.path == "/upload/heard":
             return self._heard()
+        if self.path == "/upload/claim":
+            return self._claim()
         if self.path != "/upload/played":
             return self._reject(404, "not found")
         try:
@@ -1114,6 +1302,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         log("playback", key=beacon["reply_key"], memo_id=env["correlationid"], phase=beacon["phase"], status=200,
             error=beacon.get("error"), remote=self.client_address[0], ua=ua)
+        phase = {"started": "start", "ended": "end"}.get(beacon["phase"])
+        if phase and not CLAIMS.played(env["correlationid"], phase):
+            log("claim_conflict", memo_id=env["correlationid"], by="car", action=phase, source="playback",
+                key=beacon["reply_key"], note="the car played a reply the phone had taken: it was heard twice")
         self.send_response(200)
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -1133,6 +1325,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._events()
         if self.path == "/upload/presence" or self.path.startswith("/upload/presence?"):
             return self._presence()
+        if self.path.startswith("/upload/claim?"):
+            return self._claim()
         if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")

@@ -201,7 +201,7 @@ os.environ.update({
     "MEMO_GATEWAY_DRAIN_MARKER": str(ROOT / ".drain_request.json"),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
-    "MEMO_PAD_PRESENCE_URL": "http://127.0.0.1:9/upload/presence",
+    "MEMO_PAD_CLAIM_URL": "http://127.0.0.1:9/upload/claim",
     "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_FFMPEG": str(FAKE_FFMPEG), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
 })
@@ -367,16 +367,22 @@ class Pipeline(unittest.TestCase):
             return m and m["stage"] == "await_agent"
         self.tick_until(at_await)
         asked = []
-        with mock.patch.object(iw, "car_speaks_reply", side_effect=lambda memo, k, chunked: asked.append((memo, k)) or "car_live"):
+
+        def decide(memo, k, rkey, t_up, chunked, cancelled=None):
+            # decided once the car's own copy is up (the car could already be playing it)
+            asked.append((memo, k, (BUCKET_DIR / rkey).exists()))
+            return "car_spoke", "car_started"
+        with mock.patch.object(iw, "phone_copy_decision", side_effect=decide):
             journal(m["command_id"], "holocene-pm")
             hermes_session("holocene-pm", mid, "Done. The build is green.")
             self.tick_until(lambda: m["status"] == "done")
-        self.assertEqual(asked, [(mid, key)])
+        self.assertEqual(asked, [(mid, key, True)])
         self.assertNotIn("earshot_key", m)
-        self.assertEqual(m["earshot_skipped"], "car_live")
+        self.assertEqual((m["earshot_skipped"], m["earshot_reason"]), ("car_spoke", "car_started"))
         self.assertFalse(any(mid in p.name for p in (BUCKET_DIR / "phone").rglob("*")) if (BUCKET_DIR / "phone").exists() else False)
         replied = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.replied" and r["data"]["memo_id"] == mid][-1]
-        self.assertEqual((replied["earshot_key"], replied["earshot_skipped"]), (None, "car_live"))
+        self.assertEqual((replied["earshot_key"], replied["earshot_skipped"], replied["earshot_reason"]),
+                         (None, "car_spoke", "car_started"))
         self.assertTrue((BUCKET_DIR / m["reply_key"]).exists(), "the car's own copy is still the reply of record")
 
     def test_02c_a_retry_after_the_car_left_mirrors_to_the_phone_after_all(self):
@@ -393,13 +399,15 @@ class Pipeline(unittest.TestCase):
             m = self.state.memos.get(key)
             return m and m["stage"] == "await_agent"
         self.tick_until(at_await)
-        m["earshot_skipped"] = "car_live"  # what an earlier, failed attempt left behind
-        with mock.patch.object(iw, "car_speaks_reply", return_value=None):
+        m["earshot_skipped"] = "car_spoke"  # what an earlier, failed attempt left behind
+        with mock.patch.object(iw, "phone_copy_decision", return_value=(None, "no_car_claim")):
             journal(m["command_id"], "holocene-pm")
             hermes_session("holocene-pm", mid, "Done again.")
             self.tick_until(lambda: m["status"] == "done")
         self.assertTrue(m.get("earshot_key"), "mirrored this time")
         self.assertNotIn("earshot_skipped", m)
+        replied = [r["data"] for t, r in facts() if t == "bloodbank.audio.memo.replied" and r["data"]["memo_id"] == mid][-1]
+        self.assertEqual((replied["earshot_key"], replied["earshot_reason"]), (m["earshot_key"], "no_car_claim"))
 
     def test_03_agent_timeout_emits_failed_not_retryable(self):
         key = "inbox/holocene-pm/2026/10/15/timeout.ogg"
@@ -2896,52 +2904,128 @@ class EarshotMirror(unittest.TestCase):
         with mock.patch.object(iw, "EARSHOT_CHANNEL", ""):
             self.assertIsNone(iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k"))
 
-    def test_the_phone_copy_is_left_out_only_for_a_car_that_speaks_it(self):
+    def _claims(self, script):
+        """A fake upload proxy: script(body or None) -> answer dict (or raises), every request recorded."""
         from unittest import mock
+        seen = []
 
         class Answer:
             def __init__(self, body): self.body = body
             def read(self): return json.dumps(self.body).encode()
             def __enter__(self): return self
             def __exit__(self, *a): return False
-        notified = {"type": "bloodbank.audio.memo.notified", "data": {"utterance": "reply", "decision": "start"}}
-        quiet = [{"type": "bloodbank.audio.memo.notified", "data": {"utterance": "echo", "decision": "start"}}]
-        asked = []
-        typed = lambda rows: (lambda mid, t, **k: asked.append(t) or rows)
-        # presence first: a live car decides at once, without the trace
-        urls = []
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
-                mock.patch.object(iw.urllib.request, "urlopen", side_effect=lambda req, timeout: urls.append(req.full_url) or Answer({"car_live": True, "device": "d", "host": "car"})):
-            self.assertEqual(iw.car_speaks_reply("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg"), "car_live")
-        self.assertIn("memo=f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", urls[0])
-        self.assertIn("key=inbox%2Fa%2F2026%2F10%2F20%2Fx.ogg", urls[0])
-        self.assertEqual(asked, [])
-        # not live (or unreachable), but the car's queue already started this chunked reply
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
-                mock.patch.object(iw.urllib.request, "urlopen", side_effect=OSError("refused")):
-            self.assertEqual(iw.car_speaks_reply("m", "k"), "car_spoke")
-        self.assertEqual(asked, ["bloodbank.audio.memo.notified"], "one indexed query of that type, not the whole trace")
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
-                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": None})):
-            self.assertIsNone(iw.car_speaks_reply("m", "k", chunked=False), "a single file goes up with the mirror: no car started it")
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed([notified])), \
-                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": "browser"})):
-            self.assertIsNone(iw.car_speaks_reply("m", "k"), "a browser's memo still goes to the phone")
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=typed(quiet)), \
-                mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": False, "host": "car"})):
-            self.assertIsNone(iw.car_speaks_reply("m", "k"))
-        # fail-open: nothing known, nothing reachable -> mirror as before
-        with mock.patch.object(iw.mc_, "typed_events", side_effect=OSError("down")), \
-                mock.patch.object(iw.urllib.request, "urlopen", side_effect=OSError("refused")):
-            self.assertIsNone(iw.car_speaks_reply("m", "k"))
-        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False), mock.patch.object(iw.urllib.request, "urlopen", return_value=Answer({"car_live": True})):
-            self.assertIsNone(iw.car_speaks_reply("m", "k"))
+
+        def urlopen(req, timeout):
+            body = json.loads(req.data) if req.data else None
+            seen.append(body or {"get": req.full_url})
+            return Answer(script(body))
+        return seen, mock.patch.object(iw.urllib.request, "urlopen", side_effect=urlopen)
+
+    def decide(self, script, t_up=1000.0, chunked=True, clock_start=1000.0, cancelled=None):
+        clock = [clock_start]
+        sleep = lambda s: clock.__setitem__(0, clock[0] + s)
+        seen, patch = self._claims(script)
+        with patch:
+            out = iw.phone_copy_decision("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg",
+                                         "replies/2026/10/20/101500Z-a-f753985b-d3fb-5836-9db4-f9fb8e7dbe6b.ogg",
+                                         t_up, chunked, cancelled, clock=lambda: clock[0], sleep=sleep)
+        return out, seen, clock[0] - t_up
+
+    def test_a_car_that_started_the_reply_keeps_the_phone_copy_out(self):
+        (out, seen, waited) = self.decide(lambda b: {"car": "started", "owner": "car", "sender_host": "car"})
+        self.assertEqual(out, ("car_spoke", "car_started"))
+        self.assertEqual(seen[0]["action"], "offer")
+        self.assertEqual((seen[0]["memo_id"], seen[0]["key"], seen[0]["announce"]),
+                         ("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg", False), "chunks were pushed already")
+        self.assertEqual(waited, 0)
+        _, seen, _ = self.decide(lambda b: {"car": "ended"}, chunked=False)
+        self.assertIs(seen[0]["announce"], True, "a one-file reply is pushed to the car with the offer")
+
+    def test_a_car_switched_off_before_the_reply_never_claims_it_and_the_phone_gets_it_after_the_grace(self):
+        # The original bug: the car was "connected" (its dead push stream still open at the edge) but nobody played it.
+        took = []
+
+        def proxy(b):
+            if b and b["action"] == "take":
+                took.append(1)
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            return {"car": None, "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car"}
+        out, seen, waited = self.decide(proxy)
+        self.assertEqual(out, (None, "no_car_claim"))
+        self.assertEqual(took, [1])
+        self.assertGreaterEqual(waited, iw.EARSHOT_CAR_GRACE_S)
+        self.assertLess(waited, iw.EARSHOT_CAR_GRACE_S + 2)
+        # a chunked reply decided long after its first chunk went up: the grace is already over, no wait at all
+        out, _, waited = self.decide(proxy, t_up=1000.0, clock_start=1030.0)
+        self.assertEqual((out, waited), ((None, "no_car_claim"), 30.0))
+
+    def test_a_car_that_holds_the_reply_is_waited_for_and_one_that_lets_go_hands_it_to_the_phone(self):
+        state = {"n": 0}
+
+        def proxy(b):  # holds it for 5 polls (recording), then plays it
+            if b and b["action"] == "take":
+                return {"ok": False, "car": "held", "car_holds": True, "held_ever": True}
+            state["n"] += 1
+            if state["n"] < 6:
+                return {"car": "held", "car_holds": True, "held_ever": True, "sender_host": "car"}
+            return {"car": "started", "held_ever": True}
+        out, _, waited = self.decide(proxy)
+        self.assertEqual(out, ("car_spoke", "car_started"))
+        self.assertEqual(waited, 5 * iw.EARSHOT_POLL_S)
+
+        def lapsed(b):  # it held it, then the lease lapsed (switched off while it waited): taken at once
+            if b and b["action"] == "take":
+                return {"ok": True, "owner": "phone", "held_ever": True}
+            return {"car": "held", "car_holds": False, "held_ever": True}
+        out, _, waited = self.decide(lapsed)
+        self.assertEqual((out, waited), ((None, "car_let_go"), 0))
+
+        def forever(b):
+            return {"car": "held", "car_holds": True, "held_ever": True, "ok": False}
+        out, _, waited = self.decide(forever)
+        self.assertEqual(out, ("car_holds", "car_holds"))
+        self.assertGreaterEqual(waited, iw.EARSHOT_HOLD_MAX_S)
+
+    def test_a_take_the_car_beat_is_looked_at_again(self):
+        def proxy(b):
+            if b and b["action"] == "take":
+                return {"ok": False, "car": "started", "owner": "car"}  # its start landed a moment before the take
+            return {"car": None, "car_holds": False, "held_ever": False}
+        out, seen, _ = self.decide(proxy, clock_start=1020.0)
+        self.assertEqual(out, ("car_spoke", "car_started"))
+
+    def test_a_browser_sender_goes_to_the_phone_at_once_and_an_unreachable_proxy_fails_open(self):
+        out, seen, waited = self.decide(lambda b: {"car": None, "sender_host": "browser"})
+        self.assertEqual((out, waited, len(seen)), ((None, "browser_sender"), 0, 1))
+
+        def down(b):
+            raise OSError("refused")
+        self.assertEqual(self.decide(down)[0], (None, "claim_failed"))
+        flaky = {"n": 0}
+
+        def blips(b):
+            flaky["n"] += 1
+            if flaky["n"] == 1:
+                return {"car": None, "car_holds": False, "held_ever": False}
+            raise OSError("refused")
+        out, _, waited = self.decide(blips)
+        self.assertEqual(out, (None, "claim_failed"))
+        self.assertEqual(waited, 5 * iw.EARSHOT_POLL_S, "five failed polls in a row, then fail-open")
+        from unittest import mock
+        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False):
+            self.assertEqual(self.decide(down)[0], (None, "skip_off"))
+        self.assertEqual(self.decide(lambda b: {"car": "held", "car_holds": True}, cancelled=lambda: True)[0],
+                         ("cancelled", "cancelled"))
 
     def test_a_skipped_phone_copy_is_an_ok_hop_that_says_why(self):
         import memo_trace as mt
         [h] = mt.earshot_hops(None, None, "car_live")
         self.assertEqual((h.name, h.status), ("phone_object", mt.OK))
         self.assertIn("spoke the reply itself", h.detail)
+        [h] = mt.earshot_hops(None, None, "car_spoke", "car_started")
+        self.assertIn("started (or finished) it", h.detail)
+        [h] = mt.earshot_hops(None, None, "car_holds", "car_holds")
+        self.assertIn("still held it", h.detail)
 
     def test_phone_beacons_become_hops_with_skew_corrected_times(self):
         import memo_trace as mt

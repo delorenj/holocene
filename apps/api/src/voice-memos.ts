@@ -243,8 +243,13 @@ export type ReplyInfo = {
   earshotKey?: string;
   /** Earshot object holding the FULL reply text next to the audio (the spoken digest is shorter). */
   earshotTextKey?: string;
-  /** Why the phone copy was left out: car_spoke | car_live (the car that sent the memo speaks it itself). */
+  /** Why the phone copy was left out: car_spoke | car_holds (car_live: the older presence rule). */
   earshotSkipped?: string;
+  /**
+   * Why the phone copy went the way it did: car_started | car_holds (left out) or no_car_claim | car_let_go |
+   * browser_sender | claim_failed | skip_off (mirrored). Absent on a reply from before the claim.
+   */
+  earshotReason?: string;
 };
 
 /** From an audio.memo.failed fact with data.stage "cancelled". */
@@ -479,8 +484,9 @@ export function isCancelFact(d: Record<string, unknown>): boolean {
 
 export function replyInfoOf(d: Record<string, unknown>): ReplyInfo {
   const skipped = str(d.earshot_skipped);
+  const reason = str(d.earshot_reason);
   return { late: d.late === true, escalated: d.escalated === true, earshotKey: str(d.earshot_key), earshotTextKey: str(d.earshot_text_key),
-    ...(skipped ? { earshotSkipped: skipped } : {}) };
+    ...(skipped ? { earshotSkipped: skipped } : {}), ...(reason ? { earshotReason: reason } : {}) };
 }
 
 /** "command c2 · batch lane · fell back: interactive_consumer_not_pulling", or for an escalation: "... · escalated from command c1 (interactive turn timed out)". */
@@ -876,7 +882,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const agentDone = [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
   const playedStarted = memoFacts.find((e) => e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")?.at;
   const timing = memoTiming(startedAt, progress, narrations, speech,
-    { firstChunkAt: chunks[0]?.at, repliedAt: repliedEvent?.at, agentDoneAt: agentDone, playedAt: playedStarted });
+    // reply_up_at: the replied fact waits for the phone decision, so the reply was up (and the car could start) before it
+    { firstChunkAt: chunks[0]?.at, repliedAt: (repliedEvent && str(repliedEvent.data.reply_up_at)) ?? repliedEvent?.at,
+      agentDoneAt: agentDone, playedAt: playedStarted });
   const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
 
   const summary: MemoSummary = {

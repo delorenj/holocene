@@ -1,5 +1,5 @@
 import type { Signal } from "../hub/types";
-import type { AudioLevel, CaptureLevel, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary } from "./types";
+import type { AudioLevel, CaptureLevel, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary, ReplyInfo } from "./types";
 
 export const HOP_SIGNAL: Record<HopStatus, Signal> = {
   ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown",
@@ -101,4 +101,24 @@ export function gatewayPauseLabel(lanes: Lanes): string {
 export function gatewayPauseSentence(lanes: Lanes): string {
   const text = pausedLane(lanes)?.gateway ?? "gateway restarting (draining), memo queued; it runs when the gateway is back";
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The /voice line for the phone copy: why it was left out, or why it was sent (null: nothing to say). */
+export function phoneCopyText(r: ReplyInfo | undefined): string | null {
+  if (!r) return null;
+  if (r.earshotSkipped) {
+    const why = r.earshotSkipped === "car_spoke" ? "started (or finished) it"
+      : r.earshotSkipped === "car_holds" ? "still held it, live, minutes after it was up"
+      : r.earshotSkipped === "car_live" ? "was connected and spoke it itself" : r.earshotSkipped;
+    return `Not mirrored to the phone: the car that sent it ${why}.`;
+  }
+  if (!r.earshotKey || !r.earshotReason) return null;
+  const why: Record<string, string> = {
+    no_car_claim: "no car claimed the reply within the grace window after it was up (switched off, or out of reach)",
+    car_let_go: "the car held it, then stopped renewing its hold before playing it (switched off while it waited)",
+    browser_sender: "it was sent from a browser, which is not in the car",
+    claim_failed: "the upload proxy could not be asked who speaks it (fail-open)",
+    skip_off: "every reply is mirrored (MEMO_EARSHOT_SKIP_CAR=0)"
+  };
+  return `Mirrored to the phone: ${why[r.earshotReason] ?? r.earshotReason}.`;
 }
