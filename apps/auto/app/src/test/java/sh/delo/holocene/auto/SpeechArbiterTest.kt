@@ -865,6 +865,17 @@ class SpeechArbiterTest {
         assertEquals("echo:$memo2", audible)
     }
 
+    @Test fun aSentToneOfANoteWaitsOutAReplyThatPlaysLongerThanTheAckDeadline() {
+        val r = reply(memo1)
+        a.offer(r)
+        t += 8_000
+        a.offer(sentAck().copy(maxWaitMs = SpeechArbiter.SENT_WAIT_MS)) // as MainActivity offers a note's SENT tone
+        t += 6_500 // the reply plays on past the 6 s an ordinary ack would have waited
+        end(r.id)
+        assertEquals("ack:sent:1", audible)
+        assertTrue(dropped("ack:sent:1").isEmpty())
+    }
+
     @Test fun aSentThatWentOutOnARetryOfAnOlderNoteDoesNotTakePriority() {
         a.recordingStarted()
         a.recordingEnded()

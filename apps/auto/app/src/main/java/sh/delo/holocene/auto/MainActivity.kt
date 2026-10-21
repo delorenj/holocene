@@ -722,7 +722,10 @@ class MainActivity : Activity() {
             // Both belong to the note just recorded (STOP tone + "Got it", then the SENT tone): they go before what the
             // recording held back, however long the upload took. A "sent" with no open note is an older note's retry.
             "stopped" -> voice.cue("ack:$id", SpeechKind.ACK, parts, SpeechArbiter.ACK_WAIT_MS, note = voice.arbiter.noteStopped())
-            "sent" -> voice.cue("ack:$id", SpeechKind.ACK, parts, SpeechArbiter.ACK_WAIT_MS, note = if (ev.reason == "retry") null else voice.arbiter.noteSent())
+            "sent" -> {
+                val note = if (ev.reason == "retry") null else voice.arbiter.noteSent()
+                voice.cue("ack:$id", SpeechKind.ACK, parts, if (note != null) SpeechArbiter.SENT_WAIT_MS else SpeechArbiter.ACK_WAIT_MS, note = note)
+            }
             // A newer selection replaces an older one that has not been said yet; a stale name is dropped.
             "selected" -> voice.cue("cue:$id", SpeechKind.CUE, parts, SpeechArbiter.SELECT_WAIT_MS, group = "select")
             // "Recording. Stop first." belongs to the moment; it is never said into or after the note.

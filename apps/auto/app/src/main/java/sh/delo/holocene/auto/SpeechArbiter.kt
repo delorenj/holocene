@@ -589,6 +589,13 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     companion object {
         private const val MEMORY = 200
         const val ACK_WAIT_MS = 6_000L
+        /**
+         * The SENT tone of a note waits this long behind what plays (a reply that was already playing when the upload
+         * landed): it is a half-second tone that tells the driver the note went, so said right after that reply it is
+         * still news, where the 6 s ack deadline dropped it (the sim: the upload landed 8 s after Stop, a 12 s reply
+         * played, the tone expired 3 ms after the reply ended).
+         */
+        const val SENT_WAIT_MS = 30_000L
         const val SELECT_WAIT_MS = 4_000L
         const val CUE_WAIT_MS = 30_000L
         const val ECHO_WAIT_MS = 90_000L
