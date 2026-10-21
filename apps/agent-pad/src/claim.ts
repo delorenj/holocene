@@ -88,18 +88,33 @@ export function confirmDue(since: number, now: number): boolean {
  *  really playing), release (it gave the reply up before any audio). */
 export type ClaimAction = 'hold' | 'start' | 'release'
 
-/** A reply the car left to the phone is looked at again this often, for this long (the watcher's Earshot drop retries
- *  take well under a minute; the push `released` makes the common case immediate, this is the safety net behind it). */
+/**
+ * A reply the car left to the phone is looked at again for as long as a reply is worth playing at all (30 min, main.tsx
+ * MAX_REPLY_AGE_MS), and the left-to-phone list is kept durably (ledger.ts), so a reload or the car's cold start does not
+ * forget it. The watcher's worst case: four Earshot drops of up to 60 s each, their backoff (17 s) and the release (30 s) is
+ * under 5 minutes, then it keeps trying the phone in the background and gives the take back after every failed round, so a
+ * `released` push (or this look, behind it) can come at any point of that half hour. Every 5 s for the first 5 minutes,
+ * every 30 s after that.
+ */
 export const PHONE_RECHECK_EVERY_MS = 5_000
-export const PHONE_RECHECK_MAX_MS = 3 * 60_000
+export const PHONE_RECHECK_SLOW_AFTER_MS = 5 * 60_000
+export const PHONE_RECHECK_SLOW_EVERY_MS = 30_000
+export const PHONE_RECHECK_MAX_MS = 30 * 60_000
 
 export function phoneRecheckDue(since: number, checkedAt: number, now: number): boolean {
-  return now - since < PHONE_RECHECK_MAX_MS && now - checkedAt >= PHONE_RECHECK_EVERY_MS
+  if (now - since >= PHONE_RECHECK_MAX_MS) return false
+  const every = now - since < PHONE_RECHECK_SLOW_AFTER_MS ? PHONE_RECHECK_EVERY_MS : PHONE_RECHECK_SLOW_EVERY_MS
+  return now - checkedAt >= every
 }
 
-/** The proxy's answer to GET /upload/claim?memo=: does the phone still have the reply? 'unknown': no usable answer. */
-export function phoneStillHas(status: number, body: unknown): 'phone' | 'free' | 'unknown' {
+/**
+ * The proxy's answer to GET /upload/claim?memo=: does the phone still have the reply? 'free': nobody owns it (the watcher gave
+ * the take back). 'car': a car claimed it since (this one after a reclaim, or its hold): nothing to do here, it is not
+ * played again from this list. 'unknown': no usable answer.
+ */
+export function phoneStillHas(status: number, body: unknown): 'phone' | 'free' | 'car' | 'unknown' {
   const b = (body && typeof body === 'object' ? body : {}) as { owner?: unknown; memo_id?: unknown }
   if (status !== 200 || typeof b.memo_id !== 'string') return 'unknown'
-  return b.owner === 'phone' ? 'phone' : 'free'
+  if (b.owner === 'phone') return 'phone'
+  return b.owner === 'car' ? 'car' : 'free'
 }

@@ -1,0 +1,10 @@
+reply up, holding replies/2026/10/21/091600Z-holocene-pm-baa5d82b-7dd2-53fc-bca9-723f46e90238.ogg
++  0.1s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=1s chunks=[(1, 1)]
++ 15.5s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=16s chunks=[(1, 1)]
++ 30.8s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=31s chunks=[(1, 1)]
++ 46.1s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=47s chunks=[(1, 1)]
++ 61.5s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=62s chunks=[(1, 1)]
++ 76.7s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=77s chunks=[(1, 1)]
++ 92.0s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=92s chunks=[(1, 1)]
++107.3s hold ok=True owner=car | /voice status=running stuckAt=None replied.hop=waiting waited=108s chunks=[(1, 1)]
+hold released (stopped renewing)

@@ -1,0 +1,55 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 8435f77a-ade5-5023-b805-831975cacb92
+memo_id  8435f77a-ade5-5023-b805-831975cacb92
+key      inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg
+agent    holocene-pm
+command  be45094a-c0de-4b29-b5b5-54ffd19834a7
+lane     interactive   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=8435f77a-ade5-5023-b805-831975cacb92&limit=100'
+
+  OK      s3_object                  2026-10-21T09:04:38.000Z           inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg  39954 bytes
+  OK      upload_proxy_log           2026-10-21T09:04:38.262Z  +0.3s    {"ts":"2026-10-21T09:04:38.262Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","memo_id":"8435f77a-ade5-50
+  OK      fact:uploaded              2026-10-21T09:04:38.263Z  +0.0s    39954 bytes ua=HoloceneAuto/s1-proof (car off)
+  OK      fact:received              2026-10-21T09:04:38.706Z  +0.4s    watcher saw it, lag 450ms
+  OK      fact:transcribed           2026-10-21T09:04:46.514Z  +7.8s    40 chars in 7.25s (large-v3), audio max -8 dBFS, mean -28 dBFS over 3.9 s: 'Pipeline test. Reply with proxy check 3.'
+  OK      audio_level                2026-10-21T09:04:46.514Z  +0.0s    max -8 dBFS, mean -28 dBFS over 3.9 s  -> audible
+  OK      fact:dispatched            2026-10-21T09:04:46.843Z  +0.3s    command be45094a-c0de-4b29-b5b5-54ffd19834a7 -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-21T09:04:46.875Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-21T09:04:46.875290Z updated=2026-10-21T09:04:54.353451Z
+  OK      agent:invocation.started   2026-10-21T09:04:46.875Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-21T09:04:54.353Z  +7.5s    invocation.completed
+  OK      hermes_session             2026-10-21T09:04:46.875Z  +0.0s    agent was given exactly what the watcher sent (248 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      car:chunk#1of1             2026-10-21T09:04:57.530Z  +10.7s   26 chars, tts 2.13s, 2.69s after the agent finished -> replies/2026/10/21/090454Z-holocene-pm-8435f77a-ade5-5023-b805-831975cacb92.ogg
+  OK      fact:replied               2026-10-21T09:05:38.533Z  +41.0s   13 chars, tts 2.13s (voxcpm) -> replies/2026/10/21/090454Z-holocene-pm-8435f77a-ade5-5023-b805-831975cacb92.ogg
+  OK      reply_object               2026-10-21T09:04:57.000Z  +0.0s    replies/2026/10/21/090454Z-holocene-pm-8435f77a-ade5-5023-b805-831975cacb92.ogg  9713 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  UNKNOWN phone_object               -                                  not mirrored to the phone: the phone took it, but its Earshot drop failed on every try, so the take was given back: the car may play it (look for the car's played hop) (optional)
+  FAILED  phone_retry                2026-10-21T09:06:55.471Z           gave_up: no device played the reply in 75 s after the release: the car never claimed it and 1 phone drop(s) failed (the upload proxy could not be asked who has the reply: HTTP Error 404: Not Found) (optional)
+  OK      phone_retry:released       2026-10-21T09:05:38.531Z  +41.5s   the Earshot drop failed 4 times; the take was given back to the car; the phone is tried again in 20 s if no car claims it, for 75 s
+  OK      phone_retry:take_granted   2026-10-21T09:05:58.841Z  +20.3s   no car claimed the reply: the phone took it (round 1)
+  OK      phone_retry:drop_failed    2026-10-21T09:05:59.688Z  +0.8s    the Earshot drop failed again (round 1); the take was given back to the car
+  OK      phone_retry:proxy_unreachable 2026-10-21T09:06:24.922Z  +25.2s   the upload proxy could not be asked who has the reply: HTTP Error 404: Not Found
+  OK      phone_retry:gave_up        2026-10-21T09:06:55.471Z  +30.5s   no device played the reply in 75 s after the release: the car never claimed it and 1 phone drop(s) failed (the upload proxy could not be asked who has the reply: HTTP Error 404: Not Found)
+  OK      car_status_object          2026-10-21T09:05:38.758Z  +0.0s    status/2026/10/21/8435f77a-ade5-5023-b805-831975cacb92.json: stage=done progress_seq=0 narrations=0 elapsed=60.5s
+
+timing   since upload (server clock): first audio up +19.3s | phone decided +60.3s
+         after the agent finished: first audio up +3.2s
+
+VERDICT  STOPPED AT phone_retry: gave_up: no device played the reply in 75 s after the release: the car never claimed it and 1 phone drop(s) failed (the upload proxy could not be asked who has the reply: HTTP Error 404: Not Found)
+
+watcher log (38 lines, journalctl --user -u holocene-inbox-watcher.service):
+  {"ts":"2026-10-21T09:05:27.469Z","svc":"inbox-watcher","level":"info","event":"earshot_text_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene-p
+  {"ts":"2026-10-21T09:05:27.701Z","svc":"inbox-watcher","level":"info","event":"earshot_mirror_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene
+  {"ts":"2026-10-21T09:05:27.858Z","svc":"inbox-watcher","level":"warn","event":"earshot_drop_retry","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","attempt":4,"of":4,"in_s":10.0}
+  {"ts":"2026-10-21T09:05:38.096Z","svc":"inbox-watcher","level":"info","event":"earshot_text_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene-p
+  {"ts":"2026-10-21T09:05:38.323Z","svc":"inbox-watcher","level":"info","event":"earshot_mirror_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene
+  {"ts":"2026-10-21T09:05:38.532Z","svc":"inbox-watcher","level":"warn","event":"earshot_released","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","tries":4,"took_s":0.1,"note":"the phone took it, but it
+  {"ts":"2026-10-21T09:05:38.758Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","agent":"holocene-pm","stage":"replied","fact":"audio.memo
+  {"ts":"2026-10-21T09:05:38.758Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","agent":"holocene-pm","stage":"replied","next":"done","ms":412
+  {"ts":"2026-10-21T09:05:58.841Z","svc":"inbox-watcher","level":"info","event":"phone_retry_decision","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","decision":"take_granted","why":"no car claimed the 
+  {"ts":"2026-10-21T09:05:59.262Z","svc":"inbox-watcher","level":"info","event":"earshot_text_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene-p
+  {"ts":"2026-10-21T09:05:59.478Z","svc":"inbox-watcher","level":"info","event":"earshot_mirror_failed","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","earshot_key":"phone/2026/10/21/090454857Z-holocene
+  {"ts":"2026-10-21T09:05:59.688Z","svc":"inbox-watcher","level":"warn","event":"phone_retry_decision","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","decision":"drop_failed","why":"the Earshot drop fai
+  {"ts":"2026-10-21T09:06:24.922Z","svc":"inbox-watcher","level":"info","event":"phone_retry_decision","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","decision":"proxy_unreachable","why":"the upload pro
+  {"ts":"2026-10-21T09:06:55.471Z","svc":"inbox-watcher","level":"warn","event":"phone_retry_decision","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","decision":"gave_up","why":"no device played the rep
+  {"ts":"2026-10-21T09:06:55.471Z","svc":"inbox-watcher","level":"warn","event":"phone_retry_done","memo_id":"8435f77a-ade5-5023-b805-831975cacb92","key":"inbox/holocene-pm/2026/10/21/20261021T090438Z.ogg","outcome":"gave_up","rounds":1,"after_s":76.9,"note":"no
+[memo:trace] ERROR task failed

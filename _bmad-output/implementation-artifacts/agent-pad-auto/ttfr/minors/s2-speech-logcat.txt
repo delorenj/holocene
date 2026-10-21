@@ -1,0 +1,20 @@
+         1792574505.854  7065  7065 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792574505.855  7065  7065 I HoloceneSpeech: mic  id=arm:175607 memo=- seq=0 mic=arming reason=arming at=1792574505855
+         1792574505.858  7065  7065 I HoloceneSpeech: start arming id=arm:175607 memo=- seq=0 mic=arming reason=arming at=1792574505858
+         1792574509.448  7065  7065 I HoloceneSpeech: end arming id=arm:175607 memo=- seq=0 mic=arming reason= at=1792574509448
+         1792574510.989  7065  7065 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792574510989
+         1792574516.502  7065  7065 I HoloceneSpeech: deferred ack id=ack:stopped:186434 memo=- seq=0 mic=recording reason=recording at=1792574516502
+         1792574516.622  7065  7065 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792574516622
+         1792574516.623  7065  7065 I HoloceneSpeech: start ack id=ack:stopped:186434 memo=- seq=0 mic=idle reason=waited_ms=120 at=1792574516623
+         1792574516.744  7065  7065 I HoloceneSpeech: recording focus released
+         1792574517.067  7065  7065 I HoloceneSpeech: queued ack id=ack:sent:187000 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792574517067
+         1792574519.544  7065  7065 I HoloceneSpeech: end ack id=ack:stopped:186434 memo=- seq=0 mic=idle reason= at=1792574519544
+         1792574519.545  7065  7065 I HoloceneSpeech: start ack id=ack:sent:187000 memo=- seq=0 mic=idle reason=waited_ms=2478 at=1792574519545
+         1792574520.148  7065  7065 I HoloceneSpeech: end ack id=ack:sent:187000 memo=- seq=0 mic=idle reason= at=1792574520148
+         1792574526.464  7065  7065 I HoloceneSpeech: queued echo id=echo:6a60c193-046b-5f3b-843f-72ae72101aa6 memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason= at=1792574526464
+         1792574526.465  7065  7065 I HoloceneSpeech: start echo id=echo:6a60c193-046b-5f3b-843f-72ae72101aa6 memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason=waited_ms=1 at=1792574526465
+         1792574530.982  7065  7065 I HoloceneSpeech: end echo id=echo:6a60c193-046b-5f3b-843f-72ae72101aa6 memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason= at=1792574530982
+         1792574620.806  7589  7589 I HoloceneSpeech: queued reply id=replies/2026/10/21/092214Z-holocene-pm-6a60c193-046b-5f3b-843f-72ae72101aa6.ogg memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason= at=1792574620806
+         1792574620.811  7589  7589 I HoloceneSpeech: start reply id=replies/2026/10/21/092214Z-holocene-pm-6a60c193-046b-5f3b-843f-72ae72101aa6.ogg memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason=waited_ms=7 at=1792574620811
+         1792574621.022  7589  7589 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792574625.306  7589  7589 I HoloceneSpeech: end reply id=replies/2026/10/21/092214Z-holocene-pm-6a60c193-046b-5f3b-843f-72ae72101aa6.ogg memo=6a60c193-046b-5f3b-843f-72ae72101aa6 seq=0 mic=idle reason= at=1792574625306

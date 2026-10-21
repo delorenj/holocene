@@ -329,7 +329,7 @@ class Pipeline(unittest.TestCase):
         types = [t.replace("bloodbank.", "") for t, _ in facts()]
         # a human is waiting: the memo rides the interactive lane (invoke), not the batch lane (start)
         self.assertEqual(types, ["audio.memo.received", "audio.memo.transcribed", "cmd.agent.invocation.invoke",
-                                 "audio.memo.dispatched", "audio.memo.replied"])
+                                 "audio.memo.dispatched", "audio.memo.voiced", "audio.memo.replied"])  # voiced: the one file is up
         dispatched = facts()[3][1]["data"]
         self.assertEqual((dispatched["lane"], dispatched["lane_reason"]), ("interactive", None))
         self.assertEqual(m["lane"], "interactive")
@@ -625,6 +625,10 @@ class Pipeline(unittest.TestCase):
     def test_18_command_consumed_and_dropped_by_the_gateway_is_detected(self):
         from unittest import mock
         key = "inbox/holocene-pm/2026/10/15/dropped.ogg"
+        # The gateway journal exists (another command has a row), this one has none: that is what "consumed and dropped"
+        # looks like. Without it the journal is unreadable, the watcher never starts the dropped-command clock, and the
+        # test passed only when an earlier test had happened to create the journal.
+        journal(str(uuid.uuid4()), "holocene-pm")
         put(key)
         empty = {"ok": True, "num_waiting": 1, "num_pending": 0, "num_ack_pending": 0}
         self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "await_agent")
@@ -1500,6 +1504,10 @@ class PromptIntegrity(unittest.TestCase):
         m = self.discover(key)
         put(key, b"OggS fake audio, replaced")
         self.tick_until(lambda: m["status"] == "failed")
+        # "failed" is visible to this thread the moment the worker sets it; wait for the worker's critical section (it also
+        # releases the memo, and a retry is refused while the memo is still "running") instead of racing it
+        with self.w.mu:
+            self.assertNotIn(key, self.w.running)
         ctl = Path(mc_.STATE_DIR) / "control"
         ctl.mkdir(parents=True, exist_ok=True)
         (ctl / f"retry-{m['memo_id']}").write_text("")
@@ -3602,6 +3610,205 @@ class PostV12Fixes(MemoHarness, unittest.TestCase):
         text = (Path(__file__).resolve().parents[2] / "apps/agent-pad/src/roster.ts").read_text()
         idle_s = int(re.search(r"REPLY_POLL_IDLE_MS = (\d+)", text).group(1)) / 1000
         self.assertGreaterEqual(float(os.environ.get("MEMO_EARSHOT_CAR_GRACE_S", iw.EARSHOT_CAR_GRACE_S)), idle_s + 3)
+
+
+class PhoneRetry(MemoHarness, unittest.TestCase):
+    """A reply the phone took whose Earshot drop failed for good is given back to the car; with no car to claim it the
+    watcher keeps trying the phone in the background (backoff, bounded), stops as soon as either device has it, and writes
+    down every decision."""
+
+    def reply_ready(self, name, reply="A short reply."):
+        key, m = self.to_await(name)
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], reply, ts=time.time())
+        return key, m
+
+    def released(self, name, world):
+        """Run a memo until its drop failed for good and the take was given back; `world` scripts the proxy and the drop."""
+        key, m = self.reply_ready(name)
+        self.world = world
+        world.setdefault("car", None)
+        world.setdefault("holds", False)
+        world.setdefault("calls", [])
+        world.setdefault("drops", 0)
+        world.setdefault("drop_ok_from", 10 ** 6)       # the drop succeeds from this attempt on (counted over the whole life)
+        world.setdefault("owner", None)
+        real = iw.mirror_to_earshot
+
+        def script(mid, body=None):
+            body = body or {}
+            world["calls"].append(body.get("action") or "get")
+            if body.get("action") == "take":
+                if world["car"] in ("started", "ended") or world["holds"]:
+                    return {"ok": False, "owner": "car", "car": world["car"], "car_holds": world["holds"]}
+                world["owner"] = "phone"
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            if body.get("action") == "release":
+                world["owner"] = None
+                return {"ok": True, "owner": None}
+            return {"car": world["car"], "car_holds": world["holds"], "held_ever": False, "sender_host": "car", "settling_s": 0,
+                    "owner": world["owner"], "device": "pad"}
+
+        def drop(audio, stamp, agent, mid, k, text=None, on_text=None):
+            world["drops"] += 1
+            if world["drops"] >= world["drop_ok_from"]:
+                return real(audio, stamp, agent, mid, k, text, on_text)
+            return None
+        self.patches = [unittest.mock.patch.object(iw, n, v) for n, v in (
+            ("EARSHOT_SKIP_CAR", True), ("EARSHOT_CAR_GRACE_S", 0.0), ("EARSHOT_POLL_S", 0.01), ("EARSHOT_SETTLE_S", 0.0),
+            ("EARSHOT_DROP_BACKOFF_S", (0.01,)), ("EARSHOT_RETRY_FIRST_S", 0.05), ("EARSHOT_RETRY_BACKOFF_S", (0.05,)),
+            ("EARSHOT_RETRY_TOTAL_S", world.get("total", 30.0)), ("EARSHOT_RELEASE_BUDGET_S", 0.0))]
+        self.patches += [unittest.mock.patch.object(iw, "mirror_to_earshot", side_effect=drop),
+                         unittest.mock.patch.object(iw, "claim_call", side_effect=script)]
+        for p in self.patches:
+            p.start()
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(self.of_type("replied", key)[-1]["earshot_skipped"], "car_released")
+        return key, m
+
+    def tearDown(self):
+        for p in getattr(self, "patches", []):
+            p.stop()
+        self.patches = []
+        super().tearDown()
+
+    def settle(self, m, key, n=300):
+        self.tick_until(lambda: m["phone_retry"]["state"] == "done" and f"phone:{key}" not in self.w.running, n=n)
+        return m["phone_retry"]
+
+    def test_a_released_reply_nobody_claims_is_dropped_for_the_phone_later(self):
+        key, m = self.released("s1-late-drop", {"drop_ok_from": iw.EARSHOT_DROP_TRIES + 1})
+        r = m["phone_retry"]
+        self.assertEqual((r["state"], r["rounds"]), ("pending", 0))
+        self.assertGreater(r["next_at"], time.time() - 1)
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "phone_dropped")
+        self.assertEqual(m["earshot_key"], iw.earshot_key_for(mc_.parse_iso(m["reply_stamp"]), "holocene-pm", m["memo_id"]))
+        self.assertTrue((BUCKET_DIR / m["earshot_key"]).exists())
+        self.assertEqual(self.world["drops"], iw.EARSHOT_DROP_TRIES + 1, "one drop per round, none after it landed")
+        # the take is asked for before the drop, and kept (a car that comes later is refused: one device plays it)
+        c = self.world["calls"]
+        self.assertLess(len(c) - 1 - c[::-1].index("release"), len(c) - 1 - c[::-1].index("take"))
+        self.assertEqual(self.world["owner"], "phone")
+        self.assertEqual([d["decision"] for d in r["decisions"]], ["released", "take_granted", "phone_dropped"])
+        json.dumps(self.state.data, default=str)  # persisted state stays serializable
+        self.assertNotIn("reply_text", r)
+
+    def test_a_car_that_plays_it_after_the_release_ends_the_retry_without_a_drop(self):
+        key, m = self.released("s1-car-plays", {})
+        drops, takes = self.world["drops"], self.world["calls"].count("take")
+        self.world["car"] = "started"
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "car_heard")
+        self.assertEqual(self.world["drops"], drops, "nothing was dropped for the phone")
+        self.assertEqual(self.world["calls"].count("take"), takes, "the phone did not take it again")
+        self.assertNotIn("earshot_key", m)
+
+    def test_a_car_that_holds_it_is_waited_for_and_the_phone_takes_over_when_the_hold_lapses(self):
+        key, m = self.released("s1-car-holds", {})
+        self.world["holds"] = True
+        self.tick_until(lambda: any(d["decision"] == "car_holds" for d in m["phone_retry"]["decisions"]))
+        drops, takes = self.world["drops"], self.world["calls"].count("take")
+        self.ticks(6)
+        self.assertEqual((self.world["drops"], self.world["calls"].count("take")), (drops, takes), "a live hold is never raced")
+        self.assertEqual(m["phone_retry"]["state"], "pending")
+        self.world["holds"] = False
+        self.world["drop_ok_from"] = self.world["drops"] + 1
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "phone_dropped")
+        self.assertEqual(sum(1 for d in r["decisions"] if d["decision"] == "car_holds"), 1, "a repeated decision is written once")
+
+    def test_every_failed_round_gives_the_take_back_and_the_budget_ends_it_with_the_reason(self):
+        key, m = self.released("s1-gives-up", {"total": 0.6})
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "gave_up")
+        self.assertGreaterEqual(r["rounds"], 2)
+        self.assertEqual(self.world["owner"], None, "the take was given back after the last failed drop")
+        kinds = [d["decision"] for d in r["decisions"]]
+        self.assertEqual(kinds[0], "released")
+        self.assertEqual(kinds.count("take_granted"), kinds.count("drop_failed"), kinds)
+        self.assertIn("no device played the reply", r["decisions"][-1]["why"])
+        self.assertNotIn("earshot_key", m)
+        self.assertEqual(self.world["calls"].count("release"), 1 + r["rounds"])
+
+    def test_a_drop_that_landed_despite_its_error_is_kept_not_dropped_twice(self):
+        key, m = self.released("s1-landed", {})
+        stamp = mc_.parse_iso(m["reply_stamp"])
+        ekey = iw.earshot_key_for(stamp, "holocene-pm", m["memo_id"])
+        dst = BUCKET_DIR / ekey
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(b"OggS landed")
+        try:
+            drops, takes = self.world["drops"], self.world["calls"].count("take")
+            r = self.settle(m, key)
+            self.assertEqual(r["outcome"], "phone_has_it")
+            self.assertEqual((self.world["drops"], m["earshot_key"]), (drops, ekey))
+            self.assertEqual(self.world["calls"].count("take"), takes)
+        finally:
+            dst.unlink(missing_ok=True)
+
+    def test_an_unreachable_proxy_is_waited_for_never_raced(self):
+        key, m = self.released("s1-proxy-down", {})
+        real = iw.claim_call
+
+        def down(mid, body=None):
+            raise OSError("proxy down")
+        with unittest.mock.patch.object(iw, "claim_call", side_effect=down):
+            self.tick_until(lambda: any(d["decision"] == "proxy_unreachable" for d in m["phone_retry"]["decisions"]))
+            drops = self.world["drops"]
+            self.ticks(5)
+        self.assertEqual(self.world["drops"], drops)
+        self.assertEqual(m["phone_retry"]["state"], "pending")
+
+    def test_the_retry_survives_a_restart_and_a_zero_budget_turns_it_off(self):
+        key, m = self.released("s1-restart", {"drop_ok_from": iw.EARSHOT_DROP_TRIES + 1, "total": 30.0})
+        self.w.shutdown(wait=False)
+        state2 = iw.State(self.state.dir)
+        w2 = iw.Watcher(state2)
+        m2 = state2.memos[key]
+        self.assertEqual(m2["phone_retry"]["state"], "pending")
+        for _ in range(200):
+            w2.tick(discover=False)
+            if m2["phone_retry"]["state"] == "done" and f"phone:{key}" not in w2.running:
+                break
+            time.sleep(0.05)
+        self.assertEqual(m2["phone_retry"]["outcome"], "phone_dropped")
+        w2.shutdown(wait=False)
+        with unittest.mock.patch.object(iw, "EARSHOT_RETRY_TOTAL_S", 0.0):
+            m3 = {"memo_id": "x", "key": "k", "reply_text": "t"}
+            self.w.start_phone_retry(m3, "replies/x.ogg", 4)
+            self.assertNotIn("phone_retry", m3)
+
+    def test_a_one_file_reply_is_voiced_as_chunk_1_of_1_when_the_car_could_start_it(self):
+        key, m = self.reply_ready("s3-one-file")
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", False):
+            self.tick_until(lambda: m["status"] == "done")
+        voiced = self.of_type("voiced", key)
+        replied = self.of_type("replied", key)[-1]
+        self.assertEqual(len(voiced), 1)
+        v = voiced[0]
+        self.assertEqual((v["chunk"], v["chunks"], v["chunk_s3_key"], v["reply_s3_key"]),
+                         (1, 1, replied["reply_s3_key"], replied["reply_s3_key"]))
+        self.assertIsNone(replied["reply_chunks"])
+        order = [t.split(".")[-1] for t, r in facts() if r["data"].get("s3_key") == key and t.endswith(("voiced", "replied"))]
+        self.assertEqual(order, ["voiced", "replied"], "voiced is up before the (possibly delayed) replied fact")
+        self.assertIsNotNone(v["since_agent_done_seconds"])
+        self.assertNotIn("voiced_one", m)  # compacted once done
+
+    def test_the_trace_shows_the_retry_and_why_it_ended(self):
+        import memo_trace as mt
+        base = {"state": "done", "rounds": 2, "since_ts": 0, "deadline_ts": 0, "ended_at": "2026-10-21T10:00:00Z",
+                "decisions": [{"at": "2026-10-21T09:00:00Z", "decision": "released", "why": "w1"},
+                              {"at": "2026-10-21T10:00:00Z", "decision": "gave_up", "why": "no device played the reply"}]}
+        hops = mt.phone_retry_hops({"phone_retry": {**base, "outcome": "gave_up"}})
+        self.assertEqual((hops[0].name, hops[0].status), ("phone_retry", mt.FAILED))
+        self.assertIn("no device played the reply", hops[0].detail)
+        self.assertEqual([h.name for h in hops[1:]], ["phone_retry:released", "phone_retry:gave_up"])
+        ok = mt.phone_retry_hops({"phone_retry": {**base, "outcome": "phone_dropped"}})
+        self.assertEqual(ok[0].status, mt.OK)
+        pending = mt.phone_retry_hops({"phone_retry": {**base, "state": "pending", "deadline_ts": time.time() + 100}})
+        self.assertEqual(pending[0].status, mt.UNKNOWN)
+        self.assertEqual(mt.phone_retry_hops({}), [])
 
 
 if __name__ == "__main__":

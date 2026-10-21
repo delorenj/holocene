@@ -193,7 +193,34 @@ EARSHOT_MIRRORED = {
     "browser_sender": "it was sent from a browser, which is not in the car",
     "claim_failed": "the upload proxy could not be asked who speaks it (fail-open, a reply from before 2026-10-21)",
     "skip_off": "MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply",
+    "drop_failed": ("the first Earshot drops failed and the take was given back; no car claimed the reply, so a later retry "
+                    "took it for the phone again (see phone_retry)"),
 }
+
+
+def phone_retry_hops(rec: dict | None) -> list[Hop]:
+    """The background phone retry of a reply whose first Earshot drop failed for good (watcher state: m.phone_retry): one
+    hop with where it stands and why, then one line per decision it recorded."""
+    r = (rec or {}).get("phone_retry")
+    if not isinstance(r, dict):
+        return []
+    decisions = r.get("decisions") or []
+    last = decisions[-1] if decisions else {}
+    outcome = r.get("outcome")
+    left = max(0, int((r.get("deadline_ts") or 0) - time.time()))
+    if r.get("state") == "pending":
+        status, detail = UNKNOWN, (f"still trying: {r.get('rounds', 0)} phone drop(s) so far, {left} s of the retry budget left; "
+                                   f"last: {last.get('decision')}: {last.get('why')}")
+    elif outcome in ("phone_dropped", "phone_has_it", "car_heard"):
+        status, detail = OK, f"{outcome}: {last.get('why')}"
+    elif outcome == "cancelled":
+        status, detail = OK, f"cancelled: {last.get('why')}"
+    else:
+        status, detail = FAILED, f"{outcome}: {last.get('why')}"
+    hops = [Hop("phone_retry", status, c.parse_iso(r.get("ended_at")) if r.get("ended_at") else None, detail, optional=True)]
+    for d in decisions[-12:]:
+        hops.append(Hop(f"phone_retry:{d.get('decision')}", OK, c.parse_iso(d.get("at")), str(d.get("why"))[:200], optional=True))
+    return hops
 
 
 def earshot_hops(ekey: str | None, tkey: str | None = None, skipped: str | None = None, reason: str | None = None) -> list[Hop]:
@@ -351,7 +378,7 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     obj = next((h.ts for h in hops if h.name == "reply_object" and h.status == OK and h.ts), None)
     replied = next((h.ts for h in hops if h.name == "fact:replied" and h.status == OK and h.ts), None)
     reply_up = obj or replied
-    first_audio = first_chunk or reply_up
+    first_audio = first_chunk or ctx.get("voiced_one_ts") or reply_up
     rel("first audio up", first_audio)
     if first_chunk is not None:
         rel("full reply up", reply_up)
@@ -618,7 +645,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
     for e in voiced:  # a stage retry re-uploads a chunk under the same key; its first announcement counts
         firsts.setdefault((e.get("data") or {}).get("chunk"), e)
     chunks = [firsts[k] for k in sorted(k for k in firsts if isinstance(k, int))]
-    ctx["first_chunk_ts"] = evt_ts(chunks[0]) if chunks else None
+    one_file = bool(chunks) and (chunks[0].get("data") or {}).get("chunks") == 1  # a reply spoken as one file: chunk 1 of 1
+    ctx["first_chunk_ts"] = evt_ts(chunks[0]) if chunks and not one_file else None
+    ctx["voiced_one_ts"] = evt_ts(chunks[0]) if one_file else None  # the one file is up: the car could start from here
     for e in (chunks[:1] + chunks[-1:] if len(chunks) > 1 else chunks):
         d = e.get("data") or {}
         since = d.get("since_agent_done_seconds")
@@ -661,7 +690,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
         # fact) to the pad's "started". reply_age_ms counts from the reply key's stamp, which is taken BEFORE the voice
         # is rendered, so it also contains the whole TTS time (the 10-22 s "car lag" of 2026-10-19/20 was mostly that).
         # (a one-file reply's replied fact waits for the phone decision: reply_up_at is when the car could start it)
-        avail = ctx.get("first_chunk_ts") or (c.parse_iso(((rep or {}).get("data") or {}).get("reply_up_at"))
+        avail = ctx.get("first_chunk_ts") or ctx.get("voiced_one_ts") or (c.parse_iso(((rep or {}).get("data") or {}).get("reply_up_at"))
                                                or (evt_ts(rep) if rep else None))
         lag = (evt_ts(p_start) - avail).total_seconds() if avail and evt_ts(p_start) else None
         ctx["pad_lag_s"] = lag
@@ -686,6 +715,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
     if reply_key:
         try:
             hops.extend(earshot_hops(ekey, tkey, skipped, reason))
+            hops.extend(phone_retry_hops(rec))
         except Exception as e:  # noqa: BLE001
             hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
 

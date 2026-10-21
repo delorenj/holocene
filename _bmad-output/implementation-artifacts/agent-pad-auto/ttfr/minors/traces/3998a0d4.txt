@@ -1,0 +1,49 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace 3998a0d4-afbb-58d5-9b40-7a457c015e30
+memo_id  3998a0d4-afbb-58d5-9b40-7a457c015e30
+key      inbox/holocene-pm/2026/10/21/20261021T090733Z.ogg
+agent    holocene-pm
+command  3358df93-c7de-48a1-b7d4-c704e28b329f
+lane     interactive   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=3998a0d4-afbb-58d5-9b40-7a457c015e30&limit=100'
+
+  OK      s3_object                  2026-10-21T09:07:33.000Z           inbox/holocene-pm/2026/10/21/20261021T090733Z.ogg  39954 bytes
+  OK      upload_proxy_log           2026-10-21T09:07:33.922Z  +0.9s    {"ts":"2026-10-21T09:07:33.922Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/21/20261021T090733Z.ogg","memo_id":"3998a0d4-afbb-58
+  OK      fact:uploaded              2026-10-21T09:07:33.922Z  +0.0s    39954 bytes ua=HoloceneAuto/s1-proof (car off)
+  OK      fact:received              2026-10-21T09:07:34.333Z  +0.4s    watcher saw it, lag 415ms
+  OK      fact:transcribed           2026-10-21T09:07:39.999Z  +5.7s    40 chars in 5.18s (large-v3), audio max -8 dBFS, mean -28 dBFS over 3.9 s: 'Pipeline test. Reply with proxy check 3.'
+  OK      audio_level                2026-10-21T09:07:39.999Z  +0.0s    max -8 dBFS, mean -28 dBFS over 3.9 s  -> audible
+  OK      fact:dispatched            2026-10-21T09:07:40.271Z  +0.3s    command 3358df93-c7de-48a1-b7d4-c704e28b329f -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-21T09:07:40.309Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-21T09:07:40.309672Z updated=2026-10-21T09:07:49.092144Z
+  OK      agent:invocation.started   2026-10-21T09:07:40.309Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-21T09:07:49.092Z  +8.8s    invocation.completed
+  OK      hermes_session             2026-10-21T09:07:40.309Z  +0.0s    agent was given exactly what the watcher sent (248 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      car:chunk#1of1             2026-10-21T09:07:52.163Z  +11.9s   26 chars, tts 2.07s, 2.69s after the agent finished -> replies/2026/10/21/090749Z-holocene-pm-3998a0d4-afbb-58d5-9b40-7a457c015e30.ogg
+  OK      fact:replied               2026-10-21T09:08:32.814Z  +40.7s   13 chars, tts 2.07s (voxcpm) -> replies/2026/10/21/090749Z-holocene-pm-3998a0d4-afbb-58d5-9b40-7a457c015e30.ogg
+  OK      reply_object               2026-10-21T09:07:51.000Z  +0.0s    replies/2026/10/21/090749Z-holocene-pm-3998a0d4-afbb-58d5-9b40-7a457c015e30.ogg  10858 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      phone_decision             -                                  mirrored to the phone: the first Earshot drops failed and the take was given back; no car claimed the reply, so a later retry took it for the phone again (see phone_retry)
+  OK      phone_text                 2026-10-21T09:12:22.000Z  +271.0s  s3://earshot/phone/2026/10/21/090749485Z-holocene-pm-3998a0d4-afbb-58d5-9b40-7a457c015e30.txt  13 bytes (the full reply text)
+  OK      phone_object               2026-10-21T09:12:23.000Z  +1.0s    s3://earshot/phone/2026/10/21/090749485Z-holocene-pm-3998a0d4-afbb-58d5-9b40-7a457c015e30.ogg  10858 bytes
+  OK      phone_detected             2026-10-21T09:12:23.003Z  +0.0s    SM-S948U app 0.1.3
+  OK      phone_started              2026-10-21T09:12:23.295Z  +0.3s    SM-S948U app 0.1.3
+  OK      phone_finished             2026-10-21T09:12:26.404Z  +3.1s    SM-S948U app 0.1.3
+  OK      phone_retry                2026-10-21T09:12:23.027Z  +0.0s    phone_dropped: the phone has the reply after all (round 9, 230 s after the release)
+  OK      phone_retry:take_granted   2026-10-21T09:10:11.547Z  +0.0s    no car claimed the reply: the phone took it (round 4)
+  OK      phone_retry:drop_failed    2026-10-21T09:10:12.384Z  +0.8s    the Earshot drop failed again (round 4); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:10:37.673Z  +25.3s   no car claimed the reply: the phone took it (round 5)
+  OK      phone_retry:drop_failed    2026-10-21T09:10:38.509Z  +0.8s    the Earshot drop failed again (round 5); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:11:03.796Z  +25.3s   no car claimed the reply: the phone took it (round 6)
+  OK      phone_retry:drop_failed    2026-10-21T09:11:04.582Z  +0.8s    the Earshot drop failed again (round 6); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:11:29.894Z  +25.3s   no car claimed the reply: the phone took it (round 7)
+  OK      phone_retry:drop_failed    2026-10-21T09:11:30.698Z  +0.8s    the Earshot drop failed again (round 7); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:11:55.998Z  +25.3s   no car claimed the reply: the phone took it (round 8)
+  OK      phone_retry:drop_failed    2026-10-21T09:11:56.872Z  +0.9s    the Earshot drop failed again (round 8); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:12:22.197Z  +25.3s   no car claimed the reply: the phone took it (round 9)
+  OK      phone_retry:phone_dropped  2026-10-21T09:12:23.027Z  +0.8s    the phone has the reply after all (round 9, 230 s after the release)
+  OK      car_status_object          2026-10-21T09:08:32.944Z  +0.0s    status/2026/10/21/3998a0d4-afbb-58d5-9b40-7a457c015e30.json: stage=done progress_seq=0 narrations=0 elapsed=59.0s
+
+timing   since upload (server clock): first audio up +18.2s | phone decided +58.9s
+         after the agent finished: first audio up +3.1s
+
+VERDICT  COMPLETE in 18.0s; playback on the pad not reported; speaking on the phone 272.3s after the full reply was up (290.3s recording-to-voice)

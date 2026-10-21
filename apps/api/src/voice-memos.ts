@@ -89,7 +89,11 @@ export const HOPS: readonly Spec[] = [
 /** The watcher's MEMO_EARSHOT_HOLD_MAX_S (300 s) plus a margin: how long a reply that is already up may wait for its replied fact. */
 export const REPLY_DECISION_BUDGET_SECONDS = 330;
 
-/** When the reply's first audio went up (voiced chunk 1), epoch ms: the car could start from here. */
+/**
+ * When the reply's first audio went up (the first audio.memo.voiced: chunk 1 of a chunked reply, or chunk 1 of 1 for a
+ * reply spoken as one file), epoch ms: the car could start from here. Replies from before 2026-10-21 spoken as one file
+ * have no voiced fact and count from the agent's finish.
+ */
 export function firstAudioUpMs(facts: readonly JourneyEvent[]): number | undefined {
   const t = facts.filter((e) => e.type === "bloodbank.audio.memo.voiced").map((e) => ms(e.at)).filter((x): x is number => x !== undefined);
   return t.length ? Math.min(...t) : undefined;
@@ -804,10 +808,11 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     // the car can speak it. The wait is then counted from that audio, with the decision's own allowance, and a car that
     // really started the reply (the pad's played fact, or its speech arbiter's start) is not waiting on anything.
     let carHasIt = false;
+    let audioUpAt: number | undefined;
     if (waiting?.id === "replied") {
-      const audioUp = firstAudioUpMs(memoFacts);
-      if (audioUp !== undefined) {
-        since = Math.max(since ?? 0, audioUp);
+      audioUpAt = firstAudioUpMs(memoFacts);
+      if (audioUpAt !== undefined) {
+        since = Math.max(since ?? 0, audioUpAt);
         budget += REPLY_DECISION_BUDGET_SECONDS;
       }
       carHasIt = carStartedMs(memoFacts) !== undefined;
@@ -818,6 +823,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       waiting.status = waited > budget && !carHasIt ? "stuck" : "waiting";
       waiting.waitedSeconds = waited;
       if (carHasIt) waiting.detail = "the car is speaking this reply; the replied fact waits for the watcher's phone decision";
+      else if (audioUpAt !== undefined && waiting.id === "replied") waiting.detail = "the reply is rendered and the car can speak it (a live car may hold it behind a recording); the replied fact waits for the watcher's phone-or-car decision";
       if (waiting.failures.length) {
         const last = waiting.failures.at(-1)!;
         waiting.error = last;

@@ -6,7 +6,7 @@ import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
-import { type Ledger, closeUnit, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
+import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLeaveToPhone, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, takeBackFromPhone, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 import { type Claim, type ClaimAction, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, PHONE_RECHECK_MAX_MS, phoneRecheckDue, phoneStillHas, startPlan, startVerdict } from './claim'
 
@@ -522,6 +522,9 @@ function App() {
       })().catch(() => { /* storage blocked */ }),
       new Promise<void>((r) => setTimeout(r, LEDGER_WAIT_MS)),
     ]).then(() => {
+      // Replies this car left to the phone before a reload or a cold start: looked at again, so a take the watcher gives
+      // back later still reaches this car (the in-memory list below is empty after either).
+      for (const [key, at] of Object.entries(ledger.current.phone)) if (!phoneTook.current.has(key)) phoneTook.current.set(key, { at, checkedAt: 0 })
       if (!read) playAll.current = true // the ledger is unknown: never drop a reply that may be this pad's own
       if (!DEVICE.id) {
         DEVICE.id = validDeviceId(lsGet(LS_DEVICE)) ? lsGet(LS_DEVICE) : newDeviceId()
@@ -958,12 +961,20 @@ function App() {
     playingKey.current = ''
     setStatus('reply left to the phone')
     phoneTook.current.set(key, { at: Date.now(), checkedAt: Date.now() })
+    setLedger(ledgerLeaveToPhone(ledger.current, key, Date.now())) // durable: a reload or a cold start keeps looking
     finish(key)
+  }
+  // The reply is settled as far as the phone list goes (reclaimed, claimed by a car, or too old to matter).
+  const forgetPhoneTake = (key: string) => {
+    phoneTook.current.delete(key)
+    setLedger(takeBackFromPhone(ledger.current, key))
   }
   // The watcher gave the phone's take back (its Earshot drop failed): the reply is this car's again. It is taken up the way
   // a fresh reply is: the ledger owes it, its objects are listed, and the hold at ingest says whether it is the car's.
   const reclaimFromPhone = async (key: string) => {
-    if (!phoneTook.current.delete(key)) return
+    const left = phoneTook.current.get(key)?.at ?? ledger.current.phone[key]
+    if (left === undefined) return
+    forgetPhoneTake(key)
     enqueued.current.delete(key)
     claims.current.delete(key)
     setLedger(openUnit(ledger.current, key, Date.now()))
@@ -971,7 +982,10 @@ function App() {
       const page = await listPage(key.slice(0, key.lastIndexOf('.')), '', null)
       for (const k of page.keys.sort()) ingestReply(k)
       setStatus('reply is the car\'s again')
-    } catch { phoneTook.current.set(key, { at: Date.now(), checkedAt: 0 }) } // the next look tries again
+    } catch { // the next look tries again
+      phoneTook.current.set(key, { at: left, checkedAt: 0 })
+      setLedger(ledgerLeaveToPhone(ledger.current, key, left))
+    }
     pump.current()
   }
   const lookAtPhoneTake = async (key: string) => {
@@ -979,9 +993,10 @@ function App() {
     const t = phoneTook.current.get(key)
     if (!memo || !t) return
     t.checkedAt = Date.now()
-    let has: 'phone' | 'free' | 'unknown' = 'unknown'
+    let has: 'phone' | 'free' | 'car' | 'unknown' = 'unknown'
     try { has = await fetchWithin(`/upload/claim?memo=${encodeURIComponent(memo)}`, CLAIM_WAIT_MS, async (r) => phoneStillHas(r.status, await r.json().catch(() => null))) } catch { /* next look */ }
     if (has === 'free') await reclaimFromPhone(key)
+    else if (has === 'car') forgetPhoneTake(key) // a car claimed it since (this one, before a reload): not played again from here
   }
 
   // No live hold and no answer from the proxy (it is down, or out of reach): the reply stays at the head of the queue,
@@ -1016,7 +1031,7 @@ function App() {
         if (pending && units.current.has(key) && holdDue(claims.current.get(key), now)) void claimReply(key, 'hold')
       }
       for (const [key, t] of [...phoneTook.current]) {
-        if (now - t.at >= PHONE_RECHECK_MAX_MS) phoneTook.current.delete(key)
+        if (now - t.at >= PHONE_RECHECK_MAX_MS) forgetPhoneTake(key)
         else if (phoneRecheckDue(t.at, t.checkedAt, now)) void lookAtPhoneTake(key)
       }
       for (const [key, since] of [...unconfirmed.current]) {
@@ -1218,7 +1233,7 @@ function App() {
     }
     if (ev.fact === 'released') { // the watcher gave the phone's take on a reply back: this car plays it after all
       const unit = ev.reply_s3_key
-      if (unit && phoneTook.current.has(unit)) void reclaimFromPhone(unit)
+      if (unit && (phoneTook.current.has(unit) || unit in ledger.current.phone)) void reclaimFromPhone(unit)
       return
     }
     if (ev.fact === 'narrated' && f && !f.finalAt && ev.progress_s3_key && ev.narration) {

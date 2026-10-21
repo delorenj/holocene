@@ -139,6 +139,15 @@ EARSHOT_DROP_TRIES = int(os.environ.get("MEMO_EARSHOT_DROP_TRIES", "4"))
 EARSHOT_DROP_BACKOFF_S = tuple(float(x) for x in os.environ.get("MEMO_EARSHOT_DROP_BACKOFF_S", "2,5,10").split(",") if x.strip()) or (2.0,)
 # How long the release of the phone's take is tried (the proxy may be down as well) before the stage is retried.
 EARSHOT_RELEASE_BUDGET_S = float(os.environ.get("MEMO_EARSHOT_RELEASE_BUDGET_S", "30"))
+# A reply the phone took, whose Earshot drop failed for good, is given back to the car (the release above). With the car off
+# for good nobody claims it, so the watcher keeps trying the phone in the background: EARSHOT_RETRY_FIRST_S after the
+# release (a live car reclaims within about a second of the `released` push, 20 s at the slowest), then after each failed
+# round EARSHOT_RETRY_BACKOFF_S (the last value repeats), until the phone has it, a car plays it, or EARSHOT_RETRY_TOTAL_S
+# have passed since the release (0 turns the retry off). Every round re-asks the proxy: a car that holds or started the
+# reply is never raced, and the phone's take is atomic, so one device plays it.
+EARSHOT_RETRY_FIRST_S = float(os.environ.get("MEMO_EARSHOT_RETRY_FIRST_S", "45"))
+EARSHOT_RETRY_BACKOFF_S = tuple(float(x) for x in os.environ.get("MEMO_EARSHOT_RETRY_BACKOFF_S", "60,120,240,300").split(",") if x.strip()) or (60.0,)
+EARSHOT_RETRY_TOTAL_S = float(os.environ.get("MEMO_EARSHOT_RETRY_TOTAL_S", "2700"))
 # A live car that holds the reply (it is recording, or another reply plays) is waited for this long, then left to it.
 EARSHOT_HOLD_MAX_S = float(os.environ.get("MEMO_EARSHOT_HOLD_MAX_S", "300"))
 EARSHOT_POLL_S = float(os.environ.get("MEMO_EARSHOT_POLL_S", "1"))
@@ -340,6 +349,7 @@ def compact(m: dict) -> None:
                 m[k] = m[k][:n]
         m.pop("progress_full", None)  # the status object keeps the short line; the full one is in Candystore
         m.pop("voiced_keys", None)    # the chunk keys only matter while a cancel could still retract them
+        m.pop("voiced_one", None)
         m.pop("reply_up", None)
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
@@ -947,6 +957,7 @@ class Watcher:
                 if m.get("next_at", 0) > time.time():
                     continue
                 self.advance(m)
+            self.schedule_phone_retries()
             self.s.save()
             counts: dict[str, int] = {}
             for m in self.s.memos.values():
@@ -954,6 +965,7 @@ class Watcher:
             self.s.heartbeat({
                 "lane": LANE, "lanes": self.lane_probe.snapshot() if self.lane_probe else {},
                 "memos": counts, "outbox": len(self.s.data["outbox"]),
+                "phone_retries": sum(1 for m in self.s.memos.values() if self.phone_retry_pending(m)),
                 "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
                             "running": m["key"] in self.running,
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
@@ -963,7 +975,7 @@ class Watcher:
         """Seconds the main loop may sleep: until the earliest due memo or the next listing, never above TICK_S."""
         now = time.time()
         with self.mu:
-            due = [m.get("next_at", 0) - now for m in self.active() if m["key"] not in self.running]
+            due = [m.get("next_at", 0) - now for m in self.active() if m["key"] not in self.running] + self.next_phone_retry_in()
         return max(0.05, min([TICK_S, until_discover, *due]))
 
     def advance(self, m: dict) -> None:
@@ -983,24 +995,29 @@ class Watcher:
                 "dispatch": self.step_dispatch, "await_agent": self.step_await_agent,
                 "reply": self.step_reply, "speak": self.step_speak, "mirror": self.step_mirror}[stage]
         t0 = time.time()
+        err: StageError | None = None
         try:
             step(m)
         except WatcherStopping:
             log("step_stopped", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
                 note="the service is stopping: the memo stays at this stage and resumes there on the next start")
         except StageError as e:
-            with self.mu:
-                self._settle_error(m, e)
+            err = e
         except Exception as e:  # noqa: BLE001
-            with self.mu:
-                self._settle_error(m, StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True))
+            err = StageError(FAIL_STAGE[stage], "unexpected", f"{type(e).__name__}: {e}", True)
         finally:
             WAKE.set()  # a step ended: let the main loop pick up what it unblocked (first, so a failing save cannot skip it)
+            # The failure is settled and the memo is released in ONE critical section: a memo:retry that lands between
+            # the two would find the memo failed but still "running", be refused, and its control file would be gone.
             with self.mu:
-                m["last_step_ms"] = int((time.time() - t0) * 1000)
-                m.pop("step_started_ts", None)
-                self.running.discard(m["key"])
-                self.s.save()
+                try:
+                    if err is not None:
+                        self._settle_error(m, err)
+                finally:
+                    m["last_step_ms"] = int((time.time() - t0) * 1000)
+                    m.pop("step_started_ts", None)
+                    self.running.discard(m["key"])
+                    self.s.save()
 
     def _settle_error(self, m: dict, e: StageError) -> None:
         if m.get("status") == CANCELLED:
@@ -1676,6 +1693,17 @@ class Watcher:
                 "uploaded_ts": t_up, "audio_bytes": stat["size"], "tts_seconds": round(tts_s, 2), "tts_engine": engine,
                 "spoken_chars": len(spoken), "chunks": len(parts), "journey_seconds": round(journey, 2), "t_speak": t_speak,
                 "late": late, "escalated": escalated}
+            if len(parts) == 1 and not m.get("voiced_one"):
+                # A reply spoken as one file is "voiced" too, chunk 1 of 1 (its own file): the replied fact waits for the
+                # phone-or-car decision, so this is how /voice and memo:trace know from when the car could speak it.
+                m["voiced_one"] = True
+                done_ts = m.get("agent_done_ts")
+                self.fact("voiced", m, {
+                    "reply_s3_key": rkey, "chunk_s3_key": rkey, "chunk": 1, "chunks": 1, "spoken_text": spoken,
+                    "spoken_chars": len(spoken), "command_id": m.get("command_id"), "tts_seconds": round(tts_s, 2),
+                    "tts_engine": engine, "voice": VOICE, "audio_bytes": stat["size"],
+                    "since_reply_seconds": round(t_up - t_speak, 2),
+                    "since_agent_done_seconds": round(t_up - done_ts, 2) if done_ts else None, "late": late})
             self.done_stage(m, "tts", "mirror", ms=(t_up - t1) * 1000, reply_key=rkey, journey_s=round(journey, 1))
 
     def step_mirror(self, m: dict) -> None:
@@ -1845,29 +1873,214 @@ class Watcher:
             time.sleep(min(0.25, max(0.0, end - time.time())))
         return True
 
-    def release_phone(self, m: dict, rkey: str, tries: int) -> None:
-        """The Earshot drop failed on every try after the phone took the reply: hand the take back to the upload proxy
-        (it pushes `released` to the car, which then plays the reply it had left to the phone) and record why. A proxy
-        that cannot be reached for EARSHOT_RELEASE_BUDGET_S fails the stage, which is retried (the take stays until then)."""
-        mid, key = m["memo_id"], m["key"]
+    def _release_claim(self, mid: str, rkey: str, budget_s: float) -> tuple[bool, str]:
+        """Hand the phone's take back to the upload proxy for up to budget_s: (given back, last error)."""
         t0, err = time.time(), ""
         while True:
             try:
                 ans = claim_call(mid, {"by": "watcher", "action": "release", "reply_key": rkey})
                 if ans.get("ok"):
-                    break
+                    return True, ""
                 err = f"the proxy answered {json.dumps(ans)[:160]}"
             except Exception as e:  # noqa: BLE001
                 err = str(e)[:200]
-            if time.time() - t0 >= EARSHOT_RELEASE_BUDGET_S:
-                raise StageError("reply_upload", "earshot_release_failed",
-                                 f"the Earshot drop failed {tries} times and the phone's take could not be given back: {err}")
+            if time.time() - t0 >= budget_s:
+                return False, err
             self._pause(2.0)
+
+    def release_phone(self, m: dict, rkey: str, tries: int) -> None:
+        """The Earshot drop failed on every try after the phone took the reply: hand the take back to the upload proxy
+        (it pushes `released` to the car, which then plays the reply it had left to the phone) and record why. A proxy
+        that cannot be reached for EARSHOT_RELEASE_BUDGET_S fails the stage, which is retried (the take stays until then).
+        With the car off for good nobody claims it: a phone retry is scheduled (phone_retry_step)."""
+        mid, key = m["memo_id"], m["key"]
+        t0 = time.time()
+        ok, err = self._release_claim(mid, rkey, EARSHOT_RELEASE_BUDGET_S)
+        if not ok:
+            raise StageError("reply_upload", "earshot_release_failed",
+                             f"the Earshot drop failed {tries} times and the phone's take could not be given back: {err}")
         with self.mu:
             m["earshot_skipped"], m["earshot_reason"] = "car_released", "drop_failed"
+            self.start_phone_retry(m, rkey, tries)
             self.s.save()
         log("earshot_released", "warn", memo_id=mid, key=key, tries=tries, took_s=round(time.time() - t0, 1),
             note=EARSHOT_REASONS["drop_failed"])
+
+    # -- the phone retry: a released reply nobody claims is eventually dropped for the phone again --
+
+    def start_phone_retry(self, m: dict, rkey: str, tries: int) -> None:
+        """Called with the lock held, right after the phone's take was given back. A retry already on record for this
+        memo (the mirror stage ran again) is kept: its clock and decisions are the truth."""
+        if EARSHOT_RETRY_TOTAL_S <= 0 or m.get("phone_retry"):
+            return
+        now = time.time()
+        text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
+        m["phone_retry"] = {
+            "state": "pending", "since_ts": now, "deadline_ts": now + EARSHOT_RETRY_TOTAL_S, "next_at": now + EARSHOT_RETRY_FIRST_S,
+            "rounds": 0, "rkey": rkey, "reply_text": text or None,
+            "decisions": [{"at": iso(now_utc()), "decision": "released", "why": f"the Earshot drop failed {tries} times; the take was "
+                           f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
+                           f"for {EARSHOT_RETRY_TOTAL_S:g} s"}]}
+
+    @staticmethod
+    def phone_retry_pending(m: dict) -> bool:
+        r = m.get("phone_retry")
+        return isinstance(r, dict) and r.get("state") == "pending"
+
+    def _retry_note(self, m: dict, decision: str, why: str, **extra) -> None:
+        """Record one decision of the phone retry (state.json, which memo:trace reads, and the journal). A decision that
+        repeats the last one (a car that keeps holding it, polled every few seconds) is not written again."""
+        r = m["phone_retry"]
+        last = r["decisions"][-1] if r["decisions"] else {}
+        if last.get("decision") == decision and last.get("why") == why:
+            return
+        r["decisions"].append({"at": iso(now_utc()), "decision": decision, "why": why, **extra})
+        del r["decisions"][:-40]
+        log("phone_retry_decision", "warn" if decision in ("drop_failed", "release_failed", "gave_up") else "info",
+            memo_id=m["memo_id"], key=m["key"], decision=decision, why=why, round=r.get("rounds"), **extra)
+
+    def _retry_finish(self, m: dict, outcome: str, why: str, **extra) -> None:
+        r = m["phone_retry"]
+        self._retry_note(m, outcome, why, **extra)
+        r.update(state="done", outcome=outcome, ended_at=iso(now_utc()))
+        r.pop("reply_text", None)
+        log("phone_retry_done", "warn" if outcome == "gave_up" else "info", memo_id=m["memo_id"], key=m["key"], outcome=outcome,
+            rounds=r.get("rounds"), after_s=round(time.time() - r["since_ts"], 1), note=why)
+
+    def schedule_phone_retries(self) -> None:
+        """Tick, lock held: start the round of every due phone retry on the decide pool."""
+        now = time.time()
+        for m in list(self.s.memos.values()):
+            if not self.phone_retry_pending(m) or m["phone_retry"].get("next_at", 0) > now:
+                continue
+            tag = f"phone:{m['key']}"
+            if tag in self.running or STOP:
+                continue
+            self.running.add(tag)
+            self.pools["decide"].submit(self._exec_phone_retry, m, tag)
+
+    def next_phone_retry_in(self) -> list[float]:
+        now = time.time()
+        return [m["phone_retry"].get("next_at", 0) - now for m in self.s.memos.values()
+                if self.phone_retry_pending(m) and f"phone:{m['key']}" not in self.running]
+
+    def _exec_phone_retry(self, m: dict, tag: str) -> None:
+        try:
+            self.phone_retry_step(m)
+        except WatcherStopping:
+            log("step_stopped", "warn", memo_id=m["memo_id"], key=m["key"], stage="phone_retry",
+                note="the service is stopping: the phone retry resumes from state.json on the next start")
+        except Exception as e:  # noqa: BLE001 - a bug or an outage in one round never ends the retry
+            with self.mu:
+                if self.phone_retry_pending(m):
+                    self._retry_note(m, "error", f"{type(e).__name__}: {e}"[:200])
+                    m["phone_retry"]["next_at"] = time.time() + 30
+        finally:
+            WAKE.set()
+            with self.mu:
+                self.running.discard(tag)
+                self.s.save()
+
+    def phone_retry_step(self, m: dict) -> None:
+        """One round: look at who has the reply, and if no car does, take it for the phone and drop it again. Stops with
+        an outcome as soon as either device has it. A failed drop gives the take back (the car may then claim it) and
+        schedules the next round after a longer wait; the deadline ends it with `gave_up` and the reason."""
+        with self.mu:
+            if not self.phone_retry_pending(m):
+                return
+            r = m["phone_retry"]
+            mid, key, agent, rkey = m["memo_id"], m["key"], m["agent"], r["rkey"]
+            stamp = mc_.parse_iso(m["reply_stamp"])
+            now = time.time()
+            if self._cancelled(m):
+                return self._retry_finish(m, "cancelled", "the memo was cancelled")
+            if m.get("earshot_key"):
+                return self._retry_finish(m, "phone_has_it", f"the Earshot copy is already recorded ({m['earshot_key']})")
+            if now >= r["deadline_ts"]:
+                return self._retry_finish(
+                    m, "gave_up", f"no device played the reply in {EARSHOT_RETRY_TOTAL_S:g} s after the release: the car never "
+                    f"claimed it and {r['rounds']} phone drop(s) failed ({r['decisions'][-1].get('why', '')[:120]})")
+        want = earshot_key_for(stamp, agent, mid)
+        if earshot_exists(want):
+            # An earlier drop landed (despite its error): the phone has it, and a second drop would play it twice.
+            with self.mu:
+                m["earshot_key"] = want
+                return self._retry_finish(m, "phone_has_it", f"{want} is in the Earshot channel", earshot_key=want)
+        try:
+            st = claim_call(mid)
+        except Exception as e:  # noqa: BLE001
+            with self.mu:
+                self._retry_note(m, "proxy_unreachable", f"the upload proxy could not be asked who has the reply: {str(e)[:100]}")
+                r["next_at"] = time.time() + 10
+            return
+        with self.mu:
+            if st.get("car") in ("started", "ended"):
+                return self._retry_finish(m, "car_heard", "a car started the reply after the release: it is heard there, "
+                                          "nothing is dropped for the phone", device=st.get("device"))
+            if st.get("car_holds"):
+                self._retry_note(m, "car_holds", "a live car holds the reply (it reclaimed it after the release): waiting for it",
+                                 device=st.get("device"), lease_left_s=st.get("lease_left_s"))
+                r["next_at"] = time.time() + 5
+                return
+            if st.get("settling_s"):
+                self._retry_note(m, "settling", "the upload proxy is settling after a restart: no take is granted yet")
+                r["next_at"] = time.time() + float(st["settling_s"]) + 1
+                return
+        try:
+            got = claim_call(mid, {"by": "watcher", "action": "take"})
+        except Exception as e:  # noqa: BLE001
+            with self.mu:
+                self._retry_note(m, "proxy_unreachable", f"the take could not be asked for: {str(e)[:100]}")
+                r["next_at"] = time.time() + 10
+            return
+        if not got.get("ok"):
+            with self.mu:
+                self._retry_note(m, "take_refused", "a car's hold or start landed first: looking again")
+                r["next_at"] = time.time() + 5
+            return
+        with self.mu:
+            r["rounds"] += 1
+            n = r["rounds"]
+            text = r.get("reply_text")
+            self._retry_note(m, "take_granted", f"no car claimed the reply: the phone took it (round {n})")
+        ekey, err = None, ""
+        tmp = Path(tempfile.mkdtemp(prefix="memo-phone-retry-"))
+        try:
+            out = tmp / "reply.ogg"
+            c = mc_.mc("cp", "--quiet", mc_.s3_url(rkey), str(out), timeout=60)
+            if c.returncode != 0 or not out.exists():
+                err = f"mc cp of the car's copy rc={c.returncode}: {c.stderr.strip()[-120:]}"
+            else:
+                def record_text(tkey, m=m):
+                    with self.mu:
+                        m["earshot_text_key"] = tkey
+                        m["phone_retry"]["reply_text"] = None
+                        self.s.save()
+                ekey = mirror_to_earshot(out, stamp, agent, mid, key, text, record_text)
+                if not ekey and earshot_exists(want):
+                    ekey = want  # landed despite its error
+                if not ekey:
+                    err = "the Earshot drop failed again"
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        if ekey:
+            with self.mu:
+                m["earshot_key"] = ekey
+                m["earshot_skipped"] = None
+                return self._retry_finish(m, "phone_dropped", f"the phone has the reply after all (round {n}, "
+                                          f"{round(time.time() - r['since_ts'])} s after the release)", earshot_key=ekey)
+        with self.mu:
+            if self._cancelled(m):
+                return self._retry_finish(m, "cancelled", "the memo was cancelled")
+        # Failed again: the phone's take would leave the car refused, so give it back (a car that is on can claim it)
+        ok, rerr = self._release_claim(mid, rkey, EARSHOT_RELEASE_BUDGET_S)
+        with self.mu:
+            if ok:
+                self._retry_note(m, "drop_failed", f"{err} (round {n}); the take was given back to the car")
+                r["next_at"] = time.time() + EARSHOT_RETRY_BACKOFF_S[min(n - 1, len(EARSHOT_RETRY_BACKOFF_S) - 1)]
+            else:
+                self._retry_note(m, "release_failed", f"{err} (round {n}); the take could not be given back: {rerr}")
+                r["next_at"] = time.time() + 15
 
     # -- chunked reply speech (worker thread, inside step_speak) --
 

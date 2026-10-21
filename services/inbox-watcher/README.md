@@ -173,9 +173,25 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
   drop `MEMO_EARSHOT_DROP_TRIES` (4) times (backoff `MEMO_EARSHOT_DROP_BACKOFF_S` 2,5,10; an attempt that landed
   despite an error is found by a stat, never dropped twice), and if it ultimately fails it **releases the take**
   (`POST /upload/claim` `by: watcher, action: release`): the proxy pushes `released` to the cars, the pad that left the
-  reply to the phone plays it after all (it also looks every 5 s for 3 min), and the replied fact says
+  reply to the phone plays it after all (it also looks every 5 s for 5 min, then every 30 s up to 30 min, from a list kept in its ledger, so a page reload or a cold start keeps looking), and the replied fact says
   `earshot_skipped: car_released`, `earshot_reason: drop_failed` (log `earshot_released`; memo:trace shows an UNKNOWN
   `phone_object` hop). A proxy that cannot take the release fails the stage (`earshot_release_failed`), which retries.
+- **A released reply nobody claims is dropped for the phone later (the phone retry).** With the car off for good the
+  release gives the reply to nobody, so the memo record (`phone_retry` in state.json, memo stays `done`) keeps trying the
+  phone in the background, resumable across restarts. A round: `MEMO_EARSHOT_RETRY_FIRST_S` (45) after the release, then
+  after each failed round `MEMO_EARSHOT_RETRY_BACKOFF_S` (60,120,240,300, the last repeats), for at most
+  `MEMO_EARSHOT_RETRY_TOTAL_S` (2700; 0 = off) from the release. It asks the proxy first: a car that started the reply
+  ends it (`car_heard`), a live hold is waited for (`car_holds`, never raced), an unreachable proxy is waited for
+  (`proxy_unreachable`), a settling proxy too. Otherwise it TAKES the reply (atomic: one device plays it), checks Earshot
+  for an earlier drop that landed (`phone_has_it`, never dropped twice), drops once (`phone_dropped` ends it), and on a
+  failed drop gives the take back (`drop_failed`; a car that is on claims it through the `released` push). The deadline
+  ends it with `gave_up` and the reason. Every decision is written to the record (`phone_retry.decisions`, one line per
+  change) and logged (`phone_retry_decision`, `phone_retry_done`); memo:trace shows a `phone_retry` hop with the outcome
+  and one `phone_retry:<decision>` hop per decision, and the heartbeat counts `phone_retries`.
+- **One-file replies announce themselves too.** A reply spoken as one file publishes `audio.memo.voiced` with chunk 1 of
+  chunks 1 (its `chunk_s3_key` is the reply file) when it is up, before the `replied` fact that waits for the phone-or-car
+  decision. /voice and memo:trace use it as "first audio up", so a one-file reply a live car holds behind a recording for
+  minutes is waiting, not stuck (the schema's `chunks` minimum is 1 since 2026-10-21).
 - **The phone decision is its own stage, `mirror`** (after `speak`, which renders the voice and puts the car's copy up).
   It runs on a pool of its own, so replies held by a car never queue another memo's voice behind them (the speak pool
   has three workers), and everything it needs is in the memo record (`reply_up`: the moment the car could start, the

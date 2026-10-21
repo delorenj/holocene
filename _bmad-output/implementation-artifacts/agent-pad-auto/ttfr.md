@@ -867,3 +867,113 @@ is a race around the worker thread, not related.
     not there). The replied fact says so (`car_released`).
   - A one-file reply that a car holds for more than 60 s still shows as stuck in /voice (no voiced fact to count from).
   - The pad's rebuild reaches the real car on its next page load.
+
+
+## Remaining minors
+
+Date: 2026-10-21. Server, pad, schema and tests (S1-S4); the Kotlin minors K1 and K2 are in
+[`ttfr/minors/k1-k2.md`](ttfr/minors/k1-k2.md). No Kotlin or Android code changed in S1-S4 and the signed v12 build, its
+releases and the Mac were not touched (`versionCode 12`, `0.2.10-internal`). Evidence is in
+[`ttfr/minors/`](ttfr/minors/) (drivers in `tools/`, traces in `traces/`). The Honda sim `emulator-5554` was started again
+for S2 (it had been stopped), the debug app reinstalled with `mise run auto:dev`, and the physical phone on adb was never
+used through adb; the S26 played the Earshot drops of the S1 proofs through the normal pipeline.
+
+Deployed: watcher restarted, API rebuilt and restarted, pad rebuilt into its live `dist/` (`index-B1ntyM7A.js`). Bloodbank
+schema pushed first (bloodbank `d718078`). `~/docker` was not touched (the proxy needed no change).
+
+### S1. A reply released to a car that never comes is eventually heard by the phone
+
+The phone's take is given back to the car when every Earshot drop fails (post-v12). With the car off for good nobody claimed
+it. Now the memo record keeps a `phone_retry` and the watcher tries the phone again in the background, with backoff, for a
+bounded time (README, "the phone retry"): first round 45 s after the release, then 60, 120, 240, 300 s, at most 45 min from the
+release (`MEMO_EARSHOT_RETRY_*`, `0` turns it off). Each round asks the proxy first (a car that started the reply ends the
+retry, a live hold is waited for, an unreachable proxy is waited for), takes the reply atomically, checks that an earlier
+drop did not land (never dropped twice), drops once, and gives the take back after a failed drop so a car that is on can
+claim it. Every decision is in `phone_retry.decisions`, in the journal (`phone_retry_decision`, `phone_retry_done`) and in
+memo:trace (`phone_retry` and `phone_retry:<decision>` hops).
+
+Proof (no car: memos uploaded by a synthetic car sender, `X-Holocene-Host: car`, that never opens a push stream;
+[`tools/send.sh`](ttfr/minors/tools/send.sh)). The watcher ran with `MEMO_EARSHOT_BUCKET` pointing at a bucket that does not
+exist (a temporary drop-in, removed) and short retry timers (20 s first, 25 s backoff):
+
+| memo | what | result |
+|---|---|---|
+| A `8435f77a` | budget 75 s | released 09:05:38.5, round 1 take 09:05:58.8 and drop failed, proxy answered 404 once (`proxy_unreachable`, waited), `gave_up` 09:06:55.5: "no device played the reply in 75 s after the release: the car never claimed it and 1 phone drop(s) failed (...)". Trace: [`traces/8435f77a.txt`](ttfr/minors/traces/8435f77a.txt), `phone_retry FAILED gave_up` with every decision. |
+| B `3998a0d4` | budget 900 s; the bucket was repaired (watcher restarted without the override) after 8 failed rounds | rounds 1-8 each `take_granted` then `drop_failed` (take given back every time), round 9 at 09:12:22 after the restart: `phone_dropped` "230 s after the release". The S26 detected, started and finished it 0.0 s, 0.3 s and 3.1 s after the drop. Trace: [`traces/3998a0d4.txt`](ttfr/minors/traces/3998a0d4.txt). The retry survived the restart (state.json). |
+
+Unit tests (`PhoneRetry`, 8 new): a late drop lands once and keeps the take; a car that plays it after the release ends the retry
+with no drop and no new take; a live hold is waited for and never raced, then the phone takes over; the budget ends it with the reason
+and every failed round released; a drop that landed despite its error is kept, not dropped twice; an unreachable proxy is never
+raced; the retry survives a restart and a zero budget turns it off; the trace hops.
+
+### S2. The pad's fallback for a released reply survives a reload
+
+`PHONE_RECHECK_MAX_MS` was 3 min held in page memory. Now the replies the car left to the phone are kept in the ledger (the
+same IndexedDB store and localStorage copy as the owed replies: `ledger.phone`, `leaveToPhone`/`takeBackFromPhone`), seeded
+into the recheck list when the page loads, and looked at for 30 min (the age at which a reply is no longer worth playing): every
+5 s for the first 5 minutes, every 30 s after that. The watcher's worst-case first round is under 5 minutes (4 drops of up to
+60 s, 17 s backoff, 30 s release); a test pins the window at more than five times that. The look now distinguishes `car`
+(a car claimed it since: forgotten, never replayed from this list) from `free` (nobody owns it: reclaimed).
+
+Proof on the sim (driver [`tools/drive_s2.py`](ttfr/minors/tools/drive_s2.py), memo `6a60c193`, Earshot drops forced to fail
+with backoff 10/20/30 s so the release came a minute after the take): memo recorded, app force-stopped at the agent's done
+(car off); the phone's take granted 09:22:38.6 (`no_car_claim`, 21.1 s); app relaunched, its hold **refused** (`owner: phone`)
+09:22:48.9; **the app was force-stopped and started again at 09:22:53.9 (a cold start, in-memory state gone)**; the release
+was granted at 09:23:41.194; **the reloaded car's hold was granted 0.18 s later** (09:23:41.372), playback started
+09:23:42.7 and its start claim landed at 09:23:43.0, ended 09:23:46.4. One utterance, no recording open
+(a single speech start in the sim's speech log). Files: [`s2-run.json`](ttfr/minors/s2-run.json),
+[`s2-proxy-claims.jsonl`](ttfr/minors/s2-proxy-claims.jsonl), [`s2-watcher.jsonl`](ttfr/minors/s2-watcher.jsonl),
+[`s2-speech-logcat.txt`](ttfr/minors/s2-speech-logcat.txt). Before this change a page that reloaded in that window forgot
+the reply, ignored the `released` push, and the reply was heard nowhere.
+
+Pad checks: `tsc --noEmit`, `npm test` (62 pass, 3 new in `ledger.test.ts`/`claim.test.ts`), `vite build`.
+
+### S3. A one-file reply a live car holds is not "stuck" in /voice
+
+Schema (bloodbank `memo.voiced.json`, `d718078`, naming rules and `mise run validate:schemas`,
+`smoketest:schema-contract-consistency` and `smoketest:bloodbank-naming` pass, new test in `test_validate_memo.py`): `chunks`
+minimum 2 -> 1, and a reply spoken as one file publishes one `audio.memo.voiced` with chunk 1 of 1 whose `chunk_s3_key`
+is the reply file, when it is up. The watcher does that from `step_speak` (before the `replied` fact, which still waits for
+the phone-or-car decision). /voice's `firstAudioUpMs` already counted from the first voiced fact, so a one-file reply is
+counted from its audio with the decision's allowance and says "the car can speak it ... the replied fact waits for the
+watcher's phone-or-car decision"; memo:trace's "first audio up" and car lag use it too (and drop the redundant "full reply up").
+
+Proof: memo `baa5d82b` (synthetic car) whose reply was held by a live "car" (claim `hold` renewed every 5 s, as a pad behind a
+recording does) for 110 s: `/api/modules/voice/memos/<id>` was `status=running`, `stuckAt` none, the replied hop `waiting`
+at +62 s, +77 s, +92 s and +108 s, with `chunks=[(1,1)]`
+([`s3-held-one-file-voice-api.txt`](ttfr/minors/s3-held-one-file-voice-api.txt), driver [`tools/hold.py`](ttfr/minors/tools/hold.py)).
+The API unit test also pins that without the fact (a reply from before) the old clock still says stuck at 61 s, and that
+the budget still ends in `stuck` for a reply nobody claims. API: typecheck, 149 tests (1 new).
+
+### S4. The two flaky watcher tests are deterministic
+
+- `test_retrying_a_changed_object_takes_it_as_it_is_now` (failed 1 in 3): a real race in the watcher. A worker settled a
+  failure (memo `failed`) and released the memo (`running`) in two separate critical sections; a `memo:retry` that landed
+  between them found the memo failed but still running, was refused, and its control file was already consumed. `_exec` now
+  settles and releases in one critical section, and the test waits for that section (the lock) instead of racing it.
+- `test_18_command_consumed_and_dropped_by_the_gateway_is_detected` (`KeyError: 'dropped_since'` alone under pytest): the
+  test needs the gateway journal to exist with no row for the command, and only passed when an earlier test had created the
+  journal. It now creates the journal itself.
+
+Proof: each test alone 20 times (unittest `-k` and, for the pytest-only failure, `pytest -k`): `test_retrying_a_changed_object_takes_it_as_it_is_now`
+20/20 under unittest and 20/20 under pytest, `test_18_...` 20/20 under pytest alone (the failing mode) and 20/20 under unittest;
+the full suite (`mise run memo:test` equivalent) three times: 185 tests OK, OK, OK. Before the fix the first test failed 3 of 25
+runs alone, and test 18 failed on every pytest run alone.
+
+### Checks
+
+| check | result |
+|---|---|
+| `mise run memo:test` | watcher 185 (9 new), proxy 91 |
+| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 62 tests |
+| API typecheck, `pnpm test` | PASS, 149 |
+| bloodbank schema checks | PASS |
+
+### Side effects and state
+
+- Four synthetic car memos (A-D) and one sim memo (`6a60c193`) went to holocene-pm; the S26 played the Earshot copies of B
+  (the S1 retry) and of C and D (the phone took them once the held car stopped renewing). A's retry gave up and played nowhere,
+  on purpose.
+- Two systemd drop-ins (`zz-proof-s1.conf`, `zz-proof-s2.conf`) were created and **removed**; the watcher runs with its own
+  unit. The sim mic route was restored and the null sink unloaded (`auto:sim:mic-check` OK).
+- The retry state of memos A-D is in the watcher's state.json (`phone_retry`, done).

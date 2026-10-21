@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CLAIM_CONFIRM_MAX_MS, CLAIM_LEASE_MS, CLAIM_MARGIN_MS, CLAIM_RENEW_MS, claimAnswer, confirmDue, holdDue, noteClaim, phoneRecheckDue, phoneStillHas, startPlan, startVerdict, PHONE_RECHECK_EVERY_MS, PHONE_RECHECK_MAX_MS } from './claim.ts'
+import { CLAIM_CONFIRM_MAX_MS, CLAIM_LEASE_MS, CLAIM_MARGIN_MS, CLAIM_RENEW_MS, claimAnswer, confirmDue, holdDue, noteClaim, phoneRecheckDue, phoneStillHas, startPlan, startVerdict, PHONE_RECHECK_EVERY_MS, PHONE_RECHECK_MAX_MS, PHONE_RECHECK_SLOW_AFTER_MS, PHONE_RECHECK_SLOW_EVERY_MS } from './claim.ts'
 
 const T = 1_000_000
 
@@ -65,14 +65,26 @@ test('a reply left to the phone is looked at again until the phone has really go
   assert.equal(phoneRecheckDue(T, 0, T + 1000), true)
   assert.equal(phoneRecheckDue(T, T + 1000, T + 1000 + PHONE_RECHECK_EVERY_MS - 1), false, 'not more often than every few seconds')
   assert.equal(phoneRecheckDue(T, T + 1000, T + 1000 + PHONE_RECHECK_EVERY_MS), true)
-  assert.equal(phoneRecheckDue(T, 0, T + PHONE_RECHECK_MAX_MS), false, 'the watcher gave up on the drop long before')
+  assert.equal(phoneRecheckDue(T, 0, T + PHONE_RECHECK_MAX_MS), false, 'a reply this old is not worth playing')
+})
+
+test('the look covers the watcher\'s whole drop budget and its background retries, and slows down after five minutes', () => {
+  // four Earshot drops of 60 s each, their backoff (2 + 5 + 10 s) and the release (30 s): the worst case of the first round
+  const dropBudgetMs = (4 * 60 + 17 + 30) * 1000
+  assert.ok(PHONE_RECHECK_MAX_MS >= 5 * dropBudgetMs, 'many times the watcher\'s drop budget')
+  assert.equal(PHONE_RECHECK_MAX_MS, 30 * 60_000, 'as long as a reply is worth playing (main.tsx MAX_REPLY_AGE_MS)')
+  assert.equal(phoneRecheckDue(T, T + 10_000, T + 10_000 + PHONE_RECHECK_EVERY_MS), true, 'fast at first')
+  const late = T + PHONE_RECHECK_SLOW_AFTER_MS + 60_000
+  assert.equal(phoneRecheckDue(T, late, late + PHONE_RECHECK_EVERY_MS), false, 'slower after five minutes')
+  assert.equal(phoneRecheckDue(T, late, late + PHONE_RECHECK_SLOW_EVERY_MS), true)
+  assert.equal(phoneRecheckDue(T, 0, T + 20 * 60_000), true, 'still looking twenty minutes on')
 })
 
 test('the proxy says whether the phone still has the reply: only a clear answer frees it', () => {
   const memo = 'a1b2c3d4-0000-5000-8000-000000000001'
   assert.equal(phoneStillHas(200, { memo_id: memo, owner: 'phone' }), 'phone')
   assert.equal(phoneStillHas(200, { memo_id: memo, owner: null }), 'free', 'released by the watcher')
-  assert.equal(phoneStillHas(200, { memo_id: memo, owner: 'car' }), 'free')
+  assert.equal(phoneStillHas(200, { memo_id: memo, owner: 'car' }), 'car', 'a car claimed it since: it is not played again from this list')
   assert.equal(phoneStillHas(502, { memo_id: memo, owner: null }), 'unknown', 'no answer is not a release')
   assert.equal(phoneStillHas(200, null), 'unknown')
 })

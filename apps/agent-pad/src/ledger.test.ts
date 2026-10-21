@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { OPEN_KEEP_MS, OWNED_KEEP_MS, closeUnit, emptyLedger, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger.ts'
+import { OPEN_KEEP_MS, OWNED_KEEP_MS, PHONE_KEEP_MS, closeUnit, leaveToPhone, takeBackFromPhone, emptyLedger, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger.ts'
 import { addRef, newUnit, nextUnit, parseReplyKey, type Unit } from './replies.ts'
 
 const MINE = 'f753985b-d3fb-5836-9db4-f9fb8e7dbe6b'
@@ -29,7 +29,7 @@ test('a stored ledger is cleaned, never trusted: bad entries are dropped, garbag
   assert.deepEqual(normLedger('not json', T), emptyLedger())
   assert.deepEqual(normLedger(null, T), emptyLedger())
   const l = normLedger({ owned: { [MINE]: T, x: T, [OTHER]: 'yesterday' }, open: { [reply(MINE)]: { seenAt: T, parked: true }, 'replies/../x.ogg': { seenAt: T }, 'inbox/a.ogg': { seenAt: T } } }, T)
-  assert.deepEqual(l, { owned: { [MINE]: T }, open: { [reply(MINE)]: { seenAt: T, parked: true } } })
+  assert.deepEqual(l, { owned: { [MINE]: T }, open: { [reply(MINE)]: { seenAt: T, parked: true } }, phone: {} })
 })
 
 test('a unit stays open (owed across a cold start) until it is settled, and not past the reply age limit', () => {
@@ -75,4 +75,25 @@ test('a short reply that is ready does not wait behind a long one still waiting 
   // nothing playable: null; a unit that waited too long is given up wherever it sits
   assert.equal(nextUnit([long.key], (k) => units.get(k), false, T + 1000), null)
   assert.deepEqual(nextUnit([short.key, long.key].slice(1), (k) => units.get(k), false, T + 4 * 60 * 1000), { key: long.key, plan: 'give_up' })
+})
+
+test('a reply left to the phone survives a reload and a cold start, and is forgotten when it is taken back or too old', () => {
+  const u = reply(MINE)
+  let l = leaveToPhone(own(emptyLedger(), MINE, T), u, T)
+  assert.equal(l.phone[u], T)
+  assert.equal(leaveToPhone(l, u, T + 5000).phone[u], T, 'the first time it was left counts')
+  // through the stored JSON, as localStorage / IndexedDB hand it back
+  const back = normLedger(JSON.stringify(l), T + 10 * 60_000)
+  assert.equal(back.phone[u], T)
+  assert.equal(normLedger(JSON.stringify(l), T + PHONE_KEEP_MS).phone[u], undefined, 'too old to be worth playing')
+  assert.equal(takeBackFromPhone(l, u).phone[u], undefined)
+  assert.equal(takeBackFromPhone(l, 'replies/2026/10/20/x.ogg'), l)
+  assert.equal(leaveToPhone(l, 'inbox/not-a-reply.ogg', T), l)
+  // the two stored copies merge: either one remembers it
+  const merged = mergeLedgers(emptyLedger(), l, T + 1000)
+  assert.equal(merged.phone[u], T)
+  // an older ledger without the field reads fine
+  assert.deepEqual(normLedger({ owned: { [MINE]: T }, open: {} }, T).phone, {})
+  // closing or opening other units leaves the list alone
+  assert.equal(closeUnit(openUnit(l, u, T), u).phone[u], T)
 })

@@ -698,6 +698,24 @@ test("a reply whose first audio is up is not stuck while its replied fact waits 
   assert.equal(lost.stuckAt, "replied");
 });
 
+test("a one-file reply that a live car holds for more than a minute is waiting, not stuck (voiced chunk 1 of 1)", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55)];
+  const oneFile = fact("audio.memo.voiced", 57, { occurred_at: iso(57), chunk: 1, chunks: 1, chunk_s3_key: "replies/x.ogg", reply_s3_key: "replies/x.ogg" });
+  // without the fact (a reply from before it existed) the old clock applies: 61 s after the agent finished is stuck
+  assert.equal(buildMemoDetail(MEMO, base, now(55 + 90))!.status, "stuck");
+  // held by a live car (a recording is open) for 3 minutes: the reply is up since 57 s, the decision has its own allowance
+  const held = buildMemoDetail(MEMO, [...base, oneFile], now(57 + 180))!;
+  assert.equal(held.status, "running");
+  assert.equal(held.stuckAt, undefined);
+  const hop = held.hops.find((h) => h.id === "replied")!;
+  assert.equal(hop.status, "waiting");
+  assert.match(hop.detail ?? "", /car can speak it/);
+  assert.equal(firstAudioUpMs([...base, oneFile]), T0 + 57 * 1000);
+  assert.deepEqual(held.chunks.map((c) => [c.n, c.of]), [[1, 1]]);
+  // a reply nothing ever claims is still stuck once the decision's allowance is spent
+  assert.equal(buildMemoDetail(MEMO, [...base, oneFile], now(57 + 60 + 331))!.status, "stuck");
+});
+
 test("a car that started the reply is not waiting on the replied fact", () => {
   const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55), voicedChunk(1, 3, 70), notifiedReply(72)];
   const d = buildMemoDetail(MEMO, base, now(72 + 900))!;
