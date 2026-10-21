@@ -718,9 +718,11 @@ def gateway_lanes() -> dict[str, dict]:
         # Not pulling new work on purpose (in-flight turns still finish): the gateway is draining, restarting or still
         # starting, and a queued memo runs when it takes turns again. ok keeps its meaning (a puller or work in flight);
         # draining (kept as the key every reader knows) says why nothing is pulled. A starting process whose lane
-        # already pulls is simply pulling.
+        # already pulls (a parked pull request, num_waiting >= 1) is simply pulling. Work in flight does not count
+        # here: a command the old process NAKed (shutdown_interrupt: retry) stays ack_pending with nobody pulling
+        # until the new process fetches it again, and that is still a restart.
         for info in out.values():
-            if info.get("ok") is None or ((gw["starting"] or gw["restarting"]) and info.get("ok")):
+            if info.get("ok") is None or ((gw["starting"] or gw["restarting"]) and (info.get("num_waiting") or 0) >= 1):
                 continue
             info.update(draining=True, gateway_state=gw["state"], gateway_kind=gw["kind"],
                         gateway_label=gw["label"], gateway_detail=gw["detail"])
@@ -736,6 +738,14 @@ def gateway_liveness(lane: str = "batch") -> dict:
     return gateway_lanes()[lane]
 
 
+def _held_text(info: dict, short: bool = False) -> str:
+    """What ack_pending means on a lane that is not pulling: turns still finishing while the gateway drains, but
+    commands waiting for the next process once the old one is gone (a NAKed cut-off turn), or just fetched."""
+    if str(info.get("gateway_kind") or "").endswith("_drain") or not info.get("num_ack_pending"):
+        return "in flight" if short else "in flight finishing"
+    return "held for re-run"
+
+
 def gateway_liveness_text(info: dict | None = None, lane: str = "batch") -> str:
     info = info or gateway_liveness(lane)
     lane = info.get("lane") or lane
@@ -743,7 +753,7 @@ def gateway_liveness_text(info: dict | None = None, lane: str = "batch") -> str:
     slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
     waiting, pending, ack = (info.get(k) or 0 for k in ("num_waiting", "num_pending", "num_ack_pending"))
     if info.get("draining"):
-        busy = f", {ack}{slots} in flight finishing" if ack else ""
+        busy = f", {ack}{slots} {_held_text(info)}" if ack else ""
         return (f"{lane}: {info.get('gateway_detail') or GATEWAY_DRAINING_TEXT}{busy}; consumer {consumer}: "
                 f"waiting={waiting} pending={pending} ack_pending={ack}")
     if info.get("error"):
@@ -766,7 +776,8 @@ def gateway_lanes_text(lanes: dict[str, dict] | None = None) -> str:
         elif info.get("draining"):
             slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
             parts.append(f"{lane}: {info.get('gateway_label') or GATEWAY_KINDS['restart_drain'][0]}, "
-                         f"{info.get('num_ack_pending') or 0}{slots} in flight, {info.get('num_pending') or 0} queued")
+                         f"{info.get('num_ack_pending') or 0}{slots} {_held_text(info, short=True)}, "
+                         f"{info.get('num_pending') or 0} queued")
         elif not info["ok"]:
             parts.append(f"{lane}: NOBODY PULLING")
         else:

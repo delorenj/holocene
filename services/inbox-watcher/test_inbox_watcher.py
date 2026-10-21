@@ -1009,6 +1009,32 @@ class LaneProbes(unittest.TestCase):
         self.assertIn("gateway restarting, memo queued; it runs when the gateway is back",
                       mc_.gateway_liveness_text(info, "interactive"))
 
+    def test_a_naked_turn_held_between_processes_is_restarting_not_pulling(self):
+        # shutdown_interrupt: retry NAKs the cut-off turn; it stays ack_pending (nobody pulls) from the old process's
+        # exit until the new process fetches it again. Live 2026-10-21: that read "pulling, 1/2 in flight" for 90 s.
+        body = self._unpulled()
+        for c in body["account_details"][0]["stream_detail"][0]["consumer_detail"]:
+            c.update(num_ack_pending=1, num_pending=0)
+        for fields in ({"gateway_state": "stopped", "restart_requested": True, "pid": 2 ** 22 + 12345},
+                       {"gateway_state": "starting", "restart_requested": True}):
+            self._gateway_state(**fields)
+            with self._patched(body):
+                lanes = mc_.gateway_lanes()
+            self.assertTrue(all(v["draining"] for v in lanes.values()), fields)
+            line = mc_.gateway_lanes_text(lanes)
+            self.assertNotIn("pulling", line, fields)
+            self.assertIn("1/2 held for re-run", line, fields)
+            text = mc_.gateway_liveness_text(lanes["interactive"], "interactive")
+            self.assertIn("1/2 held for re-run", text)
+            self.assertNotIn("in flight finishing", text)
+        # as soon as the new process parks a pull request it is simply pulling
+        for c in body["account_details"][0]["stream_detail"][0]["consumer_detail"]:
+            c.update(num_waiting=1)
+        with self._patched(body):
+            lanes = mc_.gateway_lanes()
+        self.assertFalse(any(v.get("draining") for v in lanes.values()))
+        self.assertNotIn("restarting", mc_.gateway_lanes_text(lanes))
+
     def test_a_dead_drainer_or_a_restart_that_never_came_back_is_nobody_pulling(self):
         for fields in ({"gateway_state": "draining", "pid": 2 ** 22 + 12345},
                        {"gateway_state": "stopped", "restart_requested": True,
