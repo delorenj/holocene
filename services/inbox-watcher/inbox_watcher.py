@@ -1817,6 +1817,9 @@ class Watcher:
             ekey = mirror_to_earshot(path, stamp, agent, mid, key, send_text, record_text)
             if ekey:
                 break
+        if not ekey and tries and earshot_exists(want):
+            # The last try may also have landed after its error: releasing it to the car would play the reply twice.
+            ekey = want
         if ekey:
             with self.mu:
                 m["earshot_key"] = ekey  # recorded even if the replied fact fails, so a retry does not re-drop

@@ -3444,6 +3444,37 @@ class PostV12Fixes(MemoHarness, unittest.TestCase):
         self.assertNotIn("release", [b.get("action") for _, b in seen if b])
         self.assertTrue(self.of_type("replied", key)[-1]["earshot_key"])
 
+    def test_a_last_try_that_failed_here_but_landed_is_kept_not_released(self):
+        key, m = self.reply_ready("v12-drop-last-landed")
+        seen = []
+        tries = []
+        real = iw.mirror_to_earshot
+
+        def last_lands_but_reports_failure(audio, stamp, agent, mid, k, text=None, on_text=None):
+            tries.append(1)
+            if len(tries) == iw.EARSHOT_DROP_TRIES:
+                real(audio, stamp, agent, mid, k, text, on_text)  # the final try committed, then the client timed out
+            return None
+
+        def script(mid, body):
+            if body.get("action") == "take":
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            if body.get("action") == "release":
+                return {"ok": True, "owner": None}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car", "settling_s": 0}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_POLL_S", 0.01), \
+                unittest.mock.patch.object(iw, "EARSHOT_SETTLE_S", 0.0), \
+                unittest.mock.patch.object(iw, "EARSHOT_DROP_BACKOFF_S", (0.01,)), \
+                unittest.mock.patch.object(iw, "mirror_to_earshot", side_effect=last_lands_but_reports_failure), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=self.proxy(script, seen)):
+            self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(len(tries), iw.EARSHOT_DROP_TRIES)
+        self.assertNotIn("release", [b.get("action") for _, b in seen if b],
+                         "the phone has the reply: releasing it to the car would play it twice")
+        self.assertTrue(self.of_type("replied", key)[-1]["earshot_key"])
+
     def test_a_proxy_that_cannot_take_the_release_fails_the_stage_and_it_is_retried(self):
         key, m = self.reply_ready("v12-release-down")
         released = []
