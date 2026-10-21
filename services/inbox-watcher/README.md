@@ -294,7 +294,14 @@ Behaviour worth knowing:
   restarting (about 2 min), and batch would only park the memo behind the
   grooming backlog, so the memo stays on `invoke` (logs `lane_kept`,
   `lane_reason=gateway_not_pulling_queued_on_interactive`); the interactive
-  durable drains first on reconnect. An unreadable monitor keeps the
+  durable drains first on reconnect. While hermes-gateway drains for a
+  reload/restart (`~/.hermes/gateway_state.json` says `draining` with a live
+  pid, or `stopped`/`starting` right after a requested restart) the Bloodbank
+  plugin stops pulling both lanes on purpose for up to 30 min: the memo stays on
+  `invoke` without a second probe (`lane_reason=gateway_draining_queued_on_interactive`),
+  its agent deadline is extended instead of failing at 600 s, and every
+  liveness line reads `gateway restarting (draining), memo queued; it runs when
+  the gateway is back`. An unreadable monitor keeps the
   interactive lane. An unrecognised `MEMO_LANE` makes the watcher refuse to
   start (exit 2, `bad_memo_lane` on stderr) rather than guess. **The lane is pinned to the
   command id** (the idempotency key, digest and journal row differ by type), so
@@ -551,6 +558,9 @@ retryable=false)` with that queue state in the message.
   watcher reads the reply from the Hermes profile `state.db`.
 - If the gateway's bloodbank platform is down, commands queue in JetStream and
   the trace verdict says `NOBODY PULLING <lane>`. Commands run when it comes back.
+  A gateway draining for a restart says `gateway restarting (draining), memo
+  queued; it runs when the gateway is back` instead (memo:trace, the watcher log,
+  the /voice banner "Gateway restarting").
 - `reply_renderer.py` was folded into this service and deleted.
 
 ## Voice memos view
