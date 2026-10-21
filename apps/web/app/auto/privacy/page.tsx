@@ -14,7 +14,7 @@ export default function PrivacyPage() {
           <p className={styles.kicker}>AutomaticAI · Android app</p>
           <h1>Holocene Auto privacy policy</h1>
           <p className={styles.meta}>
-            Effective date: <time dateTime="2026-10-16">October 16, 2026</time>
+            Effective date: <time dateTime="2026-10-21">October 21, 2026</time>
           </p>
         </header>
 
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           <p>
             This policy covers only the Holocene Auto Android app, published by
             AutomaticAI, package <code>io.automaticai.holocene</code>. The current
-            internal build is version <code>0.2.9-internal</code> (version code 11);
+            internal build is version <code>0.2.10-internal</code> (version code 12);
             versions <code>0.2.7-internal</code> and <code>0.2.8-internal</code>
             (version codes 9 and 10) handle data the same way.
             Earlier internal builds (version codes 6 to 8) may appear as
@@ -65,8 +65,10 @@ export default function PrivacyPage() {
             in the app&apos;s private storage on the device and retried until it
             is delivered. The app also reports operational status to the same
             AutomaticAI server (recording started or stopped, upload and
-            playback results, and error messages) so failures can be diagnosed;
-            these reports contain no audio. AutomaticAI does not sell this data or
+            playback results, spoken-feedback timing, a random per-install
+            device identifier used to decide whether the car or the
+            operator&apos;s phone plays a reply, and error messages) so failures
+            can be diagnosed; these reports contain no audio. AutomaticAI does not sell this data or
             share it with third parties, and the app contains no
             advertising or analytics.
           </p>
