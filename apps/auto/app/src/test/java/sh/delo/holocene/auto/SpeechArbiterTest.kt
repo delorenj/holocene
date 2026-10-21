@@ -764,6 +764,27 @@ class SpeechArbiterTest {
         assertEquals(1, played.count { it == "echo:$memo1" }) // not one more request in the 10 s window
     }
 
+    @Test fun onlyAnEchoCutByATransientLossKeepsTheHostWaitingForTheFocus() {
+        // the host keeps the loss's focus request registered only while this is true; otherwise it gives the request up
+        assertFalse(a.waitingForFocus)
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
+        assertTrue(a.waitingForFocus)
+        audible = null
+        drain()
+        a.focusReturned(true)
+        assertFalse(a.waitingForFocus)
+        end("echo:$memo1")
+        // an ack cut by a transient loss is not coming back
+        a.offer(stopAck())
+        a.focusLost("ack:stopped:1", "focus_lost:-2", transient = true)
+        assertFalse(a.waitingForFocus)
+        // nor is an echo another app took the focus from for good
+        a.offer(echo(memo2))
+        a.focusLost("echo:$memo2", "focus_lost:-1", transient = false)
+        assertFalse(a.waitingForFocus)
+    }
+
     @Test fun anEchoCutByACallWaitsForTheFocusToComeBackAndDoesNotAskInTheMeantime() {
         a.offer(echo(memo1))
         a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
@@ -886,6 +907,17 @@ class SpeechArbiterTest {
         a.offer(sentAck(retry = true)) // no note is waiting for it
         end("echo:$memo2")
         assertEquals("ack:sent:1", audible) // lowest rank: after the echo, as before
+    }
+
+    @Test fun aNoteThatEndsWithoutASentToneSpendsItsTokenSoTheNextNotesSentToneKeepsItsOwn() {
+        // note 1 ends silent (no SENT tone ever comes), note 2 is sent: its SENT tone must be note 2's, not a stale token
+        assertEquals("note:1", a.noteStopped())
+        a.noteAnswered() // silent / queued / rejected
+        assertEquals("note:2", a.noteStopped())
+        assertEquals("note:2", a.noteSent())
+        assertNull(a.noteSent())
+        a.noteAnswered() // with nothing open it is a no-op, never an error
+        assertNull(a.noteSent())
     }
 
     @Test fun aNotesTokenIsSpentByItsSentAndTwoNotesAreAnsweredInOrder() {

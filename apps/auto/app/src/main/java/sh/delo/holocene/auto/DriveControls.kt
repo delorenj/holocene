@@ -352,6 +352,18 @@ object DriveSpeech {
         return "$who heard: $head"
     }
 
+    /**
+     * The pad event is the one answer that ends the note whose "stopped" came before it, without a SENT tone: queued
+     * (saved to retry), silent (nothing heard, held back), rejected (refused for the note just recorded). A rejection
+     * that a background retry of an older saved note reports (reason "retry") answers no note recorded now, and neither
+     * do cancelled or a mic that failed to open (no "stopped" came first).
+     */
+    fun endsNote(e: PadEvent): Boolean = when (e.type) {
+        "queued", "silent" -> true
+        "rejected" -> e.reason != "retry"
+        else -> false
+    }
+
     fun toneFor(e: PadEvent): Tone? = when (e.type) {
         // START is played by the host between "Recording for X" and opening the mic, so it is never recorded.
         "stopped" -> Tone.STOP

@@ -188,10 +188,14 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
   ends it with `gave_up` and the reason. Every decision is written to the record (`phone_retry.decisions`, one line per
   change) and logged (`phone_retry_decision`, `phone_retry_done`); memo:trace shows a `phone_retry` hop with the outcome
   and one `phone_retry:<decision>` hop per decision, and the heartbeat counts `phone_retries`.
+  A drop that lands in the retry publishes `audio.memo.mirrored` (the replied fact already said `car_released`; /voice
+  shows "mirrored to the phone late" from it, and the ntfy router mutes it). `gave_up` quotes the last failed drop (not a
+  proxy blip that came after it) and the last decision. A manual `memo:retry` that runs the mirror stage again after a
+  `gave_up` and fails the drop again arms a fresh retry (the old decisions stay in front); a retry still pending is kept.
 - **One-file replies announce themselves too.** A reply spoken as one file publishes `audio.memo.voiced` with chunk 1 of
   chunks 1 (its `chunk_s3_key` is the reply file) when it is up, before the `replied` fact that waits for the phone-or-car
   decision. /voice and memo:trace use it as "first audio up", so a one-file reply a live car holds behind a recording for
-  minutes is waiting, not stuck (the schema's `chunks` minimum is 1 since 2026-10-21).
+  minutes is waiting, not stuck (the schema's `chunks` minimum is 1 since 2026-10-21). It is announced once per reply file (`voiced_one` holds the key and survives the done-compaction).
 - **The phone decision is its own stage, `mirror`** (after `speak`, which renders the voice and puts the car's copy up).
   It runs on a pool of its own, so replies held by a car never queue another memo's voice behind them (the speak pool
   has three workers), and everything it needs is in the memo record (`reply_up`: the moment the car could start, the

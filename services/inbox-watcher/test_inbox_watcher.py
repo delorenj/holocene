@@ -3793,7 +3793,68 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         order = [t.split(".")[-1] for t, r in facts() if r["data"].get("s3_key") == key and t.endswith(("voiced", "replied"))]
         self.assertEqual(order, ["voiced", "replied"], "voiced is up before the (possibly delayed) replied fact")
         self.assertIsNotNone(v["since_agent_done_seconds"])
-        self.assertNotIn("voiced_one", m)  # compacted once done
+        self.assertEqual(m["voiced_one"], replied["reply_s3_key"])  # kept once done: it is what stops a second announcement
+        # memo:retry of the finished memo speaks the reply again under the same key: voiced is not announced twice
+        m.update(status="failed", failed_stage="reply_upload", failed_code="x", failed_message="x", resume_stage="speak")
+        self.control("retry", m)
+        self.tick_until(lambda: m["status"] == "done" and len(self.of_type("replied", key)) == 2)
+        self.assertEqual(len(self.of_type("voiced", key)), 1)
+
+    def test_a_late_phone_drop_is_published_as_a_mirrored_fact(self):
+        key, m = self.released("s1-mirrored", {"drop_ok_from": iw.EARSHOT_DROP_TRIES + 1})
+        self.assertEqual(self.of_type("mirrored", key), [])
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "phone_dropped")
+        got = self.of_type("mirrored", key)
+        self.assertEqual(len(got), 1)
+        self.assertEqual((got[0]["earshot_key"], got[0]["rounds"], got[0]["earshot_skipped_before"]),
+                         (m["earshot_key"], 1, "car_released"))
+        self.assertEqual(got[0]["reply_s3_key"], m["reply_key"])
+
+    def test_a_drop_that_landed_despite_its_error_is_also_published_as_mirrored(self):
+        key, m = self.released("s1-landed-mirrored", {})
+        ekey = iw.earshot_key_for(mc_.parse_iso(m["reply_stamp"]), "holocene-pm", m["memo_id"])
+        dst = BUCKET_DIR / ekey
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(b"OggS landed")
+        try:
+            self.assertEqual(self.settle(m, key)["outcome"], "phone_has_it")
+            self.assertEqual([f["earshot_key"] for f in self.of_type("mirrored", key)], [ekey])
+        finally:
+            dst.unlink(missing_ok=True)
+
+    def test_a_manual_retry_after_gave_up_arms_the_phone_retry_again(self):
+        key, m = self.released("s1-rearm", {"total": 0.4})
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "gave_up")
+        first_rounds = r["rounds"]
+        before = len(r["decisions"])
+        # the operator runs the mirror stage again (memo:retry): the drop fails again, the take is given back again
+        with self.w.mu:
+            self.w.start_phone_retry(m, m["reply_key"], 4)
+        r2 = m["phone_retry"]
+        self.assertEqual((r2["state"], r2["rounds"]), ("pending", 0), "armed afresh")
+        self.assertEqual(len(r2["decisions"]), before + 1, "the earlier decisions stay in front of the new one")
+        self.assertIn("armed again", r2["decisions"][-1]["why"])
+        self.assertGreater(first_rounds, 0)
+        # ... and a retry that is still pending is never replaced
+        r2["rounds"] = 3
+        with self.w.mu:
+            self.w.start_phone_retry(m, m["reply_key"], 4)
+        self.assertEqual(m["phone_retry"]["rounds"], 3)
+
+    def test_gave_up_quotes_the_failed_drop_not_a_proxy_blip_that_came_after(self):
+        key, m = self.released("s1-gave-up-why", {"total": 30.0})
+        self.tick_until(lambda: any(d["decision"] == "drop_failed" for d in m["phone_retry"]["decisions"]))
+        with self.w.mu:
+            self.w.phone_retry_pending(m) and self.w._retry_note(m, "proxy_unreachable", "the upload proxy could not be asked: HTTP 404")
+            m["phone_retry"]["deadline_ts"] = time.time() - 1
+            m["phone_retry"]["next_at"] = 0
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "gave_up")
+        why = r["decisions"][-1]["why"]
+        self.assertIn("the Earshot drop failed again", why)
+        self.assertIn("last seen: proxy_unreachable", why)
 
     def test_the_trace_shows_the_retry_and_why_it_ended(self):
         import memo_trace as mt

@@ -251,7 +251,8 @@ class DriveFeedback(context: Context) {
         onFocusLost?.invoke(change)
     }
 
-    private fun dropRegain() {
+    /** Give up the focus request a transient loss left behind: nothing waits for the focus to come back. */
+    fun dropRegain() {
         val r = regain ?: return
         regain = null
         try { audio.abandonAudioFocusRequest(r) } catch (_: RuntimeException) {}

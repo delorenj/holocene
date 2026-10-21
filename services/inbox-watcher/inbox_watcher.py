@@ -349,7 +349,8 @@ def compact(m: dict) -> None:
                 m[k] = m[k][:n]
         m.pop("progress_full", None)  # the status object keeps the short line; the full one is in Candystore
         m.pop("voiced_keys", None)    # the chunk keys only matter while a cancel could still retract them
-        m.pop("voiced_one", None)
+        # voiced_one (the reply key announced as voiced 1 of 1) stays: it is what keeps a memo:retry of a finished memo
+        # from announcing the same one-file reply a second time.
         m.pop("reply_up", None)
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
@@ -1693,10 +1694,12 @@ class Watcher:
                 "uploaded_ts": t_up, "audio_bytes": stat["size"], "tts_seconds": round(tts_s, 2), "tts_engine": engine,
                 "spoken_chars": len(spoken), "chunks": len(parts), "journey_seconds": round(journey, 2), "t_speak": t_speak,
                 "late": late, "escalated": escalated}
-            if len(parts) == 1 and not m.get("voiced_one"):
+            if len(parts) == 1 and m.get("voiced_one") != rkey:
                 # A reply spoken as one file is "voiced" too, chunk 1 of 1 (its own file): the replied fact waits for the
                 # phone-or-car decision, so this is how /voice and memo:trace know from when the car could speak it.
-                m["voiced_one"] = True
+                # Announced once per reply file (its key): a re-speak under a new stamp is announced again, a memo:retry
+                # of a finished memo under the same key is not.
+                m["voiced_one"] = rkey
                 done_ts = m.get("agent_done_ts")
                 self.fact("voiced", m, {
                     "reply_s3_key": rkey, "chunk_s3_key": rkey, "chunk": 1, "chunks": 1, "spoken_text": spoken,
@@ -1909,18 +1912,23 @@ class Watcher:
     # -- the phone retry: a released reply nobody claims is eventually dropped for the phone again --
 
     def start_phone_retry(self, m: dict, rkey: str, tries: int) -> None:
-        """Called with the lock held, right after the phone's take was given back. A retry already on record for this
-        memo (the mirror stage ran again) is kept: its clock and decisions are the truth."""
-        if EARSHOT_RETRY_TOTAL_S <= 0 or m.get("phone_retry"):
+        """Called with the lock held, right after the phone's take was given back. A retry still pending for this memo (the
+        mirror stage ran again) is kept: its clock and decisions are the truth. A finished one (gave_up, say, and a manual
+        memo:retry ran the mirror stage again and its drop failed again) is armed afresh: the reply is heard nowhere
+        otherwise. Its decisions are kept in front of the new ones, so the trace tells the whole story."""
+        if EARSHOT_RETRY_TOTAL_S <= 0 or self.phone_retry_pending(m):
             return
+        old = m.get("phone_retry") if isinstance(m.get("phone_retry"), dict) else {}
         now = time.time()
         text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
+        again = f" (armed again: the earlier retry ended {old.get('outcome', 'unfinished')})" if old else ""
         m["phone_retry"] = {
             "state": "pending", "since_ts": now, "deadline_ts": now + EARSHOT_RETRY_TOTAL_S, "next_at": now + EARSHOT_RETRY_FIRST_S,
             "rounds": 0, "rkey": rkey, "reply_text": text or None,
-            "decisions": [{"at": iso(now_utc()), "decision": "released", "why": f"the Earshot drop failed {tries} times; the take was "
-                           f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
-                           f"for {EARSHOT_RETRY_TOTAL_S:g} s"}]}
+            "decisions": (old.get("decisions") or [])[-30:] + [
+                {"at": iso(now_utc()), "decision": "released", "why": f"the Earshot drop failed {tries} times; the take was "
+                 f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
+                 f"for {EARSHOT_RETRY_TOTAL_S:g} s{again}"}]}
 
     @staticmethod
     def phone_retry_pending(m: dict) -> bool:
@@ -1936,6 +1944,8 @@ class Watcher:
             return
         r["decisions"].append({"at": iso(now_utc()), "decision": decision, "why": why, **extra})
         del r["decisions"][:-40]
+        if decision in ("drop_failed", "release_failed"):
+            r["last_failure"] = why  # what gave_up quotes: the last word may be a proxy blip that says nothing about the drop
         log("phone_retry_decision", "warn" if decision in ("drop_failed", "release_failed", "gave_up") else "info",
             memo_id=m["memo_id"], key=m["key"], decision=decision, why=why, round=r.get("rounds"), **extra)
 
@@ -1946,6 +1956,15 @@ class Watcher:
         r.pop("reply_text", None)
         log("phone_retry_done", "warn" if outcome == "gave_up" else "info", memo_id=m["memo_id"], key=m["key"], outcome=outcome,
             rounds=r.get("rounds"), after_s=round(time.time() - r["since_ts"], 1), note=why)
+
+    def _phone_mirrored(self, m: dict, r: dict, ekey: str) -> None:
+        """Lock held. The phone has the reply after all: the replied fact already went out saying it was left to the car
+        (earshot_skipped=car_released), so say what happened to it afterwards (audio.memo.mirrored) for /voice and the other
+        readers of the bus. Failure queues it in the outbox like any fact."""
+        self.fact("mirrored", m, {
+            "reply_s3_key": r.get("rkey"), "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
+            "rounds": r.get("rounds"), "after_release_seconds": round(time.time() - r["since_ts"], 1),
+            "earshot_skipped_before": "car_released"})
 
     def schedule_phone_retries(self) -> None:
         """Tick, lock held: start the round of every due phone retry on the decide pool."""
@@ -1997,14 +2016,18 @@ class Watcher:
             if m.get("earshot_key"):
                 return self._retry_finish(m, "phone_has_it", f"the Earshot copy is already recorded ({m['earshot_key']})")
             if now >= r["deadline_ts"]:
+                last = r["decisions"][-1] if r["decisions"] else {}
+                fail = r.get("last_failure") or last.get("why", "")
+                tail = "" if not last or last.get("why") == fail else f"; last seen: {last.get('decision')}: {last.get('why', '')[:80]}"
                 return self._retry_finish(
                     m, "gave_up", f"no device played the reply in {EARSHOT_RETRY_TOTAL_S:g} s after the release: the car never "
-                    f"claimed it and {r['rounds']} phone drop(s) failed ({r['decisions'][-1].get('why', '')[:120]})")
+                    f"claimed it and {r['rounds']} phone drop(s) failed (last failure: {fail[:130]}){tail}")
         want = earshot_key_for(stamp, agent, mid)
         if earshot_exists(want):
             # An earlier drop landed (despite its error): the phone has it, and a second drop would play it twice.
             with self.mu:
                 m["earshot_key"] = want
+                self._phone_mirrored(m, r, want)
                 return self._retry_finish(m, "phone_has_it", f"{want} is in the Earshot channel", earshot_key=want)
         try:
             st = claim_call(mid)
@@ -2067,6 +2090,7 @@ class Watcher:
             with self.mu:
                 m["earshot_key"] = ekey
                 m["earshot_skipped"] = None
+                self._phone_mirrored(m, r, ekey)
                 return self._retry_finish(m, "phone_dropped", f"the phone has the reply after all (round {n}, "
                                           f"{round(time.time() - r['since_ts'])} s after the release)", earshot_key=ekey)
         with self.mu:

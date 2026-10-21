@@ -182,14 +182,21 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     }
 
     /**
-     * The oldest open note was answered (sent, queued, rejected, silent): its token for the SENT ack, or null when no
-     * note is waiting (a retry of an older note: it does not take priority over anything).
+     * The oldest open note was sent: its token for the SENT ack, or null when no note is waiting (a retry of an older
+     * note: it does not take priority over anything). A note that ends any other way (queued, rejected, silent) spends its
+     * token with [noteAnswered], so the next note's SENT tone gets its own.
      */
     fun noteSent(): String? {
         val t = now()
         openNotes.removeAll { t - it.second > NOTE_OPEN_MS }
         return if (openNotes.isEmpty()) null else openNotes.removeAt(0).first
     }
+
+    /** The oldest open note ended without a SENT tone (queued, rejected, silent): it claims nothing later. */
+    fun noteAnswered() { noteSent() }
+
+    /** A heard echo cut by a transient loss is waiting for the focus to come back ([focusReturned]). */
+    val waitingForFocus: Boolean get() = queue.any { it.awaitFocus }
 
     /** Offer an utterance. Returns true if it was queued or started, false if dropped. */
     fun offer(u: Utterance): Boolean {

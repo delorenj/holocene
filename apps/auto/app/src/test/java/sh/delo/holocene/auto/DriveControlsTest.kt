@@ -289,6 +289,15 @@ class DriveSpeechTest {
         assertNull(DriveSpeech.toneFor(PadEvent("recording"))) // played by the host before the mic opens
     }
 
+    @Test fun onlyTheAnswerToTheNoteJustRecordedEndsItsToken() {
+        for (t in listOf("queued", "silent")) assertTrue(t, DriveSpeech.endsNote(PadEvent(t)))
+        assertTrue(DriveSpeech.endsNote(PadEvent("rejected", reason = "413")))
+        // a background retry of an older saved note being refused is not this note's answer
+        assertFalse(DriveSpeech.endsNote(PadEvent("rejected", reason = "retry")))
+        // sent spends its token through noteSent(); a cancelled recording or a mic that failed to open never had one
+        for (t in listOf("sent", "stopped", "cancelled", "failed", "recording", "selected", "refused")) assertFalse(t, DriveSpeech.endsNote(PadEvent(t)))
+    }
+
     @Test fun speaksInTheCarOrAfterWheelUseOnly() {
         assertTrue(DriveSpeech.shouldSpeak(true, isCarHost = true, wheelRecently = false))
         assertTrue(DriveSpeech.shouldSpeak(true, isCarHost = false, wheelRecently = true))

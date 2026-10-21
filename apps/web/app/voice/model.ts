@@ -106,6 +106,11 @@ export function gatewayPauseSentence(lanes: Lanes): string {
 /** The /voice line for the phone copy: why it was left out, or why it was sent (null: nothing to say). */
 export function phoneCopyText(r: ReplyInfo | undefined): string | null {
   if (!r) return null;
+  if (r.earshotReason === "late_drop" && r.earshotKey) {
+    const l = r.phoneLate;
+    return `Mirrored to the phone late: the first Earshot drops failed and no car claimed the reply, then the watcher's background retry landed it${
+      l?.afterReleaseSeconds !== undefined ? ` ${Math.round(l.afterReleaseSeconds)} s after the release` : ""}${l?.rounds ? ` (round ${l.rounds})` : ""}.`;
+  }
   if (r.earshotSkipped === "no_answer") {
     return "Not mirrored to the phone: the upload proxy could not be asked who speaks it for minutes, so it was left to the car (which speaks a reply only with the proxy's yes).";
   }

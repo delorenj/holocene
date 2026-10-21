@@ -33,6 +33,8 @@ export type ReplyInfo = {
   earshotSkipped?: string;
   /** Why it went the way it did: car_started | car_holds | claim_failed (left out) or no_car_claim | car_let_go | browser_sender | skip_off (mirrored). */
   earshotReason?: string;
+  /** The phone copy landed after the replied fact said it was left to the car (audio.memo.mirrored). */
+  phoneLate?: { at: string; afterReleaseSeconds?: number; rounds?: number };
 };
 /** From an audio.memo.failed fact with data.stage "cancelled". afterDispatch: the agent may still have run. */
 export type Cancellation = { eventId: string; at: string; afterDispatch: boolean; message?: string };

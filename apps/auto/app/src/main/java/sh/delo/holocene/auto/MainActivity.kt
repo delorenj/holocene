@@ -717,6 +717,9 @@ class MainActivity : Activity() {
         DriveSpeech.forEvent(ev)?.let { parts += SpeechPart.Say(it) }
         if (parts.isEmpty()) return
         val id = "${ev.type}:${SystemClock.elapsedRealtime()}"
+        // A note that ends queued, silent or rejected has no SENT tone: its token is spent, or it would hand the next
+        // note's SENT tone to nobody and the next note's own would wait behind it.
+        if (DriveSpeech.endsNote(ev)) voice.arbiter.noteAnswered()
         when (ev.type) {
             // The instant ack: queued while the mic is still closing, said the moment it is closed (no server).
             // Both belong to the note just recorded (STOP tone + "Got it", then the SENT tone): they go before what the

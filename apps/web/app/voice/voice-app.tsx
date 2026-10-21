@@ -304,8 +304,8 @@ const TIMING: { key: keyof MemoTiming; label: string; title: string }[] = [
   { key: "firstProgressSeconds", label: "first progress", title: "the agent wrote its first line while working" },
   { key: "firstNarrationSeconds", label: "first narration", title: "the watcher spoke a progress line for the car" },
   { key: "progressPlayedSeconds", label: "progress played", title: "the car started playing a progress update" },
-  { key: "firstChunkSeconds", label: "first chunk up", title: "the reply's first sentence-chunk was uploaded (chunked speech)" },
-  { key: "replyUpSeconds", label: "reply up", title: "the full reply file was uploaded (the replied fact; the phone plays this one)" },
+  { key: "firstChunkSeconds", label: "first chunk up", title: "the reply's first sentence-chunk was uploaded (a reply long enough to be spoken in chunks)" },
+  { key: "replyUpSeconds", label: "reply up", title: "the whole reply was up: the full reply file (a one-file reply: its only chunk), which the phone plays" },
   { key: "replyPlayedSeconds", label: "reply played", title: "the car started playing the reply" }
 ];
 
@@ -354,7 +354,7 @@ function WhileWaiting({ memo }: { memo: MemoDetail }) {
       ) : null}
       {chunks.length ? (
         <p className="voice-timing">
-          <span className="hub-label">Reply in {chunks[0].of} chunk{chunks[0].of === 1 ? "" : "s"}</span>
+          <span className="hub-label">{chunks[0].of === 1 ? "Reply spoken as one file" : `Reply in ${chunks[0].of} chunks`}</span>
           {chunks.map((c) => (
             <span key={c.eventId} className="voice-timing-item" title={`${c.key ?? ""}${c.text ? `: ${c.text}` : ""}`}>
               #{c.n} <strong>{clockTime(c.at)}</strong>{c.ttsSeconds !== undefined ? ` · tts ${c.ttsSeconds}s` : ""}

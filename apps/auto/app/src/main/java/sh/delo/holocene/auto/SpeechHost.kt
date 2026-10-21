@@ -50,6 +50,10 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
             if (c != null && c.kind != SpeechKind.ARMING && c.chunks == 0 && c.parts.none { it is SpeechPart.Clip }) {
                 arbiter.focusLost(c.id, "focus_lost:$change", transient = change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
             }
+            // The loss's focus request is kept only for an echo that waits for the GAIN. Any other utterance (an ack, a cue,
+            // a reply, an echo already cut once) is not coming back: the request is given up now, not left registered
+            // until the next sound.
+            if (!arbiter.waitingForFocus) feedback.dropRegain()
         }
         // The focus a call took came back (or was taken for good after all): a heard echo it cut is said again now.
         feedback.onFocusBack = { gained -> arbiter.focusReturned(gained) }

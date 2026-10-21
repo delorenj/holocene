@@ -1324,7 +1324,9 @@ function App() {
     setStatus(`NOT accepted (${why.slice(0, 80)}) - kept on this device, retrying hourly`)
     // Said once per recording: for the send the driver just made, or the first time a saved row is refused. The
     // hourly self-heal (and every pad start) retrying rows that are still refused is not news the driver can act on.
-    if (live || !p.rejected) emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: String(e.status) })
+    // reason 'retry': a saved row refused for the first time by a background retry, not the note just recorded (the car app
+    // pairs each note's STOP with the one answer that follows it, and this is not that note's answer).
+    if (live || !p.rejected) emitHost({ t: 'rejected', id: agentId, name: p.agentName, reason: live ? String(e.status) : 'retry' })
     // An 'unroutable_agent' refusal already published its terminal failed fact at the proxy: a second one here
     // would show the same memo failing twice in /voice. Other final refusals are only visible from the device.
     if (e.code !== 'unroutable_agent') {

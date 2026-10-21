@@ -716,6 +716,42 @@ test("a one-file reply that a live car holds for more than a minute is waiting, 
   assert.equal(buildMemoDetail(MEMO, [...base, oneFile], now(57 + 60 + 331))!.status, "stuck");
 });
 
+test("a one-file reply has no first chunk: its only voiced fact is the moment the whole reply was up", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55)];
+  const oneFile = fact("audio.memo.voiced", 57, { occurred_at: iso(57), chunk: 1, chunks: 1, chunk_s3_key: "replies/x.ogg", reply_s3_key: "replies/x.ogg" });
+  // held behind a recording: replied has not been published yet, the reply is up since 57 s
+  const held = buildMemoDetail(MEMO, [...base, oneFile], now(100))!;
+  assert.equal(held.timing.firstChunkSeconds, undefined);
+  assert.equal(held.timing.agentToFirstChunkSeconds, undefined);
+  assert.equal(held.timing.replyUpSeconds, 57);
+  assert.equal(held.timing.agentToReplySeconds, 2);
+  // once replied is out (it waited for the decision) the replied fact's own reply_up_at still wins
+  const waited = fact("audio.memo.replied", 140, { occurred_at: iso(140), command_id: CMD, reply_text: "PONG", reply_s3_key: "replies/x.ogg", reply_up_at: iso(56.5) });
+  const done = buildMemoDetail(MEMO, [...base, oneFile, waited, played("started", 120)], now(150))!;
+  assert.equal(done.timing.firstChunkSeconds, undefined);
+  assert.equal(done.timing.replyUpSeconds, 56.5);
+  assert.equal(done.timing.carLagSeconds, 63.5);
+  // a chunked reply keeps its first chunk
+  const chunked = buildMemoDetail(MEMO, [...base, voicedChunk(1, 3, 58.2), voicedChunk(2, 3, 61.5), voicedChunk(3, 3, 66), replied(66.4)], now(100))!;
+  assert.equal(chunked.timing.firstChunkSeconds, 58.2);
+});
+
+test("a phone copy that landed after the replied fact is shown as mirrored late, not as left to the car", () => {
+  const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55)];
+  const released = fact("audio.memo.replied", 80, { occurred_at: iso(80), command_id: CMD, reply_text: "PONG", reply_s3_key: "replies/x.ogg",
+    earshot_skipped: "car_released", earshot_reason: "drop_failed" });
+  const mirrored = fact("audio.memo.mirrored", 400, { occurred_at: iso(400), reply_s3_key: "replies/x.ogg", earshot_key: "phone/2026/10/21/x.ogg",
+    earshot_text_key: "phone/2026/10/21/x.txt", rounds: 3, after_release_seconds: 320.4, earshot_skipped_before: "car_released" });
+  const before = buildMemoDetail(MEMO, [...base, released], now(200))!;
+  assert.equal(before.hops.find((h) => h.id === "replied")!.reply?.earshotSkipped, "car_released");
+  const after = buildMemoDetail(MEMO, [...base, released, mirrored], now(450))!;
+  const reply = after.hops.find((h) => h.id === "replied")!.reply!;
+  assert.equal(reply.earshotSkipped, undefined);
+  assert.deepEqual([reply.earshotKey, reply.earshotTextKey, reply.earshotReason], ["phone/2026/10/21/x.ogg", "phone/2026/10/21/x.txt", "late_drop"]);
+  assert.deepEqual(reply.phoneLate, { at: iso(400), afterReleaseSeconds: 320.4, rounds: 3 });
+  assert.equal(after.status, "complete");
+});
+
 test("a car that started the reply is not waiting on the replied fact", () => {
   const base = [uploaded(), received(), transcribed(), dispatched(), started(), completed(55), voicedChunk(1, 3, 70), notifiedReply(72)];
   const d = buildMemoDetail(MEMO, base, now(72 + 900))!;

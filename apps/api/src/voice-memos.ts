@@ -20,9 +20,10 @@ export const MEMO_STAGE_TYPES = [
  * What the driver heard while waiting: narrated = the watcher spoke a progress line for the car, notified = one
  * decision of the car's speech queue (ack, heard echo, progress, reply: start / end / halt / drop / deferred).
  * voiced = one sentence-chunk of the reply went up before the full file, so the car could start speaking it.
+ * mirrored = the phone's Earshot copy landed late, in the watcher's background retry, after the replied fact.
  * Many per memo, so they are read by correlation id for the memos on screen, never scanned.
  */
-export const MEMO_ANNOTATION_TYPES = ["bloodbank.audio.memo.narrated", "bloodbank.audio.memo.notified", "bloodbank.audio.memo.voiced"] as const;
+export const MEMO_ANNOTATION_TYPES = ["bloodbank.audio.memo.narrated", "bloodbank.audio.memo.notified", "bloodbank.audio.memo.voiced", "bloodbank.audio.memo.mirrored"] as const;
 
 export const MEMO_TYPES = [...MEMO_STAGE_TYPES, ...MEMO_ANNOTATION_TYPES] as const;
 
@@ -272,6 +273,8 @@ export type ReplyInfo = {
    * asked) or no_car_claim | car_let_go | browser_sender | skip_off (mirrored). Absent on a reply from before the claim.
    */
   earshotReason?: string;
+  /** The phone copy landed after the replied fact said it was left to the car (audio.memo.mirrored): when, and how long after the release. */
+  phoneLate?: { at: string; afterReleaseSeconds?: number; rounds?: number };
 };
 
 /** From an audio.memo.failed fact with data.stage "cancelled". */
@@ -511,6 +514,18 @@ export function replyInfoOf(d: Record<string, unknown>): ReplyInfo {
     ...(skipped ? { earshotSkipped: skipped } : {}), ...(reason ? { earshotReason: reason } : {}) };
 }
 
+/**
+ * The replied fact says what was decided when it went out. If the phone copy landed afterwards (the watcher's background
+ * retry of a reply it first gave back to the car), the audio.memo.mirrored fact is the newer truth: the copy exists now.
+ */
+export function withLateMirror(reply: ReplyInfo, mirrored: JourneyEvent | undefined): ReplyInfo {
+  const key = mirrored ? str(mirrored.data.earshot_key) : undefined;
+  if (!mirrored || !key) return reply;
+  const { earshotSkipped: _skipped, ...rest } = reply;
+  return { ...rest, earshotKey: key, earshotTextKey: str(mirrored.data.earshot_text_key) ?? reply.earshotTextKey, earshotReason: "late_drop",
+    phoneLate: { at: mirrored.at, afterReleaseSeconds: num(mirrored.data.after_release_seconds), rounds: num(mirrored.data.rounds) } };
+}
+
 /** "command c2 · batch lane · fell back: interactive_consumer_not_pulling", or for an escalation: "... · escalated from command c1 (interactive turn timed out)". */
 function dispatchDetail(d: Record<string, unknown>): string {
   const reason = str(d.lane_reason);
@@ -718,7 +733,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       failures, events: evs
     };
     if (spec.id === "uploaded") out.capture = memoFacts.map((e) => captureLevelOf(e.data)).find(Boolean);
-    if (spec.id === "replied" && evs[0]) out.reply = replyInfoOf(evs[0].data);
+    if (spec.id === "replied" && evs[0]) out.reply = withLateMirror(replyInfoOf(evs[0].data), memoFacts.filter((e) => e.type === "bloodbank.audio.memo.mirrored").at(-1));
     if (spec.id === "transcribed") {
       out.audio = (evs[0] ? audioLevelOf(evs[0].data) : undefined) ?? failures.map((f) => f.audio).filter(Boolean).at(-1);
       // The watcher fails a silent recording before it transcribes: that failure IS the transcribed hop's verdict, with the level as evidence.
@@ -857,7 +872,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const replyText = str(repliedEvent?.data.reply_text);
   const agent = memoFacts.map((e) => str(e.data.target_agent_id)).find(Boolean);
   const s3Key = memoFacts.map((e) => str(e.data.s3_key)).find(Boolean);
-  const reply = repliedEvent ? replyInfoOf(repliedEvent.data) : undefined;
+  const reply = repliedEvent ? withLateMirror(replyInfoOf(repliedEvent.data), memoFacts.filter((e) => e.type === "bloodbank.audio.memo.mirrored").at(-1)) : undefined;
   const escalated = escalation !== undefined || reply?.escalated === true;
 
   let stageLabel: string;
@@ -922,7 +937,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const playedStarted = memoFacts.find((e) => e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")?.at;
   const timing = memoTiming(startedAt, progress, narrations, speech,
     // reply_up_at: the replied fact waits for the phone decision, so the reply was up (and the car could start) before it
-    { firstChunkAt: chunks[0]?.at, repliedAt: (repliedEvent && str(repliedEvent.data.reply_up_at)) ?? repliedEvent?.at,
+    // A reply spoken as one file has no first chunk: its voiced fact (chunk 1 of 1) is the moment the whole reply was up.
+    { firstChunkAt: chunks[0] && chunks[0].of > 1 ? chunks[0].at : undefined,
+      repliedAt: (repliedEvent && str(repliedEvent.data.reply_up_at)) ?? (chunks[0] && chunks[0].of === 1 ? chunks[0].at : undefined) ?? repliedEvent?.at,
       agentDoneAt: agentDone, playedAt: playedStarted });
   const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
 
