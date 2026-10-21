@@ -80,9 +80,25 @@ export function laneQueueText(lane: Lane, status: LaneStatus | undefined): strin
   if (!status || status.pulling === undefined) return undefined;
   if (status.draining) {
     const busy = status.inFlight ? `, ${status.inFlight} in flight finishing` : "";
-    return `${lane} lane: gateway restarting (draining), ${status.queued ?? 0} queued; they run when the gateway is back${busy}`;
+    const why = status.gatewayLabel ?? "gateway restarting (draining)";
+    return `${lane} lane: ${why}, ${status.queued ?? 0} queued; they run when the gateway takes turns again${busy}`;
   }
   if (!status.pulling) return `${lane} lane: nobody is pulling its consumer`;
   const slots = status.slots !== undefined ? `/${status.slots}` : "";
   return `${lane} lane: ${status.inFlight ?? 0}${slots} in flight, ${status.queued ?? 0} queued`;
+}
+
+type Lanes = { interactive?: LaneStatus; batch?: LaneStatus } | undefined;
+const pausedLane = (lanes: Lanes) => (lanes?.interactive?.draining ? lanes.interactive : lanes?.batch?.draining ? lanes.batch : undefined);
+
+/** "Gateway restarting (draining)" · "Gateway stopping (draining)" · "Gateway paused for maintenance (draining)" · "Gateway starting". */
+export function gatewayPauseLabel(lanes: Lanes): string {
+  const label = pausedLane(lanes)?.gatewayLabel ?? "gateway restarting (draining)";
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** The watcher's sentence for why nothing is pulled, e.g. "Gateway stopping (draining), memo queued; it runs when ...". */
+export function gatewayPauseSentence(lanes: Lanes): string {
+  const text = pausedLane(lanes)?.gateway ?? "gateway restarting (draining), memo queued; it runs when the gateway is back";
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

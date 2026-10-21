@@ -479,7 +479,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                     elif row["state"] in ("pending", "started"):
                         # Not finished: a draining gateway handed the command back (NAK) and runs it after the restart.
                         gw = c.gateway_state()
-                        if gw["draining"] or gw["restarting"]:
+                        if gw["queued"]:
                             detail += f"  <- {gw['detail']}"
                     hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
                 else:

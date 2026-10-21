@@ -198,6 +198,7 @@ os.environ.update({
     "MC_BIN": str(FAKE_MC), "BB_EMIT": str(FAKE_BB), "MEMO_TRANSCRIBE": str(FAKE_TRANSCRIBE),
     "MEMO_STATE_DIR": str(ROOT / "state"), "MEMO_GATEWAY_DB": str(GATEWAY_DB),
     "MEMO_GATEWAY_STATE_FILE": str(ROOT / "gateway_state.json"),
+    "MEMO_GATEWAY_DRAIN_MARKER": str(ROOT / ".drain_request.json"),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
     "MEMO_PAD_PRESENCE_URL": "http://127.0.0.1:9/upload/presence",
@@ -1020,6 +1021,63 @@ class LaneProbes(unittest.TestCase):
             self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
         mc_.GATEWAY_STATE_FILE.unlink()
         self.assertEqual(mc_.gateway_state()["draining"], False)  # no file: unknown, never "draining"
+
+    def test_a_stop_and_a_maintenance_drain_are_not_called_a_restart(self):
+        # SIGTERM stop: draining, no restart requested, no drain marker
+        self._gateway_state(gateway_state="draining", restart_requested=False, active_agents=1)
+        with self._patched(self._unpulled()):
+            lanes = mc_.gateway_lanes()
+        info = lanes["interactive"]
+        self.assertTrue(info["draining"])
+        self.assertEqual(info["gateway_kind"], "shutdown_drain")
+        text = mc_.gateway_liveness_text(info, "interactive")
+        self.assertIn("gateway stopping (draining), memo queued; it runs when the gateway is started again", text)
+        self.assertNotIn("restarting", text)
+        self.assertTrue(mc_.gateway_lanes_text(lanes).startswith("interactive: gateway stopping (draining), 0/2"))
+        # an external drain (.drain_request.json) is maintenance, not a restart
+        mc_.GATEWAY_DRAIN_MARKER.write_text(json.dumps({"requested_at": mc_.iso(mc_.now_utc()), "epoch": "x"}))
+        self.addCleanup(lambda: mc_.GATEWAY_DRAIN_MARKER.unlink(missing_ok=True))
+        with self._patched(self._unpulled()):
+            info = mc_.gateway_liveness("batch")
+        self.assertEqual(info["gateway_kind"], "maintenance_drain")
+        self.assertIn("gateway paused for maintenance (draining), memo queued; it runs when the drain is released",
+                      mc_.gateway_liveness_text(info, "batch"))
+        # a marker older than Hermes honours (1 h) is not a maintenance drain
+        mc_.GATEWAY_DRAIN_MARKER.write_text(json.dumps({"requested_at": "2026-01-01T00:00:00+00:00"}))
+        self.assertEqual(mc_.gateway_state()["kind"], "shutdown_drain")
+        # a reload's stop phase keeps restart_requested: still a restart
+        self._gateway_state(gateway_state="draining", restart_requested=True)
+        self.assertEqual(mc_.gateway_state()["kind"], "restart_drain")
+
+    def test_a_starting_gateway_queues_until_its_lanes_connect(self):
+        # the new process after a restart: restart_requested is reset, lanes not connected yet (~1 min)
+        self._gateway_state(gateway_state="starting", restart_requested=False)
+        with self._patched(self._unpulled()):
+            lanes = mc_.gateway_lanes()
+        self.assertTrue(all(v["draining"] and v["gateway_kind"] == "starting" for v in lanes.values()))
+        text = mc_.gateway_liveness_text(lanes["interactive"], "interactive")
+        self.assertIn("gateway starting, memo queued; it runs once its Bloodbank lanes connect", text)
+        self.assertNotIn("NOBODY PULLING", text)
+        self.assertEqual(mc_.gateway_lanes_text(lanes), "interactive: gateway starting, 0/2 in flight, 2 queued | "
+                                                         "batch: gateway starting, 0/4 in flight, 2 queued")
+        # once a lane pulls it is simply pulling, even while the process still says starting
+        with self._patched(self.JSZ):
+            info = mc_.gateway_liveness("interactive")
+        self.assertFalse(info.get("draining"))
+        self.assertIn("pulling", mc_.gateway_liveness_text(info, "interactive"))
+
+    def test_a_starting_gateway_that_failed_or_went_stale_is_nobody_pulling(self):
+        for fields in ({"gateway_state": "starting", "platforms": {"bloodbank": {"state": "fatal", "writer_pid": os.getpid()}}},
+                       {"gateway_state": "starting", "updated_at": "2026-01-01T00:00:00+00:00"},
+                       {"gateway_state": "starting", "pid": 2 ** 22 + 12345}):
+            self._gateway_state(**fields)
+            with self._patched(self._unpulled()):
+                info = mc_.gateway_liveness("interactive")
+            self.assertFalse(info.get("draining"), fields)
+            self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
+        # the old process's fatal entry does not count against the new one
+        self._gateway_state(gateway_state="starting", platforms={"bloodbank": {"state": "fatal", "writer_pid": 1}})
+        self.assertEqual(mc_.gateway_state()["kind"], "starting")
 
     def test_trace_resolves_the_lane_from_the_fact_then_the_subject_then_legacy(self):
         import memo_trace as mt

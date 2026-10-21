@@ -101,8 +101,9 @@ export type MemoDetail = MemoSummary & {
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };
 export type LaneStatus = {
   pulling?: boolean; waiting?: number; inFlight?: number; queued?: number; slots?: number; error?: string;
-  /** hermes-gateway is draining for a restart: nothing is pulled on purpose, queued memos run when it is back. */
-  draining?: boolean; gateway?: string;
+  /** hermes-gateway is draining (restart, stop or maintenance) or still starting: nothing is pulled on purpose and
+   * queued memos run when it takes turns again. gateway = the watcher's sentence, gatewayLabel = its short form. */
+  draining?: boolean; gateway?: string; gatewayLabel?: string;
 };
 export type WatcherStatus = {
   state: "running" | "stopped" | "unknown";

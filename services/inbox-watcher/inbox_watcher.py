@@ -373,6 +373,7 @@ class LaneProbe:
                 "error": info.get("error"), "checked_at": iso(now_utc()),
                 # the gateway is restarting: nothing is pulled on purpose, queued memos run when it is back
                 "draining": bool(info.get("draining")), "gateway": info.get("gateway_detail"),
+                "gateway_kind": info.get("gateway_kind"), "gateway_label": info.get("gateway_label"),
             }
         with self._lock:
             self._snap = snap
@@ -1211,8 +1212,9 @@ class Watcher:
                     log("lane_kept", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch",
                         lane=m["lane"], configured=LANE, reason=m["lane_reason"],
                         gateway=mc_.gateway_lanes_text(),
-                        note=(mc_.GATEWAY_DRAINING_TEXT + " (queued on the interactive lane, which the new process "
-                              "fetches first)" if m["lane_reason"] == "gateway_draining_queued_on_interactive"
+                        note=((mc_.gateway_state()["detail"] or mc_.GATEWAY_DRAINING_TEXT)
+                              + " (queued on the interactive lane, which the gateway fetches first)"
+                              if m["lane_reason"] == "gateway_draining_queued_on_interactive"
                               else "no puller on either lane (gateway down or restarting); queued on the interactive "
                                    "lane, which drains first when the gateway reconnects"))
         lane = m["lane"]
@@ -1267,7 +1269,8 @@ class Watcher:
         if live.get("draining"):
             log("gateway_draining", "warn", memo_id=memo_id, key=key, agent=agent,
                 stage="dispatch", lane=lane, detail=mc_.gateway_liveness_text(live, lane),
-                note="the gateway is restarting: the command queues in JetStream and runs when the gateway is back")
+                note=(f"{live.get('gateway_label') or 'gateway restarting'}: the command queues in JetStream and runs "
+                      "when the gateway takes turns again"))
         elif live.get("ok") is False:
             log("gateway_not_pulling", "warn", memo_id=memo_id, key=key, agent=agent,
                 stage="dispatch", lane=lane, detail=mc_.gateway_liveness_text(live, lane),

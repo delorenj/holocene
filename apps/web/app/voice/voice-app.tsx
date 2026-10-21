@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, laneQueueText, liveTotal, statement } from "./model";
+import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, statement } from "./model";
 import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
@@ -94,11 +94,11 @@ export function VoiceApp() {
         {list.data?.watcher?.state === "running"
           && (list.data.watcher.lanes?.interactive?.draining || list.data.watcher.lanes?.batch?.draining) ? (
           <div className="voice-alert" role="status">
-            <span className="hub-label">Gateway restarting</span>
+            <span className="hub-label">{gatewayPauseLabel(list.data.watcher.lanes)}</span>
             <p>
-              Gateway restarting (draining), memos queued; they run when the gateway is back.
-              {" "}<code>hermes-gateway.service</code> is finishing its in-flight turns before it restarts, so neither lane
-              pulls new commands on purpose ({list.data.watcher.lanes?.interactive?.queued ?? 0} queued on interactive,
+              {gatewayPauseSentence(list.data.watcher.lanes)}.
+              {" "}<code>hermes-gateway.service</code> pulls no new commands on purpose until it takes turns again
+              ({list.data.watcher.lanes?.interactive?.queued ?? 0} queued on interactive,
               {" "}{list.data.watcher.lanes?.batch?.queued ?? 0} on batch).
             </p>
           </div>

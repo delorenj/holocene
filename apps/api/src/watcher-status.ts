@@ -18,6 +18,9 @@ export type LaneStatus = {
   draining?: boolean;
   /** The watcher's one-line account of the gateway when it is draining. */
   gateway?: string;
+  /** Why nothing is pulled, short: "gateway restarting (draining)", "gateway stopping (draining)",
+   * "gateway paused for maintenance (draining)", "gateway restarting", "gateway starting". */
+  gatewayLabel?: string;
 };
 
 export type WatcherStatus = {
@@ -42,7 +45,8 @@ const lanePart = (raw: unknown): LaneStatus | undefined => {
     waiting: n(l.waiting), inFlight: n(l.ack_pending), queued: n(l.pending), slots: n(l.max_ack_pending),
     error: typeof l.error === "string" ? l.error : undefined,
     draining: l.draining === true ? true : undefined,
-    gateway: typeof l.gateway === "string" ? l.gateway : undefined
+    gateway: typeof l.gateway === "string" ? l.gateway : undefined,
+    gatewayLabel: typeof l.gateway_label === "string" ? l.gateway_label : undefined
   };
 };
 

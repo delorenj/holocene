@@ -300,8 +300,15 @@ Behaviour worth knowing:
   plugin stops pulling both lanes on purpose for up to 30 min: the memo stays on
   `invoke` without a second probe (`lane_reason=gateway_draining_queued_on_interactive`),
   its agent deadline is extended instead of failing at 600 s, and every
-  liveness line reads `gateway restarting (draining), memo queued; it runs when
-  the gateway is back`. An unreadable monitor keeps the
+  liveness line names why: `gateway restarting (draining), memo queued; it runs
+  when the gateway is back` for a reload/restart, `gateway stopping (draining)
+  ...` for a plain stop (SIGTERM, `restart_requested` false),
+  `gateway paused for maintenance (draining) ...` while Hermes'
+  `~/.hermes/.drain_request.json` marker is present (Hermes ignores one older
+  than 1 h), and `gateway starting, memo queued; it runs once its Bloodbank
+  lanes connect` for the ~1 min a new process (`starting`, live pid, under
+  10 min old, its bloodbank platform not `fatal`) spends before its lanes pull.
+  An unreadable monitor keeps the
   interactive lane. An unrecognised `MEMO_LANE` makes the watcher refuse to
   start (exit 2, `bad_memo_lane` on stderr) rather than guess. **The lane is pinned to the
   command id** (the idempotency key, digest and journal row differ by type), so
@@ -558,9 +565,11 @@ retryable=false)` with that queue state in the message.
   watcher reads the reply from the Hermes profile `state.db`.
 - If the gateway's bloodbank platform is down, commands queue in JetStream and
   the trace verdict says `NOBODY PULLING <lane>`. Commands run when it comes back.
-  A gateway draining for a restart says `gateway restarting (draining), memo
-  queued; it runs when the gateway is back` instead (memo:trace, the watcher log,
-  the /voice banner "Gateway restarting").
+  A gateway that pulls nothing on purpose says why instead (memo:trace, the
+  watcher log, the /voice banner): `gateway restarting (draining)`, `gateway
+  stopping (draining)`, `gateway paused for maintenance (draining)`, `gateway
+  restarting` (between processes) or `gateway starting`, each followed by
+  `memo queued; it runs when ...`.
 - `reply_renderer.py` was folded into this service and deleted.
 
 ## Voice memos view

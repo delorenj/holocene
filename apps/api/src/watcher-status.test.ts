@@ -19,7 +19,9 @@ test("a draining gateway reaches /voice as draining, not as nobody pulling", asy
   writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({
     pid: process.pid, ts: "2026-10-20T22:59:59Z", active: [], outbox: 0, lane: "interactive",
     lanes: {
-      interactive: lane("bloodbank-hermes-gateway-interactive", { draining: true, gateway: DRAINING }),
+      interactive: lane("bloodbank-hermes-gateway-interactive", {
+        draining: true, gateway: DRAINING, gateway_kind: "restart_drain", gateway_label: "gateway restarting (draining)"
+      }),
       batch: lane("bloodbank-hermes-gateway", { draining: false, gateway: null })
     }
   }));
@@ -27,9 +29,11 @@ test("a draining gateway reaches /voice as draining, not as nobody pulling", asy
   assert.equal(status.state, "running");
   assert.equal(status.lanes?.interactive?.draining, true);
   assert.equal(status.lanes?.interactive?.gateway, DRAINING);
+  assert.equal(status.lanes?.interactive?.gatewayLabel, "gateway restarting (draining)");
   assert.equal(status.lanes?.interactive?.pulling, false);
   assert.equal(status.lanes?.interactive?.queued, 2);
   // false and absent both read as "not draining"
   assert.equal(status.lanes?.batch?.draining, undefined);
   assert.equal(status.lanes?.batch?.gateway, undefined);
+  assert.equal(status.lanes?.batch?.gatewayLabel, undefined);
 });
