@@ -847,8 +847,8 @@ python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat-q4q5.txt --t
 
 | check | result |
 |---|---|
-| `mise run memo:test` | PASS: watcher 175 (9 new: drop fails, retries, landed-but-reported, release outage, stop + resume, held replies, trace timing, grace), proxy 91 (2 new: watcher release, car release) |
-| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 60 tests (4 new in `claim.test.ts` / `roster.test.ts`) |
+| `mise run memo:test` | PASS: watcher 175 (8 new: drop fails, retries, landed-but-reported, release outage, stop + resume, held replies, trace timing, grace), proxy 91 (2 new: watcher release, car release) |
+| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 60 tests (3 new in `claim.test.ts` / `roster.test.ts`) |
 | API typecheck, `pnpm test` | PASS, 148 (2 new in `voice-memos.test.ts`) |
 
 `test_retrying_a_changed_object_takes_it_as_it_is_now` is flaky on the commit before this round as well (1 in 6 runs); it
