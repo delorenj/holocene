@@ -23,9 +23,10 @@ export default function PrivacyPage() {
           <p>
             This policy covers only the Holocene Auto Android app, published by
             AutomaticAI, package <code>io.automaticai.holocene</code>. The current
-            internal build is version <code>0.2.10-internal</code> (version code 12);
-            versions <code>0.2.7-internal</code> and <code>0.2.8-internal</code>
-            (version codes 9 and 10) handle data the same way.
+            internal builds are versions <code>0.2.10-internal</code> and
+            <code>0.2.11-internal</code> (version codes 12 and 13); versions
+            <code>0.2.7-internal</code> to <code>0.2.9-internal</code> (version codes 9
+            to 11) handle data the same way.
             Earlier internal builds (version codes 6 to 8) may appear as
             “Holocene Fixture”; they had no Internet permission and sent no
             data, as described in the “Diagnostics” sections below.
