@@ -1066,6 +1066,26 @@ class LaneProbes(unittest.TestCase):
         self.assertFalse(info.get("draining"))
         self.assertIn("pulling", mc_.gateway_liveness_text(info, "interactive"))
 
+    def test_a_reloaded_process_that_is_starting_is_starting_not_restarting(self):
+        # a reload's new process writes "starting" with restart_requested=true; its pid is alive
+        self._gateway_state(gateway_state="starting", restart_requested=True)
+        gw = mc_.gateway_state()
+        self.assertEqual(gw["kind"], "starting")
+        self.assertTrue(gw["starting"])
+        self.assertFalse(gw["restarting"])
+        with self._patched(self._unpulled()):
+            text = mc_.gateway_liveness_text(mc_.gateway_liveness("interactive"), "interactive")
+        self.assertIn("gateway starting, memo queued; it runs once its Bloodbank lanes connect", text)
+        self.assertNotIn("restarting", text)
+        # lanes already pulling: simply pulling, whatever the file still says
+        with self._patched(self.JSZ):
+            info = mc_.gateway_liveness("interactive")
+        self.assertFalse(info.get("draining"))
+        self.assertIn("pulling", mc_.gateway_liveness_text(info, "interactive"))
+        # a "starting" writer that is dead after a requested restart is still the restart gap
+        self._gateway_state(gateway_state="starting", restart_requested=True, pid=2 ** 22 + 12345)
+        self.assertEqual(mc_.gateway_state()["kind"], "restarting")
+
     def test_a_starting_gateway_that_failed_or_went_stale_is_nobody_pulling(self):
         for fields in ({"gateway_state": "starting", "platforms": {"bloodbank": {"state": "fatal", "writer_pid": os.getpid()}}},
                        {"gateway_state": "starting", "updated_at": "2026-01-01T00:00:00+00:00"},

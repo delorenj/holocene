@@ -569,7 +569,7 @@ def gateway_log_lines(needles: list[str], since: str = "-3 hours", lines: int = 
 # ---------------------------------------------------------------- NATS / gateway liveness
 
 # hermes-gateway writes its own runtime state here (gateway_state: starting|running|draining|stopped|..., pid,
-# restart_requested, active_agents). While it drains for a reload/restart (up to restart_after_turn_timeout, 30 min),
+# restart_requested, active_agents). While it drains for a reload/restart (up to restart_after_turn_timeout, 120 s here),
 # a stop, or a maintenance drain, the Bloodbank plugin stops pulling both lanes on purpose: commands stay queued and run
 # when the gateway takes turns again. A freshly started process pulls nothing until its Bloodbank lanes connect (~1 min).
 GATEWAY_STATE_FILE = Path(os.environ.get("MEMO_GATEWAY_STATE_FILE", HOME / ".hermes/gateway_state.json"))
@@ -628,7 +628,7 @@ def gateway_state(now: datetime | None = None) -> dict:
     "updated_at", "label", "detail"}. draining = the live process waits for in-flight turns before it restarts
     (kind restart_drain), stops (shutdown_drain) or resumes after a maintenance action (maintenance_drain);
     restarting = between the old process and the new one after a requested restart; starting = the new process is up
-    but its Bloodbank lanes are not connected yet. queued = any of them: nobody pulls on purpose and a queued memo runs
+    (a live writer saying "starting", restart_requested or not) but its Bloodbank lanes are not connected yet. queued = any of them: nobody pulls on purpose and a queued memo runs
     when the gateway takes turns again. A missing or unreadable file is {"state": None, "queued": False, ...}."""
     base = {"state": None, "kind": None, "queued": False, "draining": False, "restarting": False, "starting": False,
             "restart_requested": None, "active_agents": None, "updated_at": None, "label": None, "detail": None}
@@ -649,12 +649,13 @@ def gateway_state(now: datetime | None = None) -> dict:
     age = (now - updated).total_seconds() if updated else None
     fresh = age is not None and age <= GATEWAY_RESTART_STALE_S
     draining = state == "draining" and alive is not False
-    restarting = not draining and restart and state in ("draining", "stopped", "starting") and fresh
     bloodbank = (raw.get("platforms") or {}).get("bloodbank") if isinstance(raw.get("platforms"), dict) else None
     bloodbank_fatal = (isinstance(bloodbank, dict) and bloodbank.get("writer_pid") == pid
                        and bloodbank.get("state") == "fatal")
-    starting = not draining and not restarting and state == "starting" and alive is True and fresh \
-        and not bloodbank_fatal
+    # A live writer that says "starting" is the NEW process, even though a reload leaves restart_requested=true in
+    # the file it writes: it is starting (its lanes connect in ~1 min), not "restarting" for the minutes after.
+    starting = not draining and state == "starting" and alive is True and fresh and not bloodbank_fatal
+    restarting = not draining and not starting and restart and state in ("draining", "stopped", "starting") and fresh
     kind = None
     if draining:
         kind = "restart_drain" if restart else "maintenance_drain" if _maintenance_drain(now) else "shutdown_drain"
@@ -719,7 +720,7 @@ def gateway_lanes() -> dict[str, dict]:
         # draining (kept as the key every reader knows) says why nothing is pulled. A starting process whose lane
         # already pulls is simply pulling.
         for info in out.values():
-            if info.get("ok") is None or (gw["starting"] and info.get("ok")):
+            if info.get("ok") is None or ((gw["starting"] or gw["restarting"]) and info.get("ok")):
                 continue
             info.update(draining=True, gateway_state=gw["state"], gateway_kind=gw["kind"],
                         gateway_label=gw["label"], gateway_detail=gw["detail"])
