@@ -91,7 +91,18 @@ export function VoiceApp() {
           </div>
         ) : null}
 
-        {list.data?.watcher?.state === "running" && list.data.watcher.lane === "interactive"
+        {list.data?.watcher?.state === "running"
+          && (list.data.watcher.lanes?.interactive?.draining || list.data.watcher.lanes?.batch?.draining) ? (
+          <div className="voice-alert" role="status">
+            <span className="hub-label">Gateway restarting</span>
+            <p>
+              Gateway restarting (draining), memos queued; they run when the gateway is back.
+              {" "}<code>hermes-gateway.service</code> is finishing its in-flight turns before it restarts, so neither lane
+              pulls new commands on purpose ({list.data.watcher.lanes?.interactive?.queued ?? 0} queued on interactive,
+              {" "}{list.data.watcher.lanes?.batch?.queued ?? 0} on batch).
+            </p>
+          </div>
+        ) : list.data?.watcher?.state === "running" && list.data.watcher.lane === "interactive"
           && list.data.watcher.lanes?.interactive?.pulling === false ? (
           list.data.watcher.lanes?.batch?.pulling === true ? (
             <div className="voice-alert" role="alert">

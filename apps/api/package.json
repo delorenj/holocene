@@ -10,7 +10,7 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "node --import tsx --test src/hub-model.test.ts src/deckard-state.test.ts src/agent-activity.test.ts src/event-retention.test.ts src/voice-memos.test.ts src/wax.test.ts src/avatars.test.ts src/containers.test.ts src/velocity.test.ts src/director.test.ts",
+    "test": "node --import tsx --test src/hub-model.test.ts src/deckard-state.test.ts src/agent-activity.test.ts src/event-retention.test.ts src/voice-memos.test.ts src/wax.test.ts src/avatars.test.ts src/containers.test.ts src/velocity.test.ts src/director.test.ts src/watcher-status.test.ts",
     "maintenance": "node dist/maintenance.js"
   },
   "dependencies": {

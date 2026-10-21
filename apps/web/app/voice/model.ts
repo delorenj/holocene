@@ -78,6 +78,10 @@ export function statement(memos: MemoSummary[]): string {
 /** "interactive lane: 1/2 in flight, 0 queued" · "batch lane: 4/4 in flight, 17 queued" · undefined when never probed. */
 export function laneQueueText(lane: Lane, status: LaneStatus | undefined): string | undefined {
   if (!status || status.pulling === undefined) return undefined;
+  if (status.draining) {
+    const busy = status.inFlight ? `, ${status.inFlight} in flight finishing` : "";
+    return `${lane} lane: gateway restarting (draining), ${status.queued ?? 0} queued; they run when the gateway is back${busy}`;
+  }
   if (!status.pulling) return `${lane} lane: nobody is pulling its consumer`;
   const slots = status.slots !== undefined ? `/${status.slots}` : "";
   return `${lane} lane: ${status.inFlight ?? 0}${slots} in flight, ${status.queued ?? 0} queued`;

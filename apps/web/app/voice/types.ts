@@ -99,7 +99,11 @@ export type MemoDetail = MemoSummary & {
 };
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };
-export type LaneStatus = { pulling?: boolean; waiting?: number; inFlight?: number; queued?: number; slots?: number; error?: string };
+export type LaneStatus = {
+  pulling?: boolean; waiting?: number; inFlight?: number; queued?: number; slots?: number; error?: string;
+  /** hermes-gateway is draining for a restart: nothing is pulled on purpose, queued memos run when it is back. */
+  draining?: boolean; gateway?: string;
+};
 export type WatcherStatus = {
   state: "running" | "stopped" | "unknown";
   heartbeatAt?: string;

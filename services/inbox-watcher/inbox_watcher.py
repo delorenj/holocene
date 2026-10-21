@@ -371,6 +371,8 @@ class LaneProbe:
                 "waiting": info.get("num_waiting"), "ack_pending": info.get("num_ack_pending"),
                 "pending": info.get("num_pending"), "max_ack_pending": info.get("max_ack_pending"),
                 "error": info.get("error"), "checked_at": iso(now_utc()),
+                # the gateway is restarting: nothing is pulled on purpose, queued memos run when it is back
+                "draining": bool(info.get("draining")), "gateway": info.get("gateway_detail"),
             }
         with self._lock:
             self._snap = snap
@@ -580,6 +582,11 @@ class Watcher:
             return LANE, None
         for attempt in range(2):
             lanes = mc_.gateway_lanes()
+            if lanes.get("interactive", {}).get("draining"):
+                # The gateway is draining for a restart: neither lane pulls on purpose, and the interactive durable
+                # is the first thing the new process fetches.
+                return "interactive", ("gateway_draining_queued_on_interactive"
+                                       if lanes["interactive"].get("ok") is False else None)
             if lanes.get("interactive", {}).get("ok") is not False:
                 return "interactive", None
             if attempt == 0:
@@ -1204,8 +1211,10 @@ class Watcher:
                     log("lane_kept", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch",
                         lane=m["lane"], configured=LANE, reason=m["lane_reason"],
                         gateway=mc_.gateway_lanes_text(),
-                        note="no puller on either lane (gateway down or restarting); queued on the interactive lane, "
-                             "which drains first when the gateway reconnects")
+                        note=(mc_.GATEWAY_DRAINING_TEXT + " (queued on the interactive lane, which the new process "
+                              "fetches first)" if m["lane_reason"] == "gateway_draining_queued_on_interactive"
+                              else "no puller on either lane (gateway down or restarting); queued on the interactive "
+                                   "lane, which drains first when the gateway reconnects"))
         lane = m["lane"]
         with self.mu:
             if self._cancelled(m):
@@ -1255,7 +1264,11 @@ class Watcher:
             self.s.save()
             memo_id, key, agent = m["memo_id"], m["key"], m["agent"]
         live = mc_.gateway_liveness(lane)
-        if live.get("ok") is False:
+        if live.get("draining"):
+            log("gateway_draining", "warn", memo_id=memo_id, key=key, agent=agent,
+                stage="dispatch", lane=lane, detail=mc_.gateway_liveness_text(live, lane),
+                note="the gateway is restarting: the command queues in JetStream and runs when the gateway is back")
+        elif live.get("ok") is False:
             log("gateway_not_pulling", "warn", memo_id=memo_id, key=key, agent=agent,
                 stage="dispatch", lane=lane, detail=mc_.gateway_liveness_text(live, lane),
                 note="command will queue in JetStream until the gateway resumes")
@@ -1456,7 +1469,10 @@ class Watcher:
             if waited < QUEUE_MAX_WAIT_S and not memo_escalated(m):
                 live = live or mc_.gateway_liveness(lane)
                 ahead = (live.get("num_pending") or 0) + (live.get("num_ack_pending") or 0)
-                if st["state"] == "running" or (st["state"] == "pending" and live.get("ok") and ahead > 0):
+                # A draining gateway pulls nothing for up to 30 min (restart_after_turn_timeout) and then runs the
+                # queued command first: that is a queue, not an outage.
+                if st["state"] == "running" or (st["state"] == "pending" and (live.get("draining")
+                                                                              or (live.get("ok") and ahead > 0))):
                     m["deadline_ts"] = min(time.time() + AGENT_TIMEOUT_S, m["dispatched_ts"] + QUEUE_MAX_WAIT_S)
                     log("deadline_extended", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
                         command_id=m["command_id"], waited_s=int(waited), state=st["state"], detail=st["detail"],

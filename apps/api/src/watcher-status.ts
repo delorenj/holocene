@@ -14,6 +14,10 @@ export type LaneStatus = {
   /** The lane's reserved slots (consumer max_ack_pending). */
   slots?: number;
   error?: string;
+  /** true = hermes-gateway is draining for a restart: nobody pulls on purpose and queued memos run when it is back. */
+  draining?: boolean;
+  /** The watcher's one-line account of the gateway when it is draining. */
+  gateway?: string;
 };
 
 export type WatcherStatus = {
@@ -36,7 +40,9 @@ const lanePart = (raw: unknown): LaneStatus | undefined => {
   return {
     pulling: typeof l.ok === "boolean" ? l.ok : undefined,
     waiting: n(l.waiting), inFlight: n(l.ack_pending), queued: n(l.pending), slots: n(l.max_ack_pending),
-    error: typeof l.error === "string" ? l.error : undefined
+    error: typeof l.error === "string" ? l.error : undefined,
+    draining: l.draining === true ? true : undefined,
+    gateway: typeof l.gateway === "string" ? l.gateway : undefined
   };
 };
 

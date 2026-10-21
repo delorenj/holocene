@@ -197,6 +197,7 @@ threading.Thread(target=vox.serve_forever, daemon=True).start()
 os.environ.update({
     "MC_BIN": str(FAKE_MC), "BB_EMIT": str(FAKE_BB), "MEMO_TRANSCRIBE": str(FAKE_TRANSCRIBE),
     "MEMO_STATE_DIR": str(ROOT / "state"), "MEMO_GATEWAY_DB": str(GATEWAY_DB),
+    "MEMO_GATEWAY_STATE_FILE": str(ROOT / "gateway_state.json"),
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
     "MEMO_PAD_PRESENCE_URL": "http://127.0.0.1:9/upload/presence",
@@ -642,6 +643,21 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(m["status"], "active")
         self.assertGreater(m["deadline_ts"], time.time())
 
+    def test_19b_deadline_is_extended_while_the_gateway_drains_for_a_restart(self):
+        from unittest import mock
+        key = "inbox/holocene-pm/2026/10/15/draining.ogg"
+        put(key)
+        # nothing pulls either lane for up to 30 min on purpose: a queue, not an outage
+        draining = {"ok": False, "lane": "interactive", "num_waiting": 0, "num_pending": 1, "num_ack_pending": 0,
+                    "draining": True, "gateway_detail": mc_.GATEWAY_DRAINING_TEXT}
+        self.tick_until(lambda: self.state.memos.get(key, {}).get("stage") == "await_agent")
+        m = self.state.memos[key]
+        m["deadline_ts"] = time.time() - 1
+        with mock.patch.object(mc_, "gateway_liveness", return_value=draining):
+            self.w.tick()
+        self.assertEqual(m["status"], "active")
+        self.assertGreater(m["deadline_ts"], time.time())
+
     def test_17_pad_tiles_are_all_routable(self):
         """A tile whose agent id is not a routable registry row would silently strand every memo for it."""
         src = (Path(__file__).resolve().parents[2] / "apps/agent-pad/src/main.tsx").read_text()
@@ -726,6 +742,15 @@ class Pipeline(unittest.TestCase):
         d = self._dispatched(key)
         self.assertEqual(d["lane"], "interactive")
         self.assertEqual(d["lane_reason"], "gateway_not_pulling_queued_on_interactive")
+        self.assertEqual(m["lane"], "interactive")
+
+    def test_21e_a_draining_gateway_keeps_the_memo_interactive_and_says_why(self):
+        both = self._lanes(False, False)
+        for info in both.values():
+            info.update(draining=True, gateway_state="draining", gateway_detail=mc_.GATEWAY_DRAINING_TEXT)
+        key, m, probes = self._await_with("gwdrain", [both])
+        self.assertEqual(self._cmd(key)[0], "bloodbank.cmd.agent.invocation.invoke")
+        self.assertEqual(self._dispatched(key)["lane_reason"], "gateway_draining_queued_on_interactive")
         self.assertEqual(m["lane"], "interactive")
 
     def test_21c_batch_unreadable_is_not_a_reason_to_leave_interactive(self):
@@ -937,6 +962,64 @@ class LaneProbes(unittest.TestCase):
             info = mc_.gateway_liveness("interactive")
         self.assertIs(info["ok"], False)
         self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
+
+    def _gateway_state(self, **fields):
+        state = {"pid": os.getpid(), "kind": "hermes-gateway", "gateway_state": "running",
+                 "restart_requested": False, "active_agents": 0, "updated_at": mc_.iso(mc_.now_utc())}
+        state.update(fields)
+        mc_.GATEWAY_STATE_FILE.write_text(json.dumps(state))
+        self.addCleanup(lambda: mc_.GATEWAY_STATE_FILE.unlink(missing_ok=True))
+
+    def _unpulled(self):
+        body = json.loads(json.dumps(self.JSZ))
+        for c in body["account_details"][0]["stream_detail"][0]["consumer_detail"]:
+            c.update(num_waiting=0, num_ack_pending=0, num_pending=2)
+        return body
+
+    def test_a_draining_gateway_is_restarting_not_nobody_pulling(self):
+        self._gateway_state(gateway_state="draining", restart_requested=True, active_agents=1)
+        with self._patched(self._unpulled()):
+            lanes = mc_.gateway_lanes()
+            info = mc_.gateway_liveness("interactive")
+        self.assertTrue(all(v["draining"] and v["ok"] is False for v in lanes.values()))
+        text = mc_.gateway_liveness_text(info, "interactive")
+        self.assertIn("gateway restarting (draining), memo queued; it runs when the gateway is back", text)
+        self.assertIn("waiting on 1 in-flight turn", text)
+        self.assertNotIn("NOBODY PULLING", text)
+        line = mc_.gateway_lanes_text(lanes)
+        self.assertEqual(line, "interactive: gateway restarting (draining), 0/2 in flight, 2 queued | "
+                               "batch: gateway restarting (draining), 0/4 in flight, 2 queued")
+
+    def test_a_lane_finishing_its_in_flight_turn_during_the_drain_says_draining_too(self):
+        self._gateway_state(gateway_state="draining", restart_requested=True, active_agents=1)
+        body = self._unpulled()
+        body["account_details"][0]["stream_detail"][0]["consumer_detail"][0]["num_ack_pending"] = 1
+        with self._patched(body):
+            batch = mc_.gateway_liveness("batch")
+        self.assertIs(batch["ok"], True)  # work in flight
+        self.assertTrue(batch["draining"])
+        self.assertIn("1/4 in flight finishing", mc_.gateway_liveness_text(batch, "batch"))
+
+    def test_between_processes_after_a_requested_restart_is_restarting(self):
+        self._gateway_state(gateway_state="stopped", restart_requested=True, pid=2 ** 22 + 12345)
+        with self._patched(self._unpulled()):
+            info = mc_.gateway_liveness("interactive")
+        self.assertTrue(info["draining"])
+        self.assertIn("gateway restarting, memo queued; it runs when the gateway is back",
+                      mc_.gateway_liveness_text(info, "interactive"))
+
+    def test_a_dead_drainer_or_a_restart_that_never_came_back_is_nobody_pulling(self):
+        for fields in ({"gateway_state": "draining", "pid": 2 ** 22 + 12345},
+                       {"gateway_state": "stopped", "restart_requested": True,
+                        "updated_at": "2026-01-01T00:00:00+00:00"},
+                       {"gateway_state": "running"}):
+            self._gateway_state(**fields)
+            with self._patched(self._unpulled()):
+                info = mc_.gateway_liveness("interactive")
+            self.assertFalse(info.get("draining"), fields)
+            self.assertIn("NOBODY PULLING interactive", mc_.gateway_liveness_text(info, "interactive"))
+        mc_.GATEWAY_STATE_FILE.unlink()
+        self.assertEqual(mc_.gateway_state()["draining"], False)  # no file: unknown, never "draining"
 
     def test_trace_resolves_the_lane_from_the_fact_then_the_subject_then_legacy(self):
         import memo_trace as mt

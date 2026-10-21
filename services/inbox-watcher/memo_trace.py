@@ -476,12 +476,18 @@ def build(key: str) -> tuple[list[Hop], dict]:
                               + (f" failure_code={row['failure_code']}" if row.get("failure_code") else ""))
                     if bad:
                         detail += f" reason={c.terminal_error(row)}"
+                    elif row["state"] in ("pending", "started"):
+                        # Not finished: a draining gateway handed the command back (NAK) and runs it after the restart.
+                        gw = c.gateway_state()
+                        if gw["draining"] or gw["restarting"]:
+                            detail += f"  <- {gw['detail']}"
                     hops.append(Hop("gateway_journal", FAILED if bad else OK, c.parse_iso(row["created_at"]), detail))
                 else:
                     live = c.gateway_liveness(lane)
                     detail = (f"gateway never created an execution row for {command_id} (lane={lane}); "
                               f"{c.gateway_liveness_text(live, lane)}")
-                    if live.get("ok") and not live.get("num_pending") and not live.get("num_ack_pending"):
+                    if not live.get("draining") and live.get("ok") and not live.get("num_pending") \
+                            and not live.get("num_ack_pending"):
                         detail += (f"  <- {lane} consumer is EMPTY: the gateway consumed this command and dropped it without a row "
                                    "(unroutable target or bad envelope); see gateway_log below")
                     hops.append(Hop("gateway_journal", MISSING, detail=detail))

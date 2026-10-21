@@ -568,6 +568,66 @@ def gateway_log_lines(needles: list[str], since: str = "-3 hours", lines: int = 
 
 # ---------------------------------------------------------------- NATS / gateway liveness
 
+# hermes-gateway writes its own runtime state here (gateway_state: starting|running|draining|stopped|..., pid,
+# restart_requested, active_agents). While it drains for a reload/restart (up to restart_after_turn_timeout, 30 min)
+# the Bloodbank plugin stops pulling both lanes on purpose: commands stay queued and run when the new process connects.
+GATEWAY_STATE_FILE = Path(os.environ.get("MEMO_GATEWAY_STATE_FILE", HOME / ".hermes/gateway_state.json"))
+GATEWAY_DRAINING_TEXT = "gateway restarting (draining), memo queued; it runs when the gateway is back"
+GATEWAY_RESTARTING_TEXT = "gateway restarting, memo queued; it runs when the gateway is back"
+# A "stopped, restart requested" state older than this is a restart that never came back, not a restart.
+GATEWAY_RESTART_STALE_S = float(os.environ.get("MEMO_GATEWAY_RESTART_STALE_S", "600"))
+
+
+def _pid_alive(pid) -> bool | None:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def gateway_state(now: datetime | None = None) -> dict:
+    """What hermes-gateway says about itself, from its gateway_state.json.
+
+    {"state", "draining", "restarting", "restart_requested", "active_agents", "updated_at", "detail"}: draining =
+    the live process is waiting for in-flight turns before it restarts or stops; restarting = between the old process
+    and the new one after a requested restart. Either means nobody pulls the lanes on purpose and a queued memo runs
+    when the gateway is back. A missing or unreadable file is {"state": None, "draining": False, ...}."""
+    base = {"state": None, "draining": False, "restarting": False, "restart_requested": None,
+            "active_agents": None, "updated_at": None, "detail": None}
+    try:
+        raw = json.loads(GATEWAY_STATE_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {**base, "error": f"no {GATEWAY_STATE_FILE}"}
+    except Exception as e:  # noqa: BLE001
+        return {**base, "error": f"unreadable {GATEWAY_STATE_FILE}: {e}"[:200]}
+    if not isinstance(raw, dict):
+        return {**base, "error": f"unexpected {GATEWAY_STATE_FILE} content"}
+    state = raw.get("gateway_state")
+    restart = raw.get("restart_requested") is True
+    alive = _pid_alive(raw.get("pid"))
+    updated = parse_iso(raw.get("updated_at"))
+    age = ((now or now_utc()) - updated).total_seconds() if updated else None
+    draining = state == "draining" and alive is not False
+    restarting = (not draining and restart and state in ("draining", "stopped", "starting")
+                  and age is not None and age <= GATEWAY_RESTART_STALE_S)
+    active = raw.get("active_agents") if isinstance(raw.get("active_agents"), int) else None
+    detail = None
+    if draining:
+        detail = GATEWAY_DRAINING_TEXT + (f" (waiting on {active} in-flight turn{'s' if active != 1 else ''})"
+                                          if active else "")
+    elif restarting:
+        detail = GATEWAY_RESTARTING_TEXT
+    return {**base, "state": state, "draining": draining, "restarting": restarting, "restart_requested": restart,
+            "active_agents": active, "updated_at": raw.get("updated_at"), "detail": detail}
+
+
 def _consumer_info(c: dict) -> dict:
     # idle puller = parked pull request (num_waiting); busy puller = messages in flight
     # (max_ack_pending saturated parks nothing, so waiting=0 with ack_pending>0 is healthy)
@@ -607,6 +667,13 @@ def gateway_lanes() -> dict[str, dict]:
         else:
             out[lane] = {"ok": False, "lane": lane, "consumer": name,
                          "error": f"consumer {name} not registered on {COMMAND_STREAM}"}
+    gw = gateway_state()
+    if gw["draining"] or gw["restarting"]:
+        # Not pulling new work on purpose (in-flight turns still finish): the gateway is restarting and a queued memo
+        # runs when it is back. ok keeps its meaning (a puller or work in flight); draining says why nothing is pulled.
+        for info in out.values():
+            if info.get("ok") is not None:
+                info.update(draining=True, gateway_state=gw["state"], gateway_detail=gw["detail"])
     return out
 
 
@@ -623,10 +690,14 @@ def gateway_liveness_text(info: dict | None = None, lane: str = "batch") -> str:
     info = info or gateway_liveness(lane)
     lane = info.get("lane") or lane
     consumer = info.get("consumer") or GATEWAY_CONSUMERS.get(lane, lane)
-    if info.get("error"):
-        return f"{'NOBODY PULLING ' + lane + ': ' if info.get('ok') is False else ''}{info['error']}"
     slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
     waiting, pending, ack = (info.get(k) or 0 for k in ("num_waiting", "num_pending", "num_ack_pending"))
+    if info.get("draining"):
+        busy = f", {ack}{slots} in flight finishing" if ack else ""
+        return (f"{lane}: {info.get('gateway_detail') or GATEWAY_DRAINING_TEXT}{busy}; consumer {consumer}: "
+                f"waiting={waiting} pending={pending} ack_pending={ack}")
+    if info.get("error"):
+        return f"{'NOBODY PULLING ' + lane + ': ' if info.get('ok') is False else ''}{info['error']}"
     if info.get("ok"):
         verdict = f"pulling (busy: {ack}{slots} in flight, {pending} queued ahead)" if ack else "pulling (idle)"
     else:
@@ -642,6 +713,10 @@ def gateway_lanes_text(lanes: dict[str, dict] | None = None) -> str:
         info = lanes.get(lane) or {}
         if info.get("ok") is None:
             parts.append(f"{lane}: unknown ({info.get('error', 'no data')})")
+        elif info.get("draining"):
+            slots = f"/{info['max_ack_pending']}" if info.get("max_ack_pending") else ""
+            parts.append(f"{lane}: gateway restarting (draining), {info.get('num_ack_pending') or 0}{slots} in flight, "
+                         f"{info.get('num_pending') or 0} queued")
         elif not info["ok"]:
             parts.append(f"{lane}: NOBODY PULLING")
         else:
