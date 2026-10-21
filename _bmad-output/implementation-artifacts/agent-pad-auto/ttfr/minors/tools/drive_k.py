@@ -10,7 +10,7 @@ Prints host epochs as JSON."""
 import json, os, subprocess, sys, time
 
 ADB = "/home/delorenj/Android/Sdk/platform-tools/adb"
-LOG = "/tmp/k12/logcat.txt"
+LOG = os.environ.get("DRIVE_LOG", "/tmp/k12/logcat.txt")
 
 
 def adb(*a):
@@ -94,10 +94,10 @@ def n1():
     print(json.dumps(out), flush=True)
 
 
-def k(hold=6.0, slow=0.0):
-    out = {"scenario": "k", "slow": slow}
+def k(hold=6.0, slow=0.0, mwav="/tmp/v13/p2.wav", name="k"):
+    out = {"scenario": name, "slow": slow, "mwav": mwav}
     mark = logsize()
-    record("/tmp/v13/p2.wav", out, "m")
+    record(mwav, out, "m")
     out["reply_started"] = wait_log("start reply", mark, timeout=150)  # the log is chatty: scan from before the memo
     if out["reply_started"] is None:
         raise SystemExit("no reply started")
@@ -108,4 +108,8 @@ def k(hold=6.0, slow=0.0):
 
 
 if __name__ == "__main__":
-    {"n1": n1, "k": lambda: k(), "kslow": lambda: k(slow=8.0)}[sys.argv[1]]()
+    # kwait (final build): M asks for a long reply (/tmp/v13/p5.wav: "count out loud from one to thirty ...", made with vox.delo.sh
+    # /synthesize and sox to 16 kHz mono), R opens over the playing reply, and R's upload is held 3 s, so the SENT tone arrives while the
+    # re-offered long reply is already playing and has to wait for it (more than the old 6 s deadline).
+    {"n1": n1, "k": lambda: k(), "kslow": lambda: k(slow=8.0),
+     "kwait": lambda: k(slow=3.0, mwav="/tmp/v13/p5.wav", name="kwait")}[sys.argv[1]]()

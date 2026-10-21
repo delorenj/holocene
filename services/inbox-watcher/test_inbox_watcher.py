@@ -3731,6 +3731,16 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         self.assertNotIn("earshot_key", m)
         self.assertEqual(self.world["calls"].count("release"), 1 + r["rounds"])
 
+    def test_a_long_backoff_cannot_hold_a_retry_open_past_its_deadline(self):
+        key, m = self.released("s1-deadline", {"total": 1.5})
+        with unittest.mock.patch.object(iw, "EARSHOT_RETRY_BACKOFF_S", (600.0,)):
+            t0 = time.time()
+            r = self.settle(m, key, n=400)
+        self.assertEqual(r["outcome"], "gave_up")
+        self.assertLess(time.time() - t0, 10, "ended at the deadline, not at the 600 s backoff after it")
+        self.assertLess(iw.Watcher._retry_due({"next_at": 10 ** 12, "deadline_ts": 5.0}), 6)
+        self.assertEqual(iw.Watcher._retry_due({"next_at": 3.0, "deadline_ts": 5.0}), 3.0)
+
     def test_a_drop_that_landed_despite_its_error_is_kept_not_dropped_twice(self):
         key, m = self.released("s1-landed", {})
         stamp = mc_.parse_iso(m["reply_stamp"])

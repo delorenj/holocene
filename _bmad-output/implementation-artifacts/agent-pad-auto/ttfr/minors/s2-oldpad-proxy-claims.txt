@@ -1,0 +1,9 @@
+10:09:35.429 watcher offer ok= True owner= None 
+10:09:56.072 watcher take ok= True owner= phone 
+10:09:59.822 car hold ok= False owner= phone 
+10:09:59.830 car hold ok= False owner= phone 
+10:10:58.411 watcher release ok= True owner= None 
+10:11:43.715 watcher take ok= True owner= phone 
+10:11:44.533 watcher release ok= True owner= None 
+10:12:44.822 watcher take ok= True owner= phone 
+10:12:45.824 watcher release ok= True owner= None 

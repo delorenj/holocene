@@ -1966,11 +1966,17 @@ class Watcher:
             "rounds": r.get("rounds"), "after_release_seconds": round(time.time() - r["since_ts"], 1),
             "earshot_skipped_before": "car_released"})
 
+    @staticmethod
+    def _retry_due(r: dict) -> float:
+        """When the next round is due: at its backoff, but never later than the deadline, so a long backoff cannot hold
+        a retry that is out of budget open (the round that finds the deadline passed ends it with gave_up)."""
+        return min(r.get("next_at", 0), r.get("deadline_ts", float("inf")))
+
     def schedule_phone_retries(self) -> None:
         """Tick, lock held: start the round of every due phone retry on the decide pool."""
         now = time.time()
         for m in list(self.s.memos.values()):
-            if not self.phone_retry_pending(m) or m["phone_retry"].get("next_at", 0) > now:
+            if not self.phone_retry_pending(m) or self._retry_due(m["phone_retry"]) > now:
                 continue
             tag = f"phone:{m['key']}"
             if tag in self.running or STOP:
@@ -1980,7 +1986,7 @@ class Watcher:
 
     def next_phone_retry_in(self) -> list[float]:
         now = time.time()
-        return [m["phone_retry"].get("next_at", 0) - now for m in self.s.memos.values()
+        return [self._retry_due(m["phone_retry"]) - now for m in self.s.memos.values()
                 if self.phone_retry_pending(m) and f"phone:{m['key']}" not in self.running]
 
     def _exec_phone_retry(self, m: dict, tag: str) -> None:

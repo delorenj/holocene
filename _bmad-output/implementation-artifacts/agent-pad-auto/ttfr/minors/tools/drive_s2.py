@@ -5,7 +5,8 @@ Memo through the holo_testmic null sink (paplay). Prints host epochs as JSON."""
 import json, subprocess, sys, time
 sys.path.insert(0, "/tmp/v13")
 import drive13 as d
-d.LOG = "/tmp/s2/logcat.txt"
+import os
+d.LOG = os.environ.get("DRIVE_LOG", "/tmp/s2/logcat.txt")
 out = {"scenario": "s2"}
 d.record("/tmp/v13/p3.wav", out, "m")
 ev = d.journal_until(d.agent_done)

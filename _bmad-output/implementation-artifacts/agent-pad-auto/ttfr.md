@@ -977,3 +977,92 @@ runs alone, and test 18 failed on every pytest run alone.
 - Two systemd drop-ins (`zz-proof-s1.conf`, `zz-proof-s2.conf`) were created and **removed**; the watcher runs with its own
   unit. The sim mic route was restored and the null sink unloaded (`auto:sim:mic-check` OK).
 - The retry state of memos A-D is in the watcher's state.json (`phone_retry`, done).
+
+## Remaining minors, second pass (review findings)
+
+Date: 2026-10-21. The independent review of S1-S4 and K1/K2 found no blocker, and nine minors. Every one is closed here, with a
+test and, where it can be seen on the sim or the live server, a proof. Evidence is in [`ttfr/minors/`](ttfr/minors/). `versionCode 12`
+/ `0.2.10-internal` are untouched, the v12 releases and the Mac were not touched, and no adb ran against the physical phone
+(the S26 played the Earshot copy of the X2 proof reply through its normal pipeline). The Kotlin fixes are on main for the v13 build;
+the debug build was installed on `emulator-5554` only (`mise run auto:dev`).
+
+| # | minor | fix | proof |
+|---|---|---|---|
+| 1 | a manual `memo:retry` after `gave_up` did not re-arm the phone retry | `start_phone_retry` keeps only a **pending** retry; a finished one is armed afresh, its decisions kept in front (`armed again: the earlier retry ended gave_up`) | test `a_manual_retry_after_gave_up_arms_the_phone_retry_again` |
+| 2 | a late phone drop left the replied fact stale (`earshot_skipped=car_released`) | new fact `bloodbank.audio.memo.mirrored` (bloodbank `5a28c85`: schema, `mirrored` in the action allowlist, naming doc, contract test, muted in ntfy-router, router recreated) published by the retry when a drop lands (also when an earlier drop turns out to have landed). /voice overlays it on the replied hop (`earshotReason: late_drop`, `phoneLate`, "Mirrored to the phone late: ... N s after the release") | live X2 below; 2 watcher tests, 1 API test |
+| 3 | the S1 proof exercised overridden timings and a proxy blip as the last decision | `gave_up` quotes the last **failed drop** (`last failure: ...`) and, if something else came after, `last seen: <decision>: ...`; a long backoff can no longer hold a retry open past its deadline (`_retry_due = min(next_at, deadline_ts)`), so `gave_up` lands at the deadline, not up to 300 s later | live Y2 and X2 below; 2 watcher tests |
+| 4 | /voice labelled a one-file reply as a "first chunk" and timed it as one | one-file replies are "Reply spoken as one file"; `firstChunkSeconds` only for a chunked reply, a one-file reply's voiced fact is the **reply up** time (while `replied` is still held) | API test; X2's timing has `replyUpSeconds` and no `firstChunkSeconds` |
+| 5 | `voiced_one` was dropped by `compact()`, so a retry of a finished memo could announce twice | `voiced_one` now holds the reply key and survives compaction: announced once per reply file, again only under a new stamp | test (retry of a done memo: still one `voiced`) |
+| 6 | unconsumed note tokens left a stale SENT priority for up to 120 s | `SpeechArbiter.noteAnswered()`; `DriveSpeech.endsNote` spends the token on `queued`, `silent` and a live `rejected` (the pad now reports a background retry's first refusal with `reason=retry`, which answers no note recorded now); `cancelled` and a mic that failed to open never had a token; KDoc corrected | 2 JUnit tests; a silent note was also seen live on the sim (`cue:silent` right after its STOP ack) |
+| 7 | "SENT waits behind a playing reply" was JUnit only on the final build | sim run `kwait2` (below) | ZERO OVERLAPS |
+| 8 | K1: a regain focus request could linger after a transient loss of a non-echo | `SpeechHost` gives the request up (`DriveFeedback.dropRegain`) unless an echo waits for the GAIN (`SpeechArbiter.waitingForFocus`) | JUnit; device verification still needs v13 on a real head unit (the sim cannot produce a call or a second app) |
+| 9 | the S2 negative control ("an old page forgets the reply") was reasoned, not observed | ran it | below |
+
+### Proofs
+
+**Default retry schedule, success (memo `db513fc7`, X2, no car).** The Earshot bucket was pointed at one that does not exist,
+default timers. Released 09:53:21.96. Round 1 at **+45.3 s** (take, drop failed, take given back), round 2 **+60.3 s** later,
+round 3 **+120.3 s** later (the bucket repaired in between by restarting the watcher without the override; the retry resumed from
+state.json): `phone_dropped` "round 3, 228 s after the release", `audio.memo.mirrored` published 09:57:10.4. The S26 detected,
+started and finished it 2.0 s, 5.1 s and 9.2 s after. `/api/modules/voice/memos/<id>`: `status complete`, replied hop
+`earshotReason: late_drop`, `phoneLate {afterReleaseSeconds: 228.3, rounds: 3}`, `earshotKey` set, `earshotSkipped` gone, `chunks [(1,1)]`,
+timing `replyUpSeconds 17.3` with no first chunk ([`s1-x2-voice-api.json`](ttfr/minors/s1-x2-voice-api.json),
+[`traces/db513fc7-default-schedule-phone-dropped.txt`](ttfr/minors/traces/db513fc7-default-schedule-phone-dropped.txt)).
+
+**gave_up at the deadline with the real reason (memo `141c8f88`, Y2, no car).** Same bucket, `MEMO_EARSHOT_RETRY_TOTAL_S=150`, default
+first/backoff timers. Released 09:49:41.5, rounds at +45.3 s and +60.3 s later, and the third round (due at +120 s, past the
+deadline) did not wait for its backoff: `gave_up` at **09:52:11.5 = release + 150.0 s**: "no device played the reply in 150 s after
+the release: the car never claimed it and 2 phone drop(s) failed (last failure: the Earshot drop failed again (round 2); the take
+was given back to the car)". Before this fix it would have waited for the next round, up to 300 s late
+([`traces/141c8f88-gave-up-at-deadline.txt`](ttfr/minors/traces/141c8f88-gave-up-at-deadline.txt)).
+
+**S2 negative control (memo `d2f1eba1`).** The live pad was swapped for the pre-S2 build (`index-BSKvD5gS.js`, built from `6204f93`)
+for this one run (restored to `index-DM2oduz_.js` afterwards, verified), drops forced to fail with 10/20/30 s backoff, the app
+restarted so the old page was in memory, then the same scenario as the S2 proof: car off at agent done, app relaunched, its hold
+**refused** (`owner: phone`, 10:09:59.8), page reloaded 10:10:05, release granted **10:10:58.4**. The new pad's hold came 0.18 s after
+the release (S2 proof). The old pad's **never came**: the proxy log has no car claim for the memo after the refusal, no reply speech
+started on the sim between relaunch and the end of the window, and the only thing that ever touched the reply was the watcher's own
+phone retry (takes at 10:11:43.7 and 10:12:44.8, each given back because the bucket was broken) until `gave_up` at 10:14:18.4. Files:
+[`s2-oldpad-proxy-claims.txt`](ttfr/minors/s2-oldpad-proxy-claims.txt), [`s2-oldpad-run.json`](ttfr/minors/s2-oldpad-run.json),
+[`s2-oldpad-watcher.jsonl`](ttfr/minors/s2-oldpad-watcher.jsonl), [`s2-oldpad-speech-logcat.txt`](ttfr/minors/s2-oldpad-speech-logcat.txt)
+(empty on purpose), [`traces/d2f1eba1-s2-old-pad.txt`](ttfr/minors/traces/d2f1eba1-s2-old-pad.txt). With the old page the reply was heard nowhere by
+the car, which is exactly the hole S2 closed (and S1's background retry is what would still have caught it for the phone).
+
+**K2 on the final build: a SENT tone waits behind a playing reply (run `kwait2`).** Driver [`tools/drive_k.py kwait`](ttfr/minors/tools/drive_k.py)
+(memos through the `holo_testmic` null sink with `paplay`, never gRPC; M asks the agent to count to thirty, which makes a ~21 s chunked
+reply; R opens 1.2 s into the playing reply; the proxy is paused 3 s around R's Stop so the upload lands after the re-offered reply
+has started). Device log ([`logcat-kwait2.txt.gz`](ttfr/minors/logcat-kwait2.txt.gz)):
+
+```
+188.474 queued ack ack:sent:2858406 reason=behind_reply,note_ack     (the reply started 0.4 s earlier, at 188.116)
+209.098 end reply (not cut: it played to its end)
+209.104 start ack ack:sent:2858406 waited_ms=20629                  (more than three times the old 6 s deadline; not dropped)
+```
+
+The reply played through, then R's SENT tone, then R's own heard echo. `speech_overlap.py` ([`overlap-kwait2.txt`](ttfr/minors/overlap-kwait2.txt),
+offset -1012 ms, [speaker tap](ttfr/minors/speaker-tap-kwait2.jsonl.gz)): **ZERO OVERLAPS**, 6/6 PASS (11 utterances, 2 app recordings,
+2 OS capture windows, 11 HAL mix windows). An earlier run in this session (`kwait1`, a 6 s reply) also showed `queued ... behind_reply,note_ack`
+and a 5.9 s wait; it did not exceed the old deadline, which is why it was repeated with a longer reply.
+
+### Checks
+
+| check | result |
+|---|---|
+| `mise run memo:test` equivalent: watcher | 190 tests OK (5 new), proxy 91 |
+| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 62 tests; live bundle `index-DM2oduz_.js` |
+| API typecheck, `pnpm test`; web typecheck | PASS, 151 tests (2 new) |
+| car app `testDebugUnitTest lintDebug assembleDebug` | PASS, 200 tests, 0 failures (3 new) |
+| bloodbank `validate:schemas` (162), `smoketest:schema-contract-consistency`, `smoketest:bloodbank-naming`, `test_validate_memo.py`, ntfy-router tests | PASS |
+
+### Side effects and state
+
+- Deployed: watcher restarted (twice during the proofs, to apply and to remove env overrides), API rebuilt and restarted, `holocene-web`
+  recreated, pad rebuilt (`index-DM2oduz_.js`), **ntfy-router recreated** to mute `audio.memo.mirrored` (it needs
+  `BLOODBANK_NTFY_ROUTER_NTFY_TOKEN` from 1Password at `up` time: the first recreate without it crash-looped for about 40 s,
+  the second with the token is up and routing; bloodbank events published in that gap were not pushed, all muted types except failures anyway).
+- Test memos: X2 and Y2 (synthetic car senders), `d2f1eba1` (sim, S2 control), and four sim memos for the K2 runs, all to holocene-pm.
+  The S26 played X2's reply through the normal pipeline. The retry state of Y2 and `d2f1eba1` ends in `gave_up` on purpose.
+- The drop-in `zz-proof-minors.conf` was created and removed (the watcher runs with its own unit). The live pad was swapped to the old
+  build for about 5 minutes and restored. The sim's mic route was restored to the default source and the null sink unloaded
+  (`auto:sim:mic-check` OK). The adb server dropped twice during the sim runs (a logcat restart loop was used; the audited window is
+  inside one continuous capture).

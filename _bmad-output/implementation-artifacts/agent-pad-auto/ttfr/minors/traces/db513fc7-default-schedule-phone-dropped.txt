@@ -1,0 +1,43 @@
+memo_id  db513fc7-c651-5bd2-8ce1-2df14867f109
+key      inbox/holocene-pm/2026/10/21/20261021T095224Z.ogg
+agent    holocene-pm
+command  ab669591-8951-4bc1-87d9-5a5498501b30
+lane     interactive   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=db513fc7-c651-5bd2-8ce1-2df14867f109&limit=100'
+
+  OK      s3_object                  2026-10-21T09:52:24.000Z           inbox/holocene-pm/2026/10/21/20261021T095224Z.ogg  39954 bytes
+  OK      upload_proxy_log           2026-10-21T09:52:24.162Z  +0.2s    {"ts":"2026-10-21T09:52:24.161Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/21/20261021T095224Z.ogg","memo_id":"db513fc7-c651-5b
+  OK      fact:uploaded              2026-10-21T09:52:24.162Z  +0.0s    39954 bytes ua=HoloceneAuto/s1-proof (car off)
+  OK      fact:received              2026-10-21T09:52:24.749Z  +0.6s    watcher saw it, lag 592ms
+  OK      fact:transcribed           2026-10-21T09:52:30.618Z  +5.9s    40 chars in 5.36s (large-v3), audio max -8 dBFS, mean -28 dBFS over 3.9 s: 'Pipeline test. Reply with proxy check 3.'
+  OK      audio_level                2026-10-21T09:52:30.618Z  +0.0s    max -8 dBFS, mean -28 dBFS over 3.9 s  -> audible
+  OK      fact:dispatched            2026-10-21T09:52:30.886Z  +0.3s    command ab669591-8951-4bc1-87d9-5a5498501b30 -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-21T09:52:30.914Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-21T09:52:30.914212Z updated=2026-10-21T09:52:37.877672Z
+  OK      agent:invocation.started   2026-10-21T09:52:30.914Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-21T09:52:37.877Z  +7.0s    invocation.completed
+  OK      hermes_session             2026-10-21T09:52:30.914Z  +0.0s    agent was given exactly what the watcher sent (248 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      car:chunk#1of1             2026-10-21T09:52:41.493Z  +10.6s   26 chars, tts 2.83s, 3.32s after the agent finished -> replies/2026/10/21/095238Z-holocene-pm-db513fc7-c651-5bd2-8ce1-2df14867f109.ogg
+  OK      fact:replied               2026-10-21T09:53:21.958Z  +40.5s   13 chars, tts 2.83s (voxcpm) -> replies/2026/10/21/095238Z-holocene-pm-db513fc7-c651-5bd2-8ce1-2df14867f109.ogg
+  OK      reply_object               2026-10-21T09:52:41.000Z  +0.0s    replies/2026/10/21/095238Z-holocene-pm-db513fc7-c651-5bd2-8ce1-2df14867f109.ogg  12900 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      phone_decision             -                                  mirrored to the phone: the first Earshot drops failed and the take was given back; no car claimed the reply, so a later retry took it for the phone again (see phone_retry)
+  OK      phone_text                 2026-10-21T09:57:09.000Z  +268.0s  s3://earshot/phone/2026/10/21/095238186Z-holocene-pm-db513fc7-c651-5bd2-8ce1-2df14867f109.txt  13 bytes (the full reply text)
+  OK      phone_object               2026-10-21T09:57:10.000Z  +1.0s    s3://earshot/phone/2026/10/21/095238186Z-holocene-pm-db513fc7-c651-5bd2-8ce1-2df14867f109.ogg  12900 bytes
+  OK      phone_detected             2026-10-21T09:57:12.004Z  +2.0s    SM-S948U app 0.1.3
+  OK      phone_started              2026-10-21T09:57:15.126Z  +3.1s    SM-S948U app 0.1.3
+  OK      phone_finished             2026-10-21T09:57:19.168Z  +4.0s    SM-S948U app 0.1.3
+  OK      phone_retry                2026-10-21T09:57:10.404Z  +0.0s    phone_dropped: the phone has the reply after all (round 3, 228 s after the release)
+  OK      phone_retry:released       2026-10-21T09:53:21.955Z  +0.0s    the Earshot drop failed 4 times; the take was given back to the car; the phone is tried again in 45 s if no car claims it, for 2700 s
+  OK      phone_retry:take_granted   2026-10-21T09:54:07.240Z  +45.3s   no car claimed the reply: the phone took it (round 1)
+  OK      phone_retry:drop_failed    2026-10-21T09:54:08.102Z  +0.9s    the Earshot drop failed again (round 1); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:55:08.390Z  +60.3s   no car claimed the reply: the phone took it (round 2)
+  OK      phone_retry:drop_failed    2026-10-21T09:55:09.163Z  +0.8s    the Earshot drop failed again (round 2); the take was given back to the car
+  OK      phone_retry:take_granted   2026-10-21T09:57:09.483Z  +120.3s  no car claimed the reply: the phone took it (round 3)
+  OK      phone_retry:phone_dropped  2026-10-21T09:57:10.404Z  +0.9s    the phone has the reply after all (round 3, 228 s after the release)
+  OK      car_status_object          2026-10-21T09:53:22.072Z  +0.0s    status/2026/10/21/db513fc7-c651-5bd2-8ce1-2df14867f109.json: stage=done progress_seq=0 narrations=0 elapsed=57.9s
+
+timing   since upload (server clock): first audio up +17.3s | phone decided +57.8s
+         after the agent finished: first audio up +3.6s
+
+VERDICT  COMPLETE in 17.0s; playback on the pad not reported; speaking on the phone 274.1s after the full reply was up (291.1s recording-to-voice)
