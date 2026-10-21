@@ -243,11 +243,11 @@ export type ReplyInfo = {
   earshotKey?: string;
   /** Earshot object holding the FULL reply text next to the audio (the spoken digest is shorter). */
   earshotTextKey?: string;
-  /** Why the phone copy was left out: car_spoke | car_holds (car_live: the older presence rule). */
+  /** Why the phone copy was left out: car_spoke | car_holds | no_answer (car_live: the older presence rule). */
   earshotSkipped?: string;
   /**
-   * Why the phone copy went the way it did: car_started | car_holds (left out) or no_car_claim | car_let_go |
-   * browser_sender | claim_failed | skip_off (mirrored). Absent on a reply from before the claim.
+   * Why the phone copy went the way it did: car_started | car_holds | claim_failed (left out, the proxy could not be
+   * asked) or no_car_claim | car_let_go | browser_sender | skip_off (mirrored). Absent on a reply from before the claim.
    */
   earshotReason?: string;
 };

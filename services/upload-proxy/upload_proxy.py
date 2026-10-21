@@ -72,7 +72,8 @@ Who speaks a reply in the cabin, the car or the phone's Earshot copy: POST /uplo
 holds the reply on a renewed lease while it waits and claims its start; the inbox watcher takes it for the phone only
 when no car holds it after a grace window. Exactly one of them speaks it (a paired phone plays through the car's
 speakers: the same reply twice, or a reply into the next recording), and a car switched off right after the agent
-finished lets go within the lease, so the phone still speaks it.
+finished lets go within the lease, so the phone still speaks it. Neither speaks without the proxy's yes, so the claims
+are written through to CLAIM_STATE_FILE and read back at start, and every take waits CLAIM_SETTLE_S after a start.
 """
 import re
 
@@ -114,6 +115,9 @@ def log(event: str, **fields) -> None:
 
 
 # ---------------------------------------------------------------- memo identity
+
+MEMO_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
 
 def memo_id_for(key: str) -> str:
     """Same derivation as services/inbox-watcher/memo_common.py: one id per memo."""
@@ -314,25 +318,78 @@ PRESENCE = Presence()
 #   start, and leaves the reply to the phone. The car is the one that skips, because the page is deployed live here
 #   and the phone (Earshot) plays whatever lands in its channel.
 # The car's playback beacons and speech-queue starts also count as a start: a page from before claims still wins.
+#
+# Neither side speaks without this arbiter's yes, so it must never forget and never answer from a blank memory:
+# - The state is written through to CLAIM_STATE_FILE (a host-mounted directory) on every change and read back at
+#   start, so a restart keeps every hold, start and take (a take forgotten by a restart would let a car that comes back
+#   speak a reply the phone already played; a start forgotten would let the phone take a reply the car is speaking).
+# - For CLAIM_SETTLE_S after a start every take is refused ("settling"): a car that played a reply on its live hold
+#   while the proxy was down re-sends its start, and a waiting car renews its holds, within a few seconds of the proxy
+#   answering again, so they land before the phone can take what the car already has.
 CLAIM_LEASE_S = float(os.environ.get("CLAIM_LEASE_S", "20"))
+CLAIM_SETTLE_S = float(os.environ.get("CLAIM_SETTLE_S", "10"))
+CLAIM_STATE_FILE = os.environ.get("CLAIM_STATE_FILE", "")  # empty: memory only
+CLAIM_KEEP_S = 2 * 86400  # a claim this old is not read back (the car never plays a reply that old)
 CLAIM_MEMOS = 2000
 CLAIM_ACTIONS = {"car": ("hold", "start", "end"), "watcher": ("offer", "take")}
+CLAIM_FIELDS = ("owner", "car", "lease_until", "held_at", "started_at", "device", "offered_at", "phone_at", "touched")
 
 
 class ReplyClaims:
-    """Per memo: who owns its reply (car | phone | nobody yet), and the car's hold lease. In memory, bounded."""
+    """Per memo: who owns its reply (car | phone | nobody yet), and the car's hold lease. Bounded; written through to
+    state_file (when given) on every change and read back at start; every take refused for settle_s after boot_at."""
 
-    def __init__(self, lease_s: float = CLAIM_LEASE_S, memos_max: int = CLAIM_MEMOS):
+    def __init__(self, lease_s: float = CLAIM_LEASE_S, memos_max: int = CLAIM_MEMOS, state_file: str | None = None,
+                 settle_s: float = CLAIM_SETTLE_S, boot_at: float | None = None):
         self._lock = threading.Lock()
         self._m: dict = {}   # memo_id -> state (insertion ordered, bounded)
         self.lease_s = lease_s
         self._max = memos_max
+        self.state_file = state_file or None
+        self.settle_s = settle_s
+        self.boot_at = time.time() if boot_at is None else boot_at
+        self.loaded = self._load()  # memos read back (0: no file yet), None: the file could not be read
+
+    def _load(self) -> int | None:
+        if not self.state_file:
+            return 0
+        try:
+            with open(self.state_file, encoding="utf-8") as f:
+                doc = json.load(f)
+        except FileNotFoundError:
+            return 0
+        except (OSError, ValueError) as e:
+            log("claims_load_failed", file=self.state_file, error=str(e)[:200],
+                note="starting empty; every take waits out the settle window")
+            return None
+        memos = doc.get("memos") if isinstance(doc, dict) else None
+        if not isinstance(memos, dict):
+            log("claims_load_failed", file=self.state_file, error="no memos object")
+            return None
+        cutoff = self.boot_at - CLAIM_KEEP_S
+        for mid, st in memos.items():
+            if isinstance(mid, str) and MEMO_UUID_RE.match(mid) and isinstance(st, dict) and (st.get("touched") or 0) >= cutoff:
+                self._m[mid] = {k: st.get(k) for k in CLAIM_FIELDS}
+        while len(self._m) > self._max:
+            self._m.pop(next(iter(self._m)))
+        return len(self._m)
+
+    def _save(self) -> None:
+        """Write the whole state through (atomic rename), under the lock, before the answer goes out."""
+        if not self.state_file:
+            return
+        tmp = f"{self.state_file}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"v": 1, "saved_at": time.time(), "memos": self._m}, f, separators=(",", ":"))
+            os.replace(tmp, self.state_file)
+        except OSError as e:
+            log("claims_save_failed", file=self.state_file, error=str(e)[:200])
 
     def _state(self, memo_id: str) -> dict:
         st = self._m.get(memo_id)
         if st is None:
-            st = {"owner": None, "car": None, "lease_until": None, "held_at": None, "started_at": None, "device": None,
-                  "offered_at": None, "phone_at": None}
+            st = {k: None for k in CLAIM_FIELDS}
             self._m[memo_id] = st
             while len(self._m) > self._max:
                 self._m.pop(next(iter(self._m)))
@@ -344,7 +401,8 @@ class ReplyClaims:
         return {"memo_id": memo_id, "owner": st.get("owner"), "car": st.get("car"), "car_holds": left > 0,
                 "lease_left_s": round(max(0.0, left), 1), "held_ever": st.get("held_at") is not None,
                 "device": st.get("device"), "offered": st.get("offered_at") is not None,
-                "since_offer_s": round(now - st["offered_at"], 1) if st.get("offered_at") else None}
+                "since_offer_s": round(now - st["offered_at"], 1) if st.get("offered_at") else None,
+                "settling_s": round(max(0.0, self.boot_at + self.settle_s - now), 1)}
 
     def view(self, memo_id: str, now: float | None = None) -> dict:
         now = time.time() if now is None else now
@@ -371,6 +429,8 @@ class ReplyClaims:
             elif action == "end":
                 st["car"] = "ended"
                 st["started_at"] = st["started_at"] or now
+            st["touched"] = now
+            self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
     def played(self, memo_id: str, phase: str, device=None, now: float | None = None) -> bool:
@@ -380,8 +440,8 @@ class ReplyClaims:
             return True
         now = time.time() if now is None else now
         with self._lock:
-            st = self._state(memo_id)
-            if st["owner"] == "phone":
+            st = self._m.get(memo_id)
+            if st is not None and st["owner"] == "phone":
                 return False
         return self.car(memo_id, phase, device, now)["ok"]
 
@@ -389,22 +449,28 @@ class ReplyClaims:
         now = time.time() if now is None else now
         with self._lock:
             st = self._state(memo_id)
-            st["offered_at"] = st["offered_at"] or now
+            if not st["offered_at"]:
+                st["offered_at"] = st["touched"] = now
+                self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
     def take(self, memo_id: str, now: float | None = None) -> dict:
-        """The phone takes the reply: granted unless the car holds a live lease on it, or started (or ended) it."""
+        """The phone takes the reply: granted unless the car holds a live lease on it, or started (or ended) it, and
+        never while the arbiter is settling after a start (a car's re-sent start or hold may still be on its way)."""
         now = time.time() if now is None else now
         with self._lock:
             st = self._state(memo_id)
             if st["owner"] != "phone":
                 if st["car"] in ("started", "ended") or (st["car"] == "held" and (st["lease_until"] or 0) > now):
                     return {**self._view(memo_id, st, now), "ok": False}
-                st["owner"], st["phone_at"] = "phone", now
+                if now < self.boot_at + self.settle_s:
+                    return {**self._view(memo_id, st, now), "ok": False, "settling": True}
+                st["owner"], st["phone_at"], st["touched"] = "phone", now, now
+                self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
 
-CLAIMS = ReplyClaims()
+CLAIMS = ReplyClaims(state_file=CLAIM_STATE_FILE)
 
 
 def claim_request(body, claims: "ReplyClaims" = None, presence: "Presence" = None, lookup=None, hub=None):
@@ -860,7 +926,6 @@ PUSH_MAX_CLIENTS = int(os.environ.get("PUSH_MAX_CLIENTS", "32"))
 PUSH_MAX_AGE_S = float(os.environ.get("PUSH_MAX_AGE_S", "180"))
 PUSH_RING = 200
 PUSH_NATS_IDLE_S = 150.0   # the server PINGs every 2 min: silence longer than this is a dead connection
-MEMO_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 PUSH_KEY_PREFIX = {"reply_s3_key": "replies/", "chunk_s3_key": "replies/", "progress_s3_key": "progress/"}
 
 
@@ -1416,7 +1481,8 @@ class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 if __name__ == "__main__":
-    log("starting", port=PORT, nats=f"{NATS_HOST}:{NATS_PORT}", emit_facts=EMIT_FACTS, push_boot=PUSH.boot)
+    log("starting", port=PORT, nats=f"{NATS_HOST}:{NATS_PORT}", emit_facts=EMIT_FACTS, push_boot=PUSH.boot,
+        claims_file=CLAIM_STATE_FILE or None, claims_loaded=CLAIMS.loaded, claims_settle_s=CLAIMS.settle_s)
     threading.Thread(target=nats_subscribe_forever, name="push-nats", daemon=True).start()
     with ThreadedServer(("", PORT), Handler) as srv:
         srv.serve_forever()

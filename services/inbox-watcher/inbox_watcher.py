@@ -121,7 +121,8 @@ EARSHOT_BUCKET = os.environ.get("MEMO_EARSHOT_BUCKET", "earshot")
 # claims its start; the watcher takes it for the phone when no car started it or holds it EARSHOT_CAR_GRACE_S after its
 # first audio was up. A car switched off right after the agent finished never claims it (or lets its lease lapse), so
 # the phone speaks it. Being connected is not enough: a dead car's push stream stays "open" for minutes at the edge.
-# MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply again.
+# Only the proxy's yes sends the phone copy: a proxy that cannot be asked is waited for, never failed open (the car
+# reads replies from S3 and may be speaking this one). MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply again.
 EARSHOT_SKIP_CAR = os.environ.get("MEMO_EARSHOT_SKIP_CAR", "1") != "0"
 CLAIM_URL = os.environ.get("MEMO_PAD_CLAIM_URL", "https://agent-pad.delo.sh/upload/claim")
 CLAIM_TIMEOUT_S = float(os.environ.get("MEMO_PAD_CLAIM_TIMEOUT_S", "4"))
@@ -131,6 +132,12 @@ EARSHOT_CAR_GRACE_S = float(os.environ.get("MEMO_EARSHOT_CAR_GRACE_S", "12"))
 # A live car that holds the reply (it is recording, or another reply plays) is waited for this long, then left to it.
 EARSHOT_HOLD_MAX_S = float(os.environ.get("MEMO_EARSHOT_HOLD_MAX_S", "300"))
 EARSHOT_POLL_S = float(os.environ.get("MEMO_EARSHOT_POLL_S", "1"))
+# Neither the car nor the phone speaks a reply without the proxy's yes: a proxy that cannot be asked is waited for (at
+# most MEMO_EARSHOT_HOLD_MAX_S, then the reply is left to the car), never "failed open" to the phone. Once it answers
+# again the watcher lets it settle this long before it takes a reply: a car that played the reply on its live hold
+# while the proxy was out of reach re-sends its start every 2.5 s (and a waiting car renews its holds every 5 s), so
+# those land first. The proxy itself refuses every take for its CLAIM_SETTLE_S after a restart.
+EARSHOT_SETTLE_S = float(os.environ.get("MEMO_EARSHOT_SETTLE_S", "10"))
 # Reply chunks carry this object tag; the holocene-auto lifecycle rule for it expires them after a day.
 CHUNK_TAGS = "kind=chunk"
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
@@ -1644,10 +1651,11 @@ class Watcher:
                 "prompt_match": m.get("prompt_match"), "late": late, "escalated": escalated,
                 "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
                 # why the phone copy was left out: car_spoke (the car that sent the memo started or finished it) |
-                # car_holds (it still held it, live, after MEMO_EARSHOT_HOLD_MAX_S); null when it was mirrored
+                # car_holds (it still held it, live, after MEMO_EARSHOT_HOLD_MAX_S) | no_answer (the upload proxy could
+                # not be asked for MEMO_EARSHOT_HOLD_MAX_S: left to the car); null when it was mirrored
                 "earshot_skipped": m.get("earshot_skipped"),
-                # why it went the way it did (phone_copy_decision): car_started | car_holds | no_car_claim | car_let_go |
-                # browser_sender | claim_failed | skip_off
+                # why it went the way it did (phone_copy_decision): car_started | car_holds | claim_failed (left out) or
+                # no_car_claim | car_let_go | browser_sender | skip_off (mirrored)
                 "earshot_reason": m.get("earshot_reason"),
                 # the car's copy was up at reply_up_at; this fact waits for the phone decision (a car that holds it)
                 "reply_up_at": up_at, "earshot_wait_seconds": round(time.time() - t_decide, 2),
@@ -1666,9 +1674,10 @@ class Watcher:
 
     def _phone_copy(self, m: dict, audio: Path, stamp: datetime, rkey: str, chunked: bool, t_up: float) -> str | None:
         """The reply's Earshot phone copy, once per memo, after the car's copy is up: dropped unless the car that sent the
-        memo speaks the reply itself (phone_copy_decision; it may wait out the car's grace window or its hold). The
-        Earshot key, or None when it was left out (or failed open). Re-dropping the same key would give it a new
-        LastModified, and Earshot plays that again: an earlier attempt that landed unrecorded is recorded instead."""
+        memo speaks the reply itself (phone_copy_decision; it may wait out the car's grace window, its hold, or an upload
+        proxy that cannot be asked). The Earshot key, or None when it was left out (or the drop failed). Re-dropping the
+        same key would give it a new LastModified, and Earshot plays that again: an earlier attempt that landed
+        unrecorded is recorded instead."""
         with self.mu:
             agent, mid, key, ekey = m["agent"], m["memo_id"], m["key"], m.get("earshot_key")
             reply_text = m["reply_text"]
@@ -2038,7 +2047,8 @@ EARSHOT_REASONS = {
     "no_car_claim": f"no car claimed it within {EARSHOT_CAR_GRACE_S:g} s of its first audio being up",
     "car_let_go": "the car held it, then stopped renewing its hold before playing it (switched off)",
     "browser_sender": "it was sent from a browser, which is not in the car",
-    "claim_failed": "the upload proxy could not be asked who speaks it (fail-open)",
+    "claim_failed": (f"the upload proxy could not be asked who speaks it for {int(EARSHOT_HOLD_MAX_S)} s: left to the car, "
+                     "which speaks a reply only with the proxy's yes"),
     "skip_off": "MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply",
 }
 
@@ -2047,65 +2057,90 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
                         clock=time.time, sleep=time.sleep) -> tuple[str | None, str]:
     """Who speaks the reply in the cabin, the car that sent the memo or the phone's Earshot copy: (skip, why).
 
-    skip "car_spoke" (why car_started) or "car_holds" leaves the phone copy out; skip None mirrors it, why no_car_claim |
-    car_let_go | browser_sender | claim_failed | skip_off (EARSHOT_REASONS); skip "cancelled": the memo was cancelled.
-    The watcher OFFERS the reply to the proxy's arbiter (a one-file reply is pushed to the car right then), then TAKES it
-    for the phone once nobody started it and no live car holds it, EARSHOT_CAR_GRACE_S after its first audio was up
-    (t_up). The take is atomic at the proxy: a car whose hold or start lands first keeps it, and a car that comes back
-    after the take is refused and leaves the reply to the phone. So it waits the grace window when no car claims it,
-    and as long as a live car holds it (recording, another reply playing; at most EARSHOT_HOLD_MAX_S)."""
+    skip "car_spoke" (why car_started), "car_holds" or "no_answer" (why claim_failed) leaves the phone copy out; skip
+    None mirrors it, why no_car_claim | car_let_go | browser_sender | skip_off (EARSHOT_REASONS); skip "cancelled": the
+    memo was cancelled. The watcher OFFERS the reply to the proxy's arbiter (a one-file reply is pushed to the car right
+    then), then TAKES it for the phone once nobody started it and no live car holds it, EARSHOT_CAR_GRACE_S after its
+    first audio was up (t_up). The take is atomic at the proxy: a car whose hold or start lands first keeps it, and a car
+    that comes back after the take is refused and leaves the reply to the phone. So it waits the grace window when no
+    car claims it, and as long as a live car holds it (recording, another reply playing; at most EARSHOT_HOLD_MAX_S).
+
+    Only a granted take mirrors. A proxy that cannot be asked (the offer, a poll or the take fails) is waited for: the
+    car may be speaking the reply on its live hold meanwhile (it reads the reply from S3, not through the proxy). Once
+    the proxy answers again, a take waits EARSHOT_SETTLE_S more, so the car's re-sent start and renewed holds land
+    first. Still unanswered at EARSHOT_HOLD_MAX_S: left to the car ("no_answer"), never mirrored blind."""
     if not EARSHOT_SKIP_CAR:
         return None, "skip_off"
+    link = {"down_at": None, "back_at": None, "fails": 0}
 
     def ask(body=None):
         try:
-            return claim_call(mid, body)
-        except Exception as e:  # noqa: BLE001 - fail-open, decided below
-            log("earshot_car_check_failed", "warn", memo_id=mid, key=key, source="claim", error=str(e)[:200])
+            ans = claim_call(mid, body)
+        except Exception as e:  # noqa: BLE001 - the proxy is waited for, below
+            link["fails"] += 1
+            if link["down_at"] is None:
+                link["down_at"] = clock()
+                log("earshot_car_check_failed", "warn", memo_id=mid, key=key, source="claim", error=str(e)[:200],
+                    note="who speaks the reply waits for the upload proxy; the phone copy is not sent blind")
             return None
+        if link["down_at"] is not None:
+            log("earshot_car_check_back", memo_id=mid, key=key, source="claim", down_s=round(clock() - link["down_at"], 1),
+                fails=link["fails"], settle_s=EARSHOT_SETTLE_S)
+            link["down_at"], link["back_at"] = None, clock()
+        return ans
+
+    def settled() -> bool:
+        return link["down_at"] is None and (link["back_at"] is None or clock() - link["back_at"] >= EARSHOT_SETTLE_S)
 
     def done(skip, why, st=None):
         waited = round(clock() - t_up, 1)
         if skip and skip != "cancelled":
             log("earshot_skipped", memo_id=mid, key=key, reason=skip, why=why, waited_s=waited, device=(st or {}).get("device"),
-                note=EARSHOT_REASONS.get(why, why))
+                proxy_fails=link["fails"] or None, note=EARSHOT_REASONS.get(why, why))
         elif not skip:
-            log("earshot_mirror_decided", memo_id=mid, key=key, why=why, waited_s=waited, note=EARSHOT_REASONS.get(why, why))
+            log("earshot_mirror_decided", memo_id=mid, key=key, why=why, waited_s=waited, proxy_fails=link["fails"] or None,
+                note=EARSHOT_REASONS.get(why, why))
         return skip, why
 
-    st = ask({"by": "watcher", "action": "offer", "reply_key": rkey, "key": key, "announce": not chunked})
-    if st is None:
-        return done(None, "claim_failed")
+    def gone() -> bool:
+        return cancelled is not None and cancelled()
+
+    offer = {"by": "watcher", "action": "offer", "reply_key": rkey, "key": key, "announce": not chunked}
+    st = ask(offer)
+    while st is None:  # the offer (and with it the one-file reply's push to the car) waits for the proxy
+        if gone():
+            return done("cancelled", "cancelled")
+        if clock() - t_up >= EARSHOT_HOLD_MAX_S:
+            return done("no_answer", "claim_failed")
+        sleep(EARSHOT_POLL_S)
+        st = ask(offer)
     if st.get("sender_host") == "browser" and not st.get("car"):
         return done(None, "browser_sender", st)
-    fails = 0
     while True:
-        if cancelled is not None and cancelled():
+        if gone():
             return done("cancelled", "cancelled")
         if st.get("car") in ("started", "ended"):
             return done("car_spoke", "car_started", st)
         waited = clock() - t_up
-        if st.get("car_holds"):
-            if waited >= EARSHOT_HOLD_MAX_S:
+        live = link["down_at"] is None
+        if waited >= EARSHOT_HOLD_MAX_S:
+            if not live:
+                return done("no_answer", "claim_failed", st)
+            if st.get("car_holds"):
                 return done("car_holds", "car_holds", st)
-            nxt = None
-        elif st.get("held_ever") or waited >= EARSHOT_CAR_GRACE_S:
+        if (live and settled() and not st.get("car_holds") and not st.get("settling_s")
+                and (st.get("held_ever") or waited >= EARSHOT_CAR_GRACE_S)):
             nxt = ask({"by": "watcher", "action": "take"})
             if nxt is not None and nxt.get("ok"):
                 return done(None, "car_let_go" if nxt.get("held_ever") else "no_car_claim", nxt)
             if nxt is not None:
-                st = nxt  # a car's hold or start landed first: look again
-                continue
-        else:
-            nxt = None
+                st = nxt  # a car's hold or start landed first, or the proxy is settling: look again
+                if st.get("car") in ("started", "ended"):
+                    continue
         sleep(EARSHOT_POLL_S)
         nxt = ask()
-        if nxt is None:
-            fails += 1
-            if fails >= 5:
-                return done(None, "claim_failed")
-            continue
-        fails, st = 0, nxt
+        if nxt is not None:
+            st = nxt
 
 
 def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: str,

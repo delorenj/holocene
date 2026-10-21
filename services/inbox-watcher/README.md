@@ -165,14 +165,30 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
 - **A granted take is final.** A car that comes back later (an ignition, a reconnect) is refused its hold and its start
   and leaves the reply to the phone (the page logs nothing; the proxy logs the refused `claim`). The car is the one that
   gives way because the pad page is deployed live, and Earshot plays whatever lands in its channel.
-- The `replied` fact waits for the decision and records it: `earshot_skipped: car_spoke | car_holds` (left out, an OK
-  `phone_object` hop in memo:trace) or `earshot_key` (mirrored, with a `phone_decision` hop saying why), and
-  `earshot_reason: car_started | car_holds | no_car_claim | car_let_go | browser_sender | claim_failed | skip_off`, plus
-  `reply_up_at` (when the car's copy was up) and `earshot_wait_seconds`. /voice says the same under the replied hop.
-  Logged `earshot_skipped` or `earshot_mirror_decided`.
-- Fail-open: a proxy that cannot be asked (5 failed polls in a row) mirrors, as before claims; a car whose claim gets
-  no answer plays. Both happen only with the proxy down, which also stops memos from uploading. The claims live in the
-  proxy's memory: a proxy restart between a take and a car coming back could let both speak it, minutes apart.
+- The `replied` fact waits for the decision and records it: `earshot_skipped: car_spoke | car_holds | no_answer` (left
+  out, a `phone_object` hop in memo:trace) or `earshot_key` (mirrored, with a `phone_decision` hop saying why), and
+  `earshot_reason: car_started | car_holds | claim_failed` (left out) or `no_car_claim | car_let_go | browser_sender |
+  skip_off` (mirrored), plus `reply_up_at` (when the car's copy was up) and `earshot_wait_seconds`. /voice says the same
+  under the replied hop. Logged `earshot_skipped` or `earshot_mirror_decided`.
+- **Neither speaks without the proxy's yes** (no fail-open). The car reads replies straight from S3, so a proxy that is
+  down does not stop it from playing one; "the proxy did not answer" therefore never means "nobody is playing it":
+  - The watcher mirrors only on a granted take. An offer, poll or take that fails is retried every second; once the
+    proxy answers again a take waits `MEMO_EARSHOT_SETTLE_S` (10) more. Still unanswered `MEMO_EARSHOT_HOLD_MAX_S` after
+    the reply was up: left to the car (`earshot_skipped: no_answer`, `earshot_reason: claim_failed`; memo:trace shows
+    an UNKNOWN `phone_object` hop, look at the car's played hop). Logged `earshot_car_check_failed` once and
+    `earshot_car_check_back` with the outage length.
+  - The car plays without an answer only on a live hold (answered less than 10 s ago: the proxy refuses the phone for
+    at least 10 s more). Its start goes out with the download and its answer is looked at before the audio starts (the
+    phone's: skipped); a start that got no answer is re-sent every 2.5 s for 10 min. Without a live hold no answer
+    means wait: the reply stays at the head of the car's queue ("reply waiting for the upload proxy") and is asked
+    again every 2.5 s.
+  - The proxy writes its claims through to `CLAIM_STATE_FILE` (`~/.local/share/agent-pad/claims/claims.json` on the
+    host) on every change and reads them back at start, so a restart forgets no hold, start or take; for
+    `CLAIM_SETTLE_S` (10) after it starts every take is refused (`settling`), so the car's re-sent start and renewed
+    holds land first. The container runs under `init: true` with `exec python3`, so a recreate takes about a second.
+  - Left: a car whose own link to the proxy breaks for more than 10 s exactly as it starts a reply on its hold (the
+    proxy and the watcher see no outage, the lease lapses, the phone may take it), and a car whose start was granted
+    but whose answer was lost and which is then switched off before its retry (heard nowhere; /voice still has it).
 - `MEMO_EARSHOT_SKIP_CAR=0` mirrors every reply; `MEMO_PAD_CLAIM_URL` (default
   `https://agent-pad.delo.sh/upload/claim`) points at the proxy.
 
@@ -251,7 +267,7 @@ the lane as `batch (esc.)`. The phone hops start with `phone_text` (the full-tex
 | agent:invocation.* | gateway lifecycle facts (same correlationid) | Candystore query above, `type=bloodbank.agent.invocation.completed` etc. |
 | reply text | the session the gateway opened for this memo | `sqlite3 -readonly ~/.hermes/profiles/<profile>/state.db "select role,substr(content,1,200) from messages where session_id=(select id from sessions where source='bloodbank' and chat_id='<memo_id>') order by timestamp"` |
 | reply_object | the TTS audio | `mc stat delo/holocene-auto/<reply_s3_key>` |
-| phone_decision | why the reply went to the phone (`earshot_reason`: no car claimed it in time, the car let go, a browser sent it, fail-open) | `docker logs agent-pad-upload \| grep '"event":"claim"' \| grep <memo_id>` |
+| phone_decision | why the reply went to the phone (`earshot_reason`: no car claimed it in time, the car let go, a browser sent it) | `docker logs agent-pad-upload \| grep '"event":"claim"' \| grep <memo_id>` |
 | phone_text / phone_object | the full reply text (`earshot_text_key`, uploaded first) and the phone audio (`earshot_key`) in the Earshot channel | `mc stat delo/earshot/<earshot_text_key>`, `mc stat delo/earshot/<earshot_key>` |
 | audio level | loudest/mean sample in dBFS, measured before transcribing (`audio_max_dbfs`, `audio_mean_dbfs` on `transcribed` and on every transcribe-stage `failed`); `audio_level` hop in `memo:trace`; `device heard peak ...` from the pad when it sends `data.capture` | `ffmpeg -i <file> -af volumedetect -f null -` |
 | device-side events | record start/stop/failure and upload failure from the pad | `docker logs agent-pad-upload \| grep '"event":"client"'`; failures are `failed(stage=record\|upload)` facts |

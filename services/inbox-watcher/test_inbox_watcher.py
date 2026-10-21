@@ -202,6 +202,9 @@ os.environ.update({
     "MEMO_HERMES_PROFILES": str(HERMES), "MEMO_VOX_URL": f"http://127.0.0.1:{vox.server_port}",
     "MEMO_CANDYSTORE_URL": "http://127.0.0.1:9", "MEMO_NATS_MONITOR_URL": "http://127.0.0.1:9",
     "MEMO_PAD_CLAIM_URL": "http://127.0.0.1:9/upload/claim",
+    # The pipeline tests mirror every reply (no upload proxy to ask: the watcher never mirrors blind, it would wait
+    # MEMO_EARSHOT_HOLD_MAX_S). The phone decision itself is tested in EarshotMirror, with SKIP_CAR patched on.
+    "MEMO_EARSHOT_SKIP_CAR": "0",
     "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_FFMPEG": str(FAKE_FFMPEG), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
 })
@@ -2921,11 +2924,12 @@ class EarshotMirror(unittest.TestCase):
             return Answer(script(body))
         return seen, mock.patch.object(iw.urllib.request, "urlopen", side_effect=urlopen)
 
-    def decide(self, script, t_up=1000.0, chunked=True, clock_start=1000.0, cancelled=None):
+    def decide(self, script, t_up=1000.0, chunked=True, clock_start=1000.0, cancelled=None, skip_car=True):
         clock = [clock_start]
         sleep = lambda s: clock.__setitem__(0, clock[0] + s)
         seen, patch = self._claims(script)
-        with patch:
+        from unittest import mock
+        with patch, mock.patch.object(iw, "EARSHOT_SKIP_CAR", skip_car):
             out = iw.phone_copy_decision("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg",
                                          "replies/2026/10/20/101500Z-a-f753985b-d3fb-5836-9db4-f9fb8e7dbe6b.ogg",
                                          t_up, chunked, cancelled, clock=lambda: clock[0], sleep=sleep)
@@ -2994,28 +2998,104 @@ class EarshotMirror(unittest.TestCase):
         out, seen, _ = self.decide(proxy, clock_start=1020.0)
         self.assertEqual(out, ("car_spoke", "car_started"))
 
-    def test_a_browser_sender_goes_to_the_phone_at_once_and_an_unreachable_proxy_fails_open(self):
+    def test_a_browser_sender_goes_to_the_phone_at_once(self):
         out, seen, waited = self.decide(lambda b: {"car": None, "sender_host": "browser"})
         self.assertEqual((out, waited, len(seen)), ((None, "browser_sender"), 0, 1))
+        self.assertEqual(self.decide(lambda b: 1 / 0, skip_car=False)[0], (None, "skip_off"))
+        self.assertEqual(self.decide(lambda b: {"car": "held", "car_holds": True}, cancelled=lambda: True)[0],
+                         ("cancelled", "cancelled"))
+
+    def test_a_live_hold_then_a_proxy_outage_never_mirrors_blind(self):
+        # The review's repro: the proxy reports a live hold (the car is recording) and then goes down (a redeploy). The
+        # old code mirrored after 5 failed polls while the car, reading the reply from S3, still meant to play it.
+        state = {"n": 0}
+
+        def proxy(b):
+            state["n"] += 1
+            if state["n"] <= 2:
+                return {"car": "held", "car_holds": True, "held_ever": True, "sender_host": "car", "ok": True}
+            raise OSError("refused")
+        (out, seen, waited) = self.decide(proxy)
+        self.assertEqual(out, ("no_answer", "claim_failed"), "left to the car, never mirrored")
+        self.assertGreaterEqual(waited, iw.EARSHOT_HOLD_MAX_S)
+        self.assertFalse([b for b in seen if b.get("action") == "take"])
 
         def down(b):
             raise OSError("refused")
-        self.assertEqual(self.decide(down)[0], (None, "claim_failed"))
-        flaky = {"n": 0}
+        (out, seen, waited) = self.decide(down)
+        self.assertEqual(out, ("no_answer", "claim_failed"), "an offer that never got through is not a phone copy")
+        self.assertGreaterEqual(waited, iw.EARSHOT_HOLD_MAX_S)
+        self.assertTrue(all(b.get("action") == "offer" for b in seen), "the offer is retried, nothing is taken")
 
-        def blips(b):
-            flaky["n"] += 1
-            if flaky["n"] == 1:
-                return {"car": None, "car_holds": False, "held_ever": False}
-            raise OSError("refused")
-        out, _, waited = self.decide(blips)
-        self.assertEqual(out, (None, "claim_failed"))
-        self.assertEqual(waited, 5 * iw.EARSHOT_POLL_S, "five failed polls in a row, then fail-open")
+    def test_after_an_outage_the_take_waits_for_the_cars_resent_start(self):
+        # The car played the reply on its live hold while the proxy was down; its start is re-sent every 2.5 s and lands
+        # a few seconds after the proxy answers again. The lapsed hold must not hand the reply to the phone first.
+        clock = {"t": None}
+        took = []
+
+        def proxy(b):
+            t = clock["t"]()
+            if t < 1003:
+                return {"car": "held", "car_holds": True, "held_ever": True, "sender_host": "car", "ok": True}
+            if t < 1020:
+                raise OSError("502 bad gateway")  # a redeploy
+            if b and b.get("action") == "take":
+                took.append(t)
+                return {"ok": True, "owner": "phone", "held_ever": True}
+            if t < 1024:  # back, the hold lapsed meanwhile, the car's start not in yet
+                return {"car": "held", "car_holds": False, "held_ever": True, "owner": "car"}
+            return {"car": "started", "car_holds": False, "held_ever": True, "owner": "car"}
+        out, _, waited = self._decide_clocked(proxy, clock)
+        self.assertEqual(out, ("car_spoke", "car_started"))
+        self.assertEqual(took, [], "no take inside the settle window")
+        self.assertGreaterEqual(waited, 24)
+
+        def car_gone(b):  # the same outage, but the car was switched off: the phone gets it once the proxy settled
+            t = clock["t"]()
+            if t < 1003:
+                return {"car": "held", "car_holds": True, "held_ever": True, "sender_host": "car", "ok": True}
+            if t < 1020:
+                raise OSError("502 bad gateway")
+            if b and b.get("action") == "take":
+                took.append(t)
+                return {"ok": True, "owner": "phone", "held_ever": True}
+            return {"car": "held", "car_holds": False, "held_ever": True, "owner": "car"}
+        out, _, waited = self._decide_clocked(car_gone, clock)
+        self.assertEqual(out, (None, "car_let_go"))
+        self.assertEqual(len(took), 1)
+        self.assertGreaterEqual(took[0], 1020 + iw.EARSHOT_SETTLE_S, "taken only after the settle window")
+        self.assertLess(took[0], 1020 + iw.EARSHOT_SETTLE_S + 2)
+
+    def test_a_proxy_that_is_settling_after_a_restart_is_waited_for_not_hammered(self):
+        took = []
+        clock = {"t": None}
+
+        def proxy(b):
+            t = clock["t"]()
+            if b and b.get("action") == "take":
+                took.append(t)
+                if t < 1030:
+                    return {"ok": False, "settling": True, "settling_s": round(1030 - t, 1), "car": None, "car_holds": False}
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            return {"car": None, "car_holds": False, "held_ever": False, "sender_host": "car",
+                    "settling_s": round(max(0, 1030 - t), 1)}
+        out, _, waited = self._decide_clocked(proxy, clock, clock_start=1015)
+        self.assertEqual(out, (None, "no_car_claim"))
+        self.assertEqual(len(took), 1, "no take while the proxy says it is settling")
+        self.assertGreaterEqual(took[0], 1030)
+
+    def _decide_clocked(self, script, holder, t_up=1000.0, clock_start=1000.0):
+        """decide(), with the fake proxy able to read the fake clock (holder["t"]())."""
+        clock = [clock_start]
+        holder["t"] = lambda: clock[0]
+        sleep = lambda s: clock.__setitem__(0, clock[0] + s)
+        _, patch = self._claims(script)
         from unittest import mock
-        with mock.patch.object(iw, "EARSHOT_SKIP_CAR", False):
-            self.assertEqual(self.decide(down)[0], (None, "skip_off"))
-        self.assertEqual(self.decide(lambda b: {"car": "held", "car_holds": True}, cancelled=lambda: True)[0],
-                         ("cancelled", "cancelled"))
+        with patch, mock.patch.object(iw, "EARSHOT_SKIP_CAR", True):
+            out = iw.phone_copy_decision("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg",
+                                         "replies/2026/10/20/101500Z-a-f753985b-d3fb-5836-9db4-f9fb8e7dbe6b.ogg",
+                                         t_up, True, None, clock=lambda: clock[0], sleep=sleep)
+        return out, None, clock[0] - t_up
 
     def test_a_skipped_phone_copy_is_an_ok_hop_that_says_why(self):
         import memo_trace as mt
@@ -3026,6 +3106,9 @@ class EarshotMirror(unittest.TestCase):
         self.assertIn("started (or finished) it", h.detail)
         [h] = mt.earshot_hops(None, None, "car_holds", "car_holds")
         self.assertIn("still held it", h.detail)
+        [h] = mt.earshot_hops(None, None, "no_answer", "claim_failed")
+        self.assertEqual(h.status, mt.UNKNOWN, "nobody knows whether the car spoke it")
+        self.assertIn("could not be asked", h.detail)
 
     def test_phone_beacons_become_hops_with_skew_corrected_times(self):
         import memo_trace as mt

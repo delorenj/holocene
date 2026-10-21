@@ -182,12 +182,14 @@ EARSHOT_SKIPPED = {
     "car_spoke": "the car that sent the memo started (or finished) it",
     "car_holds": "the car that sent the memo still held it, live, minutes after it was up",
     "car_live": "the car that sent the memo was connected and spoke the reply itself",
+    "no_answer": ("the upload proxy could not be asked who speaks it for minutes: left to the car, which speaks a reply "
+                  "only with the proxy's yes (look for the car's played hop)"),
 }
 EARSHOT_MIRRORED = {
     "no_car_claim": "no car claimed it within the grace window after its first audio was up (switched off, or out of reach)",
     "car_let_go": "the car held it, then stopped renewing its hold before playing it (switched off while it waited)",
     "browser_sender": "it was sent from a browser, which is not in the car",
-    "claim_failed": "the upload proxy could not be asked who speaks it (fail-open)",
+    "claim_failed": "the upload proxy could not be asked who speaks it (fail-open, a reply from before 2026-10-21)",
     "skip_off": "MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply",
 }
 
@@ -195,7 +197,8 @@ EARSHOT_MIRRORED = {
 def earshot_hops(ekey: str | None, tkey: str | None = None, skipped: str | None = None, reason: str | None = None) -> list[Hop]:
     if not ekey and skipped:
         why = EARSHOT_SKIPPED.get(skipped, skipped)
-        return [Hop("phone_object", OK, detail=f"not mirrored to the phone: {why} (a paired phone plays through the car's "
+        # no_answer: nobody knows whether the car spoke it, so the hop does not say OK
+        return [Hop("phone_object", UNKNOWN if skipped == "no_answer" else OK, detail=f"not mirrored to the phone: {why} (a paired phone plays through the car's "
                                                "speakers: the same reply twice, or into a recording)", optional=True)]
     if not ekey:
         return [Hop("phone_object", UNKNOWN, detail="no Earshot mirror recorded for this reply (MEMO_EARSHOT_CHANNEL off, "

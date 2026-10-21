@@ -977,7 +977,7 @@ class ReplyClaims(unittest.TestCase):
     RKEY = f"replies/2026/10/21/101500Z-holocene-pm-{PUSH_MEMO}.ogg"
 
     def test_a_car_that_holds_the_reply_keeps_the_phone_out_until_its_lease_lapses(self):
-        c = up.ReplyClaims(lease_s=20)
+        c = up.ReplyClaims(lease_s=20, boot_at=0)
         self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=100)["ok"])
         self.assertFalse(c.take(PUSH_MEMO, now=110)["ok"], "the car holds it (queued behind a recording)")
         self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=115)["ok"], "renewed")
@@ -992,7 +992,7 @@ class ReplyClaims(unittest.TestCase):
         self.assertFalse(c.car(PUSH_MEMO, "start", self.DEV, now=201)["ok"])
 
     def test_a_car_that_started_the_reply_owns_it_for_good(self):
-        c = up.ReplyClaims(lease_s=20)
+        c = up.ReplyClaims(lease_s=20, boot_at=0)
         c.car(PUSH_MEMO, "hold", now=100)
         c.car(PUSH_MEMO, "start", now=101)
         self.assertFalse(c.take(PUSH_MEMO, now=500)["ok"], "a start is final, whatever the lease")
@@ -1001,24 +1001,24 @@ class ReplyClaims(unittest.TestCase):
         self.assertFalse(c.take(PUSH_MEMO, now=900)["ok"])
 
     def test_nobody_claimed_the_phone_takes_it_and_a_late_beacon_is_a_conflict(self):
-        c = up.ReplyClaims()
+        c = up.ReplyClaims(boot_at=0)
         self.assertTrue(c.offer(PUSH_MEMO, now=100)["ok"])
         self.assertTrue(c.take(PUSH_MEMO, now=112)["ok"])
         self.assertTrue(c.take(PUSH_MEMO, now=113)["ok"], "a second take is the same answer")
         self.assertFalse(c.played(PUSH_MEMO, "start", now=120), "a page from before claims played it anyway")
-        c2 = up.ReplyClaims()
+        c2 = up.ReplyClaims(boot_at=0)
         self.assertTrue(c2.played(PUSH_MEMO, "start", now=100), "an unclaimed reply the car plays is the car's")
         self.assertFalse(c2.take(PUSH_MEMO, now=200)["ok"])
 
     def test_the_claims_are_bounded(self):
-        c = up.ReplyClaims(memos_max=3)
+        c = up.ReplyClaims(memos_max=3, boot_at=0)
         for i in range(5):
             c.car(f"{i:08d}-0000-5000-8000-000000000000", "start")
         self.assertIsNone(c.view("00000000-0000-5000-8000-000000000000")["owner"])
         self.assertEqual(c.view("00000004-0000-5000-8000-000000000000")["owner"], "car")
 
     def test_claim_request_validates_and_the_offer_names_the_sender_and_pushes_a_one_file_reply(self):
-        c, hub, p = up.ReplyClaims(), up.PushHub(), up.Presence()
+        c, hub, p = up.ReplyClaims(boot_at=0), up.PushHub(), up.Presence()
         p.sent(PUSH_MEMO, self.DEV, "car")
         self.assertEqual(up.claim_request("x", c)[0], 400)
         self.assertEqual(up.claim_request({"by": "car", "action": "take", "memo_id": PUSH_MEMO}, c)[0], 400)
@@ -1038,6 +1038,72 @@ class ReplyClaims(unittest.TestCase):
         self.assertEqual((code, ans["ok"], ans["owner"], ans["device"]), (200, True, "car", self.DEV))
         self.assertFalse(up.claim_request({"by": "watcher", "action": "take", "memo_id": PUSH_MEMO}, c)[1]["ok"])
 
+    def test_a_restart_forgets_nothing_a_take_or_a_start(self):
+        # The review's double play: claims lived only in memory, so a restart let the phone take a reply the car was
+        # speaking, or let a car that came back speak one the phone had already played.
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            f = str(Path(d) / "claims.json")
+            a = up.ReplyClaims(state_file=f, boot_at=0)
+            other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+            a.offer(PUSH_MEMO, now=100)
+            self.assertTrue(a.take(PUSH_MEMO, now=112)["ok"], "no car: the phone took it")
+            a.car(other, "hold", self.DEV, now=100)
+            a.car(other, "start", self.DEV, now=101)
+            b = up.ReplyClaims(state_file=f, boot_at=200, settle_s=10)
+            self.assertEqual(b.loaded, 2)
+            self.assertFalse(b.car(PUSH_MEMO, "hold", self.DEV, now=203)["ok"], "the take survived the restart")
+            self.assertFalse(b.car(PUSH_MEMO, "start", self.DEV, now=204)["ok"])
+            self.assertFalse(b.take(other, now=500)["ok"], "the car's start survived the restart")
+            self.assertEqual(b.view(other, now=500)["device"], self.DEV)
+            # a claim older than CLAIM_KEEP_S is not read back
+            c = up.ReplyClaims(state_file=f, boot_at=101 + up.CLAIM_KEEP_S + 1)
+            self.assertEqual(c.loaded, 1, "only the take, touched at 112, is still young enough")
+
+    def test_a_hold_live_across_a_restart_still_keeps_the_phone_out(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            f = str(Path(d) / "claims.json")
+            up.ReplyClaims(state_file=f, boot_at=0).car(PUSH_MEMO, "hold", self.DEV, now=100)
+            b = up.ReplyClaims(state_file=f, boot_at=101, settle_s=10)
+            self.assertFalse(b.take(PUSH_MEMO, now=115)["ok"], "the lease from before the restart still runs")
+            self.assertTrue(b.view(PUSH_MEMO, now=115)["car_holds"])
+
+    def test_every_take_waits_out_the_settle_window_after_a_start(self):
+        # A blank or stale memory after a restart: a car that played the reply on its live hold while the proxy was down
+        # re-sends its start within a few seconds of the proxy answering; the take must not beat it.
+        c = up.ReplyClaims(boot_at=1000, settle_s=10, lease_s=20)
+        c.offer(PUSH_MEMO, now=1001)
+        ans = c.take(PUSH_MEMO, now=1002)
+        self.assertEqual((ans["ok"], ans.get("settling"), ans["settling_s"], ans["owner"]), (False, True, 8.0, None))
+        self.assertTrue(c.car(PUSH_MEMO, "start", self.DEV, now=1004)["ok"], "the car's re-sent start lands first")
+        self.assertFalse(c.take(PUSH_MEMO, now=1020)["ok"], "and it is the car's for good")
+        # no car at all: the phone gets it once the window is over
+        other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+        self.assertFalse(c.take(other, now=1009.9)["ok"])
+        ans = c.take(other, now=1010)
+        self.assertEqual((ans["ok"], ans["owner"], ans["settling_s"]), (True, "phone", 0.0))
+
+    def test_an_unreadable_state_file_starts_empty_and_settles(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "claims.json"
+            f.write_text("{not json")
+            with mock.patch.object(up, "log") as lg:
+                c = up.ReplyClaims(state_file=str(f), boot_at=100, settle_s=10)
+            self.assertIsNone(c.loaded)
+            self.assertEqual(lg.call_args[0][0], "claims_load_failed")
+            self.assertFalse(c.take(PUSH_MEMO, now=105)["ok"])
+            self.assertTrue(c.car(PUSH_MEMO, "hold", now=106)["ok"])
+            self.assertEqual(json.loads(f.read_text())["memos"][PUSH_MEMO]["car"], "held", "written through")
+            self.assertFalse(Path(f"{f}.tmp").exists())
+            # a write that fails is logged, and the answer still goes out
+            c.state_file = str(Path(d) / "gone" / "claims.json")
+            with mock.patch.object(up, "log") as lg:
+                self.assertTrue(c.car(PUSH_MEMO, "start", now=107)["ok"])
+            self.assertEqual(lg.call_args[0][0], "claims_save_failed")
+
 
 class ReplyClaimsHttp(unittest.TestCase):
     """POST /upload/claim and GET /upload/claim?memo= over HTTP, and the playback beacon counting as the car's start."""
@@ -1046,7 +1112,7 @@ class ReplyClaimsHttp(unittest.TestCase):
     def setUpClass(cls):
         import threading
         cls.old = (up.CLAIMS, up.EMIT_FACTS)
-        up.CLAIMS = up.ReplyClaims()
+        up.CLAIMS = up.ReplyClaims(boot_at=0)
         up.EMIT_FACTS = False
         cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
         cls.port = cls.srv.server_address[1]

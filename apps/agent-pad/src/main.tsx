@@ -8,7 +8,7 @@ import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normS
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
-import { type Claim, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, holdDue, noteClaim, startPlan } from './claim'
+import { type Claim, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, startPlan, startVerdict } from './claim'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -564,7 +564,7 @@ function App() {
   const units = useRef<Map<string, Unit>>(new Map())
   const chunkBlobs = useRef<Map<string, Blob>>(new Map()) // downloaded chunks, kept until the reply is done (a replay after a note)
   // The unit the host is playing chunk by chunk, and which chunks it has been handed.
-  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean; fails: number } | null>(null)
+  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean; fails: number; gate: Promise<ClaimAnswer> | null } | null>(null)
   const push = useRef({ heardAt: 0, nats: false })
   // Chunked replies that stopped short (a chunk never came: vox failed mid-reply, a cancel took them back): parked, not
   // done. Their chunks are ignored from here on, and the full file plays when (if) it lands. Unit key -> parked at.
@@ -573,6 +573,9 @@ function App() {
   // ---- who speaks a reply in the cabin: this car, or the phone's Earshot copy (claim.ts). Cars only: a browser is not
   // in the cabin, and the watcher mirrors a browser's memo at once. Unit key -> the proxy's last answer.
   const claims = useRef<Map<string, Claim>>(new Map())
+  // Starts this car made on a live hold that the proxy never answered (it was down): re-sent until it has them, so the
+  // phone cannot take the lapsed hold once the proxy is back. Unit key -> first sent.
+  const unconfirmed = useRef<Map<string, number>>(new Map())
   const claimReply = async (key: string, action: 'hold' | 'start'): Promise<ClaimAnswer> => {
     if (HOST_KIND !== 'car') return 'none'
     const sent = Date.now() // the lease runs from the proxy's receipt: counting it from the send is on the safe side
@@ -582,9 +585,12 @@ function App() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ by: 'car', action, reply_key: key, ...(DEVICE.id ? { device: DEVICE.id } : {}) }),
       })
-    } catch { /* no answer is no refusal: an older proxy, or the network */ }
-    const c = noteClaim(claims.current.get(key), answer, sent)
-    if (c) claims.current.set(key, c)
+    } catch { /* no answer is no yes: the proxy is down, or the network */ }
+    if (action === 'start' && answer !== 'none') unconfirmed.current.delete(key)
+    if (units.current.has(key)) { // a reply this page is done with keeps no claim
+      const c = noteClaim(claims.current.get(key), answer, sent)
+      if (c) claims.current.set(key, c)
+    }
     return answer
   }
   const refreshFlights = () => {
@@ -819,6 +825,11 @@ function App() {
             chunkBlobs.current.set(ck, blob)
           }
           if (streaming.current !== st || recordingRef.current || arming.current) return // stopped meanwhile
+          if (st.gate) { // chunk 1: the start claimed on the live hold is answered before any audio
+            const gate = st.gate
+            st.gate = null
+            if (!(await passGate(st.unit, gate)) || streaming.current !== st || recordingRef.current || arming.current) return
+          }
           host.playReplyChunk(st.unit, i, u.n, await blobToBase64(blob), 'opus')
           st.offered.add(i)
           st.fails = 0
@@ -860,12 +871,19 @@ function App() {
       return
     }
     playingKey.current = key // claim before any await so a second pump cannot start another reply
+    let gate: Promise<ClaimAnswer> | null = null
     if (HOST_KIND === 'car') {
-      // Exactly one of this car and the phone says it. A live hold covers the start; without one the start is claimed
-      // first, and a reply the phone took (this car was off, or out of reach, when it was up) is left to the phone.
+      // Exactly one of this car and the phone says it, and neither without the proxy's yes. A live hold is one: the start
+      // is claimed alongside the download and its answer looked at before the audio starts (passGate). Without one the
+      // start is claimed first: the phone's (this car was off, or out of reach, when it was up) is left to the phone, and
+      // no answer leaves it at the head of the queue until the proxy answers (waitForProxy).
       const how = startPlan(claims.current.get(key), Date.now())
-      if (how === 'skip' || (how === 'claim' && (await claimReply(key, 'start')) === 'phone')) { leaveToPhone(key); return }
-      if (how === 'play') void claimReply(key, 'start')
+      if (how === 'skip') { leaveToPhone(key); return }
+      if (how === 'claim') {
+        const v = startVerdict('claim', await claimReply(key, 'start'))
+        if (v === 'skip') { leaveToPhone(key); return }
+        if (v === 'wait') { waitForProxy(key); return }
+      } else gate = claimReply(key, 'start')
       if (playingKey.current !== key) return // interrupted while the claim was out
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began meanwhile
     }
@@ -874,13 +892,14 @@ function App() {
       // after the last). Recording stops all of it; the next pump offers it again, the full file if it is up by then.
       replyBytes.current = 0
       setLastReply(key)
-      streaming.current = { unit: key, offered: new Set(), busy: false, again: false, fails: 0 }
+      streaming.current = { unit: key, offered: new Set(), busy: false, again: false, fails: 0, gate }
       void feedStream()
       return
     }
     try {
       const blob = await getBlob(`${BUCKET_BASE}/${key}`)
       replyBytes.current = blob.size
+      if (gate && !(await passGate(key, gate))) { if (playingKey.current === key) playingKey.current = ''; return }
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began while it downloaded
       setLastReply(key)
       const np = nativeReply()
@@ -919,6 +938,26 @@ function App() {
     finish(key)
   }
 
+  // No live hold and no answer from the proxy (it is down, or out of reach): the reply stays at the head of the queue,
+  // its hold is renewed on every tick, and its start is asked again shortly. The watcher waits for the proxy too, so
+  // the phone does not say it blind either.
+  const waitForProxy = (key: string) => {
+    if (playingKey.current === key) playingKey.current = ''
+    setStatus('reply waiting for the upload proxy')
+    window.setTimeout(() => pump.current(), CLAIM_RENEW_MS / 2)
+  }
+
+  // A start claimed on a live hold, answered before the audio starts. The phone's (the proxy lost the hold) is left to
+  // the phone. No answer plays on the hold, and the start is re-sent until the proxy has it. False: do not play it
+  // (the phone has it, or a note began, or another pump moved on while the answer was out).
+  const passGate = async (key: string, gate: Promise<ClaimAnswer>): Promise<boolean> => {
+    const answer = await gate
+    if (startVerdict('play', answer) === 'skip') { leaveToPhone(key); return false }
+    const playing = playingKey.current === key && !recordingRef.current && !arming.current
+    if (playing && answer === 'none' && !unconfirmed.current.has(key)) unconfirmed.current.set(key, Date.now())
+    return playing
+  }
+
   // A waiting reply renews this car's hold, so the phone copy stays out while the car still means to say it. A car that
   // was switched off stops renewing, and the phone takes it once the lease lapses.
   useEffect(() => {
@@ -927,6 +966,10 @@ function App() {
       const now = Date.now()
       for (const key of queue.current) {
         if (key !== playingKey.current && units.current.has(key) && holdDue(claims.current.get(key), now)) void claimReply(key, 'hold')
+      }
+      for (const [key, since] of [...unconfirmed.current]) {
+        if (confirmDue(since, now)) void claimReply(key, 'start')
+        else unconfirmed.current.delete(key)
       }
     }, CLAIM_RENEW_MS / 2)
     return () => window.clearInterval(t)
