@@ -48,9 +48,11 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         feedback.onFocusLost = { change ->
             val c = arbiter.current
             if (c != null && c.kind != SpeechKind.ARMING && c.chunks == 0 && c.parts.none { it is SpeechPart.Clip }) {
-                arbiter.focusLost(c.id, "focus_lost:$change")
+                arbiter.focusLost(c.id, "focus_lost:$change", transient = change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
             }
         }
+        // The focus a call took came back (or was taken for good after all): a heard echo it cut is said again now.
+        feedback.onFocusBack = { gained -> arbiter.focusReturned(gained) }
     }
 
     private fun onClip(id: String, phase: String, detail: String) {
@@ -138,9 +140,9 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     // ---- what the rest of the app asks for ----
 
-    fun cue(id: String, kind: SpeechKind, parts: List<SpeechPart>, maxWaitMs: Long, group: String? = null, deferrable: Boolean = true) {
+    fun cue(id: String, kind: SpeechKind, parts: List<SpeechPart>, maxWaitMs: Long, group: String? = null, deferrable: Boolean = true, note: String? = null) {
         if (parts.isEmpty()) return
-        arbiter.offer(Utterance(id, kind, parts, group = group, maxWaitMs = maxWaitMs, deferrable = deferrable))
+        arbiter.offer(Utterance(id, kind, parts, group = group, maxWaitMs = maxWaitMs, deferrable = deferrable, note = note))
     }
 
     fun reply(id: String, bytes: ByteArray, ext: String) {

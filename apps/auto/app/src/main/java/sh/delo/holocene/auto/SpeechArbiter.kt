@@ -19,13 +19,19 @@ package sh.delo.holocene.auto
  * - A sound cut off mid-play (halted) is let drain from the speakers for [HALT_DRAIN_MS] before anything else starts.
  * - Every queued item has a deadline ([Utterance.maxWaitMs]); an ack that could not be said within seconds is
  *   dropped instead of said late.
- * - The note just recorded is answered first: an ack offered while the mic is busy, or within [NOTE_ACK_WINDOW_MS] of
- *   it closing (the STOP tone + "Got it, X's on it", then the SENT tone), starts before anything held back by the
- *   recording, whatever its rank. Without this, an earlier memo's progress clip or echo that waited out the note played
+ * - The note just recorded is answered first: the acks that belong to it (the STOP tone + "Got it, X's on it", then the
+ *   SENT tone; [Utterance.note], handed out by [noteStopped] and [noteSent]) start before anything held back by the
+ *   recording, whatever their rank. Without this, an earlier memo's progress clip or echo that waited out the note played
  *   first and the new memo's ack expired behind it (round 2, memos Y and C): the driver never heard the note was sent.
+ *   The tie is the note itself, not a clock: a SENT tone whose upload took 20 s still answers its note, and a "sent" for
+ *   an older note that went out on a retry (no open note) keeps the lowest rank. It never cuts what plays: it only
+ *   chooses among what waits, so a reply that is already playing is not interrupted.
  * - Something cut off (by a recording, or by a call taking the audio focus) comes back only while it is still the newest
  *   thing for its memo: a newer progress clip, or the memo turning final, drops it. A heard echo cut or refused by a call
- *   is tried again for [FOCUS_RETURN_MS] (every [FOCUS_RETRY_MS]) and said again at most once; an ack is not.
+ *   is said again at most once, if the loss was transient (a call, the car's assistant): the host keeps its request and
+ *   reports when the focus comes back ([focusReturned]), so the echo never takes the focus from something that still
+ *   holds it; a refused request is tried again every [FOCUS_RETRY_MS]. Both for [FOCUS_RETURN_MS]. Another app taking the
+ *   focus for good (not transient) drops the echo, and an ack is never said again.
  * - A chunked reply ([offerChunk]: the watcher uploads the reply sentence by sentence while it renders the rest) is ONE
  *   reply: its chunks play in order, back to back, and while it waits for its next chunk it still holds the queue, so
  *   nothing of lower rank is said between two chunks. A recording start stops the whole reply (the page offers it again
@@ -66,6 +72,8 @@ data class Utterance(
     val deferrable: Boolean = true,
     /** > 0: a chunked reply of this many chunks; its clips arrive through [SpeechArbiter.offerChunk], not [parts]. */
     val chunks: Int = 0,
+    /** The note (from [SpeechArbiter.noteStopped]) this ack answers: it starts before what the recording held back. */
+    val note: String? = null,
 )
 
 data class SpeechDecision(
@@ -109,6 +117,8 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         val notBefore: Long = Long.MIN_VALUE,
         val noteAck: Boolean = false,
         val replay: Boolean = false,
+        /** A cut echo waiting for the host to report that the audio focus is back ([SpeechArbiter.focusReturned]). */
+        var awaitFocus: Boolean = false,
     )
 
     /** A chunked reply's clips by index, which one plays, and since when it waits for the next one (-1: not waiting). */
@@ -137,8 +147,9 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     private var lastHaltAt = Long.MIN_VALUE / 2
     /** The arming prompt, waiting for a sound it cut to drain ([arm]). */
     private var pendingPrompt: Utterance? = null
-    /** When the mic last closed: an ack offered soon after answers that note ([NOTE_ACK_WINDOW_MS]). */
-    private var micClosedAt = Long.MIN_VALUE / 2
+    /** Notes whose STOP ack was offered and that nothing has answered yet (token, when): oldest first. */
+    private val openNotes = ArrayList<Pair<String, Long>>()
+    private var noteSeq = 0
     /** Echoes a call cut off or refused: until when they may still be tried again ([FOCUS_RETURN_MS]). */
     private val focusUntil = LinkedHashMap<String, Long>()
     /** Echoes a call already cut off once while audible: a second cut drops them (said again at most once). */
@@ -159,6 +170,26 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     }
 
     private fun drop(u: Utterance, reason: String): Boolean { log("drop", u, reason); return false }
+
+    /** A note was just recorded and its STOP ack is about to be offered: the token to put in [Utterance.note]. */
+    fun noteStopped(): String {
+        val t = now()
+        openNotes.removeAll { t - it.second > NOTE_OPEN_MS }
+        val token = "note:${++noteSeq}"
+        openNotes += token to t
+        while (openNotes.size > MAX_OPEN_NOTES) openNotes.removeAt(0)
+        return token
+    }
+
+    /**
+     * The oldest open note was answered (sent, queued, rejected, silent): its token for the SENT ack, or null when no
+     * note is waiting (a retry of an older note: it does not take priority over anything).
+     */
+    fun noteSent(): String? {
+        val t = now()
+        openNotes.removeAll { t - it.second > NOTE_OPEN_MS }
+        return if (openNotes.isEmpty()) null else openNotes.removeAt(0).first
+    }
 
     /** Offer an utterance. Returns true if it was queued or started, false if dropped. */
     fun offer(u: Utterance): Boolean {
@@ -184,8 +215,8 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         }
         if (mic != Mic.IDLE && !u.deferrable) return drop(u, "recording")
         if (u.group != null) removeQueued("superseded") { it.group == u.group }
-        // An ack offered while the mic is busy, or just after it closed, answers the note just recorded: it goes first.
-        val noteAck = u.kind == SpeechKind.ACK && (mic != Mic.IDLE || now() - micClosedAt <= NOTE_ACK_WINDOW_MS)
+        // An ack that belongs to the note just recorded goes first (not an older note's "sent" that went out on a retry).
+        val noteAck = u.kind == SpeechKind.ACK && u.note != null
         queue += Entry(u, now(), noteAck = noteAck)
         if (mic != Mic.IDLE) log("deferred", u, "recording")
         else log("queued", u, listOfNotNull(current?.let { "behind_${it.kind.wire}" }, "note_ack".takeIf { noteAck }).joinToString(","))
@@ -344,19 +375,39 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     }
 
     /**
-     * A call (or the car's own assistant) took the audio focus [id] was speaking under: it stops now. A heard echo comes
-     * back once, if the focus returns within [FOCUS_RETURN_MS] and nothing newer for its memo was queued meanwhile; an
-     * ack or a cue belongs to the moment and is dropped, as before.
+     * Something took the audio focus [id] was speaking under: it stops now. [transient]: a call or the car's own
+     * assistant, which gives the focus back (LOSS_TRANSIENT); false: another app took it for good (LOSS). A heard echo
+     * cut by a transient loss comes back once, when the host reports the focus is back ([focusReturned]) within
+     * [FOCUS_RETURN_MS] and nothing newer for its memo was queued meanwhile. An echo whose focus was taken for good, an
+     * ack and a cue belong to the moment and are dropped.
      */
-    fun focusLost(id: String, reason: String) {
+    fun focusLost(id: String, reason: String, transient: Boolean) {
         val c = current
         if (c == null || c.id != id) return
+        if (!transient) { cancel(id, reason); log("drop", c, "focus_taken_for_good"); return }
         if (c.kind != SpeechKind.ECHO || c.id in focusCut || !stillNewest(c)) { cancel(id, reason); return }
         remember(focusCut, c.id)
         current = null
         log("halt", c, reason)
         out.halt(c, reason)
-        focusRetry(c)
+        focusRetry(c, awaitFocus = true)
+        pump()
+    }
+
+    /**
+     * The host holds the request a transient loss left behind and the system gave the focus back ([gained]), or it was
+     * taken for good after all. The echo waiting for it is tried at once, or dropped.
+     */
+    fun focusReturned(gained: Boolean) {
+        val waiting = queue.filter { it.awaitFocus }
+        if (waiting.isEmpty()) return
+        if (!gained) { removeEntries("focus_taken_for_good") { it.awaitFocus }; return }
+        val t = now()
+        for (e in waiting) {
+            e.awaitFocus = false
+            queue[queue.indexOf(e)] = Entry(e.u, e.at, e.maxWaitMs, notBefore = t, replay = true)
+            log("deferred", e.u, "focus_back")
+        }
         pump()
     }
 
@@ -364,14 +415,14 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
      * Queue the echo [u] again for a later try under a call's focus window: true while its window is open (opened by its
      * first cut or refusal) and it is still the newest thing for its memo, false otherwise (then it is dropped).
      */
-    private fun focusRetry(u: Utterance): Boolean {
+    private fun focusRetry(u: Utterance, awaitFocus: Boolean = false): Boolean {
         val t = now()
         val until = focusUntil[u.id] ?: (t + FOCUS_RETURN_MS).also { focusUntil[u.id] = it; while (focusUntil.size > MEMORY) focusUntil.remove(focusUntil.keys.first()) }
         if (t >= until) { log("drop", u, "expired"); return false }
         if (!stillNewest(u)) { log("drop", u, "superseded"); return false }
         // Re-entered with its deadline at the window's end: the queue's own expiry closes it.
-        queue.add(0, Entry(u, until - FOCUS_RETURN_MS, FOCUS_RETURN_MS, notBefore = t + FOCUS_RETRY_MS, replay = true))
-        log("deferred", u, "focus_retry")
+        queue.add(0, Entry(u, until - FOCUS_RETURN_MS, FOCUS_RETURN_MS, notBefore = if (awaitFocus) Long.MIN_VALUE else t + FOCUS_RETRY_MS, replay = true, awaitFocus = awaitFocus))
+        log("deferred", u, if (awaitFocus) "focus_wait" else "focus_retry")
         return true
     }
 
@@ -447,7 +498,6 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         pendingPrompt = null
         onArmed = null
         mic = Mic.IDLE
-        micClosedAt = now()
         out.decision(SpeechDecision("mic", "", "", null, 0, "idle", now(), mic.name.lowercase()))
         pump()
     }
@@ -505,8 +555,9 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
         // A sound that was just cut off is still coming out of the speakers: nothing starts over its tail.
         val left = drainLeft()
         if (left > 0) { out.wakeAfter(left); return }
-        val ready = queue.withIndex().filter { it.value.notBefore <= t }
-        if (ready.isEmpty()) { out.wakeAfter(maxOf(1L, queue.minOf { it.notBefore } - t)); return }
+        val ready = queue.withIndex().filter { !it.value.awaitFocus && it.value.notBefore <= t }
+        // A cut echo waits for the focus to come back, not for a time: only its window closing wakes the queue for it.
+        if (ready.isEmpty()) { out.wakeAfter(maxOf(1L, queue.minOf { if (it.awaitFocus) it.at + it.maxWaitMs + 1 else it.notBefore } - t)); return }
         // The note just recorded is answered first (oldest ack first: the STOP tone + ack, then the SENT tone).
         val next = ready.firstOrNull { it.value.noteAck }
             ?: ready.maxWithOrNull(compareBy<IndexedValue<Entry>> { it.value.u.kind.rank }.thenByDescending { it.index })
@@ -551,11 +602,12 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
          * prompt's own speech). A sound that ends by itself needs no wait: it was played out.
          */
         const val HALT_DRAIN_MS = 350L
-        /** An ack offered this soon after the mic closed answers that note (the SENT tone comes ~0.3-1.5 s after Stop). */
-        const val NOTE_ACK_WINDOW_MS = ACK_WAIT_MS
+        /** A note nothing answered (cancelled, no event) stops being the note a later "sent" belongs to after this long. */
+        const val NOTE_OPEN_MS = 120_000L
+        const val MAX_OPEN_NOTES = 4
         /** A heard echo a call cut off (or refused) is tried again for this long after the first cut... */
         const val FOCUS_RETURN_MS = 10_000L
-        /** ...this often: each try asks for the focus again, and a call still on refuses it (nothing sounds). */
+        /** ...a refused request this often (a call still on refuses it, nothing sounds; a cut one waits for the focus to return). */
         const val FOCUS_RETRY_MS = 2_000L
         /** What the host reports when the audio focus was refused for an utterance (nothing was said). */
         const val FOCUS_DENIED = "error:focus_denied"

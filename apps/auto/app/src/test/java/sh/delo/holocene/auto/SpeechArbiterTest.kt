@@ -103,7 +103,7 @@ class SpeechArbiterTest {
         a.recordingStarted()
         a.offer(progress(memo2, 1))
         a.offer(echo(memo2))
-        a.offer(ack())
+        a.offer(ack().copy(note = a.noteStopped()))
         assertNull(audible)
         assertEquals(listOf(r.id, "arm"), played)
         a.recordingEnded()
@@ -542,9 +542,11 @@ class SpeechArbiterTest {
     // ---- the note just recorded is answered first (ttfr.md round 2, memos Y and C) ----
 
     private fun stopAck(n: Int = 1) = Utterance("ack:stopped:$n", SpeechKind.ACK,
-        listOf(SpeechPart.Tone(DriveSpeech.Tone.STOP), SpeechPart.Say("Got it, Holocene's on it.")), maxWaitMs = SpeechArbiter.ACK_WAIT_MS)
-    private fun sentAck(n: Int = 1) = Utterance("ack:sent:$n", SpeechKind.ACK, listOf(SpeechPart.Tone(DriveSpeech.Tone.SENT)),
-        maxWaitMs = SpeechArbiter.ACK_WAIT_MS)
+        listOf(SpeechPart.Tone(DriveSpeech.Tone.STOP), SpeechPart.Say("Got it, Holocene's on it.")), maxWaitMs = SpeechArbiter.ACK_WAIT_MS,
+        note = a.noteStopped())
+    /** The SENT tone of the oldest open note (as MainActivity offers it), or of no note: a retry of an older one. */
+    private fun sentAck(n: Int = 1, retry: Boolean = false) = Utterance("ack:sent:$n", SpeechKind.ACK, listOf(SpeechPart.Tone(DriveSpeech.Tone.SENT)),
+        maxWaitMs = SpeechArbiter.ACK_WAIT_MS, note = if (retry) null else a.noteSent())
 
     /** Memo X works while memo Y is recorded: X's progress clip is held back by the note. */
     private fun recordOver(held: () -> Unit) {
@@ -597,10 +599,10 @@ class SpeechArbiterTest {
         assertEquals(listOf("arm", "ack:stopped:1", "progress:$memo1:2"), played)
     }
 
-    @Test fun anAckLongAfterTheNoteKeepsItsRank() {
+    @Test fun anAckOfNoNoteKeepsItsRank() {
         a.recordingStarted()
         a.recordingEnded()
-        t += SpeechArbiter.NOTE_ACK_WINDOW_MS + 1
+        t += 400
         a.offer(Utterance("cue", SpeechKind.CUE, say("Holocene")))
         a.offer(ack())
         a.offer(progress(memo1, 1))
@@ -661,15 +663,17 @@ class SpeechArbiterTest {
 
     @Test fun anEchoCutByACallIsSaidOnceMoreWhenTheFocusComesBack() {
         a.offer(echo(memo1))
-        a.focusLost("echo:$memo1", "focus_lost:-2")
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
         assertEquals(listOf("echo:$memo1" to "focus_lost:-2"), halted)
         audible = null
         drain()
-        assertNull(audible) // not before the retry period
+        assertNull(audible) // the call is on: the host does not ask again, it waits for the focus to come back
         t += SpeechArbiter.FOCUS_RETRY_MS
         a.tick()
+        assertNull(audible)
+        a.focusReturned(true) // the call ended
         assertEquals("echo:$memo1", audible) // the host asks for the focus again
-        a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) // the call is still on: refused, nothing sounded
+        a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) // a second call came in at once: refused, nothing sounded
         audible = null
         t += SpeechArbiter.FOCUS_RETRY_MS
         a.tick()
@@ -683,27 +687,33 @@ class SpeechArbiterTest {
 
     @Test fun anEchoCutByACallIsGivenUpWhenTheFocusDoesNotReturnInTime() {
         a.offer(echo(memo1))
-        a.focusLost("echo:$memo1", "focus_lost:-1")
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
         audible = null
-        var tries = 0
+        t += SpeechArbiter.HALT_DRAIN_MS
+        a.focusReturned(true)
+        assertEquals("echo:$memo1", audible)
+        a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED)
+        audible = null
+        var tries = 1
         while (t < SpeechArbiter.FOCUS_RETURN_MS + 5_000) {
             t += SpeechArbiter.FOCUS_RETRY_MS
             a.tick()
             if (audible != null) { tries++; audible = null; a.finished("echo:$memo1", SpeechArbiter.FOCUS_DENIED) }
         }
-        assertTrue(tries in 3..5)
+        assertTrue("tries=$tries", tries in 3..6)
         assertEquals(listOf("expired"), dropped("echo:$memo1"))
         assertTrue(a.queued.isEmpty())
     }
 
     @Test fun anEchoCutTwiceByACallOrSupersededMeanwhileIsDropped() {
         a.offer(echo(memo1))
-        a.focusLost("echo:$memo1", "focus_lost:-2")
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
         audible = null
         t += SpeechArbiter.HALT_DRAIN_MS + SpeechArbiter.FOCUS_RETRY_MS
+        a.focusReturned(true)
         a.tick()
         assertEquals("echo:$memo1", audible)
-        a.focusLost("echo:$memo1", "focus_lost:-2") // cut again: said again at most once
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true) // cut again: said again at most once
         audible = null
         t += 10 * SpeechArbiter.FOCUS_RETRY_MS
         a.tick()
@@ -711,7 +721,7 @@ class SpeechArbiterTest {
         assertTrue(a.queued.isEmpty())
 
         a.offer(echo(memo2))
-        a.focusLost("echo:$memo2", "focus_lost:-2")
+        a.focusLost("echo:$memo2", "focus_lost:-2", transient = true)
         audible = null
         a.offer(progress(memo2, 1)) // something newer about memo 2 while the call is on
         assertEquals(listOf("superseded"), dropped("echo:$memo2"))
@@ -719,7 +729,7 @@ class SpeechArbiterTest {
 
     @Test fun anAckCutByACallIsDroppedNotRequeued() {
         a.offer(stopAck())
-        a.focusLost("ack:stopped:1", "focus_lost:-2")
+        a.focusLost("ack:stopped:1", "focus_lost:-2", transient = true)
         assertEquals(listOf("ack:stopped:1" to "focus_lost:-2"), halted)
         audible = null
         t += 20_000
@@ -738,5 +748,143 @@ class SpeechArbiterTest {
         assertEquals("echo:$memo1", audible)
         end("echo:$memo1")
         assertEquals(2, played.size)
+    }
+
+    // ---- K1: only a transient loss is waited out; never a request while something else holds the focus ----
+
+    @Test fun anEchoWhoseFocusAnotherAppTookForGoodIsDroppedAndNeverAskedForAgain() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-1", transient = false) // another app took the focus for good
+        assertEquals(listOf("echo:$memo1" to "focus_lost:-1"), halted)
+        audible = null
+        assertTrue(a.queued.isEmpty())
+        assertEquals(listOf("focus_taken_for_good"), dropped("echo:$memo1").filter { it == "focus_taken_for_good" })
+        for (i in 1..10) { t += SpeechArbiter.FOCUS_RETRY_MS; a.tick(); a.focusReturned(true) }
+        assertNull(audible)
+        assertEquals(1, played.count { it == "echo:$memo1" }) // not one more request in the 10 s window
+    }
+
+    @Test fun anEchoCutByACallWaitsForTheFocusToComeBackAndDoesNotAskInTheMeantime() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
+        audible = null
+        t += SpeechArbiter.HALT_DRAIN_MS
+        var starts = 0
+        for (i in 1..4) { t += SpeechArbiter.FOCUS_RETRY_MS; a.tick(); if (audible != null) starts++ }
+        assertEquals("no request while the call holds the focus", 0, starts)
+        assertEquals(listOf("echo:$memo1"), a.queued.map { it.id })
+        a.focusReturned(true)
+        assertEquals("echo:$memo1", audible)
+    }
+
+    @Test fun aWaitingEchoTheCallNeverGivesBackIsDroppedWhenItsWindowCloses() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
+        audible = null
+        assertTrue(wakes.isNotEmpty())
+        t += SpeechArbiter.FOCUS_RETURN_MS + 1
+        a.tick()
+        assertTrue(a.queued.isEmpty())
+        assertEquals(listOf("expired"), dropped("echo:$memo1"))
+        a.focusReturned(true) // too late, nothing to say
+        assertNull(audible)
+    }
+
+    @Test fun aWaitingEchoIsDroppedWhenTheCallsFocusTurnsOutToBeTakenForGood() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
+        audible = null
+        a.focusReturned(false)
+        assertTrue(a.queued.isEmpty())
+        assertEquals(listOf("focus_taken_for_good"), dropped("echo:$memo1"))
+    }
+
+    @Test fun aReturnedFocusNeverBargesInOnAReplyOrARecording() {
+        a.offer(echo(memo1))
+        a.focusLost("echo:$memo1", "focus_lost:-2", transient = true)
+        audible = null
+        a.offer(reply(memo2)) // a reply for another memo started meanwhile
+        drain()
+        val r = reply(memo2).id
+        assertEquals(r, audible)
+        a.focusReturned(true) // the call ended while the reply plays: the echo waits its turn
+        assertEquals(r, audible)
+        end(r)
+        assertEquals("echo:$memo1", audible)
+        end("echo:$memo1")
+        // and never into a note
+        val memo3 = "33333333-3333-5333-8333-333333333333"
+        a.offer(echo(memo3))
+        a.focusLost("echo:$memo3", "focus_lost:-2", transient = true)
+        audible = null
+        a.arm(null) {}
+        a.recordingStarted()
+        a.focusReturned(true)
+        assertNull(audible)
+        a.recordingEnded()
+        drain()
+        assertEquals("echo:$memo3", audible)
+    }
+
+    // ---- K2: the SENT tone belongs to its note, not to a 6 s window ----
+
+    @Test fun aSentToneForANoteWhoseUploadTookLongStillAnswersItBeforeWhatWaits() {
+        recordOver { a.offer(progress(memo1, 1)); a.offer(stopAck()) }
+        a.recordingEnded()
+        end("ack:stopped:1")
+        assertEquals("progress:$memo1:1", audible) // the held-back clip plays while the upload is slow
+        t += 10_000 // the upload landed 10 s after Stop, long past any 6 s window
+        a.offer(echo(memo2))
+        a.offer(progress(memo2, 1))
+        a.offer(sentAck())
+        t += 2_000
+        end("progress:$memo1:1")
+        assertEquals("ack:sent:1", audible) // its note's tone before the echo and the clip that waited, however late
+        assertTrue(dropped("ack:sent:1").isEmpty())
+        end("ack:sent:1")
+        assertEquals("echo:$memo2", audible)
+    }
+
+    @Test fun aLateSentToneGoesBeforeQueuedNarrationButNeverCutsAReplyThatPlays() {
+        recordOver { a.offer(stopAck()) }
+        a.recordingEnded()
+        end("ack:stopped:1")
+        val r = reply(memo1)
+        a.offer(r) // the page's reply starts after the note
+        assertEquals(r.id, audible)
+        a.offer(progress(memo2, 1))
+        a.offer(echo(memo2))
+        t += 20_000 // the upload landed long after Stop
+        a.offer(sentAck())
+        assertEquals("a playing reply is never cut", r.id, audible)
+        assertTrue(halted.none { it.first == r.id })
+        a.offer(ack("ack:later")) // an ack of no note: lowest rank
+        end(r.id)
+        assertEquals("ack:sent:1", audible) // its note's tone before the narration that waited
+        end("ack:sent:1")
+        assertEquals("echo:$memo2", audible)
+    }
+
+    @Test fun aSentThatWentOutOnARetryOfAnOlderNoteDoesNotTakePriority() {
+        a.recordingStarted()
+        a.recordingEnded()
+        t += 400
+        a.offer(progress(memo1, 1))
+        end("progress:$memo1:1")
+        a.offer(echo(memo2))
+        a.offer(sentAck(retry = true)) // no note is waiting for it
+        end("echo:$memo2")
+        assertEquals("ack:sent:1", audible) // lowest rank: after the echo, as before
+    }
+
+    @Test fun aNotesTokenIsSpentByItsSentAndTwoNotesAreAnsweredInOrder() {
+        assertEquals("note:1", a.noteStopped())
+        assertEquals("note:2", a.noteStopped())
+        assertEquals("note:1", a.noteSent())
+        assertEquals("note:2", a.noteSent())
+        assertNull(a.noteSent())
+        a.noteStopped()
+        t += SpeechArbiter.NOTE_OPEN_MS + 1 // a note nothing ever answered stops claiming a later retry
+        assertNull(a.noteSent())
     }
 }

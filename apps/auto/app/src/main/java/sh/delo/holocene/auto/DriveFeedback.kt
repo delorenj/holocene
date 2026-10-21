@@ -45,6 +45,13 @@ class DriveFeedback(context: Context) {
     /** The focus this app was granted for the sound now playing was taken away (LOSS or LOSS_TRANSIENT); main thread. */
     var onFocusLost: ((change: Int) -> Unit)? = null
 
+    /**
+     * After a LOSS_TRANSIENT the request stays registered, so the system tells us when the focus is back instead of us
+     * asking again (a new request would take it from whatever still holds it). True: gained; false: taken for good.
+     */
+    var onFocusBack: ((gained: Boolean) -> Unit)? = null
+    private var regain: AudioFocusRequest? = null
+
     private val attrs = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANT)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -210,6 +217,7 @@ class DriveFeedback(context: Context) {
     /** Ask for (or share the one already held) transient may-duck focus. False: refused, nothing may sound. */
     private fun requestFocus(): Boolean {
         if (focus != null) { outstanding++; return true }
+        dropRegain() // a new sound asks for the focus itself; the one a call took is no longer waited for
         lateinit var request: AudioFocusRequest
         request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs)
             .setOnAudioFocusChangeListener({ change -> onFocusChange(request, change) }, main)
@@ -227,11 +235,26 @@ class DriveFeedback(context: Context) {
     // Only the request that is still held counts: a late callback for one already given back (the sound was halted and
     // the next one asked again) says nothing about what plays now.
     private fun onFocusChange(request: AudioFocusRequest, change: Int) {
+        if (regain === request) {
+            // Nothing plays: this is only the answer to the loss that stopped the last sound.
+            if (change == AudioManager.AUDIOFOCUS_GAIN) { Log.i(TAG, "focus back after a transient loss"); dropRegain(); onFocusBack?.invoke(true) }
+            else if (change == AudioManager.AUDIOFOCUS_LOSS) { Log.i(TAG, "focus taken for good while waiting"); dropRegain(); onFocusBack?.invoke(false) }
+            return
+        }
         if (focus !== request || outstanding <= 0) return
         if (change != AudioManager.AUDIOFOCUS_LOSS && change != AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) return
         Log.w(TAG, "focus lost change=$change while speaking: stopping")
+        val keep = if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) request else null
+        if (keep != null) focus = null // stop() must not give it back: its GAIN is what says the call is over
         stop()
+        if (keep != null) { dropRegain(); regain = keep }
         onFocusLost?.invoke(change)
+    }
+
+    private fun dropRegain() {
+        val r = regain ?: return
+        regain = null
+        try { audio.abandonAudioFocusRequest(r) } catch (_: RuntimeException) {}
     }
 
     private fun releaseFocus() {
@@ -258,6 +281,7 @@ class DriveFeedback(context: Context) {
 
     fun shutdown() {
         stop()
+        dropRegain()
         tts?.shutdown()
         tts = null
         ready = false
