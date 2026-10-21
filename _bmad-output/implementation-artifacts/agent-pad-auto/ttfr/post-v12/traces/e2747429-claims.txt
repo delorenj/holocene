@@ -1,0 +1,6 @@
+08:07:24.487 claim watcher offer True None  
+08:07:24.632 claim car hold True car held 
+08:07:24.632 claim car hold True car held 
+08:07:25.287 playback   None None  started
+08:07:25.287 claim car start True car started 
+08:07:40.035 playback   None None  ended

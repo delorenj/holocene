@@ -1,0 +1,76 @@
+intervals (device clock, epoch s):
+  1792570271.247   +2.969s  speech    arming arm:33539759                          - -> end 
+  1792570271.843   +2.033s  audio     speaker output                               rms<=802
+  1792570274.089   +0.274s  audio     speaker output                               rms<=814
+  1792570274.645   +5.738s  recording OS capture active                           
+  1792570274.651   +5.752s  recording app mic                                     
+  1792570280.404   +3.142s  speech    ack ack:stopped:33549192                     - -> end 
+  1792570280.838   +0.262s  audio     speaker output                               rms<=659
+  1792570281.477   +0.475s  audio     speaker output                               rms<=464
+  1792570282.374   +0.945s  audio     speaker output                               rms<=827
+  1792570283.548   +0.514s  speech    ack ack:sent:33549669                        - -> end 
+  1792570283.905   +0.310s  audio     speaker output                               rms<=657
+  1792570288.942   +7.138s  speech    echo echo:8e40e52b-3161-5397-8298-c6e07481.. 8e40e52b-3161-5397-8298-c6e074813edc -> end 
+  1792570289.819   +1.218s  audio     speaker output                               rms<=512
+  1792570291.794   +1.156s  audio     speaker output                               rms<=582
+  1792570293.509   +0.787s  audio     speaker output                               rms<=668
+  1792570294.628   +0.479s  audio     speaker output                               rms<=802
+  1792570295.346   +0.220s  audio     speaker output                               rms<=457
+  1792570300.099   +4.206s  speech    reply 081137Z-holocene-pm-8e40...74813edc.og 8e40e52b-3161-5397-8298-c6e074813edc -> end 
+  1792570301.106   +2.553s  audio     speaker output                               rms<=373
+  1792570303.874   +0.349s  audio     speaker output                               rms<=274
+  1792570310.529   +2.268s  speech    arming arm:33579374                          - -> end 
+  1792570311.069   +1.346s  audio     speaker output                               rms<=603
+  1792570312.664   +0.267s  audio     speaker output                               rms<=658
+  1792570313.260   +5.474s  recording OS capture active                           
+  1792570313.262   +5.470s  recording app mic                                     
+  1792570318.732   +2.937s  speech    ack ack:stopped:33587574                     - -> end 
+  1792570319.280   +0.325s  audio     speaker output                               rms<=662
+  1792570319.834   +0.362s  audio     speaker output                               rms<=449
+  1792570320.547   +0.938s  audio     speaker output                               rms<=578
+  1792570321.669   +0.604s  speech    ack ack:sent:33587958                        - -> end 
+  1792570321.984   +0.477s  audio     speaker output                               rms<=655
+  1792570327.167   +5.517s  speech    echo echo:0e7e234f-1a63-50c5-a826-f99e3008.. 0e7e234f-1a63-50c5-a826-f99e30089ed8 -> end 
+  1792570327.980   +0.820s  audio     speaker output                               rms<=497
+  1792570329.161   +0.749s  audio     speaker output                               rms<=586
+  1792570330.616   +0.890s  audio     speaker output                               rms<=582
+  1792570331.628   +0.969s  audio     speaker output                               rms<=487
+  1792570339.017   +2.662s  speech    arming arm:33607896                          - -> end 
+  1792570339.424   +1.905s  audio     speaker output                               rms<=614
+  1792570341.564   +0.322s  audio     speaker output                               rms<=659
+  1792570342.134  +27.159s  recording OS capture active                           
+  1792570342.136  +27.164s  recording app mic                                     
+  1792570369.301   +4.827s  speech    ack ack:stopped:33638056                     - -> end 
+  1792570370.050   +0.690s  audio     speaker output                               rms<=881
+  1792570370.891   +0.680s  audio     speaker output                               rms<=481
+  1792570371.929   +2.130s  audio     speaker output                               rms<=860
+  1792570374.134   +1.086s  speech    ack ack:sent:33638900                        - -> end 
+  1792570374.489   +1.384s  audio     speaker output                               rms<=965
+  1792570375.220   +5.167s  speech    reply 081218Z-holocene-pm-0e7e...30089ed8.og 0e7e234f-1a63-50c5-a826-f99e30089ed8 -> end 
+  1792570376.452   +3.007s  audio     speaker output                               rms<=332
+  1792570379.598   +0.762s  audio     speaker output                               rms<=300
+  1792570380.387   +8.355s  speech    echo echo:06a3cbb6-830b-5aaa-9f2c-28ae3455.. 06a3cbb6-830b-5aaa-9f2c-28ae34550e03 -> end 
+  1792570382.063   +0.972s  audio     speaker output                               rms<=486
+  1792570383.409   +1.444s  audio     speaker output                               rms<=858
+  1792570386.032   +1.639s  audio     speaker output                               rms<=551
+  1792570387.856   +1.158s  audio     speaker output                               rms<=628
+  1792570397.385  +10.445s  speech    progress progress:06a3cbb6-830b-5aaa-9f2c-28 06a3cbb6-830b-5aaa-9f2c-28ae34550e03 -> end 
+  1792570399.636   +1.465s  audio     speaker output                               rms<=461
+  1792570401.547   +6.369s  audio     speaker output                               rms<=600
+  1792570419.548  +12.658s  speech    reply 081332Z-holocene-pm-06a3...34550e03.og 06a3cbb6-830b-5aaa-9f2c-28ae34550e03 -> end 
+  1792570420.414   +1.263s  audio     speaker output                               rms<=374
+  1792570422.096   +1.050s  audio     speaker output                               rms<=476
+  1792570423.458   +1.119s  audio     speaker output                               rms<=273
+  1792570424.699   +0.435s  audio     speaker output                               rms<=286
+  1792570425.480   +2.089s  audio     speaker output                               rms<=351
+  1792570427.900   +4.384s  audio     speaker output                               rms<=509
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+        info: ack ack:sent:33638900 -> reply 081218Z-holocene-pm-0e7e: the first still sounded 37 ms into the next, then 7 ms of silence before it
+      speaker output: 43 spans, 52.5 s of sound in the window
+RESULT ZERO OVERLAPS  (16 utterances, 3 app recordings, 3 OS capture windows, 15 HAL mix windows)

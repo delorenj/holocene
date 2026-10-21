@@ -744,3 +744,126 @@ the health monitor's restarts, the four memo traces, the run timings and the dri
   `OK (rms 32.3 peak 137)`.
 - The app version was not bumped. No native code changed, so the car gets this fix from the live pad page.
 
+
+## Post-v12 server/pad fixes
+
+Date: 2026-10-21, 07:55-08:15 UTC. Six findings from independent reviews of the pre-v12 phone/car arbitration. No
+Kotlin or Android code changed (the signed v12 build is untouched; Kotlin findings go to v13). Code is in the commit
+"fix(voice): post-v12 server and pad fixes ..." (watcher, upload proxy, pad, /voice). Evidence is in
+[`ttfr/post-v12/`](ttfr/post-v12/).
+
+Deployment: the pad was rebuilt into its live `dist/` (`index-BSKvD5gS.js`), `agent-pad-upload` was recreated (compose
+unchanged, so `~/docker` has nothing to commit), the watcher and the API were restarted. The web app was not touched.
+`holocene-web` needs nothing: /voice's change is all in the API.
+
+### What changed
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | A reply the phone took is heard nowhere when the Earshot drop then fails: the car is refused for good. | The drop is retried (`MEMO_EARSHOT_DROP_TRIES` 4, backoff 2/5/10 s; an attempt that failed here but landed is found by a stat and never dropped twice). If it ultimately fails the watcher **releases the take** (`POST /upload/claim` `by: watcher, action: release`). The proxy pushes `released`, and the pad that left the reply to the phone plays it (it also looks every 5 s for 3 min). The replied fact says `earshot_skipped: car_released`, `earshot_reason: drop_failed`; memo:trace shows it as an UNKNOWN `phone_object` hop. A proxy that cannot take the release fails the stage and it is retried. |
+| 2 | A watcher restart hung (SIGKILL) while a phone decision waited. | The phone decision is its own persisted stage, `mirror` (state.json holds `reply_up`: the moment the car could start, the object key, everything the replied fact needs). The decision loop and its sleeps honour the stop signal (`WatcherStopping`, about a second), and the next start resumes the decision from the same clock. |
+| 3 | "Car started" was claimed when the page handed the reply to the host, and nothing released a failure. | Before the audio the pad only **holds** (renewed every 5 s while the reply waits **and until its audio starts**). The **start** is claimed when playback really starts (`__hnPlayback started`, the audio element's `playing`). A playback that fails for good before any audio, or a chunked reply parked before it started, **releases** the hold (`action: release` for the car), so the phone may take it at once. |
+| 4 | The 12 s grace was shorter than the pad's 15 s idle poll, so a live car that missed a push could lose its reply to the phone. | The grace is now 20 s (`MEMO_EARSHOT_CAR_GRACE_S`: the idle poll plus a margin; a test pins it above `REPLY_POLL_IDLE_MS`). The pad also keeps its fast poll (2 s, 6 s with push) for as long as a memo is in flight, instead of dropping to the idle poll after 10 minutes. The cost: a switched-off car holds the phone's copy back 8 s longer than before (20.8 s in memo A below). |
+| 5 | memo:trace's TTFR line and /voice's stuck detection used the delayed `replied` fact. | memo:trace times **first audio up** (chunk 1, else the reply object's own LastModified), **full reply up**, **car speaking** (the pad's real start); the replied fact is shown as "phone decided". /voice counts a waiting replied hop from the first audio up (voiced chunk 1) with the decision's allowance (`REPLY_DECISION_BUDGET_SECONDS` 330), and a car that really started the reply (played / speech `start`) is not waiting on anything. A one-file reply has no voiced fact, so its stuck timer still starts at the agent's finish; the voiced schema needs `chunks >= 2` and the bloodbank repo was not touched. |
+| 6 | Three speak workers: held replies could queue a later memo's TTS. | `speak` renders and uploads the car's copy; the held decision runs on the new `mirror` stage in a pool of its own (32 workers). The test holds three replies and sees a fourth memo finish. |
+
+### Proven on the sim
+
+`emulator-5554`, app user 10, live pad `index-BSKvD5gS.js`, memos through the `holo_testmic` null sink with `paplay`
+(never gRPC injection). Driver: [`tools/drive13.py`](ttfr/post-v12/tools/drive13.py). Test memos went to holocene-pm.
+
+**(a) Earshot drop forced to fail -> the car plays it.** The watcher ran with `MEMO_EARSHOT_BUCKET` pointing at a bucket
+that does not exist (a temporary systemd drop-in, removed afterwards). Memo A `e130c2e0`:
+
+| time (UTC) | event |
+|---|---|
+| 08:03:28.27 | agent done; the app force-stopped 0.4 s later (car off) |
+| 08:03:34.0 / 34.8 | the car's copy is up / offered |
+| 08:03:55.55 | no car claimed it within the 20 s grace: **the phone's take is granted** (`no_car_claim`, 20.8 s) |
+| 08:03:55.8 | app relaunched; at 08:04:05.99 its hold is **refused** (`owner: phone`), so the car left it to the phone |
+| 08:03:56.2 to 08:04:14.9 | the Earshot drop fails four times (`earshot_mirror_failed` x4, `earshot_drop_retry` 2 s, 5 s, 10 s) |
+| 08:04:15.007 | **`release` granted** (`earshot_released`, tries 4) |
+| 08:04:15.184 | **the car's hold is granted 0.18 s later** (the `released` push) |
+| 08:04:16.228 | the car's playback starts, and **its start claim lands 8 ms after it** (08:04:16.236) |
+| 08:04:22.68 | ends |
+
+The replied fact: `earshot_skipped: car_released`, `earshot_reason: drop_failed`. The trace
+([`traces/e130c2e0.txt`](ttfr/post-v12/traces/e130c2e0.txt)) shows `phone_object UNKNOWN ... the take was given back: the
+car may play it`, and `first audio up +43.0s | phone decided +84.0s | reply played +85.0s`: the delayed fact no longer
+stands in for the audio. Watcher side: [`watcher-q1-drop-fails.txt`](ttfr/post-v12/watcher-q1-drop-fails.txt).
+
+**(b) Watcher restarted during a phone decision.** Memo B `68f54f1a`. At its agent done a recording R opened and was
+held 55 s, so the car held B's reply (hold at the proxy, watcher waiting). Eight seconds later
+`systemctl --user restart holocene-inbox-watcher.service`:
+
+| time (UTC) | event |
+|---|---|
+| 08:05:36.34 | B's reply offered; the car holds it |
+| 08:05:45.158 | `step_stopped` (stage `mirror`, the decision loop left at the stop) |
+| 08:05:45.178 | `stopped`; systemd "Stopped" (no SIGKILL, no timeout) |
+| 08:05:45.301 | `starting`: **the whole restart took 0.45 s** (before: a 30 s `TimeoutStopSec` then SIGKILL) |
+| 08:06:31.06 | R stopped, the car's start claimed and played |
+| 08:06:31.307 | the **resumed** decision: `car_spoke` (`car_started`), `waited_s` **55.0**, counted from the original reply-up time, not from the restart |
+| 08:06:31.529 | replied fact |
+
+Logs: [`watcher-q2-restart.jsonl`](ttfr/post-v12/watcher-q2-restart.jsonl),
+[`watcher-q2-systemd.txt`](ttfr/post-v12/watcher-q2-systemd.txt), trace [`68f54f1a`](ttfr/post-v12/traces/68f54f1a.txt).
+
+**(c) Normal memos still `car_spoke`, start claimed at the real start.**
+
+| memo | what | hold | start claim | playback `started` | decision |
+|---|---|---|---|---|---|
+| C `e2747429` | normal | 08:07:24.632 | 08:07:25.287 | 08:07:25.287 | `car_spoke`, not mirrored |
+| D `8e40e52b` | normal | 08:11:40.427 | 08:11:40.962 | 08:11:40.967 | `car_spoke`, not mirrored |
+| E `0e7e234f` | reply held by a recording for 35 s | 08:12:21.979, renewed 29.0, 41.5 | 08:12:55.989 | 08:12:56.000 | `car_spoke`, not mirrored |
+| R `06a3cbb6` | the recording over E | | 08:13:40.230 | 08:13:40.240 | `car_spoke` |
+
+Before this fix the start was claimed at hand-off, about a second before the audio. Claims per memo:
+[`traces/*-claims.txt`](ttfr/post-v12/traces/), all of them in [`claims.jsonl`](ttfr/post-v12/claims.jsonl).
+
+**Overlap audit.**
+- **D, E, R** (the clean window, `speech_overlap.py`, offset -450 ms): **ZERO OVERLAPS**, 6/6 PASS (16 utterances, 3
+  recordings, 3 OS capture windows, 15 HAL windows); the proxy-side audit `proxy_overlap.py`: **ZERO OVERLAPS**
+  ([`overlap-q4q5.txt`](ttfr/post-v12/overlap-q4q5.txt), [`overlap-proxy-q4q5.txt`](ttfr/post-v12/overlap-proxy-q4q5.txt)).
+- **A and B** (19 utterances, 4 recordings; [`overlap-q1q2.txt`](ttfr/post-v12/overlap-q1q2.txt)): checks 1-4 and 6 PASS
+  (no speech x speech, no speech or speaker sound while a mic was open, no HAL mix over a capture). **Check 5 FAILS with
+  one flag** and it is not a double speech: the speakers carried sound until device time 1792569777.867, 0.83 s
+  after the SENT tone of A's note was logged as ended, which is 19 ms past the tool's 700 ms allowance (the flag holds at
+  any offset from -440 to -460 ms). The next utterance was 7 s later and no recording was open. It is the app's own tone
+  path, which this round did not touch; it did not recur in the three later memos. The proxy-side audit is clean
+  ([`overlap-proxy-q1q2.txt`](ttfr/post-v12/overlap-proxy-q1q2.txt)).
+- Memo C's audit is not usable: `adb logcat` died in the middle of its reply. The evidence logs were cut to the
+  speech/AudioService/HAL lines.
+
+To rerun:
+
+```bash
+E=_bmad-output/implementation-artifacts/agent-pad-auto/ttfr/post-v12
+zcat $E/speaker-tap-q4q5.jsonl.gz > /tmp/tap.jsonl
+python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat-q4q5.txt --tap /tmp/tap.jsonl --offset-ms=-450 --from 1792570271 --to 1792570445
+```
+
+### Checks
+
+| check | result |
+|---|---|
+| `mise run memo:test` | PASS: watcher 175 (9 new: drop fails, retries, landed-but-reported, release outage, stop + resume, held replies, trace timing, grace), proxy 91 (2 new: watcher release, car release) |
+| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 60 tests (4 new in `claim.test.ts` / `roster.test.ts`) |
+| API typecheck, `pnpm test` | PASS, 148 (2 new in `voice-memos.test.ts`) |
+
+`test_retrying_a_changed_object_takes_it_as_it_is_now` is flaky on the commit before this round as well (1 in 6 runs); it
+is a race around the worker thread, not related.
+
+### Side effects and state
+
+- **Real memos to holocene-pm:** A, B, C, D, E and R (plus one recording held back as silence, which uploads nothing).
+  None reached the phone: A's Earshot drop was forced to fail on purpose.
+- **Systemd drop-in** `zz-proof-drop-fail.conf` was created for (a) and **removed**; the watcher runs with its own unit
+  again. The proxy was recreated once, the watcher restarted three times.
+- **State left.** The sim mic route is restored (moved back first, then the null sink unloaded), `auto:sim:mic-check` is
+  `OK (rms 28.0 peak 138)`, the app is open and parked. The Mac and the Google sign-in were not touched.
+- **What is left:**
+  - A car off for good never hears a reply whose Earshot drop failed (the release gives it back to the car, which is
+    not there). The replied fact says so (`car_released`).
+  - A one-file reply that a car holds for more than 60 s still shows as stuck in /voice (no voiced fact to count from).
+  - The pad's rebuild reaches the real car on its next page load.

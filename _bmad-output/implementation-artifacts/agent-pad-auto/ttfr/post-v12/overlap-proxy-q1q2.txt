@@ -1,0 +1,30 @@
+speech decisions: 71   utterances: 20   mic-busy windows: 4   recordings: 4
+  mono 33021.102 s    7.24 s  arming   end    -
+  mono 33037.916 s    6.96 s  ack      end    e130c2e0
+  mono 33044.876 s    1.05 s  ack      end    e130c2e0
+  mono 33053.750 s    5.57 s  echo     end    e130c2e0
+  mono 33123.875 s    7.20 s  reply    end    e130c2e0
+  mono 33165.003 s    6.18 s  arming   end    -
+  mono 33177.538 s    5.11 s  ack      end    68f54f1a
+  mono 33182.662 s    1.00 s  ack      end    68f54f1a
+  mono 33188.112 s    6.92 s  echo     end    68f54f1a
+  mono 33199.005 s    4.35 s  arming   end    -
+  mono 33254.007 s    4.07 s  ack      end    a5f5cdce
+  mono 33258.073 s    0.95 s  ack      end    a5f5cdce
+  mono 33259.020 s   14.79 s  reply    end    68f54f1a
+  mono 33273.820 s    0.58 s  echo     halt   a5f5cdce
+  mono 33274.756 s    2.26 s  arming   end    -
+  mono 33283.068 s    3.28 s  ack      end    e2747429
+  mono 33286.352 s    0.97 s  ack      end    e2747429
+  mono 33287.350 s    6.18 s  reply    end    a5f5cdce
+  mono 33293.535 s    6.66 s  echo     end    e2747429
+  mono 33313.217 s   15.18 s  reply    end    e2747429
+  mono 33021.100 s   16.81 s  MIC BUSY (arming + recording)
+  mono 33165.002 s   12.54 s  MIC BUSY (arming + recording)
+  mono 33198.999 s   55.00 s  MIC BUSY (arming + recording)
+  mono 33274.403 s    8.66 s  MIC BUSY (arming + recording)
+
+check 1 speech x speech: PASS 0 overlaps
+check 2 speech x mic busy: PASS 0 overlaps
+check 3 arming prompt x recording: PASS 0 overlaps
+RESULT ZERO OVERLAPS

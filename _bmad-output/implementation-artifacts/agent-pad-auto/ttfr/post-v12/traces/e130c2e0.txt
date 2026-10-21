@@ -1,0 +1,41 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace e130c2e0-298e-51bb-af11-04225b11b520
+memo_id  e130c2e0-298e-51bb-af11-04225b11b520
+key      inbox/holocene-pm/2026/10/21/20261021T080231Z.ogg
+agent    holocene-pm
+command  5d13bb5c-b9c1-44c2-91a5-4591066f8fdf
+lane     interactive   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 0/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=e130c2e0-298e-51bb-af11-04225b11b520&limit=100'
+
+  OK      s3_object                  2026-10-21T08:02:51.000Z           inbox/holocene-pm/2026/10/21/20261021T080231Z.ogg  14956 bytes
+  OK      upload_proxy_log           2026-10-21T08:02:51.042Z  +0.0s    {"ts":"2026-10-21T08:02:51.042Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/21/20261021T080231Z.ogg","memo_id":"e130c2e0-298e-51
+  OK      fact:uploaded              2026-10-21T08:02:51.042Z  +0.0s    14956 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -10 dBFS, window avg -18 dBFS
+  OK      fact:received              2026-10-21T08:02:51.498Z  +0.5s    watcher saw it, lag 465ms
+  OK      fact:transcribed           2026-10-21T08:03:04.268Z  +12.8s   17 chars in 12.0s (large-v3), audio max -10 dBFS, mean -34 dBFS over 4.0 s: "I'm test with one"
+  OK      audio_level                2026-10-21T08:03:04.268Z  +0.0s    max -10 dBFS, mean -34 dBFS over 4.0 s  -> audible | device heard peak -10 dBFS, window avg -18 dBFS
+  OK      fact:dispatched            2026-10-21T08:03:04.709Z  +0.4s    command 5d13bb5c-b9c1-44c2-91a5-4591066f8fdf -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-21T08:03:04.769Z  +0.1s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-21T08:03:04.769486Z updated=2026-10-21T08:03:28.145581Z
+  OK      agent:invocation.started   2026-10-21T08:03:04.769Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-21T08:03:28.145Z  +23.4s   invocation.completed
+  OK      hermes_session             2026-10-21T08:03:04.769Z  +0.0s    agent was given exactly what the watcher sent (225 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      fact:replied               2026-10-21T08:04:15.030Z  +70.3s   58 chars, tts 5.83s (voxcpm) -> replies/2026/10/21/080328Z-holocene-pm-e130c2e0-298e-51bb-af11-04225b11b520.ogg
+  OK      reply_object               2026-10-21T08:03:34.000Z  +0.0s    replies/2026/10/21/080328Z-holocene-pm-e130c2e0-298e-51bb-af11-04225b11b520.ogg  17507 bytes
+  OK      pad_playback_log           2026-10-21T08:04:16.229Z  +42.2s   {"ts":"2026-10-21T08:04:16.228Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/21/080328Z-holocene-pm-e130c2e0-298e-51bb-af11-04225b11b520.
+  OK      played_on_pad              2026-10-21T08:04:16.228Z  +0.0s    reply started 41.5s after the reply was up (48228 ms after the key stamp, TTS included), ended after 4.32s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  UNKNOWN phone_object               -                                  not mirrored to the phone: the phone took it, but its Earshot drop failed on every try, so the take was given back: the car may play it (look for the car's played hop) (optional)
+  OK      car_status_object          2026-10-21T08:04:15.201Z  +0.0s    status/2026/10/21/e130c2e0-298e-51bb-af11-04225b11b520.json: stage=done progress_seq=0 narrations=0 elapsed=84.2s
+
+car speech (9 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -1.8s     ack       deferred     reason recording  while recording  mic recording
+  -1.0s     ack       start        reason waited_ms=366
+  +5.6s     ack       start        reason waited_ms=5252
+  +5.6s     ack       end          
+  +6.6s     ack       end          
+  +14.5s    echo      start        reason waited_ms=2
+  +19.9s    echo      end          
+  +85.0s    reply     start        reason waited_ms=2
+  +91.7s    reply     end          
+
+timing   since upload (server clock): ack -1.0s | heard-echo +14.5s | first audio up +43.0s | phone decided +84.0s | reply played +85.0s
+         after the agent finished: first audio up +5.9s | car speaking +48.1s
+
+VERDICT  COMPLETE in 43.0s; played on the pad 41.5s after the reply was up

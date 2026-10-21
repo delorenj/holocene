@@ -1,0 +1,19 @@
+08:03:04.446 fact_published transcribed    audio.memo.transcribed 
+08:03:04.447 stage_done transcribed dispatch    
+08:03:04.883 fact_published dispatched    audio.memo.dispatched 
+08:03:04.883 stage_done dispatched await_agent    
+08:03:28.271 stage_done agent reply    
+08:03:28.276 stage_done reply_text speak    
+08:03:34.110 stage_done tts     
+08:03:34.721 stage_done tts mirror    
+08:03:55.570 earshot_mirror_decided      
+08:03:56.214 earshot_mirror_failed      mc cp rc=1: mc: <ERROR> Failed to copy `/tmp/memo-mirror-chzye44w/repl
+08:03:56.357 earshot_drop_retry   2 2.0  
+08:03:58.795 earshot_mirror_failed      mc cp rc=1: mc: <ERROR> Failed to copy `/tmp/memo-mirror-chzye44w/repl
+08:03:58.927 earshot_drop_retry   3 5.0  
+08:04:04.370 earshot_mirror_failed      mc cp rc=1: mc: <ERROR> Failed to copy `/tmp/memo-mirror-chzye44w/repl
+08:04:04.486 earshot_drop_retry   4 10.0  
+08:04:14.946 earshot_mirror_failed      mc cp rc=1: mc: <ERROR> Failed to copy `/tmp/memo-mirror-chzye44w/repl
+08:04:15.028 earshot_released      
+08:04:15.201 fact_published replied    audio.memo.replied 
+08:04:15.201 stage_done replied done    
