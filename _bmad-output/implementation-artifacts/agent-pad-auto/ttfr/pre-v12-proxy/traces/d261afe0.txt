@@ -1,0 +1,44 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace d261afe0-4eff-5c0f-a6fd-e323e3d52e70
+memo_id  d261afe0-4eff-5c0f-a6fd-e323e3d52e70
+key      inbox/holocene-pm/2026/10/21/20261021T043451Z.ogg
+agent    holocene-pm
+command  c6c6d19c-f1be-4501-81d2-cb7024ff9489
+lane     interactive   queues: interactive: pulling, 0/2 in flight, 0 queued | batch: pulling, 0/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=d261afe0-4eff-5c0f-a6fd-e323e3d52e70&limit=100'
+
+  OK      s3_object                  2026-10-21T04:35:00.000Z           inbox/holocene-pm/2026/10/21/20261021T043451Z.ogg  24349 bytes
+  OK      upload_proxy_log           2026-10-21T04:35:00.455Z  +0.5s    {"ts":"2026-10-21T04:35:00.455Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/21/20261021T043451Z.ogg","memo_id":"d261afe0-4eff-5c
+  OK      fact:uploaded              2026-10-21T04:35:00.455Z  +0.0s    24349 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -8 dBFS, window avg -17 dBFS
+  OK      fact:received              2026-10-21T04:35:00.879Z  +0.4s    watcher saw it, lag 430ms
+  OK      fact:transcribed           2026-10-21T04:35:06.963Z  +6.1s    38 chars in 5.56s (large-v3), audio max -8 dBFS, mean -30 dBFS over 5.5 s: 'Pipeline test reply with proxy check 3'
+  OK      audio_level                2026-10-21T04:35:06.963Z  +0.0s    max -8 dBFS, mean -30 dBFS over 5.5 s  -> audible | device heard peak -8 dBFS, window avg -17 dBFS
+  OK      fact:dispatched            2026-10-21T04:35:07.254Z  +0.3s    command c6c6d19c-f1be-4501-81d2-cb7024ff9489 -> bloodbank.cmd.agent.invocation.invoke lane=interactive
+  OK      gateway_journal            2026-10-21T04:35:07.287Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-21T04:35:07.287013Z updated=2026-10-21T04:35:15.501691Z
+  OK      agent:invocation.started   2026-10-21T04:35:07.286Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:invocation.done      2026-10-21T04:35:15.501Z  +8.2s    invocation.completed
+  OK      hermes_session             2026-10-21T04:35:07.287Z  +0.0s    agent was given exactly what the watcher sent (246 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. The driver hears '
+  OK      fact:replied               2026-10-21T04:35:32.100Z  +24.8s   13 chars, tts 2.18s (voxcpm) -> replies/2026/10/21/043515Z-holocene-pm-d261afe0-4eff-5c0f-a6fd-e323e3d52e70.ogg
+  OK      reply_object               2026-10-21T04:35:18.000Z  +0.0s    replies/2026/10/21/043515Z-holocene-pm-d261afe0-4eff-5c0f-a6fd-e323e3d52e70.ogg  10821 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      phone_decision             -                                  mirrored to the phone: no car claimed it within the grace window after its first audio was up (switched off, or out of reach)
+  OK      phone_text                 2026-10-21T04:35:31.000Z  +13.0s   s3://earshot/phone/2026/10/21/043515637Z-holocene-pm-d261afe0-4eff-5c0f-a6fd-e323e3d52e70.txt  13 bytes (the full reply text)
+  OK      phone_object               2026-10-21T04:35:32.000Z  +1.0s    s3://earshot/phone/2026/10/21/043515637Z-holocene-pm-d261afe0-4eff-5c0f-a6fd-e323e3d52e70.ogg  10821 bytes
+  OK      phone_detected             2026-10-21T04:35:32.003Z  +0.0s    SM-S948U app 0.1.3
+  OK      phone_started              2026-10-21T04:35:35.160Z  +3.2s    SM-S948U app 0.1.3
+  OK      phone_finished             2026-10-21T04:35:38.132Z  +3.0s    SM-S948U app 0.1.3
+  OK      car_status_object          2026-10-21T04:35:32.210Z  +0.0s    status/2026/10/21/d261afe0-4eff-5c0f-a6fd-e323e3d52e70.json: stage=done progress_seq=0 narrations=0 elapsed=31.8s
+
+car speech (7 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.1s     ack       start        reason waited_ms=84
+  -0.1s     ack       deferred     reason recording  while recording  mic recording
+  +2.5s     ack       end          
+  +2.5s     ack       start        reason waited_ms=2405
+  +3.0s     ack       end          
+  +7.4s     echo      start        reason waited_ms=0
+  +11.6s    echo      end          
+
+timing   since upload (server clock): ack -0.1s | heard-echo +7.4s | reply up +31.6s
+         after the agent finished: reply up +16.6s
+
+VERDICT  COMPLETE in 18.0s; playback on the pad not reported; speaking on the phone 17.2s after the full reply was up (35.2s recording-to-voice)

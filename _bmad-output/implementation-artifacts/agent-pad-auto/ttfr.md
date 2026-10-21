@@ -559,9 +559,9 @@ did not check whether the car played the reply. The edge keeps a dead car's push
 
   `memo:trace` adds a `phone_decision` hop (or says why the copy was left out), and /voice prints the same sentence
   under the replied hop. The car-lag timings use `reply_up_at`, because the fact now comes after the decision.
-- **Fail-open.** If the proxy cannot be asked (5 failed polls), the watcher mirrors. A car whose claim gets no answer
-  plays. Both cases need the proxy to be down, and then memos cannot upload either. Claims are held in memory, so a
-  proxy restart between a take and a car coming back could let both play, minutes apart.
+- **Fail-open (superseded, see "Review fix: no double play when the upload proxy is down" below).** If the proxy
+  could not be asked (5 failed polls), the watcher mirrored, and a car whose claim got no answer played. Claims were
+  held in memory only.
 
 **Proven on the sim:**
 
@@ -668,3 +668,79 @@ python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat.txt --tap /t
   - `drive_y.py` records over a held-back clip;
   - `kill_on_done.py` force-stops the app at the agent's done;
   - `record_on_done.py` opens a recording at the agent's done.
+
+## Review fix: no double play when the upload proxy is down
+
+Date: 2026-10-21, 04:30-04:36 UTC. Fix in `dfc6de8` (watcher, upload proxy, pad, /voice) and the agent-pad compose
+in `~/docker` (`init: true`, `exec python3`, claims volume). Evidence is in
+[`ttfr/pre-v12-proxy/`](ttfr/pre-v12-proxy/).
+
+**Bug (review, major).** A reply the car held was played by both the car and the phone when the upload proxy was down
+or restarted:
+- the watcher mirrored after 5 failed polls, even after it had seen a live car hold, and also when the offer failed;
+- the car played on a claim with no answer (it reads replies straight from S3, not through the proxy);
+- the claims lived only in the proxy's memory, so a restart let the phone take a reply the car was speaking (and the
+  car's start on a live hold ignored the refusal);
+- `sh -c` as PID 1 made every recreate wait out Docker's 10 s stop timeout, longer than the 5-poll budget.
+
+**Fix: neither side speaks a reply without the proxy's yes.**
+- **Watcher.** Only a granted take mirrors. A failed offer, poll or take is retried every second. Once the proxy answers
+  again, a take waits `MEMO_EARSHOT_SETTLE_S` (10 s) more. Still unanswered 300 s after the reply was up, the reply is
+  left to the car (`earshot_skipped: no_answer`, `earshot_reason: claim_failed`; memo:trace shows an UNKNOWN
+  `phone_object` hop), never mirrored blind.
+- **Proxy.** `ReplyClaims` is written through to `CLAIM_STATE_FILE` on every change and read back at start, so a restart
+  forgets no hold, start or take. For `CLAIM_SETTLE_S` (10 s) after a start every take is refused (`settling`), so the
+  car's re-sent start and renewed holds land first. The container now restarts in about 0.3 s.
+- **Pad.** No answer is no yes. Without a live hold the reply waits at the head of the queue for the proxy. On a live
+  hold (answered less than 10 s ago, so the lease has at least 10 s left) the start goes out with the download, and its
+  answer is looked at before the audio starts (the phone's answer skips it). A start that got no answer is re-sent every
+  2.5 s for 10 minutes.
+
+**Proven on the sim** (`emulator-5554`, app user 10, live pad bundle `index--rjG0ZRM.js`, memos through the
+`holo_testmic` null sink with `paplay`):
+
+| run | memo | what happened | decision |
+|---|---|---|---|
+| P1: proxy down while the car holds the reply behind a recording | M1 `88f84d12` (R `8ea9d5bc` is the recording) | Agent done at 04:31:12.99. Recording R opened at once (mic live 04:31:16.8, held 41.8 s). The reply was offered at 04:31:19.83, and the car held it 44 ms later (20 s lease). The proxy was stopped at 04:31:21.9. `docker-health-monitor` started it again at 04:31:34.5, so it was down 12.6 s (it read back 2 claims). The watcher's calls failed 10 times over 10.9 s; the old code mirrored after 5. After it was back, the watcher saw the persisted hold and the car renewing it (04:31:38.4, 45.9, 53.3, 58.3). R stopped at 04:31:58.33. The car claimed the start at 58.86 and played the reply from 04:32:01.88 to 04:32:11.82, after R's STOP ack and SENT tone. | `car_spoke`, waited 40.0 s; not mirrored |
+| P2: the reply lands while the proxy is down | M2 `9e0f02d9` | Agent done at 04:34:06.21. The proxy was stopped 0.4 s later and stayed down 25.5 s (the health monitor was in its cooldown). The reply was up at 04:34:08.0. The watcher's offer got 404s (23 failed calls), and the car's hold and start got no answer, so **the car did not play it** (the old pad did). The proxy was back at 04:34:32.1. The car's start was granted at 04:34:32.74 and the reply played from 04:34:32.95. The watcher's offer at 04:34:33.66 saw the car's start. | `car_spoke`, waited 25.1 s; not mirrored |
+| P3: car off, and the proxy restarted twice | M3 `d261afe0` | The app was force-stopped at the agent's done (04:35:16.06). The reply was offered at 04:35:18.36, with no car hold. The proxy was restarted at 04:35:19.4 and came back in 0.4 s (5 claims read back, settling until 04:35:29.8). The take was granted at 04:35:31.44. The Earshot copy went up at 32.10, and the S26 started it at 35.49 and finished at 38.46. The proxy was restarted again at 04:35:37.96, and the app was relaunched at 04:35:40. Its start and hold at 04:35:44.44 were both refused (`owner: phone`, the take survived the restart), and the car did not play the reply. | `no_car_claim`, waited 13.2 s; mirrored once |
+
+Overlap audit for the whole session (19 utterances, 4 recordings):
+- `speech_overlap.py`: **ZERO OVERLAPS** on all 6 checks at device offsets -628, -608 and -591 ms
+  ([`overlap-session`](ttfr/pre-v12-proxy/overlap-session.txt)).
+- `proxy_overlap.py`: **ZERO OVERLAPS** ([`overlap-proxy-side`](ttfr/pre-v12-proxy/overlap-proxy-side.txt)).
+
+To rerun:
+
+```bash
+E=_bmad-output/implementation-artifacts/agent-pad-auto/ttfr/pre-v12-proxy
+zcat $E/speaker-tap.jsonl.gz > /tmp/tap.jsonl
+python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat.txt --tap /tmp/tap.jsonl --offset-ms=-628 --from 1792557030 --to 1792557400
+```
+
+Also in the evidence: the proxy's claim lines (`claims.jsonl`), the watcher's decisions (`watcher-decisions.jsonl`),
+the health monitor's restarts, the four memo traces, the run timings and the driver (`tools/drive_p.py`).
+
+**Checks:**
+- `memo:test` passes: watcher 167 tests, proxy 89. The new tests cover persistence, the settle window, an unreadable
+  state file, a live hold followed by an outage, an offer that never gets through, a take after an outage waiting for
+  the car's re-sent start, and a settling proxy that is waited for rather than hammered.
+- pad: `tsc` passes, 57 tests pass (`startVerdict`, the 10 s margin, the re-send window), and the vite build passes.
+- API: 47 voice tests pass. The API and web typechecks pass.
+
+**What is left (documented in the watcher README):**
+- A car whose own link to the proxy breaks for more than 10 s, exactly as it starts a reply on its hold. The proxy and
+  the watcher see no outage, the lease lapses, and the phone may take the reply.
+- A car whose start was granted but whose answer was lost, and which is then switched off before its retry. The reply
+  is heard nowhere, though /voice still has it.
+- During an outage a live car now waits for the proxy, so the reply comes as late as the outage is long (P2: 24.5 s
+  after it was up). This is the cost of never playing a reply twice.
+
+**Side effects.**
+- Four real memos went to holocene-pm: M1, R, M2 and M3.
+- M3's reply played on the S26, which was the point of P3. None of the others reached the phone.
+- The proxy was stopped twice and restarted three times.
+- The sim mic route is restored (moved back first, then the null sink unloaded), and `auto:sim:mic-check` reports
+  `OK (rms 32.3 peak 137)`.
+- The app version was not bumped. No native code changed, so the car gets this fix from the live pad page.
+

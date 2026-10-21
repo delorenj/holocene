@@ -1,0 +1,11 @@
+[2026-10-21 04:31:31] RECOVERY: Publishing Bloodbank container exit event for agent-pad-upload
+[2026-10-21 04:31:34] Container agent-pad-upload needs recovery (Status: Exited, Health: )
+[2026-10-21 04:31:34] RECOVERY: Attempting recovery for container: agent-pad-upload (Status: Exited, Health: )
+[2026-10-21 04:31:34] RECOVERY: Container agent-pad-upload has exited. Attempting restart...
+agent-pad-upload
+[2026-10-21 04:31:34] RECOVERY: Successfully restarted container: agent-pad-upload
+[2026-10-21 04:31:34] ALERT [info]: Container agent-pad-upload was restarted successfully
+[2026-10-21 04:34:21] RECOVERY: Publishing Bloodbank container exit event for agent-pad-upload
+[2026-10-21 04:34:22] Container agent-pad-upload needs recovery (Status: Exited, Health: )
+[2026-10-21 04:34:22] RECOVERY: Attempting recovery for container: agent-pad-upload (Status: Exited, Health: )
+[2026-10-21 04:34:22] Container agent-pad-upload is in cooldown period. Skipping recovery.
