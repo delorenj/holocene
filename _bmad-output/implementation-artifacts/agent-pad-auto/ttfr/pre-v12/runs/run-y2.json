@@ -1,0 +1,21 @@
+{
+ "start2_pressed": 1792553844.6423519,
+ "mic_recording": [
+  1792553847.3445234,
+  "1792553846.235 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553846235"
+ ],
+ "paplay": [
+  1792553847.6446137,
+  1792553849.8633718,
+  0
+ ],
+ "held_back": [
+  1792553855.0373015,
+  "1792553853.893 16373 16373 I HoloceneSpeech: deferred progress id=progress:4f63901b-30d9-53f8-9134-9f44a6b9b394:1 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=1 mic=recording reason=recording at=1792553853893"
+ ],
+ "stop2_pressed": 1792553856.0375214,
+ "mic_idle": [
+  1792553856.123451,
+  "1792553855.027 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553855027"
+ ]
+}

@@ -1,0 +1,15 @@
+{
+ "start_pressed": 1792553940.8452258,
+ "mic_recording_seen": 1792553943.5518804,
+ "mic_line": "         1792553942.426 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553942426",
+ "inject": [
+  {
+   "wav": "d1.wav",
+   "began": 1792553943.5519166,
+   "ended": 1792553947.0621889,
+   "result": "{\"paplay_rc\": 0, \"err\": \"\", \"played_s\": 3.21}"
+  }
+ ],
+ "stop_pressed": 1792553947.06222,
+ "mic_idle_seen": 1792553947.2068417
+}

@@ -513,3 +513,158 @@ docker logs agent-pad-upload 2>&1 | python3 $E/proxy_overlap.py --since 2026-10-
 - `ttfr/round2/traces/*.txt`: memo:trace for every memo, including the two failures.
 - Helpers (they expect `/tmp/ttfr2` paths): `drive_memo_pa.py` (paplay input), `timeline.py` / `timeline2.py`,
   `segments.py` (tone versus speech onsets), `proxy_overlap.py` and `wait_gateway.sh`.
+
+## Pre-v12 fixes
+
+Date: 2026-10-21, 03:20-03:41 UTC. An independent re-check of round 2 left three open issues. All three are fixed at
+the root in `f9f5aa1` (car) and `97bcdbf` (watcher, upload proxy, pad, /voice). Evidence is in
+[`ttfr/pre-v12/`](ttfr/pre-v12/).
+
+Deployment:
+- The watcher (`holocene-inbox-watcher.service`) and the API (`holocene-api.service`) were restarted.
+- The upload proxy (`agent-pad-upload`) and `holocene-web` were recreated.
+- The pad was rebuilt into its live bind-mounted `dist/`.
+- The debug app was installed on `emulator-5554` with `mise run auto:dev` (Play installer of record).
+
+The app version was not bumped, so it is still 0.2.9-internal.
+
+### 1. The phone copy goes out unless the car actually speaks the reply
+
+**Bug.** The watcher left the Earshot phone copy out whenever the sending car was *connected*, which is presence. It
+did not check whether the car played the reply. The edge keeps a dead car's push stream "open" for up to
+`PUSH_MAX_AGE_S` + 30 s. So a reply that arrived just after the car was switched off was heard nowhere.
+
+**Fix.** Exactly one of the car and the phone speaks a reply. The upload proxy decides which one, atomically
+(`POST /upload/claim`, `ReplyClaims`):
+- **The car.** The pad page, host `car`, holds every reply it means to play as soon as it learns of it. It renews the
+  hold every 5 s while the reply waits (behind a recording or another reply), and claims the start when it plays. The
+  hold is a 20 s lease. The car's playback beacon and its speech queue's `start` also count as a start.
+- **The watcher.** Once the car's copy is up, the watcher offers the reply. A one-file reply is also pushed to the car
+  as `offered` at that moment, so the car does not wait for `replied`. The watcher then takes the reply for the phone
+  in two cases:
+  - no car claimed it within 12 s of its first audio (chunk 1, or the one file);
+  - the car's lease lapsed.
+
+  While a live car holds the reply, the watcher waits (at most 300 s).
+- **Who gives way.** The car does, and the phone owner is documented in `services/inbox-watcher/README.md`. The pad
+  page is deployed live, while Earshot plays whatever lands in its channel. A granted take is final. A car that comes
+  back later (an ignition, a reconnect) is refused both its hold and its start, and leaves the reply to the phone. A car
+  that holds or started the reply makes the take fail. So the phone copy can never start while the car speaks the reply
+  or holds it behind a recording.
+- **Record.** The `replied` fact now waits for the decision and records it:
+  - `earshot_skipped`: `car_spoke` or `car_holds`;
+  - `earshot_reason`: `car_started`, `car_holds`, `no_car_claim`, `car_let_go`, `browser_sender`, `claim_failed` or
+    `skip_off`;
+  - `reply_up_at` and `earshot_wait_seconds`.
+
+  `memo:trace` adds a `phone_decision` hop (or says why the copy was left out), and /voice prints the same sentence
+  under the replied hop. The car-lag timings use `reply_up_at`, because the fact now comes after the decision.
+- **Fail-open.** If the proxy cannot be asked (5 failed polls), the watcher mirrors. A car whose claim gets no answer
+  plays. Both cases need the proxy to be down, and then memos cannot upload either. Claims are held in memory, so a
+  proxy restart between a take and a car coming back could let both play, minutes apart.
+
+**Proven on the sim:**
+
+| memo | id | what happened | decision |
+|---|---|---|---|
+| A | `96cad0ae` | Agent done at 03:36:04.114. The app was force-stopped 0.35 s later, before the reply existed. The reply was up and offered at 03:36:09.78 (pushed, nobody claimed it). The phone took it at 03:36:21.87, the watcher dropped the copy at 03:36:22.45, and the S26 started it at 03:36:26.1. The app was relaunched at 03:36:40: its hold and start at 03:36:43.39 were both refused (`owner: phone`), and the car did not play the reply. | `earshot_reason: no_car_claim`, waited 12.2 s; trace `phone_decision OK mirrored to the phone: no car claimed it within the grace window ...` |
+| B | `10a56377` | Normal memo, car live. The one-file reply was offered at 03:35:02.643. The car claimed its start 53 ms later and played it at 03:35:02.915, 0.27 s after the offer. | `earshot_skipped: car_spoke` (`car_started`), decided in 1.2 s; not mirrored |
+| D | `a2516f66` | D's reply was up while recording E was open (E opened at D's agent done and was held 30 s). The car held the reply with 6 renewals, from 03:39:22.17 to 03:39:50.33. The longest gap between renewals was 7.5 s, inside the 20 s lease. The car claimed the start at 03:39:50.36, after E's STOP ack and SENT tone. | `car_spoke`, waited 29.4 s; not mirrored |
+| Y1, Y2, E | `4f63901b`, `491e5b8e`, `c6b26402` | Car live. | `car_spoke`, 1.2 s each |
+
+The proxy's claim lines are in [`pre-v12/claims.jsonl`](ttfr/pre-v12/claims.jsonl) and the traces in
+[`pre-v12/traces/`](ttfr/pre-v12/traces/).
+
+### 2. The stopping memo's STOP tone and ack play first
+
+**Bug.** Speech that a recording held back outranked the new memo's ack, because the ack has the lowest rank and
+expires after 6 s. Examples are an earlier memo's progress clip, or an echo that the arming cut and requeued. Memo Y got
+no STOP tone, ack or SENT tone. Memo C's SENT tone expired, and L's echo was replayed in full after C.
+
+**Fix** (`SpeechArbiter`, pure, JUnit):
+- An ack that is offered while the mic is busy, or within 6 s of it closing, is the note's ack. It starts before
+  anything else in the queue, whatever its rank. Oldest goes first: the STOP tone + "Got it, X's on it", then the SENT
+  tone.
+- Held-back progress follows the existing rules. A newer clip for the same memo replaces it, and the memo turning final
+  (its reply) drops it.
+- An echo or progress clip cut by a recording is requeued only while it is still the newest thing about its memo. If
+  a newer progress clip or a reply is already queued, it is dropped at the cut. If one arrives later, or the memo turns
+  final, the replay is dropped then.
+
+**Proven on the sim (memo Y).**
+1. Y1 (`4f63901b`, a `sleep 40` turn) was recorded. Recording Y2 started 14.0 s after Y1's Stop.
+2. Y1's progress clip was held back 7.7 s into Y2 (`deferred progress ... reason=recording`).
+3. Y2 was stopped 1.0 s later. The queue (device clock) then ran:
+
+```
+855.027 mic idle
+855.027 start ack id=ack:stopped:17124729 waited_ms=47
+855.210 queued ack id=ack:sent:17124958 reason=behind_ack,note_ack
+857.621 start ack id=ack:sent:17124958 waited_ms=2412
+858.163 start progress id=progress:4f63901b-...:1 waited_ms=4270
+```
+
+On the speakers, timed from the Stop press (host clock, `pre-v12/segments-after-stop-y2.txt`):
+
+| time after Stop | sound |
+|---|---|
+| +0.32 s | the STOP tone (266 ms): the first sound after Stop |
+| +0.93-2.52 s | "Got it, Holocene's on it." |
+| +3.00 s | the SENT tone |
+| +3.64 s | Y1's held-back progress clip |
+
+No ack expired. In round 2, the first sound after Stop was X's clip at +0.93 s, with no STOP tone. The same ordering
+held for memo E over D's held reply: E's STOP ack, E's SENT tone (`note_ack`, ahead of the reply), then D's reply.
+
+The JUnit tests cover memo Y and memo C:
+- the STOP ack, then the SENT tone, then the held-back clip;
+- superseded and final backlog dropped;
+- an echo cut by arming is said after the note's acks only while nothing newer exists;
+- the replay is dropped by a later progress clip or reply;
+- the replay is not requeued when a newer clip already waits.
+
+### 3. A heard echo cut by a call comes back once
+
+**Bug.** An echo cut by a phone call (focus loss) was dropped. That is fine for an ack, but not for the echo.
+
+**Fix** (`SpeechArbiter.focusLost`, wired from `SpeechHost`):
+- A heard echo that a call cuts, or whose focus is refused, is tried again every 2 s for 10 s.
+- While the call is on, each try is refused and nothing sounds. The first try after the call ends says the echo.
+- It is said again at most once: a second cut drops it.
+- It is dropped if something newer about its memo arrives.
+- An ack or a cue cut by a call is dropped, as before.
+
+JUnit covers four cases: cut then said again, refused until the window closes, cut twice or superseded, and an ack
+dropped. This path is **not exercised on the sim**, because the sim has no call to take the focus.
+
+### Checks
+
+| check | result |
+|---|---|
+| `./gradlew testDebugUnitTest lintDebug assembleDebug` | PASS, 187 JUnit tests (51 in `SpeechArbiterTest`, 12 new) |
+| `mise run memo:test` | PASS (watcher 164, proxy 85: claim rules, claim HTTP, decision loop) |
+| pad `tsc --noEmit`, `npm test`, `vite build` | PASS, 54 tests (4 new in `claim.test.ts`) |
+| API / web typecheck, `voice-memos.test.ts` | PASS, 47 tests |
+| `speech_overlap.py`, whole session (memos B, A, Y1, Y2, D, E: 30 utterances, 6 recordings, 6 OS capture windows, 30 HAL windows, 44 s of sound) | **ZERO OVERLAPS**, 6/6 PASS, at offsets -1088, -1040 and -1140 ms ([`overlap-session`](ttfr/pre-v12/overlap-session.txt)) |
+| `proxy_overlap.py` (the pad's speech events at the proxy) | **ZERO OVERLAPS**, 30 utterances, 6 mic windows ([`overlap-proxy-side`](ttfr/pre-v12/overlap-proxy-side.txt)) |
+
+To rerun:
+
+```bash
+E=_bmad-output/implementation-artifacts/agent-pad-auto/ttfr/pre-v12
+zcat $E/speaker-tap.jsonl.gz > /tmp/tap.jsonl
+python3 apps/auto/tools/speech_overlap.py --logcat $E/speech-logcat.txt --tap /tmp/tap.jsonl --offset-ms=-1088 --from 1792553675 --to 1792554020
+```
+
+### Side effects and state
+
+- **Six real memos went to holocene-pm:** B, A, Y1, Y2, D and E.
+  - A's reply was mirrored to the phone channel, and the S26 played it. That was the point of the test.
+  - None of the others reached the phone.
+- **Memo input** came through the PulseAudio null sink (`paplay`), never gRPC injection.
+- **The sim is left** windowed, parked, with the app open. The capture stream is back on the default source and the
+  null sink is unloaded. `auto:sim:mic-check` reports `OK (rms 25.9 peak 112)`.
+- **Tools** are in [`pre-v12/tools/`](ttfr/pre-v12/tools/) and expect `/tmp/v12`:
+  - `drive_y.py` records over a held-back clip;
+  - `kill_on_done.py` force-stops the app at the agent's done;
+  - `record_on_done.py` opens a recording at the agent's done.

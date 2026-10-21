@@ -1,0 +1,379 @@
+         1792553680.350  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553680.357  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553680.382  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553680.387 15319 15319 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553680.388 15319 15319 I HoloceneSpeech: mic  id=arm:16950025 memo=- seq=0 mic=arming reason=arming at=1792553680388
+         1792553680.391 15319 15319 I HoloceneSpeech: start arming id=arm:16950025 memo=- seq=0 mic=arming reason=arming at=1792553680391
+         1792553680.395 15319 15319 I HoloceneWheel: say "Recording for Holocene."
+         1792553682.199 15319 15319 I HoloceneWheel: tone START
+         1792553682.667 15319 15319 I HoloceneWheel: tone START out after 447 ms (244 ms long, presented, presented=5401/5401)
+         1792553682.668 15319 15319 I HoloceneSpeech: end arming id=arm:16950025 memo=- seq=0 mic=arming reason= at=1792553682668
+         1792553683.260 15319 15319 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553683260
+         1792553683.263  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:681 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:142 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553686.843 15319 15319 I HoloceneSpeech: deferred ack id=ack:stopped:16956591 memo=- seq=0 mic=recording reason=recording at=1792553686843
+         1792553686.882  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553686.894 15319 15319 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553686894
+         1792553686.895 15319 15319 I HoloceneSpeech: start ack id=ack:stopped:16956591 memo=- seq=0 mic=idle reason=waited_ms=52 at=1792553686895
+         1792553686.895 15319 15319 I HoloceneWheel: tone STOP
+         1792553686.898  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553686.898  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553686.899  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553686.909 15319 15319 I HoloceneSpeech: recording focus released
+         1792553686.910  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553687.062 15319 15319 I HoloceneSpeech: queued ack id=ack:sent:16956811 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553687062
+         1792553687.416 15319 15319 I HoloceneWheel: tone STOP out after 508 ms (244 ms long, presented, presented=5401/5401)
+         1792553687.417 15319 15319 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553687.417  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553687.417  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553687.424  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553687.424  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553687.427  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553689.507 15319 15319 I HoloceneSpeech: end ack id=ack:stopped:16956591 memo=- seq=0 mic=idle reason= at=1792553689507
+         1792553689.507 15319 15319 I HoloceneSpeech: start ack id=ack:sent:16956811 memo=- seq=0 mic=idle reason=waited_ms=2445 at=1792553689507
+         1792553689.508 15319 15319 I HoloceneWheel: tone SENT
+         1792553689.508  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553689.508  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553689.510  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b92dc72,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553689.510  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553689.511  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b92dc72,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553690.049 15319 15319 I HoloceneWheel: tone SENT out after 533 ms (289 ms long, presented, presented=6393/6393)
+         1792553690.050 15319 15319 I HoloceneSpeech: end ack id=ack:sent:16956811 memo=- seq=0 mic=idle reason= at=1792553690050
+         1792553690.050  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b92dc72,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553690.051  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553693.242 15319 15319 I HoloceneSpeech: queued echo id=echo:10a56377-09f9-5ad5-8ddf-6c57a38853f8 memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason= at=1792553693242
+         1792553693.242 15319 15319 I HoloceneSpeech: start echo id=echo:10a56377-09f9-5ad5-8ddf-6c57a38853f8 memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason=waited_ms=0 at=1792553693242
+         1792553693.242 15319 15319 I HoloceneWheel: say "Holocene heard: Reply with just the word pong."
+         1792553693.243  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@edec8c3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553693.243  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553693.245  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@edec8c3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553696.938 15319 15319 I HoloceneSpeech: end echo id=echo:10a56377-09f9-5ad5-8ddf-6c57a38853f8 memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason= at=1792553696938
+         1792553696.938  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@edec8c3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553696.938  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553701.681 15319 15319 I HoloceneSpeech: queued reply id=replies/2026/10/21/033500Z-holocene-pm-10a56377-09f9-5ad5-8ddf-6c57a38853f8.ogg memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason= at=1792553701680
+         1792553701.681 15319 15319 I HoloceneSpeech: start reply id=replies/2026/10/21/033500Z-holocene-pm-10a56377-09f9-5ad5-8ddf-6c57a38853f8.ogg memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason=waited_ms=1 at=1792553701681
+         1792553701.695  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553701.696  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553701.698  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553701.698 15319 15319 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792553703.514 15319 15319 I HoloceneSpeech: end reply id=replies/2026/10/21/033500Z-holocene-pm-10a56377-09f9-5ad5-8ddf-6c57a38853f8.ogg memo=10a56377-09f9-5ad5-8ddf-6c57a38853f8 seq=0 mic=idle reason= at=1792553703514
+         1792553703.515  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553703.515  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553740.706  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@57d87ca,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553740.708  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553740.715  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@57d87ca,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553740.717 15319 15319 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553740.717 15319 15319 I HoloceneSpeech: mic  id=arm:17010442 memo=- seq=0 mic=arming reason=arming at=1792553740717
+         1792553740.719 15319 15319 I HoloceneSpeech: start arming id=arm:17010442 memo=- seq=0 mic=arming reason=arming at=1792553740719
+         1792553740.719 15319 15319 I HoloceneWheel: say "Recording for Holocene."
+         1792553742.343 15319 15319 I HoloceneWheel: tone START
+         1792553742.819 15319 15319 I HoloceneWheel: tone START out after 467 ms (244 ms long, presented, presented=5401/5401)
+         1792553742.820 15319 15319 I HoloceneSpeech: end arming id=arm:17010442 memo=- seq=0 mic=arming reason= at=1792553742820
+         1792553743.198 15319 15319 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553743198
+         1792553743.200  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:745 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:152 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553749.314 15319 15319 I HoloceneSpeech: deferred ack id=ack:stopped:17019062 memo=- seq=0 mic=recording reason=recording at=1792553749314
+         1792553749.385  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553749.389 15319 15319 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553749389
+         1792553749.390 15319 15319 I HoloceneSpeech: start ack id=ack:stopped:17019062 memo=- seq=0 mic=idle reason=waited_ms=76 at=1792553749389
+         1792553749.390 15319 15319 I HoloceneWheel: tone STOP
+         1792553749.397  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@61f81b1,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.397  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@57d87ca,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.401  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@61f81b1,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.443 15319 15319 I HoloceneSpeech: recording focus released
+         1792553749.455  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@57d87ca,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.623 15319 15319 I HoloceneSpeech: queued ack id=ack:sent:17019371 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553749623
+         1792553749.917 15319 15319 I HoloceneWheel: tone STOP out after 480 ms (244 ms long, presented, presented=5401/5401)
+         1792553749.920 15319 15319 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553749.920  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@61f81b1,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.921  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553749.926  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.926  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553749.927  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553752.021 15319 15319 I HoloceneSpeech: end ack id=ack:stopped:17019062 memo=- seq=0 mic=idle reason= at=1792553752021
+         1792553752.021 15319 15319 I HoloceneSpeech: start ack id=ack:sent:17019371 memo=- seq=0 mic=idle reason=waited_ms=2398 at=1792553752021
+         1792553752.021 15319 15319 I HoloceneWheel: tone SENT
+         1792553752.026  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553752.026  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553752.027  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@ecec217,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553752.027  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553752.028  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@ecec217,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553752.565 15319 15319 I HoloceneWheel: tone SENT out after 531 ms (289 ms long, presented, presented=6393/6393)
+         1792553752.566 15319 15319 I HoloceneSpeech: end ack id=ack:sent:17019371 memo=- seq=0 mic=idle reason= at=1792553752566
+         1792553752.567  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@ecec217,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553752.567  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553756.752 15319 15319 I HoloceneSpeech: queued echo id=echo:96cad0ae-4f76-5391-9565-533e0754a2f1 memo=96cad0ae-4f76-5391-9565-533e0754a2f1 seq=0 mic=idle reason= at=1792553756752
+         1792553756.752 15319 15319 I HoloceneSpeech: start echo id=echo:96cad0ae-4f76-5391-9565-533e0754a2f1 memo=96cad0ae-4f76-5391-9565-533e0754a2f1 seq=0 mic=idle reason=waited_ms=0 at=1792553756752
+         1792553756.752 15319 15319 I HoloceneWheel: say "Holocene heard: Answer in three short sentences. What is a"
+         1792553756.754  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@1f5d604,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553756.754  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553756.756  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@1f5d604,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553761.207 15319 15319 I HoloceneSpeech: end echo id=echo:96cad0ae-4f76-5391-9565-533e0754a2f1 memo=96cad0ae-4f76-5391-9565-533e0754a2f1 seq=0 mic=idle reason= at=1792553761207
+         1792553761.207  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5704928sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@1f5d604,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553761.207  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553763.445   649  2661 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792553799.938   649   831 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792553799.938   649   831 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792553799.939   649   831 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792553818.715  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@fd3e41a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553818.716  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553818.732  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@fd3e41a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553818.735 16373 16373 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553818.736 16373 16373 I HoloceneSpeech: mic  id=arm:17088453 memo=- seq=0 mic=arming reason=arming at=1792553818736
+         1792553818.737 16373 16373 I HoloceneSpeech: start arming id=arm:17088453 memo=- seq=0 mic=arming reason=arming at=1792553818737
+         1792553818.737 16373 16373 I HoloceneWheel: say "Recording for Holocene."
+         1792553820.722 16373 16373 I HoloceneWheel: tone START
+         1792553821.220 16373 16373 I HoloceneWheel: tone START out after 487 ms (244 ms long, presented, presented=5401/5401)
+         1792553821.221 16373 16373 I HoloceneSpeech: end arming id=arm:17088453 memo=- seq=0 mic=arming reason= at=1792553821221
+         1792553821.598 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553821598
+         1792553821.612  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:817 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:161 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553829.645 16373 16373 I HoloceneSpeech: deferred ack id=ack:stopped:17099394 memo=- seq=0 mic=recording reason=recording at=1792553829645
+         1792553829.694  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553829.701 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553829701
+         1792553829.702 16373 16373 I HoloceneSpeech: start ack id=ack:stopped:17099394 memo=- seq=0 mic=idle reason=waited_ms=56 at=1792553829702
+         1792553829.702 16373 16373 I HoloceneWheel: tone STOP
+         1792553829.704  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553829.706  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@fd3e41a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553829.707  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553829.712 16373 16373 I HoloceneSpeech: recording focus released
+         1792553829.715  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@fd3e41a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553829.901 16373 16373 I HoloceneSpeech: queued ack id=ack:sent:17099649 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553829901
+         1792553830.200 16373 16373 I HoloceneWheel: tone STOP out after 488 ms (244 ms long, presented, presented=5401/5401)
+         1792553830.204 16373 16373 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553830.204  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4098641,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553830.205  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553830.207  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@63c27e6,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553830.208  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553830.209  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@63c27e6,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553832.376 16373 16373 I HoloceneSpeech: end ack id=ack:stopped:17099394 memo=- seq=0 mic=idle reason= at=1792553832376
+         1792553832.376  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@63c27e6,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553832.376 16373 16373 I HoloceneSpeech: start ack id=ack:sent:17099649 memo=- seq=0 mic=idle reason=waited_ms=2476 at=1792553832376
+         1792553832.376 16373 16373 I HoloceneWheel: tone SENT
+         1792553832.377  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553832.380  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@da94127,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553832.380  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553832.381  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@da94127,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553832.921 16373 16373 I HoloceneWheel: tone SENT out after 532 ms (289 ms long, presented, presented=6393/6393)
+         1792553832.923 16373 16373 I HoloceneSpeech: end ack id=ack:sent:17099649 memo=- seq=0 mic=idle reason= at=1792553832923
+         1792553832.924  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@da94127,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553832.927  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553836.082 16373 16373 I HoloceneSpeech: queued echo id=echo:4f63901b-30d9-53f8-9134-9f44a6b9b394 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason= at=1792553836082
+         1792553836.083 16373 16373 I HoloceneSpeech: start echo id=echo:4f63901b-30d9-53f8-9134-9f44a6b9b394 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason=waited_ms=0 at=1792553836083
+         1792553836.083 16373 16373 I HoloceneWheel: say "Holocene heard: First say that you will wait then run"
+         1792553836.086  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553836.087  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553836.088  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553839.527 16373 16373 I HoloceneSpeech: end echo id=echo:4f63901b-30d9-53f8-9134-9f44a6b9b394 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason= at=1792553839527
+         1792553839.527  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e14cfd4,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553839.528  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553843.724  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553843.727  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553843.738  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553843.739 16373 16373 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553843.739 16373 16373 I HoloceneSpeech: mic  id=arm:17113456 memo=- seq=0 mic=arming reason=arming at=1792553843739
+         1792553843.741 16373 16373 I HoloceneSpeech: start arming id=arm:17113456 memo=- seq=0 mic=arming reason=arming at=1792553843741
+         1792553843.741 16373 16373 I HoloceneWheel: say "Recording for Holocene."
+         1792553845.355 16373 16373 I HoloceneWheel: tone START
+         1792553845.855 16373 16373 I HoloceneWheel: tone START out after 490 ms (244 ms long, presented, presented=5401/5401)
+         1792553845.856 16373 16373 I HoloceneSpeech: end arming id=arm:17113456 memo=- seq=0 mic=arming reason= at=1792553845856
+         1792553846.235 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553846235
+         1792553846.236  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:873 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:170 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553853.893 16373 16373 I HoloceneSpeech: deferred progress id=progress:4f63901b-30d9-53f8-9134-9f44a6b9b394:1 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=1 mic=recording reason=recording at=1792553853893
+         1792553854.980 16373 16373 I HoloceneSpeech: deferred ack id=ack:stopped:17124729 memo=- seq=0 mic=recording reason=recording at=1792553854980
+         1792553855.025  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553855.027 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553855027
+         1792553855.027 16373 16373 I HoloceneSpeech: start ack id=ack:stopped:17124729 memo=- seq=0 mic=idle reason=waited_ms=47 at=1792553855027
+         1792553855.027 16373 16373 I HoloceneWheel: tone STOP
+         1792553855.029  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@fd91540,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.030  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.030  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@fd91540,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.040 16373 16373 I HoloceneSpeech: recording focus released
+         1792553855.043  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@827457d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.210 16373 16373 I HoloceneSpeech: queued ack id=ack:sent:17124958 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553855209
+         1792553855.523 16373 16373 I HoloceneWheel: tone STOP out after 486 ms (244 ms long, presented, presented=5401/5401)
+         1792553855.526  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@fd91540,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.526  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553855.527 16373 16373 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553855.528  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553855.528  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553855.529  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553857.621 16373 16373 I HoloceneSpeech: end ack id=ack:stopped:17124729 memo=- seq=0 mic=idle reason= at=1792553857621
+         1792553857.621  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@367bc79,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553857.621  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553857.621 16373 16373 I HoloceneSpeech: start ack id=ack:sent:17124958 memo=- seq=0 mic=idle reason=waited_ms=2412 at=1792553857621
+         1792553857.621 16373 16373 I HoloceneWheel: tone SENT
+         1792553857.623  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@d2e4dbe,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553857.623  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553857.624  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@d2e4dbe,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553858.161 16373 16373 I HoloceneWheel: tone SENT out after 531 ms (289 ms long, presented, presented=6393/6393)
+         1792553858.162  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@d2e4dbe,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553858.162  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553858.163 16373 16373 I HoloceneSpeech: end ack id=ack:sent:17124958 memo=- seq=0 mic=idle reason= at=1792553858163
+         1792553858.163 16373 16373 I HoloceneSpeech: start progress id=progress:4f63901b-30d9-53f8-9134-9f44a6b9b394:1 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=1 mic=idle reason=waited_ms=4270 at=1792553858163
+         1792553858.165  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4da456c,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553858.165  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553858.166  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4da456c,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553858.166 16373 16373 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792553861.339 16373 16373 I HoloceneSpeech: end progress id=progress:4f63901b-30d9-53f8-9134-9f44a6b9b394:1 memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=1 mic=idle reason= at=1792553861339
+         1792553861.341  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4da456c,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553861.342  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553861.637 16373 16373 I HoloceneSpeech: queued echo id=echo:491e5b8e-ae06-5b22-a084-941c92e5b2a7 memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason= at=1792553861637
+         1792553861.638 16373 16373 I HoloceneSpeech: start echo id=echo:491e5b8e-ae06-5b22-a084-941c92e5b2a7 memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason=waited_ms=1 at=1792553861638
+         1792553861.638 16373 16373 I HoloceneWheel: say "Holocene heard: Reply with just the word two."
+         1792553861.640  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@9dc4c58,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553861.641  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553861.644  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@9dc4c58,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553864.976 16373 16373 I HoloceneSpeech: end echo id=echo:491e5b8e-ae06-5b22-a084-941c92e5b2a7 memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason= at=1792553864975
+         1792553864.976  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@9dc4c58,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553864.976  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553869.792 16373 16373 I HoloceneSpeech: queued reply id=replies/2026/10/21/033748Z-holocene-pm-491e5b8e-ae06-5b22-a084-941c92e5b2a7.ogg memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason= at=1792553869792
+         1792553869.793 16373 16373 I HoloceneSpeech: start reply id=replies/2026/10/21/033748Z-holocene-pm-491e5b8e-ae06-5b22-a084-941c92e5b2a7.ogg memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason=waited_ms=10 at=1792553869793
+         1792553869.797  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553869.798  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553869.799  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553869.800 16373 16373 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792553871.545 16373 16373 I HoloceneSpeech: end reply id=replies/2026/10/21/033748Z-holocene-pm-491e5b8e-ae06-5b22-a084-941c92e5b2a7.ogg memo=491e5b8e-ae06-5b22-a084-941c92e5b2a7 seq=0 mic=idle reason= at=1792553871545
+         1792553871.546  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@4d45696,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553871.546  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553888.101 16373 16373 I HoloceneSpeech: queued reply id=replies/2026/10/21/033806Z-holocene-pm-4f63901b-30d9-53f8-9134-9f44a6b9b394.ogg memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason= at=1792553888101
+         1792553888.102 16373 16373 I HoloceneSpeech: start reply id=replies/2026/10/21/033806Z-holocene-pm-4f63901b-30d9-53f8-9134-9f44a6b9b394.ogg memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason=waited_ms=2 at=1792553888102
+         1792553888.112  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@2f368b3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553888.113  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553888.116  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@2f368b3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553888.126 16373 16373 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792553890.258 16373 16373 I HoloceneSpeech: end reply id=replies/2026/10/21/033806Z-holocene-pm-4f63901b-30d9-53f8-9134-9f44a6b9b394.ogg memo=4f63901b-30d9-53f8-9134-9f44a6b9b394 seq=0 mic=idle reason= at=1792553890258
+         1792553890.260  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@2f368b3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553890.261  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553939.902  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@7b1dd0f,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553939.904  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553939.918  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@7b1dd0f,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553939.921 16373 16373 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553939.922 16373 16373 I HoloceneSpeech: mic  id=arm:17209633 memo=- seq=0 mic=arming reason=arming at=1792553939921
+         1792553939.923 16373 16373 I HoloceneSpeech: start arming id=arm:17209633 memo=- seq=0 mic=arming reason=arming at=1792553939923
+         1792553939.923 16373 16373 I HoloceneWheel: say "Recording for Holocene."
+         1792553941.553 16373 16373 I HoloceneWheel: tone START
+         1792553942.048 16373 16373 I HoloceneWheel: tone START out after 487 ms (244 ms long, presented, presented=5401/5401)
+         1792553942.049 16373 16373 I HoloceneSpeech: end arming id=arm:17209633 memo=- seq=0 mic=arming reason= at=1792553942049
+         1792553942.425  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:953 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:182 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553942.426 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553942426
+         1792553946.043 16373 16373 I HoloceneSpeech: deferred ack id=ack:stopped:17215792 memo=- seq=0 mic=recording reason=recording at=1792553946043
+         1792553946.092  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553946.097 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553946097
+         1792553946.098 16373 16373 I HoloceneSpeech: start ack id=ack:stopped:17215792 memo=- seq=0 mic=idle reason=waited_ms=54 at=1792553946098
+         1792553946.098 16373 16373 I HoloceneWheel: tone STOP
+         1792553946.101  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@66f777a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.101  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@7b1dd0f,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.109  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@66f777a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.126  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@7b1dd0f,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.129 16373 16373 I HoloceneSpeech: recording focus released
+         1792553946.263 16373 16373 I HoloceneSpeech: queued ack id=ack:sent:17216012 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553946263
+         1792553946.611 16373 16373 I HoloceneWheel: tone STOP out after 488 ms (244 ms long, presented, presented=5401/5401)
+         1792553946.612 16373 16373 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553946.613  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@66f777a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.613  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553946.614  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6393b2b,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553946.615  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553946.616  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6393b2b,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553948.705 16373 16373 I HoloceneSpeech: end ack id=ack:stopped:17215792 memo=- seq=0 mic=idle reason= at=1792553948705
+         1792553948.705  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6393b2b,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553948.705 16373 16373 I HoloceneSpeech: start ack id=ack:sent:17216012 memo=- seq=0 mic=idle reason=waited_ms=2442 at=1792553948705
+         1792553948.705 16373 16373 I HoloceneWheel: tone SENT
+         1792553948.705  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553948.709  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4a77b88,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553948.710  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553948.710  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4a77b88,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553949.249 16373 16373 I HoloceneWheel: tone SENT out after 532 ms (289 ms long, presented, presented=6393/6393)
+         1792553949.250 16373 16373 I HoloceneSpeech: end ack id=ack:sent:17216012 memo=- seq=0 mic=idle reason= at=1792553949250
+         1792553949.250  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4a77b88,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553949.250  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553953.065 16373 16373 I HoloceneSpeech: queued echo id=echo:a2516f66-c3e2-5bdf-bd03-77235a0d1396 memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason= at=1792553953065
+         1792553953.065 16373 16373 I HoloceneSpeech: start echo id=echo:a2516f66-c3e2-5bdf-bd03-77235a0d1396 memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason=waited_ms=0 at=1792553953065
+         1792553953.066 16373 16373 I HoloceneWheel: say "Holocene heard: Reply with just the word hold."
+         1792553953.067  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6233921,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553953.067  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553953.074  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6233921,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553956.412 16373 16373 I HoloceneSpeech: end echo id=echo:a2516f66-c3e2-5bdf-bd03-77235a0d1396 memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason= at=1792553956412
+         1792553956.412  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@6233921,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553956.412  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553959.003  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@8ed9146,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553959.006  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@8ed9146,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553959.006 16373 16373 I HoloceneSpeech: recording focus request gain=TRANSIENT_EXCLUSIVE usage=ASSISTANT result=1 media_active=false
+         1792553959.006 16373 16373 I HoloceneSpeech: mic  id=arm:17228751 memo=- seq=0 mic=arming reason=arming at=1792553959006
+         1792553959.006 16373 16373 I HoloceneSpeech: start arming id=arm:17228751 memo=- seq=0 mic=arming reason=arming at=1792553959006
+         1792553959.007 16373 16373 I HoloceneWheel: say "Recording for Holocene."
+         1792553959.008  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553960.527 16373 16373 I HoloceneWheel: tone START
+         1792553961.021 16373 16373 I HoloceneWheel: tone START out after 487 ms (244 ms long, presented, presented=5401/5401)
+         1792553961.021 16373 16373 I HoloceneSpeech: end arming id=arm:17228751 memo=- seq=0 mic=arming reason= at=1792553961021
+         1792553961.351 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=recording reason=recording at=1792553961351
+         1792553961.351  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1009 -- source client=MIC, dev=1ch 48000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:191 -- pack:io.automaticai.holocene -- format client=1ch 48000Hz ENCODING_PCM_16BIT, dev=1ch 48000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792553989.079 16373 16373 I HoloceneSpeech: deferred ack id=ack:stopped:17258827 memo=- seq=0 mic=recording reason=recording at=1792553989078
+         1792553989.161 16373 16373 I HoloceneSpeech: mic  id= memo=- seq=0 mic=idle reason=idle at=1792553989161
+         1792553989.161 16373 16373 I HoloceneSpeech: start ack id=ack:stopped:17258827 memo=- seq=0 mic=idle reason=waited_ms=83 at=1792553989161
+         1792553989.161 16373 16373 I HoloceneWheel: tone STOP
+         1792553989.164  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792553989.167  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@cd9465d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.168  1030  1416 I AudioFocusControl: MM_AF,CHANGE,AUDIOFOCUS_LOSS_TRANSIENT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@8ed9146,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.170  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@cd9465d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.197 16373 16373 I HoloceneSpeech: recording focus released
+         1792553989.199  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.RecordingFocus$$ExternalSyntheticLambda0@8ed9146,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.302 16373 16373 I HoloceneSpeech: queued reply id=replies/2026/10/21/033919Z-holocene-pm-a2516f66-c3e2-5bdf-bd03-77235a0d1396.ogg memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason=behind_ack at=1792553989302
+         1792553989.359 16373 16373 I HoloceneSpeech: queued ack id=ack:sent:17259108 memo=- seq=0 mic=idle reason=behind_ack,note_ack at=1792553989359
+         1792553989.682 16373 16373 I HoloceneWheel: tone STOP out after 487 ms (244 ms long, presented, presented=5401/5401)
+         1792553989.683 16373 16373 I HoloceneWheel: say "Got it, Holocene's on it."
+         1792553989.683  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@cd9465d,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.684  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553989.688  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4e17bd2,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553989.689  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553989.690  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4e17bd2,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553991.783 16373 16373 I HoloceneSpeech: end ack id=ack:stopped:17258827 memo=- seq=0 mic=idle reason= at=1792553991783
+         1792553991.784  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@4e17bd2,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553991.784 16373 16373 I HoloceneSpeech: start ack id=ack:sent:17259108 memo=- seq=0 mic=idle reason=waited_ms=2425 at=1792553991784
+         1792553991.784 16373 16373 I HoloceneWheel: tone SENT
+         1792553991.784  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553991.786  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e27e4a3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553991.786  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553991.787  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e27e4a3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553992.304 16373 16373 I HoloceneWheel: tone SENT out after 512 ms (289 ms long, presented, presented=6393/6393)
+         1792553992.307 16373 16373 I HoloceneSpeech: end ack id=ack:sent:17259108 memo=- seq=0 mic=idle reason= at=1792553992307
+         1792553992.307  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@e27e4a3,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553992.308  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553992.308 16373 16373 I HoloceneSpeech: start reply id=replies/2026/10/21/033919Z-holocene-pm-a2516f66-c3e2-5bdf-bd03-77235a0d1396.ogg memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason=waited_ms=3006 at=1792553992308
+         1792553992.311  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@6e8eb59,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553992.311  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553992.312  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@6e8eb59,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553992.313 16373 16373 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792553994.554 16373 16373 I HoloceneSpeech: end reply id=replies/2026/10/21/033919Z-holocene-pm-a2516f66-c3e2-5bdf-bd03-77235a0d1396.ogg memo=a2516f66-c3e2-5bdf-bd03-77235a0d1396 seq=0 mic=idle reason= at=1792553994554
+         1792553994.561  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@6e8eb59,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553994.561  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792553996.403 16373 16373 I HoloceneSpeech: queued echo id=echo:c6b26402-5a01-5fc7-b670-3e09d819a873 memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason= at=1792553996403
+         1792553996.403 16373 16373 I HoloceneSpeech: start echo id=echo:c6b26402-5a01-5fc7-b670-3e09d819a873 memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason=waited_ms=0 at=1792553996403
+         1792553996.403 16373 16373 I HoloceneWheel: say "Holocene heard: Reply with just the word five."
+         1792553996.405  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b54b32a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553996.405  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792553996.407  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b54b32a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553999.799 16373 16373 I HoloceneSpeech: end echo id=echo:c6b26402-5a01-5fc7-b670-3e09d819a873 memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason= at=1792553999799
+         1792553999.799  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.DriveFeedback$$ExternalSyntheticLambda0@b54b32a,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792553999.800  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792554003.770 16373 16373 I HoloceneSpeech: queued reply id=replies/2026/10/21/034002Z-holocene-pm-c6b26402-5a01-5fc7-b670-3e09d819a873.ogg memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason= at=1792554003769
+         1792554003.778 16373 16373 I HoloceneSpeech: start reply id=replies/2026/10/21/034002Z-holocene-pm-c6b26402-5a01-5fc7-b670-3e09d819a873.ogg memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason=waited_ms=9 at=1792554003777
+         1792554003.812  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@1f4d6b8,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554003.813  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792554003.823  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@1f4d6b8,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554003.825 16373 16373 I HoloceneReply: reply focus request gain=TRANSIENT_MAY_DUCK usage=ASSISTANT result=1
+         1792554005.869 16373 16373 I HoloceneSpeech: end reply id=replies/2026/10/21/034002Z-holocene-pm-c6b26402-5a01-5fc7-b670-3e09d819a873.ogg memo=c6b26402-5a01-5fc7-b670-3e09d819a873 seq=0 mic=idle reason= at=1792554005869
+         1792554005.870  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@3e82c5sh.delo.holocene.auto.ReplyPlayer$$ExternalSyntheticLambda0@1f4d6b8,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554005.871  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792554052.047   649  2111 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554052.938   649  1171 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554052.938   649  1171 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554052.939   649  1171 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554054.430  1030  1416 I AudioFocusControl: MM_AF,REQUEST,ENTER,android.media.AudioManager@5fb04d3sh.delo.holocene.auto.MainActivity$$ExternalSyntheticLambda19@58b8810,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554054.431  1030  1421 I AudioFocusControl: MM_AF,AMP,startMixing,src=10005,vol=2,att_enable=true,att_ms=0,att_ratio=1.000000,mute_bus_list=[]
+         1792554054.434  1030  1416 I AudioFocusControl: MM_AF,REQUEST,RESULT,android.media.AudioManager@5fb04d3sh.delo.holocene.auto.MainActivity$$ExternalSyntheticLambda19@58b8810,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,AUDIOFOCUS_REQUEST_GRANTED,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554054.475  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, session:1081 -- source client=MIC, dev=1ch 16000Hz ENCODING_PCM_16BIT -- uid:1010177 -- patch:200 -- pack:io.automaticai.holocene -- format client=1ch 16000Hz ENCODING_PCM_16BIT, dev=1ch 16000Hz ENCODING_PCM_16BIT -- silenced:false -- effects client=, dev=
+         1792554060.490  1030  1518 I SpeechRecognitionManagerService: SpeechRecognitionUtils:dumpAudioRecordingConfigurations, List<AudioRecordingConfiguration> is null or empty. configs:[]
+         1792554060.491  1030  1416 I AudioFocusControl: MM_AF,ABANDON,RECOGNIZED,android.media.AudioManager@5fb04d3sh.delo.holocene.auto.MainActivity$$ExternalSyntheticLambda19@58b8810,USAGE_VOICE_COMMAND,CONTENT_TYPE_DEFAULT,AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,0x00000000,USAGE_ASSISTANT,CONTENT_TYPE_SPEECH,rcvDuck=false
+         1792554060.492  1030  1421 I AudioFocusControl: MM_AF,AMP,stopMixing
+         1792554060.927   649  2111 I MediaSessionStack: removeSession | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554061.382   649   829 I MediaSessionStack: addSession to bottom of stack | record: io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554061.382   649   829 D MediaSessionService: Media button session is changed to io.automaticai.holocene/HoloceneWheel (userId=10)
+         1792554061.383   649  2671 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.automaticai.holocene/HoloceneWheel (userId=10)
