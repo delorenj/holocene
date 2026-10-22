@@ -1,0 +1,354 @@
+intervals (device clock, epoch s):
+  1792679442.223   +4.829s  speech    arming arm:28712944                          - -> end 
+  1792679447.569   +4.392s  recording OS capture active                           
+  1792679447.572   +4.409s  recording app mic                                     
+  1792679451.992   +3.595s  speech    ack ack:stopped:28722697                     - -> end 
+  1792679455.588   +0.616s  speech    ack ack:sent:28723214                        - -> end 
+  1792679459.173  +12.432s  speech    reply 143055Z-holocene-pm-78c0...9316436a.og 78c0a332-fbf7-5543-8660-5f229316436a -> end chunks=2
+  1792679498.037   +2.450s  speech    arming arm:28768793                          - -> end 
+  1792679501.029   +4.172s  recording app mic                                     
+  1792679501.035   +4.153s  recording OS capture active                           
+  1792679505.202   +2.869s  speech    ack ack:stopped:28775972                     - -> end 
+  1792679508.076   +0.563s  speech    ack ack:sent:28776271                        - -> end 
+  1792679512.599   +5.575s  speech    reply 143148Z-holocene-pm-7acf...2c522359.og 7acffc03-b304-5b3f-b102-cf082c522359 -> end 
+  1792679527.888   +2.297s  speech    arming arm:28798647                          - -> end 
+  1792679530.665   +3.899s  recording OS capture active                           
+  1792679530.668   +3.935s  recording app mic                                     
+  1792679534.619   +2.836s  speech    ack ack:stopped:28805043                     - -> end 
+  1792679537.455   +0.549s  speech    ack ack:sent:28805941                        - -> end 
+  1792679541.350   +8.985s  speech    reply 143218Z-holocene-pm-6b7b...cbff1b4c.og 6b7b41f3-111d-5e8e-b51f-7087cbff1b4c -> end chunks=2
+  1792679560.025   +2.184s  speech    arming arm:28830782                          - -> end 
+  1792679562.676   +5.541s  recording app mic                                     
+  1792679562.684   +5.486s  recording OS capture active                           
+  1792679568.234   +2.821s  speech    ack ack:stopped:28838735                     - -> end 
+  1792679571.055   +0.529s  speech    ack ack:sent:28839679                        - -> end 
+  1792679574.054   +9.562s  speech    reply 143251Z-holocene-pm-1d30...b6f42b8b.og 1d301024-d0db-5b82-be0d-03e1b6f42b8b -> end chunks=2
+  1792679593.740   +2.252s  speech    arming arm:28864436                          - -> end 
+  1792679596.447   +4.622s  recording app mic                                     
+  1792679596.455   +4.576s  recording OS capture active                           
+  1792679601.071   +3.336s  speech    ack ack:stopped:28871752                     - -> end 
+  1792679604.410   +0.580s  speech    ack ack:sent:28872337                        - -> end 
+  1792679608.533  +12.002s  speech    reply 143325Z-holocene-pm-3c6a...81f6c3f2.og 3c6a7099-d112-50d6-be05-d15e81f6c3f2 -> end chunks=2
+  1792679629.996   +2.186s  speech    arming arm:28900769                          - -> end 
+  1792679632.857   +4.282s  recording app mic                                     
+  1792679632.923   +4.189s  recording OS capture active                           
+  1792679637.141   +2.764s  speech    ack ack:stopped:28907838                     - -> end 
+  1792679639.905   +0.564s  speech    ack ack:sent:28908358                        - -> end 
+  1792679643.913  +11.382s  speech    reply 143400Z-holocene-pm-009e...6e18d3c5.og 009e144e-a652-5db8-ad5e-b0546e18d3c5 -> end chunks=2
+  1792679666.244   +2.462s  speech    arming arm:28936993                          - -> end 
+  1792679669.216   +4.862s  recording app mic                                     
+  1792679669.217   +4.882s  recording OS capture active                           
+  1792679674.084   +2.808s  speech    ack ack:stopped:28944755                     - -> end 
+  1792679676.899   +0.645s  speech    ack ack:sent:28945274                        - -> end 
+  1792679681.523  +16.674s  speech    reply 143438Z-holocene-pm-7040...f2073642.og 7040b48d-8625-56ad-acf7-ab7df2073642 -> end chunks=2
+  1792679707.796   +2.324s  speech    arming arm:28978567                          - -> end 
+  1792679710.624   +4.634s  recording app mic                                     
+  1792679710.639   +4.594s  recording OS capture active                           
+  1792679715.259   +2.738s  speech    ack ack:stopped:28985966                     - -> end 
+  1792679717.997   +0.530s  speech    ack ack:sent:28986459                        - -> end 
+  1792679722.770  +13.098s  speech    reply 143519Z-holocene-pm-b4d1...e1ec5e7f.og b4d1be2f-555d-521b-92ea-45b2e1ec5e7f -> end chunks=2
+  1792679745.947   +2.150s  speech    arming arm:29016683                          - -> end 
+  1792679748.677   +4.128s  recording app mic                                     
+  1792679748.685   +4.116s  recording OS capture active                           
+  1792679752.811   +1.296s  speech    ack ack:stopped:29023584                     - -> end error:focus_denied
+  1792679754.113   +0.705s  speech    ack ack:sent:29023940                        - -> end 
+  1792679760.957  +14.731s  speech    reply 143557Z-holocene-pm-bb40...fb26e9bb.og bb40f887-556b-5afd-80d0-4a46fb26e9bb -> end chunks=2
+  1792679786.439   +2.479s  speech    arming arm:29057204                          - -> end 
+  1792679789.383   +4.339s  recording app mic                                     
+  1792679789.447   +4.270s  recording OS capture active                           
+  1792679793.723   +3.054s  speech    ack ack:stopped:29064486                     - -> end 
+  1792679796.782   +0.559s  speech    ack ack:sent:29064837                        - -> end 
+  1792679800.500  +13.061s  speech    reply 143637Z-holocene-pm-d5b3...d1dc9a07.og d5b34f1e-41c5-5368-b103-2cb1d1dc9a07 -> end chunks=2
+  1792679822.615   +2.143s  speech    arming arm:29093377                          - -> end 
+  1792679825.211   +3.723s  recording app mic                                     
+  1792679825.211   +3.712s  recording OS capture active                           
+  1792679828.935   +2.748s  speech    ack ack:stopped:29099647                     - -> end 
+  1792679831.683   +0.554s  speech    ack ack:sent:29100094                        - -> end 
+  1792679836.208  +14.075s  speech    reply 143712Z-holocene-pm-4e46...7af08df1.og 4e46d5f7-b647-5cca-8b7e-5dff7af08df1 -> end chunks=2
+  1792679859.908   +2.340s  speech    arming arm:29130681                          - -> end 
+  1792679862.712   +5.057s  recording app mic                                     
+  1792679862.718   +5.008s  recording OS capture active                           
+  1792679867.770   +2.814s  speech    ack ack:stopped:29138454                     - -> end 
+  1792679870.591   +0.703s  speech    ack ack:sent:29138985                        - -> end 
+  1792679873.740   +7.462s  speech    reply 143750Z-holocene-pm-920e...561d71c9.og 920e2ac5-11f8-5315-9fd5-595b561d71c9 -> end chunks=2
+  1792679891.789   +2.145s  speech    arming arm:29162549                          - -> end 
+  1792679894.375   +3.659s  recording app mic                                     
+  1792679894.420   +3.593s  recording OS capture active                           
+  1792679898.036   +2.863s  speech    ack ack:stopped:29168722                     - -> end 
+  1792679900.899   +0.518s  speech    ack ack:sent:29169455                        - -> end 
+  1792679903.931   +2.684s  speech    reply 143820Z-holocene-pm-485f...c4e10675.og 485f5d10-6eb6-59fb-9604-86dac4e10675 -> end 
+  1792680224.428   +2.679s  speech    arming arm:29495070                          - -> end 
+  1792680228.709   +4.411s  recording OS capture active                           
+  1792680228.712   +4.476s  recording app mic                                     
+  1792680233.197   +3.347s  speech    ack ack:stopped:29503801                     - -> end 
+  1792680236.638   +0.847s  speech    ack ack:sent:29505078                        - -> end 
+  1792680243.714   +7.969s  speech    reply 144357Z-holocene-pm-9e98...92586af3.og 9e98f0d4-05d1-599f-8f6a-1fc792586af3 -> end 
+  1792680262.615   +3.565s  speech    arming arm:29533358                          - -> end 
+  1792680268.874   +7.155s  recording app mic                                     
+  1792680270.675   +5.102s  recording OS capture active                           
+  1792680276.060   +2.838s  speech    ack ack:stopped:29544830                     - -> end error:focus_denied
+  1792680280.732   +0.627s  speech    ack ack:sent:29551505                        - -> end error:focus_denied
+  1792680290.006   +0.735s  speech    reply 144443Z-holocene-pm-a263...82e49111.og a263b3aa-f226-59a8-9cba-c99182e49111 -> halt focus_denied
+  1792680293.890  +12.400s  speech    reply 144443Z-holocene-pm-a263...82e49111.og a263b3aa-f226-59a8-9cba-c99182e49111 -> halt stopped
+  1792680309.441   +0.952s  speech    arming arm:29579339                          - -> end error:focus_denied
+  1792680312.875   +4.344s  recording OS capture active                           
+  1792680313.019   +4.339s  recording app mic                                     
+  1792680317.365   +3.552s  speech    ack ack:stopped:29587740                     - -> end error:focus_denied
+  1792680325.616   +0.795s  speech    ack ack:sent:29596035                        - -> end error:focus_denied
+  1792680332.935   +0.422s  speech    reply 144527Z-holocene-pm-dde0...77c9273a.og dde016f6-8d68-5d5d-99c7-ba2377c9273a -> halt focus_denied
+  1792680339.915   +0.992s  speech    reply 144527Z-holocene-pm-dde0...77c9273a.og dde016f6-8d68-5d5d-99c7-ba2377c9273a -> end error:focus_denied
+  1792680348.048   +7.730s  speech    arming arm:29618149                          - -> end error:focus_denied
+  1792680362.284  +12.917s  recording OS capture active                           
+  1792680363.012  +13.763s  recording app mic                                     
+  1792680376.809   +3.075s  speech    ack ack:stopped:29641859                     - -> end error:focus_denied
+  1792680392.626   +0.820s  speech    reply 144527Z-holocene-pm-dde0...77c9273a.og dde016f6-8d68-5d5d-99c7-ba2377c9273a -> end error:focus_denied
+  1792680446.416   +3.750s  speech    arming arm:29716877                          - -> end error:focus_denied
+  1792680453.049   +5.651s  recording OS capture active                           
+  1792680453.469   +5.283s  recording app mic                                     
+  1792680458.753   +4.037s  speech    ack ack:stopped:29729081                     - -> end 
+  1792680462.795   +0.968s  speech    ack ack:sent:29731432                        - -> end 
+  1792680468.319   +0.441s  speech    reply 144744Z-holocene-pm-80d3...7eec57e2.og 80d33076-3e9a-5667-86f0-80817eec57e2 -> halt focus_denied
+  1792680470.072  +11.040s  speech    reply 144744Z-holocene-pm-80d3...7eec57e2.og 80d33076-3e9a-5667-86f0-80817eec57e2 -> halt stopped
+  1792680481.970   +3.492s  speech    arming arm:29752682                          - -> end 
+  1792680487.599   +4.937s  recording OS capture active                           
+  1792680487.608   +5.132s  recording app mic                                     
+  1792680492.750   +4.226s  speech    ack ack:stopped:29763081                     - -> end 
+  1792680497.128   +0.619s  speech    ack ack:sent:29765165                        - -> end error:focus_denied
+  1792680501.590  +17.337s  speech    reply 144817Z-holocene-pm-7d41...ea528cc9.og 7d413d3f-402a-57f8-8d47-9407ea528cc9 -> end chunks=2
+  1792680530.716   +3.290s  speech    arming arm:29801279                          - -> end 
+  1792680534.940   +5.743s  recording app mic                                     
+  1792680534.988   +5.600s  recording OS capture active                           
+  1792680540.703   +6.704s  speech    ack ack:stopped:29810962                     - -> end 
+  1792680547.413   +2.994s  speech    ack ack:sent:29812992                        - -> end 
+  1792680554.308  +23.977s  speech    reply 144907Z-holocene-pm-22f1...903f9db7.og 22f1c94b-4308-51cb-af44-8676903f9db7 -> end error:media 1/-2147483648
+  1792680584.275   +8.886s  speech    reply 144907Z-holocene-pm-22f1...903f9db7.og 22f1c94b-4308-51cb-af44-8676903f9db7 -> halt stopped
+  1792680593.537   +7.326s  speech    arming arm:29864215                          - -> end 
+  1792680602.621   +5.614s  recording app mic                                     
+  1792680602.797   +5.332s  recording OS capture active                           
+  1792680608.239   +6.435s  speech    ack ack:stopped:29878361                     - -> end 
+  1792680614.675   +1.627s  speech    ack ack:sent:29881086                        - -> end 
+  1792680632.822  +33.736s  speech    reply 145021Z-holocene-pm-c5a5...2405ff35.og c5a53e9e-b4fd-5a27-9928-32432405ff35 -> end chunks=2
+  1792680684.982  +11.067s  speech    arming arm:29955550                          - -> end 
+  1792680701.236   +8.100s  recording OS capture active                           
+  1792680701.245   +8.541s  recording app mic                                     
+  1792680709.895   +3.388s  speech    ack ack:stopped:29978811                     - -> end error:focus_denied
+  1792680722.643   +1.221s  speech    ack ack:sent:29993431                        - -> end error:focus_denied
+  1792680777.238   +7.511s  speech    arming arm:30047692                          - -> end 
+  1792680785.567   +9.866s  recording OS capture active                           
+  1792680785.593   +9.965s  recording app mic                                     
+  1792680795.569   +6.654s  speech    ack ack:stopped:30065853                     - -> end 
+  1792680802.224   +1.578s  speech    ack ack:sent:30067957                        - -> end 
+  1792680803.802  +10.415s  speech    echo echo:d309aac8-40e9-5b1e-a695-6723c399.. d309aac8-40e9-5b1e-a695-6723c399470e -> end 
+  1792680827.973   +7.441s  speech    arming arm:30098021                          - -> end 
+  1792680836.537   +3.843s  recording OS capture active                           
+  1792680836.658   +3.745s  recording app mic                                     
+  1792680840.404   +3.569s  speech    ack ack:stopped:30111076                     - -> end 
+  1792680843.973   +1.044s  speech    ack ack:sent:30111773                        - -> end 
+  1792680848.606   +2.512s  speech    reply 145405Z-holocene-pm-3570...9e3c940a.og 3570c250-df44-5257-81dc-af909e3c940a -> end 
+  1792680936.720  +25.711s  speech    reply 145531Z-holocene-pm-d309...c399470e.og d309aac8-40e9-5b1e-a695-6723c399470e -> halt stopped
+  1792680965.518   +3.679s  speech    arming arm:30235479                          - -> end error:focus_denied
+  1792680977.976  +20.131s  recording app mic                                     
+  1792680978.415  +19.561s  recording OS capture active                           
+  1792681016.026   +0.735s  speech    ack ack:sent:30286575                        - -> end error:focus_denied
+  1792681025.480   +0.374s  speech    reply 145531Z-holocene-pm-d309...c399470e.og d309aac8-40e9-5b1e-a695-6723c399470e -> end error:focus_denied
+  1792681032.644   +1.091s  speech    reply 145531Z-holocene-pm-d309...c399470e.og d309aac8-40e9-5b1e-a695-6723c399470e -> end error:focus_denied
+  1792681039.599   +0.422s  speech    reply 145531Z-holocene-pm-d309...c399470e.og d309aac8-40e9-5b1e-a695-6723c399470e -> end error:focus_denied
+  1792681075.977   +8.155s  speech    arming arm:30344849                          - -> end error:focus_denied
+  1792681087.565  +14.111s  recording OS capture active                           
+  1792681088.883  +12.906s  recording app mic                                     
+  1792681101.790   +9.724s  speech    ack ack:stopped:30371475                     - -> end error:focus_denied
+  1792681111.515   +1.399s  speech    ack ack:sent:30381490                        - -> end error:focus_denied
+  1792681923.087   +2.611s  speech    arming arm:31193726                          - -> end 
+  1792681930.178   +9.975s  recording app mic                                     
+  1792681930.336   +9.819s  recording OS capture active                           
+  1792681940.158   +3.578s  speech    ack ack:stopped:31210463                     - -> end error:focus_denied
+  1792681945.737   +1.745s  speech    ack ack:sent:31216547                        - -> end 
+  1792681959.951   +1.022s  speech    reply 151231Z-holocene-pm-a36b...a8db935d.og a36bf174-c954-5d6e-a05a-78a0a8db935d -> halt focus_denied
+  1792681963.413   +0.890s  speech    reply 151231Z-holocene-pm-a36b...a8db935d.og a36bf174-c954-5d6e-a05a-78a0a8db935d -> halt focus_denied
+  1792681967.678  +10.234s  speech    reply 151231Z-holocene-pm-a36b...a8db935d.og a36bf174-c954-5d6e-a05a-78a0a8db935d -> halt stopped
+  1792681979.084   +0.659s  speech    arming arm:31249436                          - -> end error:focus_denied
+  1792681982.841   +4.868s  recording OS capture active                           
+  1792681982.985   +4.784s  recording app mic                                     
+  1792681987.778   +2.430s  speech    ack ack:stopped:31258008                     - -> end error:focus_denied
+  1792681991.753   +1.007s  speech    ack ack:sent:31262553                        - -> end 
+  1792682005.988  +23.077s  speech    reply 151321Z-holocene-pm-0d63...8c600382.og 0d636695-810d-5f97-a300-77aa8c600382 -> halt focus_denied
+  1792682032.174   +0.396s  speech    reply 151321Z-holocene-pm-0d63...8c600382.og 0d636695-810d-5f97-a300-77aa8c600382 -> end error:focus_denied
+  1792682036.671   +8.770s  speech    reply 151321Z-holocene-pm-0d63...8c600382.og 0d636695-810d-5f97-a300-77aa8c600382 -> halt stopped
+  1792682045.837   +3.364s  speech    arming arm:31316516                          - -> end 
+  1792682050.316   +4.514s  recording app mic                                     
+  1792682050.339   +4.336s  recording OS capture active                           
+  1792682054.839   +5.096s  speech    ack ack:stopped:31324937                     - -> end 
+  1792682059.947   +0.483s  speech    ack ack:sent:31328133                        - -> end error:focus_denied
+  1792682062.685  +10.548s  speech    echo echo:ac8b188a-aead-58b3-b24c-bc011e85.. ac8b188a-aead-58b3-b24c-bc011e856a3d -> end 
+  1792682089.455   +2.967s  speech    arming arm:31359833                          - -> end 
+  1792682093.234   +7.347s  recording OS capture active                           
+  1792682093.305   +7.395s  recording app mic                                     
+  1792682100.704   +1.586s  speech    ack ack:stopped:31371135                     - -> end error:focus_denied
+  1792682104.851   +0.445s  speech    ack ack:sent:31375631                        - -> end error:focus_denied
+  1792682106.435  +10.494s  speech    reply 151458Z-holocene-pm-ac8b...1e856a3d.og ac8b188a-aead-58b3-b24c-bc011e856a3d -> end 
+  1792682117.710  +21.923s  speech    reply 151508Z-holocene-pm-9057...8be1a2f6.og 9057ddbd-7c13-5954-8e9b-0b2a8be1a2f6 -> end chunks=3
+  1792682151.933   +2.423s  speech    arming arm:31422620                          - -> end 
+  1792682154.973   +5.008s  recording OS capture active                           
+  1792682154.974   +5.023s  recording app mic                                     
+  1792682160.005   +4.269s  speech    ack ack:stopped:31430406                     - -> end 
+  1792682164.293   +0.329s  speech    ack ack:sent:31432504                        - -> end error:focus_denied
+  1792682167.753  +15.566s  speech    reply 151605Z-holocene-pm-ac80...9a5dc9c3.og ac804a5d-25c8-5f7c-8bb9-aa729a5dc9c3 -> end chunks=2
+  1792682201.909   +2.266s  speech    arming arm:31472109                          - -> end error:focus_denied
+  1792682211.688   +9.290s  recording app mic                                     
+  1792682212.854   +8.023s  recording OS capture active                           
+  1792682220.981   +0.493s  speech    ack ack:stopped:31490373                     - -> end error:focus_denied
+  1792682233.154   +0.643s  speech    ack ack:sent:31503906                        - -> end error:focus_denied
+  1792682290.775   +1.479s  speech    arming arm:31560672                          - -> end error:focus_denied
+  1792682300.382   +0.370s  speech    cue cue:failed:31571189                      - -> end error:focus_denied
+  1792682326.296   +0.400s  speech    arming arm:31596674                          - -> end error:focus_denied
+  1792682330.615   +4.823s  recording app mic                                     
+  1792682330.764   +4.630s  recording OS capture active                           
+  1792682335.445   +3.526s  speech    ack ack:stopped:31605981                     - -> end 
+  1792682338.971   +0.564s  speech    ack ack:sent:31607161                        - -> end 
+  1792683016.653   +7.584s  speech    arming arm:32287191                          - -> end 
+  1792683025.615   +7.572s  recording app mic                                     
+  1792683025.649   +7.547s  recording OS capture active                           
+  1792683033.257   +1.362s  speech    ack ack:stopped:32303473                     - -> end error:focus_denied
+  1792683038.584   +1.666s  speech    ack ack:sent:32309265                        - -> end 
+  1792683075.418  +19.721s  speech    reply 153100Z-holocene-pm-82e6...72527f7a.og 82e68401-bc63-5b21-a8ab-01c672527f7a -> end chunks=3
+  1792683113.382   +3.543s  speech    arming arm:32384097                          - -> end 
+  1792683117.514   +4.245s  recording app mic                                     
+  1792683117.538   +4.173s  recording OS capture active                           
+  1792683121.767  +10.889s  speech    ack ack:stopped:32392256                     - -> end 
+  1792683132.720   +3.957s  speech    ack ack:sent:32395963                        - -> end error:focus_denied
+  1792683170.783   +1.253s  speech    reply 153211Z-holocene-pm-49bc...4f8e08da.og 49bcf1e3-e746-56d3-9efc-b2234f8e08da -> halt focus_denied
+  1792683189.880   +0.644s  speech    reply 153211Z-holocene-pm-49bc...4f8e08da.og 49bcf1e3-e746-56d3-9efc-b2234f8e08da -> halt stopped
+  1792683191.166   +4.935s  speech    arming arm:32465011                          - -> end 
+  1792683197.838   +5.981s  recording app mic                                     
+  1792683198.359   +5.584s  recording OS capture active                           
+  1792683203.829   +1.993s  speech    ack ack:stopped:32477186                     - -> end error:focus_denied
+  1792683208.618   +0.451s  speech    ack ack:sent:32482719                        - -> end error:focus_denied
+  1792683209.094   +0.392s  speech    reply 153211Z-holocene-pm-49bc...4f8e08da.og 49bcf1e3-e746-56d3-9efc-b2234f8e08da -> end error:focus_denied
+  1792683216.559   +0.473s  speech    reply 153211Z-holocene-pm-49bc...4f8e08da.og 49bcf1e3-e746-56d3-9efc-b2234f8e08da -> end error:focus_denied
+  1792683218.780   +0.393s  speech    reply 153335Z-holocene-pm-f00c...b173833e.og f00c0bd3-fffb-527c-9b64-4787b173833e -> halt focus_denied
+  1792683222.057   +0.410s  speech    reply 153335Z-holocene-pm-f00c...b173833e.og f00c0bd3-fffb-527c-9b64-4787b173833e -> halt focus_denied
+  1792683228.884   +0.520s  speech    reply 153335Z-holocene-pm-f00c...b173833e.og f00c0bd3-fffb-527c-9b64-4787b173833e -> end error:focus_denied
+  1792683233.901   +4.887s  speech    arming arm:32507769                          - -> end 
+  1792683241.885   +5.461s  recording app mic                                     
+  1792683243.631   +3.457s  recording OS capture active                           
+  1792683247.362   +2.567s  speech    ack ack:stopped:32520604                     - -> end error:focus_denied
+  1792683250.959   +1.861s  speech    ack ack:sent:32525032                        - -> end error:focus_denied
+  1792683263.464   +0.751s  speech    reply 153418Z-holocene-pm-a709...fddcaf96.og a70992e6-787d-50d6-a720-6b5cfddcaf96 -> end error:focus_denied
+  1792683272.184   +0.416s  speech    reply 153418Z-holocene-pm-a709...fddcaf96.og a70992e6-787d-50d6-a720-6b5cfddcaf96 -> end error:focus_denied
+  1792683276.537   +7.315s  speech    arming arm:32550523                          - -> end 
+  1792683285.775   +6.654s  recording app mic                                     
+  1792683285.888   +6.298s  recording OS capture active                           
+  1792683292.477   +1.533s  speech    ack ack:stopped:32564741                     - -> end error:focus_denied
+  1792683294.683  +12.678s  speech    reply 153418Z-holocene-pm-a709...fddcaf96.og a70992e6-787d-50d6-a720-6b5cfddcaf96 -> end 
+  1792683307.369   +1.307s  speech    ack ack:sent:32569365                        - -> end 
+  1792683310.624   +8.395s  speech    reply 153501Z-holocene-pm-c39e...0807f0d7.og c39eab93-2760-529b-96aa-97940807f0d7 -> end 
+  1792683336.809   +2.714s  speech    arming arm:32610758                          - -> end 
+  1792683341.041   +4.571s  recording app mic                                     
+  1792683341.235   +4.104s  recording OS capture active                           
+  1792683345.652   +4.289s  speech    ack ack:stopped:32618583                     - -> end 
+  1792683349.962   +1.218s  speech    ack ack:sent:32622741                        - -> end 
+  1792683758.234   +5.258s  speech    arming arm:33032255                          - -> end 
+  1792683765.134   +6.333s  recording OS capture active                           
+  1792683765.176   +6.534s  recording app mic                                     
+  1792683771.713   +5.133s  speech    ack ack:stopped:33045374                     - -> end 
+  1792683776.858   +0.331s  speech    ack ack:sent:33047032                        - -> end error:focus_denied
+  1792683779.899   +8.916s  speech    reply 154300Z-holocene-pm-27c7...59282c02.og 27c7d2da-627c-5cd7-918f-d51859282c02 -> end chunks=2
+  1792683800.009   +2.397s  speech    arming arm:33074058                          - -> end 
+  1792683803.455   +5.526s  recording app mic                                     
+  1792683803.544   +5.467s  recording OS capture active                           
+  1792683808.983   +4.053s  speech    ack ack:stopped:33082917                     - -> end 
+  1792683813.043   +0.563s  speech    ack ack:sent:33083773                        - -> end 
+  1792683817.111   +0.462s  speech    reply 154337Z-holocene-pm-25cd...461d6b25.og 25cd854e-fe0e-5a25-9cf7-adb8461d6b25 -> halt focus_denied
+  1792683821.779   +0.559s  speech    reply 154337Z-holocene-pm-25cd...461d6b25.og 25cd854e-fe0e-5a25-9cf7-adb8461d6b25 -> halt focus_denied
+  1792683822.744   +5.997s  speech    reply 154337Z-holocene-pm-25cd...461d6b25.og 25cd854e-fe0e-5a25-9cf7-adb8461d6b25 -> halt stopped
+  1792683829.140   +2.469s  speech    arming arm:33103124                          - -> end 
+  1792683832.071   +2.902s  recording app mic                                     
+  1792683832.110   +2.843s  recording OS capture active                           
+  1792683834.975   +3.118s  speech    ack ack:stopped:33108928                     - -> end 
+  1792683838.106   +1.264s  speech    ack ack:sent:33109801                        - -> end 
+  1792683844.522  +11.427s  speech    reply 154404Z-holocene-pm-eef7...31d11231.og eef7d107-c2f3-5afb-9953-7e1431d11231 -> end chunks=2
+  1792683868.152   +8.363s  speech    arming arm:33142028                          - -> end 
+  1792683877.450   +3.122s  recording app mic                                     
+  1792683877.451   +3.114s  recording OS capture active                           
+  1792683880.574   +8.002s  speech    ack ack:stopped:33154599                     - -> end 
+  1792683888.595   +2.119s  speech    ack ack:sent:33155220                        - -> end 
+  1792683890.720  +25.832s  speech    reply 154448Z-holocene-pm-10e5...01019b78.og 10e595aa-bcc6-5d2f-beb7-5bf601019b78 -> end chunks=2
+  1792683931.693   +0.513s  speech    arming arm:33205479                          - -> end error:focus_denied
+  1792683933.937   +7.766s  recording OS capture active                           
+  1792683934.013   +8.161s  recording app mic                                     
+  1792683942.182   +2.827s  speech    ack ack:stopped:33213227                     - -> end error:focus_denied
+  1792683945.537   +0.785s  speech    ack ack:sent:33219581                        - -> end error:focus_denied
+  1792684003.420   +1.386s  speech    arming arm:33277196                          - -> end error:focus_denied
+  1792684007.611   +7.840s  recording app mic                                     
+  1792684007.733   +7.456s  recording OS capture active                           
+  1792684015.587   +2.484s  speech    ack ack:stopped:33287682                     - -> halt recording
+  1792684019.110   +8.460s  speech    arming arm:33292151                          - -> end 
+  1792684028.433  +316.510s  recording app mic                                     
+  1792684028.483  +316.305s  recording OS capture active                           
+  1792684345.713   +2.029s  speech    ack ack:stopped:33619823                     - -> end error:focus_denied
+  1792684349.076   +0.905s  speech    ack ack:sent:33623163                        - -> end error:focus_denied
+  1792684384.474   +4.082s  speech    arming arm:33658458                          - -> end 
+  1792684389.964   +5.547s  recording app mic                                     
+  1792684390.044   +5.405s  recording OS capture active                           
+  1792684395.540   +1.304s  speech    ack ack:stopped:33669169                     - -> end error:focus_denied
+  1792684397.354   +0.938s  speech    ack ack:sent:33671460                        - -> end 
+  1792684404.799   +4.439s  speech    reply 155324Z-holocene-pm-8d4b...d9eff20f.og 8d4bd137-39f7-5270-855c-538ad9eff20f -> end 
+  1792684422.309   +3.260s  speech    arming arm:33696311                          - -> end 
+  1792684426.153   +6.571s  recording app mic                                     
+  1792684426.197   +6.443s  recording OS capture active                           
+  1792684432.727   +3.233s  speech    ack ack:stopped:33706627                     - -> end 
+  1792684435.961   +1.034s  speech    ack ack:sent:33707386                        - -> end 
+  1792684443.309   +8.949s  speech    reply 155401Z-holocene-pm-bb5e...3ccbd71b.og bb5e5a20-8e63-5737-9cff-11b73ccbd71b -> end 
+  1792684463.425   +2.819s  speech    arming arm:33737462                          - -> end 
+  1792684466.830   +3.537s  recording app mic                                     
+  1792684466.846   +3.517s  recording OS capture active                           
+  1792684470.368   +3.701s  speech    ack ack:stopped:33744411                     - -> end 
+  1792684474.075   +0.850s  speech    ack ack:sent:33744873                        - -> end 
+  1792684478.330   +0.376s  speech    reply 155438Z-holocene-pm-770b...c097ca74.og 770b89b0-d4fd-5b39-82ce-c028c097ca74 -> halt focus_denied
+  1792684481.499  +11.229s  speech    reply 155438Z-holocene-pm-770b...c097ca74.og 770b89b0-d4fd-5b39-82ce-c028c097ca74 -> halt stopped
+  1792684493.082   +2.601s  speech    arming arm:33767093                          - -> end 
+  1792684496.313   +3.074s  recording app mic                                     
+  1792684496.341   +3.038s  recording OS capture active                           
+  1792684499.388   +2.011s  speech    ack ack:stopped:33773451                     - -> end error:focus_denied
+  1792684502.013   +0.607s  speech    ack ack:sent:33776103                        - -> end error:focus_denied
+  1792684507.098   +6.754s  speech    reply 155506Z-holocene-pm-a152...a13df7e8.og a152e7e7-edbe-5e4a-b2df-e0b2a13df7e8 -> end 
+  1792684526.299   +3.579s  speech    arming arm:33800128                          - -> end 
+  1792684531.100   +3.464s  recording app mic                                     
+  1792684531.128   +3.384s  recording OS capture active                           
+  1792684534.573   +6.148s  speech    ack ack:stopped:33808349                     - -> end 
+  1792684540.739   +0.851s  speech    ack ack:sent:33810630                        - -> end error:focus_denied
+  1792684544.255   +8.670s  speech    reply 155542Z-holocene-pm-37d5...43f0cfac.og 37d583f6-77f6-5384-93fc-4bf343f0cfac -> end 
+  1792684564.018   +2.977s  speech    arming arm:33838008                          - -> end 
+  1792684568.394   +6.508s  recording app mic                                     
+  1792684568.700   +6.002s  recording OS capture active                           
+  1792684574.955   +1.110s  speech    ack ack:stopped:33847841                     - -> end error:focus_denied
+  1792684576.757   +1.418s  speech    ack ack:sent:33850863                        - -> end 
+  1792684583.925   +7.519s  speech    reply 155622Z-holocene-pm-aaa9...e503114f.og aaa91988-3bc8-5961-8117-4d05e503114f -> end 
+  1792684603.852   +0.575s  speech    arming arm:33877542                          - -> end error:focus_denied
+  1792684606.968   +2.674s  recording OS capture active                           
+  1792684607.006   +2.659s  recording app mic                                     
+  1792684609.668   +3.842s  speech    ack ack:stopped:33883703                     - -> end 
+  1792684613.516   +0.742s  speech    ack ack:sent:33884173                        - -> end 
+  1792684677.348  +15.993s  speech    reply 155755Z-holocene-pm-a152...a13df7e8.og a152e7e7-edbe-5e4a-b2df-e0b2a13df7e8 -> halt stopped
+  1792684693.698   +3.268s  speech    arming arm:33967604                          - -> end 
+  1792684697.520   +8.826s  recording app mic                                     
+  1792684697.555   +8.786s  recording OS capture active                           
+  1792684706.348   +4.946s  speech    ack ack:stopped:33980334                     - -> end 
+  1792684711.303   +1.306s  speech    ack ack:sent:33980984                        - -> end 
+  1792684712.656   +0.529s  speech    reply 155755Z-holocene-pm-a152...a13df7e8.og a152e7e7-edbe-5e4a-b2df-e0b2a13df7e8 -> end error:focus_denied
+  1792684715.661  +17.568s  speech    reply 155755Z-holocene-pm-a152...a13df7e8.og a152e7e7-edbe-5e4a-b2df-e0b2a13df7e8 -> end 
+  1792684733.490   +4.646s  speech    reply 155834Z-holocene-pm-5ffb...800799c1.og 5ffb074a-f470-510a-bba2-886d800799c1 -> halt stopped
+  1792684738.490   +2.248s  speech    arming arm:34012397                          - -> end 
+  1792684741.748   +6.436s  recording app mic                                     
+  1792684741.865   +6.163s  recording OS capture active                           
+  1792684748.226   +0.885s  speech    ack ack:stopped:34021491                     - -> end error:focus_denied
+  1792684751.012   +1.695s  speech    ack ack:sent:34025109                        - -> end 
+  1792684762.004   +7.455s  speech    echo echo:2b37dfd4-df93-5baf-b7c4-e5d1a4c6.. 2b37dfd4-df93-5baf-b7c4-e5d1a4c6cf46 -> end 
+  1792684787.868   +7.517s  speech    reply 155945Z-holocene-pm-2b37...a4c6cf46.og 2b37dfd4-df93-5baf-b7c4-e5d1a4c6cf46 -> end 
+
+PASS  1 speech x speech (queue): 0 overlaps
+FAIL  2 speech x recording (queue vs app mic + OS capture, tolerance 60 ms): 1 overlap(s)
+        54 ms  speech ack ack:stopped:32477186 [1792683203.829, 1792683205.822)  x  recording OS capture active [1792683198.359, 1792683203.943)
+FAIL  3 HAL assistant mix x OS capture (tolerance 60 ms): 1 overlap(s)
+        3 ms  hal assistant mix [1792683203.880, 1792683204.999)  x  recording OS capture active [1792683198.359, 1792683203.943)
+RESULT OVERLAPS FOUND  (236 utterances, 55 app recordings, 55 OS capture windows, 255 HAL mix windows)

@@ -195,3 +195,49 @@ r3c `ok` 36, `timeout` 10, `http_503` 7; r3a `ok` 1. Watcher events: `converse_g
 holocene `2755c53` (ladder rungs, 402 trip), `converse.py` follow-ups for the stutter lexicon, the sent-claim filter, the incomplete
 propose and fallback title, the expired-draft line, "send it" with nothing pending, the per-channel timeout blame, the README
 and unit comment, and this evidence (see `git log --oneline -- services/inbox-watcher/converse.py`).
+
+## Review round (2026-10-22, 14:20-15:40 UTC): independent review, fixes, re-run
+
+An independent review found 6 majors and 12 minors (see the commit message of ce66028 and `services/inbox-watcher/README.md`,
+"Review fixes"). Each one was reproduced first (the reviewers' probes in `/tmp/conv_probe` were run against the shipped code and
+reproduced A-F), then fixed and pinned by `services/inbox-watcher/test_converse_review.py` (27 tests; the watcher suite is now
+333 tests, all OK; pad tests 68, typechecks clean). The watcher was restarted when idle (twice), the pad was rebuilt
+(`index-BmA_NrkV.js`), and the flag file / unit were left as they were (see "Enable decision").
+
+### Re-run on the Honda sim (emulator-5554 only)
+
+Same method as above (vox -> `paplay` into `holo_testmic`, Stop press, facts from Candystore). Turns:
+[`runs/review-round-turns.json`](runs/review-round-turns.json); overlap audit:
+[`overlap/review-round-logcat-only-tol60.txt`](overlap/review-round-logcat-only-tol60.txt).
+
+| what | result |
+|---|---|
+| Propose / explicit confirm (h-01..h-05) | `Please ask the PM to find out whether the Hyper account has been topped up` -> read-back `Draft for Holocene PM: Check Hyper account balance. Read-only. Say send it, or tell me what to change.` Then `Okay, how long will that take?` (pending draft) -> **not** a confirmation: the draft is read back again with `To send it, say send it on its own.`, nothing dispatched. Then `Yes.` right after that read-back -> `confirm_only`, `Sending to Holocene PM: ...`, exactly **1** batch dispatch (`followup=1`, `lane_reason=voice_delegation`), **1** `audio.memo.delegated`, **1** gateway journal row (`completed/success`, profile holocene-pm). Two further `Send it.` -> `Already sent to Holocene PM: ... I'll call you back with the result`, 0 dispatches. |
+| Delegated model | the dispatched fact carries `model = automaticai/personal/sol-6.1` (the voice model), not the PM profile's `automaticai/auto` default. The result was spoken as a follow-up and written back (`delegation_result done`). |
+| Nothing pending (f-03..f-05, g-04) | `Send it.` / `Yes.` with no draft -> `There's nothing waiting to send` / a plain reply, 0 dispatches. |
+| Barge-in (S10, pad bundle with `reset` removed) | A fast reply started, a new recording halted it (`halt reason=stopped`), it was not replayed after the note. |
+| Overlap audit, post-fix window (236 utterances, 55 recordings) | check 1 speech x speech: **0**. Checks 2/3 (logcat only, tol 60 ms): **1** flag, at 15:33:23Z: the pad's own `ack:stopped` cue started 54 ms before the OS audio-recording dump logged the capture as ended (the app's mic was idle; the OS dump lags under host load, load average 40-70 at that time). It is not fast-desk speech, but it is not zero either. With the speaker tap (14:29-15:19Z, offset about -400 ms): checks 1-4 and 6 pass; check 5 flags 5 spans of 50-210 ms at utterance edges (packet-boundary artefacts of the clock offset, rms of the leading packets is that of the utterance next to them). |
+
+### Latency, re-measured (it did NOT reproduce the 7.80 / 10.39 s of the first proof)
+
+| run | host | n | car starts the reply, p50 / p90 | audible, p50 / p90 |
+|---|---|---|---|---|
+| first proof (above) | quiet | 12 | 6.81 / 9.42 s | 7.80 / 10.39 s |
+| re-run 1 (r2-01..12, before the async routed fact) | load avg 30-70 | 12 | 7.50 / 8.22 s | 8.34 / 9.09 s |
+| re-run 2 (s1y-01..11, after it) | load avg 22-30 | 11 | **10.03 / 12.7 s** | (tap had ended) |
+
+What the stages cost in re-run 2: Stop -> uploaded 0.55-5.8 s (median 2.1; the sim's capture and the upload proxy, not the
+desk), -> transcribed +1.4 s, -> routed +1.6 s (LLM 0.9-1.6 s on ministral-14b), -> the car starts +3.4-4.5 s (TTS of the first
+chunk, upload, pad push, the two ack cues). The desk's own part (transcribed -> routed) is the same as in the first proof; the
+rest is the host. The routed fact is now published after the stage hands over to speak (`fact_async`), which removes about 0.3 s
+from the critical path.
+
+### Enable decision
+
+**Left sim-only.** The S1 gate (record stop to first audio p50 <= 8 s and p90 <= 12 s) held in the first proof on a quiet host
+(7.80 / 10.39 s) and did not hold on the re-runs on this host as it is today (audible p50 8.34 s; car start p50 10.03 s, p90
+12.7 s with the host's load average at 22-70 from other agents' builds, Whisper and TTS jobs). Exactly-once and never-Anthropic hold;
+the overlap audit has one ack-cue flag. The designed model (`deepseek-v4.1-flash-1017`) still does not answer: the shared Hyper
+key is out of credit (402). The flag file keeps `agents=[holocene-pm]`, `devices=[the sim]`; the unit ships `MEMO_CONVERSE=off`.
+To enable it for the car once the gate is re-measured on a quiet host: `mise run memo:converse on --agents '*'` and clear the
+device (`--devices ''`), then set `MEMO_CONVERSE=on` / `MEMO_CONVERSE_AGENTS=*` in the unit so a restart keeps it.
