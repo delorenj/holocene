@@ -110,7 +110,7 @@ class Routes(unittest.TestCase):
         raw = line.split("=", 2)[2].rstrip("'")
         routes, refused = cv.parse_routes(raw)
         self.assertEqual(refused, [])
-        self.assertEqual([r["id"] for r in routes], ["r1", "r2", "r3a", "r3b"])
+        self.assertEqual([r["id"] for r in routes], ["r1", "r2", "r3m", "r3c", "r3a", "r3b"])
         self.assertEqual(routes[0]["model"], "deepseek-v4.1-flash-1017")
         self.assertTrue(all(r["key_ref"].startswith("op://DeLoSecrets/") for r in routes))
         kimi = next(r for r in routes if r["id"] == "r3a")
@@ -237,6 +237,12 @@ class Ladder(unittest.TestCase):
         self.assertTrue(b.is_open("r1"))
         now[0] += 2
         self.assertFalse(b.is_open("r1"))
+
+    def test_whispers_stutter_still_matches_the_lexicons(self):
+        for said in ("S-Send it!", "s-send it", "Y-yes, send it.", "N-no", "C-cancel that"):
+            self.assertTrue(cv.confirm_only(said) or cv.cancel_only(said), said)
+        self.assertFalse(cv.confirm_only("S-Send it but change the title"))
+        self.assertEqual(cv.norm("A-and so"), "and so")
 
     def test_breaker_clock(self):
         now = [1000.0]

@@ -544,6 +544,7 @@ class Ladder:
 
 def norm(text: str) -> str:
     t = (text or "").lower().replace("’", "'").replace("‘", "'")
+    t = re.sub(r"\b([a-z])[-\u2013\u2014]\s*(?=\1[a-z])", "", t)  # whisper's stutter: "S-Send it!" is "send it"
     t = re.sub(r"[^a-z0-9' ]+", " ", t)
     return re.sub(r"\s+", " ", t).strip()
 
