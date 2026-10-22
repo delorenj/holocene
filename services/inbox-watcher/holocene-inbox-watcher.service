@@ -22,10 +22,10 @@ Environment=MEMO_LANE=interactive
 # Per-turn model routes are the code defaults (voice sol-6.1, follow-up the profile's own model, a desk delegation the voice model). Sonnet 5.5 was tried and rolled
 # back 2026-10-22 (Anthropic 400s Hermes gateway turns); override with MEMO_VOICE_MODEL / MEMO_FOLLOWUP_MODEL only here.
 # ---- the fast in-car conversation desk (HOLOC-23, converse.py; README "Fast conversation layer")
-# Shipped OFF. `mise run memo:converse on|shadow|off [--agents a,b|'*'] [--devices id]` flips it at runtime through the
-# flag file ~/.local/state/holocene-auto/inbox-watcher/converse.json (wins over these defaults, no restart).
-Environment=MEMO_CONVERSE=off
-Environment=MEMO_CONVERSE_AGENTS=holocene-pm
+# ON for every tile and car since 2026-10-22 (operator). `mise run memo:converse on|shadow|off [--agents a,b|'*'] [--devices id]`
+# flips it at runtime through the flag file ~/.local/state/holocene-auto/inbox-watcher/converse.json (wins over these defaults, no restart).
+Environment=MEMO_CONVERSE=on
+Environment=MEMO_CONVERSE_AGENTS=*
 # empty = any car device; the sim pilot puts the emulator's device id here (or in the flag file)
 Environment=MEMO_CONVERSE_DEVICES=
 # another agent than the tile only when the driver said its name aloud and confirmed the read-back naming it (off: tile only)
