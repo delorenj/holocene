@@ -9,6 +9,7 @@ import { convReplyUnit, noteConv, onDeferred } from './convo'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLeaveToPhone, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, takeBackFromPhone, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
+import { PLAY_STRIKES, isFocusFailure, retryPlan, stopAckName } from './pace'
 import { type Claim, type ClaimAction, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, PHONE_RECHECK_MAX_MS, phoneRecheckDue, phoneStillHas, startPlan, startVerdict } from './claim'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
@@ -111,6 +112,7 @@ async function memoIdFor(key: string): Promise<string | null> {
   }
 }
 
+type Gate = { answer: Promise<ClaimAnswer>; plan: 'play' | 'claim' }
 type ListPage = { keys: string[]; next: string | null }
 // A request that hangs on a flaky car link must fail, so the next poll runs instead of waiting minutes for it. The
 // deadline covers the body too: headers can arrive and the body then stall.
@@ -548,6 +550,7 @@ function App() {
   const queue = useRef<string[]>([])
   const enqueued = useRef<Set<string>>(new Set())
   const loadFails = useRef<Record<string, number>>({})
+  const focusFails = useRef<Record<string, number>>({}) // audio-focus refusals in a row, per reply (pace.ts)
   const playingKey = useRef<string>('') // reply loaded in the audio element ('' while the silent unlock clip plays)
   const beaconsSent = useRef<Set<string>>(new Set())
   const pump = useRef<() => void>(() => {})
@@ -572,7 +575,7 @@ function App() {
   const units = useRef<Map<string, Unit>>(new Map())
   const chunkBlobs = useRef<Map<string, Blob>>(new Map()) // downloaded chunks, kept until the reply is done (a replay after a note)
   // The unit the host is playing chunk by chunk, and which chunks it has been handed.
-  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean; fails: number; gate: Promise<ClaimAnswer> | null } | null>(null)
+  const streaming = useRef<{ unit: string; offered: Set<number>; busy: boolean; again: boolean; fails: number; gate: Gate | null } | null>(null)
   const push = useRef({ heardAt: 0, nats: false })
   // Chunked replies that stopped short (a chunk never came: vox failed mid-reply, a cancel took them back): parked, not
   // done. Their chunks are ignored from here on, and the full file plays when (if) it lands. Unit key -> parked at.
@@ -590,6 +593,15 @@ function App() {
   // Replies this car left to the phone (it took them): looked at again until the phone really has them (the watcher gives a
   // take back when its Earshot drop failed on every try, and pushes `released`). Unit key -> when left, last looked at.
   const phoneTook = useRef<Map<string, { at: number; checkedAt: number }>>(new Map())
+  // The hold made when a reply joined the queue, while its answer is out: the pump reuses it instead of asking again.
+  const holdInflight = useRef<Map<string, Promise<ClaimAnswer>>>(new Map())
+  const holdFor = (key: string): Promise<ClaimAnswer> => {
+    const cur = holdInflight.current.get(key)
+    if (cur) return cur
+    const p = claimReply(key, 'hold').finally(() => { if (holdInflight.current.get(key) === p) holdInflight.current.delete(key) })
+    holdInflight.current.set(key, p)
+    return p
+  }
   const claimReply = async (key: string, action: ClaimAction): Promise<ClaimAnswer> => {
     if (HOST_KIND !== 'car') return 'none'
     const sent = Date.now() // the lease runs from the proxy's receipt: counting it from the send is on the safe side
@@ -745,6 +757,7 @@ function App() {
     queue.current = queue.current.filter((k) => k !== key)
     claims.current.delete(key)
     startedKeys.current.delete(key)
+    delete focusFails.current[key]
     playingKey.current = ''
     const u = units.current.get(key)
     if (u) for (const ck of Object.values(u.chunks)) chunkBlobs.current.delete(ck)
@@ -828,7 +841,7 @@ function App() {
       units.current.set(ref.unit, u)
       setLedger(openUnit(ledger.current, ref.unit, Date.now()))
       queue.current = [...queue.current, ref.unit].sort()
-      void claimReply(ref.unit, 'hold') // this car means to say it: the phone leaves it alone while the hold lives
+      void holdFor(ref.unit) // this car means to say it: the phone leaves it alone while the hold lives
       const memo = memoOfReply(ref.unit)
       const f = memo ? flights.current.get(memo) : undefined
       if (f) {
@@ -929,7 +942,7 @@ function App() {
       return
     }
     playingKey.current = key // claim before any await so a second pump cannot start another reply
-    let gate: Promise<ClaimAnswer> | null = null
+    let gate: Gate | null = null
     if (HOST_KIND === 'car') {
       // Exactly one of this car and the phone says it, and neither without the proxy's yes. A live hold is one: the hold is
       // renewed alongside the download and its answer looked at before the audio starts (passGate). Without one the hold
@@ -938,11 +951,9 @@ function App() {
       // audio really starts (report 'started'), and the hold is renewed until then (the interval below).
       const how = startPlan(claims.current.get(key), Date.now())
       if (how === 'skip') { leaveToPhone(key); return }
-      if (how === 'claim') {
-        const v = startVerdict('claim', await claimReply(key, 'hold'))
-        if (v === 'skip') { leaveToPhone(key); return }
-        if (v === 'wait') { waitForProxy(key); return }
-      } else gate = claimReply(key, 'hold')
+      // No live hold yet (a fresh reply: its first hold is still out): the same answer is awaited, but alongside the
+      // download instead of before it, with the 'claim' verdict (no answer = wait, not play) applied by passGate.
+      gate = { answer: how === 'claim' ? holdFor(key) : claimReply(key, 'hold'), plan: how === 'claim' ? 'claim' : 'play' }
       if (playingKey.current !== key) return // interrupted while the claim was out
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began meanwhile
     }
@@ -1047,9 +1058,15 @@ function App() {
   // to the phone. No answer plays on the live hold (renewed until the audio starts; the start is then claimed and, if the
   // proxy is still silent, re-sent until it has it). False: do not play it (the phone has it, or a note began, or another
   // pump moved on while the answer was out).
-  const passGate = async (key: string, gate: Promise<ClaimAnswer>): Promise<boolean> => {
-    const answer = await gate
-    if (startVerdict('play', answer) === 'skip') { leaveToPhone(key); return false }
+  const passGate = async (key: string, gate: Gate): Promise<boolean> => {
+    const answer = await gate.answer
+    const v = startVerdict(gate.plan, answer)
+    if (v === 'skip') { leaveToPhone(key); return false }
+    if (v === 'wait') { // 'claim' plan, no answer and no live hold: stays at the head of the queue, asked again shortly
+      if (streaming.current?.unit === key) streaming.current = null
+      waitForProxy(key)
+      return false
+    }
     return playingKey.current === key && !recordingRef.current && !arming.current
   }
 
@@ -1077,11 +1094,18 @@ function App() {
     return () => window.clearInterval(t)
   }, [])
 
-  // A reply that could not be played: retry a couple of times, then give it up so it never blocks the queue.
-  const playFailed = (key: string, text: string) => {
-    const n = (loadFails.current[key] = (loadFails.current[key] || 0) + 1)
-    const msg = text.replace('play failed:', `play failed (try ${n}):`).slice(0, 200)
-    if (n >= 3) {
+  // A reply that could not be played: retry a couple of times, then give it up so it never blocks the queue. A refused
+  // or lost audio focus (`detail` focus_denied / focus_lost) is retried within a fraction of a second and is not a
+  // strike, for a bounded number of tries (pace.ts): the reply was fine, the car's audio was busy for a moment.
+  const playFailed = (key: string, text: string, detail = '') => {
+    const focus = isFocusFailure(detail)
+    const tries = focus ? (focusFails.current[key] = (focusFails.current[key] || 0) + 1) : 0
+    if (!focus) delete focusFails.current[key]
+    const plan = retryPlan(focus, tries)
+    const n = plan.strike ? (loadFails.current[key] = (loadFails.current[key] || 0) + 1) : (loadFails.current[key] || 0)
+    const msg = text.replace('play failed:', focus && !plan.strike ? `play failed (no audio focus, try ${tries}):` : `play failed (try ${n}):`).slice(0, 200)
+    if (plan.strike && n >= PLAY_STRIKES) {
+      delete focusFails.current[key]
       report('error', { error: msg })
       setStatus('reply could not play')
       if (!startedKeys.current.has(key)) void claimReply(key, 'release') // never heard: the phone may take it at once
@@ -1090,7 +1114,7 @@ function App() {
       playingKey.current = ''
       speak({ t: 'failed', key })
       setStatus(msg)
-      window.setTimeout(() => pump.current(), 5000)
+      window.setTimeout(() => pump.current(), plan.delay)
     }
   }
 
@@ -1112,9 +1136,9 @@ function App() {
         speak({ t: 'interrupted' })
         return
       }
-      if (phase === 'started') { report('started'); setStatus('playing reply') }
+      if (phase === 'started') { delete focusFails.current[key]; report('started'); setStatus('playing reply') }
       else if (phase === 'ended') { report('ended', { seconds: Number(detail) || undefined }); setStatus('reply played'); finish(key) }
-      else playFailed(key, `play failed: ${detail || 'host player'}`)
+      else playFailed(key, `play failed: ${detail || 'host player'}`, detail || '')
     }
     return () => { delete (window as any).__hnPlayback }
   })
@@ -1427,10 +1451,11 @@ function App() {
     // The outbox is written BEFORE the first attempt and cleared on success: if the app is backgrounded, killed or
     // loses the network mid-send, the recording is still on disk and the retry timer finishes the job.
     await ownMemo(key) // its reply is this pad's to play, however fast it comes back
-    await outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture })
+    // The outbox row is written WHILE the first PUT runs, not before it (the write used to sit ahead of the upload):
+    // durability is unchanged because the row is awaited before it is deleted, and a PUT that fails finds it written.
+    const stored = outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture }).then(() => true, () => false)
     try {
-      const memo = await memoIdFor(key)
-      setMemoShort(memo ? memo.slice(0, 8) : null)
+      void memoIdFor(key).then((memo) => setMemoShort(memo ? memo.slice(0, 8) : null))
       const delays = [0, 1500, 4000, 10000, 20000]
       let lastErr = ''
       for (let i = 0; i < delays.length; i++) {
@@ -1439,8 +1464,10 @@ function App() {
           await new Promise((r) => setTimeout(r, delays[i]))
         }
         try {
+          const rowWritten = stored // settled long ago on a retry; on the first PUT it is awaited only now
           await putObject(key, blob, capture)
           noteSent()
+          await rowWritten
           await outboxDel(key)
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
@@ -1450,6 +1477,7 @@ function App() {
           if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
           return
         } catch (e) {
+          await stored // the first row write is done before any later write to the same row
           if (e instanceof UploadRejected) {
             // Retrying a refusal only repeats it: keep the audio, stop here.
             await holdRejected({ key, agentName: agent.name, blob, attempts: i, at: Date.now(), capture }, e, agent.id, true)
@@ -1684,12 +1712,13 @@ function App() {
   const noteEnded = (agent: Agent) => {
     if (stopEmitted.current) return
     stopEmitted.current = true
-    emitHost({ t: 'stopped', id: agent.id, name: agent.name, reason: 'auto' })
+    emitHost({ t: 'stopped', id: agent.id, name: stopAckName(HOST_KIND, agent.name), reason: 'auto' })
   }
 
   const stopRecording = useCallback(() => {
     stopEmitted.current = true
-    emitHost({ t: 'stopped', name: selectedRef.current?.name })
+    // The car says the short "Got it, sending." (pace.ts): the name was said at the start, and the reply waits behind it.
+    emitHost({ t: 'stopped', name: stopAckName(HOST_KIND, selectedRef.current?.name) })
     if (nativeActive.current) { (window as any).HoloceneNative.stop(); return }
     mediaRecorder.current?.stop()
   }, [])
