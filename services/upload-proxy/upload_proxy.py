@@ -1400,7 +1400,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = None
         code, ans = claim_request(body)
         b = body if isinstance(body, dict) else {}
-        log("claim", status=code, memo_id=ans.get("memo_id"), by=str(b.get("by"))[:10], action=str(b.get("action"))[:10],
+        log("claim", status=code, memo_id=ans.get("memo_id"), reply_key=ans.get("reply_key"), by=str(b.get("by"))[:10],
+            action=str(b.get("action"))[:10],
             ok=ans.get("ok"), owner=ans.get("owner"), car=ans.get("car"), lease_left_s=ans.get("lease_left_s"),
             device=ans.get("device"), sender_host=ans.get("sender_host"), announced=ans.get("announced"),
             error=ans.get("error"), remote=self.client_address[0])
