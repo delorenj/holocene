@@ -556,6 +556,12 @@ class Guard(unittest.TestCase):
         self.assertIn("no_pending_draft", reasons)
         self.assertIsNone(final["draft"])
 
+    def test_send_it_is_never_a_direct_turn_either(self):
+        final, reasons = g({"action": "direct"}, session(), "Send it.")
+        self.assertEqual((final["action"], final["say"]), ("reply", cv.NOTHING_PENDING_LINE))
+        final, _ = g({"action": "direct"}, session(), "Ask Holocene PM directly what is on the board.")
+        self.assertEqual(final["action"], "direct")
+
     def test_cancel_drops_the_pending_draft_and_end_closes(self):
         sess = session()
         sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]

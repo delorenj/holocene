@@ -898,6 +898,11 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             return out, reasons
         out.update(send=pend, say=sending_line(pend))
         return out, reasons
+    if action in ("propose", "direct") and pend is None and confirm_only(transcript) and not force_direct(transcript):
+        # "send it" with nothing to send is never a new request (a proposal called "Send it") nor a question for the full agent
+        reasons.append("no_pending_draft")
+        out.update(action="reply", say=NOTHING_PENDING_LINE)
+        return out, reasons
     if action == "propose":
         if pend is None and confirm_only(transcript):
             # "send it" with nothing to send is never a new request called "Send it" (a model that proposes it)
