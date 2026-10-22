@@ -1,0 +1,131 @@
+{
+ "name": "hc-02",
+ "text": "In one sentence, why is a voice assistant hard to make feel fast?",
+ "offset_s": -0.6400735378265381,
+ "start_pressed": 1792702942.2037537,
+ "mic_recording_seen": 1792702946.256416,
+ "paplay": [
+  1792702946.656497,
+  1792702952.5496118,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792702953.5497096,
+ "mic_idle_seen": 1792702954.5306103,
+ "memo_id": "464e9a5c-08f0-58c9-85af-75ef89e47006",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T210222Z.ogg",
+ "discovered": 1792702955.12,
+ "first_kind": "reply",
+ "first_start": 1792702983.3380735,
+ "first_audible": null,
+ "stop_to_first_start_s": 29.79,
+ "stop_to_upload_discover_s": 1.57,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 4956,
+   "cached_tokens": 3136,
+   "conv_turn": 2,
+   "conv_id": "feae4a0a-cb3c-4642-90d8-d477a7a04e43",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Because a spoken turn is a chain \u2014 recognition, understanding, thinking, speaking \u2014 and a human sits in silence through every stage, so one slow model call turns a three-second pause into an eternity.",
+   "say_chars": 200,
+   "lexicon": false,
+   "card_age_s": 5.5,
+   "decide_ms": 4990,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 4956,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "feae4a0a",
+     "path": "fast",
+     "turn": 2,
+     "action": "reply",
+     "conv_id": "feae4a0a-cb3c-4642-90d8-d477a7a04e43"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   5.65,
+   "queued",
+   "progress",
+   "behind_reply"
+  ],
+  [
+   7.97,
+   "drop",
+   "progress",
+   "memo_final"
+  ],
+  [
+   29.79,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   29.79,
+   "start",
+   "reply",
+   "waited_ms=2"
+  ],
+  [
+   44.37,
+   "end",
+   "reply",
+   ""
+  ]
+ ]
+}

@@ -1,0 +1,167 @@
+{
+ "name": "hc-03",
+ "text": "In two sentences, what is the tradeoff between saying a short filler word and staying silent while a voice assistant thinks?",
+ "offset_s": -0.6333804130554199,
+ "start_pressed": 1792703046.749647,
+ "mic_recording_seen": 1792703050.7297697,
+ "paplay": [
+  1792703051.1298497,
+  1792703060.2116952,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792703061.2117982,
+ "mic_idle_seen": 1792703062.132837,
+ "memo_id": "c6418321-ed92-5777-b3f8-6fe5a45c57f4",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T210406Z.ogg",
+ "discovered": 1792703062.736,
+ "first_kind": "reply",
+ "first_start": 1792703070.5043805,
+ "first_audible": null,
+ "stop_to_first_start_s": 9.29,
+ "stop_to_upload_discover_s": 1.52,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 3566,
+   "cached_tokens": 3264,
+   "conv_turn": 3,
+   "conv_id": "feae4a0a-cb3c-4642-90d8-d477a7a04e43",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "A filler tells you the system heard you and is working, which keeps you from repeating yourself or assuming it died. But filler stretches the perceived wait, can interrupt playback later, and sets an expectation of progress it can't always honestly claim.",
+   "say_chars": 255,
+   "lexicon": false,
+   "card_age_s": 4.2,
+   "decide_ms": 3612,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 3566,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "feae4a0a",
+     "path": "fast",
+     "turn": 3,
+     "action": "reply",
+     "conv_id": "feae4a0a-cb3c-4642-90d8-d477a7a04e43"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   6.55,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   6.61,
+   "start",
+   "progress",
+   "waited_ms=51"
+  ],
+  [
+   7.14,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   9.27,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   9.29,
+   "start",
+   "reply",
+   "waited_ms=4"
+  ],
+  [
+   9.29,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   11.16,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   14.58,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   15.63,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   20.13,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   29.67,
+   "end",
+   "reply",
+   "chunks=3"
+  ]
+ ]
+}

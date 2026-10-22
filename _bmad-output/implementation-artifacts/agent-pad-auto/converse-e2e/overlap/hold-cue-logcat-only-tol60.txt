@@ -1,0 +1,33 @@
+intervals (device clock, epoch s):
+  1792702812.865   +2.700s  speech    arming arm:52083580                          - -> end 
+  1792702816.219   +8.767s  recording app mic                                     
+  1792702816.228   +8.721s  recording OS capture active                           
+  1792702825.006   +2.735s  speech    ack ack:stopped:52095670                     - -> end 
+  1792702827.742   +0.752s  speech    ack ack:sent:52098570                        - -> end 
+  1792702833.283   +1.920s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702839.085   +3.131s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702842.221   +7.602s  speech    echo echo:90cd6181-d6e0-5529-853c-62934db9.. 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702849.827   +1.867s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702857.318   +2.970s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702868.419   +8.310s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702904.461   +7.759s  speech    progress progress:90cd6181-d6e0-5529-853c-62 90cd6181-d6e0-5529-853c-62934db9503a -> halt memo_final
+  1792702915.835  +26.235s  speech    reply 210152Z-holocene-pm-90cd...4db9503a.og 90cd6181-d6e0-5529-853c-62934db9503a -> halt stopped
+  1792702942.501   +2.312s  speech    arming arm:52213352                          - -> end 
+  1792702945.562   +8.254s  recording app mic                                     
+  1792702945.582   +8.169s  recording OS capture active                           
+  1792702953.820   +2.708s  speech    ack ack:stopped:52224408                     - -> end 
+  1792702956.536   +0.688s  speech    ack ack:sent:52225468                        - -> end 
+  1792702957.225  +25.003s  speech    reply 210152Z-holocene-pm-90cd...4db9503a.og 90cd6181-d6e0-5529-853c-62934db9503a -> end 
+  1792702982.698  +14.576s  speech    reply 210240Z-holocene-pm-464e...89e47006.og 464e9a5c-08f0-58c9-85af-75ef89e47006 -> end 
+  1792703046.674   +2.642s  speech    arming arm:52317488                          - -> end 
+  1792703050.028  +11.392s  recording app mic                                     
+  1792703050.037  +11.369s  recording OS capture active                           
+  1792703061.423   +2.732s  speech    ack ack:stopped:52332083                     - -> end 
+  1792703064.159   +0.602s  speech    ack ack:sent:52333247                        - -> end 
+  1792703067.192   +0.522s  speech    progress progress:c6418321-ed92-5777-b3f8-6f c6418321-ed92-5777-b3f8-6fe5a45c57f4 -> end error:focus_denied
+  1792703069.871  +20.374s  speech    reply 210426Z-holocene-pm-c641...a45c57f4.og c6418321-ed92-5777-b3f8-6fe5a45c57f4 -> end chunks=3
+
+PASS  1 speech x speech (queue): 0 overlaps
+PASS  2 speech x recording (queue vs app mic + OS capture, tolerance 60 ms): 0 overlaps
+PASS  3 HAL assistant mix x OS capture (tolerance 60 ms): 0 overlaps
+RESULT ZERO OVERLAPS  (21 utterances, 3 app recordings, 3 OS capture windows, 20 HAL mix windows)

@@ -1,0 +1,179 @@
+{
+ "name": "hc-01",
+ "text": "What do you think is the biggest risk in the voice pipeline right now, and why?",
+ "offset_s": -0.5934305191040039,
+ "start_pressed": 1792702812.6366067,
+ "mic_recording_seen": 1792702816.896037,
+ "paplay": [
+  1792702817.2961183,
+  1792702823.9847324,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792702824.984857,
+ "mic_idle_seen": 1792702825.6777499,
+ "memo_id": "90cd6181-d6e0-5529-853c-62934db9503a",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T210012Z.ogg",
+ "discovered": 1792702827.653,
+ "first_kind": "echo",
+ "first_start": 1792702842.8144305,
+ "first_audible": null,
+ "stop_to_first_start_s": 17.83,
+ "stop_to_upload_discover_s": 2.67,
+ "facts": {
+  "routed": {
+   "action": "direct",
+   "decided_action": "direct",
+   "path": "fallback",
+   "model_answered": null,
+   "route": null,
+   "attempts": 1,
+   "latency_ms": 12012,
+   "cached_tokens": null,
+   "conv_turn": 1,
+   "conv_id": "feae4a0a-cb3c-4642-90d8-d477a7a04e43",
+   "guard": null,
+   "fallback_reason": "all_routes_failed",
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": null,
+   "say_chars": null,
+   "lexicon": false,
+   "card_age_s": 12.5,
+   "decide_ms": 12057,
+   "requested_model": null,
+   "served_route": null,
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 12012,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "timeout"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "3e0fd1d7-c724-423b-86d2-e1f5c2a7dfe5",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   8.88,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   8.89,
+   "start",
+   "progress",
+   "waited_ms=7"
+  ],
+  [
+   10.81,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   14.69,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   14.69,
+   "start",
+   "progress",
+   "waited_ms=9"
+  ],
+  [
+   16.95,
+   "queued",
+   "echo",
+   "behind_progress"
+  ],
+  [
+   17.83,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   17.83,
+   "start",
+   "echo",
+   "waited_ms=886"
+  ],
+  [
+   24.7,
+   "queued",
+   "progress",
+   "behind_echo"
+  ],
+  [
+   25.43,
+   "end",
+   "echo",
+   ""
+  ],
+  [
+   25.44,
+   "start",
+   "progress",
+   "waited_ms=733"
+  ],
+  [
+   27.3,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   32.92,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   32.93,
+   "start",
+   "progress",
+   "waited_ms=11"
+  ]
+ ]
+}
