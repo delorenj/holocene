@@ -1,0 +1,16 @@
+name       memo     action    path         model@route                              ms stop->start ->audible
+p1-a       None     None      None         None@None                              None        None      None
+p1-a       f26c4fbb direct    fast         deepseek-flash@r2                      1904         9.5      None
+p1-b       30de0cf6 reply     fast         deepseek-flash@r2                      1819       12.17     15.76
+p1-c       4d75a880 reply     fast         deepseek-flash@r2                      1449       14.28      None
+p2-a       26332f6b reply     fast         deepseek-flash@r2                      1163       11.67     11.76
+p2-b       671c0978 reply     fast         deepseek-flash@r2                      1690       11.76      None
+p2-a       7eb92020 tool      fast         deepseek-flash@r2                      1211       13.99      None
+p4-a       59c5e27c tool      setting_phrase None@None                              None       10.07      13.3
+p4-b       0c6e4691 reply     fast         deepseek-v4-pro@pro-d                  9157       29.27     31.56
+p3-a       25f10c0b reply     fast         deepseek-v4-pro@pro-d                  4019       25.73     28.39
+p5-a       1306d2b9 tool      setting_phrase None@None                              None       13.68     16.79
+p5-b       b2b2bcbf reply     fast         glm-5.3@r3                             4060       16.76      None
+p3-b       922a6d46 tool      fast         glm-5.3@r3                             2567       14.39      None
+p6-a       75420868 reply     fast         glm-5.3@r3                             4677       18.08     20.28
+p7-a       714891a8 tool      fast         deepseek-flash@r2                      1484       24.86      None

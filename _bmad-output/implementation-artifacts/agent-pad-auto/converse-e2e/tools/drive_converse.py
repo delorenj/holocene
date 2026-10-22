@@ -94,7 +94,11 @@ def synth(name, text, voice="rick"):
         blob = r.read()
     src = W / "wav" / f"{name}.src"
     src.write_bytes(blob)
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-ar", "16000", "-ac", "1", str(out)], check=True)
+    # LEAD_IN_S (default 0): silence in front of the utterance. The emulator's mic can open ~2 s after mic=recording, which
+    # clips the first words ("Geek, bro." for "Switch to DeepSeek Pro."); 2.5 s of lead-in covers it.
+    lead_ms = int(float(os.environ.get("LEAD_IN_S", "0") or 0) * 1000)
+    filt = ["-af", f"adelay={lead_ms}:all=1"] if lead_ms > 0 else []
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), *filt, "-ar", "16000", "-ac", "1", str(out)], check=True)
     (W / "wav" / f"{name}.txt").write_text(text)
     return out
 
@@ -212,15 +216,18 @@ def summarize(memo_id):
     return {
         "routed": {k: rd.get(k) for k in ("action", "decided_action", "path", "model_answered", "route", "attempts", "latency_ms",
                                          "cached_tokens", "conv_turn", "conv_id", "guard", "fallback_reason", "title", "target",
-                                         "perm", "delegate_to", "say", "say_chars", "lexicon", "card_age_s", "decide_ms")} if rd else None,
+                                         "perm", "delegate_to", "say", "say_chars", "lexicon", "card_age_s", "decide_ms",
+                                         "requested_model", "served_route", "tile_model", "tile_voice", "tool")} if rd else None,
         "attempt_log": rd.get("attempt_log"),
         "n_routed": len(routed),
         "dispatched": [{k: d.get(k) for k in ("followup", "lane", "lane_reason", "command_id", "target_agent_id", "tile_agent_id",
                                               "model", "brief_id", "brief_title", "perm", "conv_id", "delegated_to")} for d in disp],
         "delegated": [{k: e["data"].get(k) for k in ("target_agent_id", "tile_agent_id", "brief_id", "command_id", "lane", "perm", "title")}
                       for e in g("delegated")],
-        "replied": [{k: e["data"].get(k) for k in ("followup", "command_id", "conv", "chars")} for e in g("replied")],
+        "replied": [{k: e["data"].get(k) for k in ("followup", "command_id", "conv", "chars", "voice", "voice_requested",
+                                                   "voice_fallback")} for e in g("replied")],
         "voiced": len(g("voiced")),
+        "voiced_voices": sorted({str(e["data"].get("voice")) for e in g("voiced")}),
         "types": sorted({k for k in by}),
     }
 
