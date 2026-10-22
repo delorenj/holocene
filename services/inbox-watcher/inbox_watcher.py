@@ -92,6 +92,13 @@ REPLY_FRESH_SLACK_S = 2.0
 TRANSCRIBE_TIMEOUT_S = int(os.environ.get("MEMO_TRANSCRIBE_TIMEOUT_S", "420"))
 TRANSCRIBE_RATIO = float(os.environ.get("MEMO_TRANSCRIBE_RATIO", "8"))  # CPU large-v3 measured ~5x realtime
 TRANSCRIBE_MAX_S = int(os.environ.get("MEMO_TRANSCRIBE_MAX_S", "7200"))
+# The fast path (holocene-whisper.service): large-v3-turbo kept warm on the GPU, about 0.5 s for a 7 s clip. Tried first;
+# the `transcribe` CLI runs instead on ANY failure (down, slow, an error, a junk result), so the server can only make a
+# memo faster, never fail it. The CLI alone was 5-6 s cold on the GPU and 8-17 s whenever another transcription held
+# its heavy lock (its CPU "small" fast lane: every car memo of 2026-10-21). Empty MEMO_WHISPER_URL turns it off.
+WHISPER_URL = os.environ.get("MEMO_WHISPER_URL", "http://127.0.0.1:8766").rstrip("/")
+WHISPER_TIMEOUT_S = float(os.environ.get("MEMO_WHISPER_TIMEOUT_S", "8"))     # plus 0.1 s per second of audio
+WHISPER_MAX_AUDIO_S = float(os.environ.get("MEMO_WHISPER_MAX_AUDIO_S", "900"))  # longer goes to the CLI
 MAX_ATTEMPTS = int(os.environ.get("MEMO_MAX_ATTEMPTS", "3"))
 MIN_AUDIO_S = float(os.environ.get("MEMO_MIN_AUDIO_S", "0.7"))
 SILENT_MAX_DBFS = mc_.SILENT_MAX_DBFS  # loudest-sample line below which a recording is silent (see memo_common)
@@ -1177,6 +1184,10 @@ class Watcher:
 
     def _transcribe_run(self, tmp: Path, audio: Path, mid: str, key: str, agent: str, audio_s: float | None,
                         levels: dict, lvl: dict, timeouts: int) -> dict:
+        t1 = time.time()
+        served, fallback = self._transcribe_server(audio, mid, key, agent, audio_s, levels)
+        if served:
+            return {**served, "took": time.time() - t1, "audio_s": audio_s, "levels": lvl}
         timeout = transcribe_timeout(audio_s, timeouts)
 
         out_md = tmp / (audio.stem + ".md")
@@ -1185,8 +1196,7 @@ class Watcher:
         # --output keeps the transcript out of ~/d/Transcripts (--ephemeral only skips S3 archiving)
         cmd = [TRANSCRIBE, str(audio), "--no-diarization", "--ephemeral", "--output", str(out_md)]
         log("transcribe_start", memo_id=mid, key=key, agent=agent, stage="transcribe",
-            audio_s=audio_s, timeout_s=timeout)
-        t1 = time.time()
+            audio_s=audio_s, timeout_s=timeout, server_skipped=fallback)
         try:
             r = run(cmd, timeout, env=env)
         except subprocess.TimeoutExpired:
@@ -1208,10 +1218,50 @@ class Watcher:
                     meta = json.loads(line.split(":", 1)[1].strip())
                 except json.JSONDecodeError:
                     pass
+        dev = re.search(r"Device: (\w+)", r.stderr)  # transcribe.py logs "Device: cuda (float16)" / "Device: cpu (int8)"
+        meta = {**meta, "device": dev.group(1) if dev else None, "fallback_reason": fallback}
         junk = junk_reason(text, audio_s or meta.get("duration_seconds"), levels)
         if junk:
             raise StageError("transcribe", junk[0], junk[1], retryable=False)
         return {"text": text, "meta": meta, "took": took, "audio_s": audio_s, "levels": lvl}
+
+    def _transcribe_server(self, audio: Path, mid: str, key: str, agent: str, audio_s: float | None,
+                           levels: dict) -> tuple[dict | None, str | None]:
+        """The fast path: POST the clip to the warm GPU whisper server. ({text, meta}, None) for a usable transcript;
+        (None, why) when the CLI must run instead. A junk result (empty, "Thank you.") also goes to the CLI: a second
+        opinion costs seconds only on a memo that would otherwise fail."""
+        if not WHISPER_URL:
+            return None, "server off"
+        if audio_s is not None and audio_s > WHISPER_MAX_AUDIO_S:
+            return None, f"audio {audio_s:.0f}s is over the server's {WHISPER_MAX_AUDIO_S:.0f}s"
+        timeout = WHISPER_TIMEOUT_S + 0.1 * (audio_s or 0)
+        t0 = time.time()
+        try:
+            boundary = uuid.uuid4().hex
+            body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{audio.name.replace(chr(34), "")}"\r\n'
+                    "Content-Type: application/octet-stream\r\n\r\n").encode() + audio.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+            req = urllib.request.Request(f"{WHISPER_URL}/v1/audio/transcriptions", data=body, method="POST",
+                                         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                d = json.loads(resp.read())
+            if not isinstance(d, dict) or not isinstance(d.get("text"), str):
+                raise ValueError(f"no text in the response: {str(d)[:120]}")
+            text = d["text"].strip()
+            junk = junk_reason(text, audio_s or d.get("duration_seconds"), levels)
+            if junk:
+                raise ValueError(f"{junk[0]} {text[:40]!r}")
+        except Exception as e:  # noqa: BLE001 - every failure has the same answer: the CLI runs
+            why = f"{type(e).__name__}: {e}"[:240]
+            log("whisper_server_fallback", "warn", memo_id=mid, key=key, agent=agent, stage="transcribe",
+                ms=int((time.time() - t0) * 1000), timeout_s=round(timeout, 1), reason=why)
+            return None, why
+        model = re.sub(r"^faster-whisper-|-ct2$", "", str(d.get("model") or "").rsplit("/", 1)[-1]) or None
+        meta = {"model": model, "backend": "faster-whisper-server", "device": d.get("device"),
+                "language": d.get("language"), "duration_seconds": d.get("duration_seconds"),
+                "word_count": len(text.split()), "fallback_reason": None}
+        log("whisper_server_done", memo_id=mid, key=key, agent=agent, stage="transcribe",
+            ms=int((time.time() - t0) * 1000), model=model, device=meta["device"], audio_s=audio_s)
+        return {"text": text, "meta": meta}, None
 
     def _transcribe_apply(self, m: dict, w: dict) -> None:
         text, meta, took = w["text"], w["meta"], w["took"]
@@ -1227,11 +1277,13 @@ class Watcher:
             "word_count": meta.get("word_count") or len(text.split()),
             "audio_duration_seconds": meta.get("duration_seconds") or w["audio_s"],
             "processing_seconds": round(took, 2), "model": meta.get("model"),
-            "backend": meta.get("backend"), "language": meta.get("language"), **w.get("levels", {})})
+            "backend": meta.get("backend"), "language": meta.get("language"),
+            # which path ran: device "cuda"/"cpu"; fallback_reason set when the warm server was skipped for the CLI
+            "device": meta.get("device"), "fallback_reason": meta.get("fallback_reason"), **w.get("levels", {})})
         m.update({k: v for k, v in w.get("levels", {}).items() if v is not None})
         self.done_stage(m, "transcribed", "dispatch", ms=took * 1000, chars=len(text),
                         audio_s=meta.get("duration_seconds") or w["audio_s"], model=meta.get("model"),
-                        text=text[:120])
+                        backend=meta.get("backend"), device=meta.get("device"), text=text[:120])
 
     # -- dispatch (worker thread) --
 

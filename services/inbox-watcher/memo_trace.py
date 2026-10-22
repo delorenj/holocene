@@ -81,6 +81,14 @@ def level_of(d: dict) -> str:
     return c.level_text(d.get("audio_max_dbfs"), d.get("audio_mean_dbfs"), d.get("audio_duration_seconds"))
 
 
+def stt_path_of(d: dict) -> str:
+    """Which speech-to-text path ran, from a transcribed fact: 'large-v3-turbo, gpu server, cuda', or
+    'small, cli, cpu; server skipped: URLError: ...' when the warm server was passed over for the `transcribe` CLI."""
+    path = {"faster-whisper-server": "gpu server", "faster-whisper": "cli"}.get(d.get("backend"), d.get("backend"))
+    out = ", ".join(str(x) for x in (d.get("model"), path, d.get("device")) if x) or "?"
+    return out + (f"; server skipped: {str(d['fallback_reason'])[:80]}" if d.get("fallback_reason") else "")
+
+
 def capture_of(d: dict) -> str:
     """The device-reported capture level (data.capture of the uploaded fact), '' when the pad sent none."""
     cap = d.get("capture") or {}
@@ -490,7 +498,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                            + (f" | {capture_of(d)}" if capture_of(d) else ""), optional=True)
     add_fact_hop("fact:received", "received", lambda d: f"watcher saw it, lag {d.get('detect_lag_ms')}ms")
     add_fact_hop("fact:transcribed", "transcribed",
-                 lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({d.get('model')})"
+                 lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({stt_path_of(d)})"
                            + (f", audio {level_of(d)}" if level_of(d) else "") + f": {str(d.get('transcript_text'))[:80]!r}")
     # The recording's level, from whichever transcribe-stage fact carries it (a silent or unrecognised memo never
     # gets a transcribed fact, only the failed one). It is the evidence behind a "silent microphone" verdict.

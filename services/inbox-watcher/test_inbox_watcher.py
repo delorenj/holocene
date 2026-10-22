@@ -104,6 +104,7 @@ FAKE_TRANSCRIBE.write_text(textwrap.dedent("""\
     text = "" if "SILENT" in open(args[0], "rb").read().decode("latin1") else "Summarize recent work."
     open(out, "w").write("---\\nsource-audio: x\\n---\\n# Transcription: x\\n\\n" + text + "\\n")
     print(json.dumps({"mdPath": out}), file=sys.stderr)
+    print("  Device: cpu (int8)", file=sys.stderr)
     print('Transcription-Metadata: {"model":"large-v3","backend":"faster-whisper","duration_seconds":1.5,"language":"en","word_count":3}', file=sys.stderr)
     print(out)
     """))
@@ -207,6 +208,8 @@ os.environ.update({
     "MEMO_EARSHOT_SKIP_CAR": "0",
     "MEMO_FFPROBE": str(FAKE_FFPROBE), "MEMO_FFMPEG": str(FAKE_FFMPEG), "MEMO_AGENT_REGISTRY": str(REGISTRY), "MEMO_RETRY_BUDGET_S": "0.4",
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
+    # The warm GPU whisper server is off unless a test points it at its fake (WhisperServer): never the live :8766.
+    "MEMO_WHISPER_URL": "",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memo_common as mc_  # noqa: E402
@@ -3880,6 +3883,142 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         pending = mt.phone_retry_hops({"phone_retry": {**base, "state": "pending", "deadline_ts": time.time() + 100}})
         self.assertEqual(pending[0].status, mt.UNKNOWN)
         self.assertEqual(mt.phone_retry_hops({}), [])
+
+
+class FakeWhisper(BaseHTTPRequestHandler):
+    """holocene-whisper.service's API: POST /v1/audio/transcriptions (multipart `file`) -> JSON. `server.mode` scripts it."""
+    def log_message(self, *a): pass
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        self.server.calls.append({"path": self.path, "ctype": self.headers["Content-Type"], "body": body})
+        mode = self.server.mode
+        if mode == "slow":
+            time.sleep(2.0)
+        status, out = 200, {"text": " Can we do a crank circuit? ", "language": "en", "language_probability": 1.0,
+                            "model": "deepdml/faster-whisper-large-v3-turbo-ct2", "device": "cuda",
+                            "compute_type": "float16", "duration_seconds": 9.0, "transcription_seconds": 0.48}
+        if mode == "error":
+            status, out = 500, {"error": {"message": "CUDA failed with error out of memory", "type": "RuntimeError"}}
+        elif mode == "junk":
+            out = {**out, "text": " Thank you."}
+        elif mode == "empty":
+            out = {**out, "text": ""}
+        blob = b"<html>bad gateway</html>" if mode == "garbled" else json.dumps(out).encode()
+        try:
+            self.send_response(status); self.send_header("Content-Length", str(len(blob))); self.end_headers()
+            self.wfile.write(blob)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the watcher gave up on a slow answer
+
+
+class WhisperServer(MemoHarness, unittest.TestCase):
+    """The warm GPU whisper server is the fast path; the `transcribe` CLI runs on every failure, so a memo is only ever
+    made faster by the server, never failed by it."""
+
+    @classmethod
+    def setUpClass(cls):
+        from http.server import ThreadingHTTPServer
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), FakeWhisper)
+        cls.srv.daemon_threads = True
+        cls.srv.mode, cls.srv.calls = "ok", []
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = f"http://127.0.0.1:{cls.srv.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def setUp(self):
+        super().setUp()
+        self.srv.mode, self.srv.calls = "ok", []
+        patcher = unittest.mock.patch.object(iw, "WHISPER_URL", self.url)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def transcribe(self, name, content=b"OggS fake audio"):
+        """Upload a memo and run it until its transcribe stage ends; the transcribed (or failed) fact."""
+        key = self.upload(name, content)
+        m = self.discover(key)
+        self.tick_until(lambda: self.of_type("transcribed", key) or self.of_type("failed", key))
+        return key, m, (self.of_type("transcribed", key) or [None])[-1]
+
+    def test_the_server_transcript_is_used_and_the_cli_never_runs(self):
+        key, m, d = self.transcribe("gpu", b"OggS the car clip")
+        self.assertEqual(d["transcript_text"], "Can we do a crank circuit?")  # the fake CLI would say "Summarize recent work."
+        self.assertEqual((d["backend"], d["model"], d["device"], d["language"]),
+                         ("faster-whisper-server", "large-v3-turbo", "cuda", "en"))
+        self.assertIsNone(d["fallback_reason"])
+        self.assertEqual(d["audio_duration_seconds"], 9.0)
+        self.assertLess(d["processing_seconds"], 3.0)
+        self.assertEqual(m["prompt"], iw.VOICE_PREFIX + "Can we do a crank circuit?")
+        call, = self.srv.calls
+        self.assertEqual(call["path"], "/v1/audio/transcriptions")
+        self.assertTrue(call["ctype"].startswith("multipart/form-data; boundary="))
+        self.assertIn(b'name="file"; filename="gpu.ogg"', call["body"])
+        self.assertIn(b"OggS the car clip", call["body"])
+
+    def assert_cli_ran(self, d, why):
+        self.assertEqual(d["transcript_text"], "Summarize recent work.")
+        self.assertEqual((d["backend"], d["model"], d["device"]), ("faster-whisper", "large-v3", "cpu"))
+        self.assertIn(why, d["fallback_reason"])
+
+    def test_a_server_error_falls_back_to_the_cli(self):
+        self.srv.mode = "error"
+        _, m, d = self.transcribe("gpu-500")
+        self.assert_cli_ran(d, "HTTP Error 500")
+        self.assertIn(m["stage"], ("dispatch", "await_agent"))
+
+    def test_a_server_that_is_down_falls_back_to_the_cli(self):
+        with unittest.mock.patch.object(iw, "WHISPER_URL", "http://127.0.0.1:9"):
+            _, _, d = self.transcribe("gpu-down")
+        self.assert_cli_ran(d, "URLError")
+
+    def test_a_slow_server_is_abandoned_at_its_timeout_for_the_cli(self):
+        self.srv.mode = "slow"
+        with unittest.mock.patch.object(iw, "WHISPER_TIMEOUT_S", 0.2):  # + 0.1 s per audio second: 1.1 s for 9 s
+            _, _, d = self.transcribe("gpu-slow")
+        self.assert_cli_ran(d, "timed out")
+
+    def test_a_garbled_answer_falls_back_to_the_cli(self):
+        self.srv.mode = "garbled"
+        _, _, d = self.transcribe("gpu-garbled")
+        self.assert_cli_ran(d, "JSONDecodeError")
+
+    def test_a_junk_server_transcript_gets_a_second_opinion_from_the_cli(self):
+        for mode, code in (("junk", "garbage_transcript"), ("empty", "empty_transcript")):
+            self.srv.mode = mode
+            _, _, d = self.transcribe(f"gpu-{mode}")
+            self.assert_cli_ran(d, code)
+
+    def test_junk_from_both_paths_fails_with_the_cli_verdict(self):
+        self.srv.mode = "junk"
+        key, m, d = self.transcribe("gpu-junk-silent", b"OggS SILENT")  # the fake CLI hears nothing in it either
+        self.assertIsNone(d)
+        f = self.of_type("failed", key)[-1]
+        self.assertEqual((f["stage"], f["error_code"], f["retryable"]), ("transcribe", "empty_transcript", False))
+        self.assertEqual(len(self.srv.calls), 1)
+
+    def test_a_long_recording_skips_the_server(self):
+        with unittest.mock.patch.object(iw, "WHISPER_MAX_AUDIO_S", 5.0):
+            _, _, d = self.transcribe("gpu-long")
+        self.assert_cli_ran(d, "over the server's 5s")
+        self.assertEqual(self.srv.calls, [])
+
+    def test_an_empty_url_turns_the_server_off(self):
+        with unittest.mock.patch.object(iw, "WHISPER_URL", ""):
+            _, _, d = self.transcribe("gpu-off")
+        self.assert_cli_ran(d, "server off")
+        self.assertEqual(self.srv.calls, [])
+
+    def test_the_trace_names_the_path_that_ran(self):
+        import memo_trace as mt
+        self.assertEqual(mt.stt_path_of({"model": "large-v3-turbo", "backend": "faster-whisper-server", "device": "cuda"}),
+                         "large-v3-turbo, gpu server, cuda")
+        self.assertEqual(mt.stt_path_of({"model": "small", "backend": "faster-whisper", "device": "cpu",
+                                         "fallback_reason": "URLError: <urlopen error [Errno 111] Connection refused>"}),
+                         "small, cli, cpu; server skipped: URLError: <urlopen error [Errno 111] Connection refused>")
+        self.assertEqual(mt.stt_path_of({"model": "large-v3"}), "large-v3")  # a fact from before the server existed
 
 
 if __name__ == "__main__":

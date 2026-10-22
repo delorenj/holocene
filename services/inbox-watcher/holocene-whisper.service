@@ -1,0 +1,36 @@
+[Unit]
+Description=Warm GPU faster-whisper for Holocene car memos (POST /v1/audio/transcriptions on 127.0.0.1:8766)
+Documentation=file://%h/code/33GOD/holocene/services/inbox-watcher/README.md
+After=network-online.target
+StartLimitIntervalSec=0
+
+# The inbox watcher's fast path: large-v3-turbo fp16 stays resident on the GPU (about 2.4 GB of VRAM), so a car memo
+# transcribes in well under a second instead of 5-6 s (cold `transcribe` CLI on the GPU) or 8-17 s (the CLI's CPU
+# fast lane when another transcription holds the heavy lock). The watcher falls back to the CLI on any error,
+# timeout or junk result, so this unit being down only costs speed, never a memo.
+#
+# Same server as vocalinux-faster-whisper.service (dictation, CPU, :8765, tied to the graphical session); this twin
+# runs headless on its own port so the car path never depends on a desktop login and dictation is not touched.
+
+[Service]
+Type=simple
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HF_HUB_OFFLINE=1
+Environment=HF_HOME=%h/.cache/huggingface
+Environment=VOCALINUX_FASTER_WHISPER_MODEL=large-v3-turbo
+Environment=VOCALINUX_FASTER_WHISPER_DEVICE=cuda
+Environment=VOCALINUX_FASTER_WHISPER_COMPUTE_TYPE=float16
+# beam 5 + VAD: the same decoding the `transcribe` CLI uses (scripts/transcribe.py), so either path hears the same.
+Environment=VOCALINUX_FASTER_WHISPER_BEAM_SIZE=5
+Environment=VOCALINUX_FASTER_WHISPER_CPU_THREADS=4
+Environment=VOCALINUX_FASTER_WHISPER_HOST=127.0.0.1
+Environment=VOCALINUX_FASTER_WHISPER_PORT=8766
+ExecStart=%h/code/infra/scripts/run-vocalinux-faster-whisper-server.sh
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

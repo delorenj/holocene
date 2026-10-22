@@ -19,8 +19,9 @@ tools to see every hop of it.
    inbox_watcher.py                                      memo_id = uuid5(URL, "s3://holocene-auto/"+key)
         |-- received    fact: audio.memo.received         HOP 3  watcher owns it
         |-- download, then measure the level (ffmpeg)     silent file -> failed(silent_audio), no transcription spent
-        |-- `transcribe` (faster-whisper)                 HOP 4  speech to text
-        |-- transcribed fact: audio.memo.transcribed      (text, seconds, model, audio duration, max/mean dBFS)
+        |-- warm GPU whisper :8766, else `transcribe` CLI  HOP 4  speech to text (holocene-whisper.service)
+        |-- transcribed fact: audio.memo.transcribed      (text, seconds, model, backend, device, fallback_reason,
+        |                                                  audio duration, max/mean dBFS)
         |-- bb-emit --kind command                        HOP 5  dispatch
         |     bloodbank.cmd.agent.invocation.invoke       (interactive lane; .start = batch lane, the fallback)
         |                                                 correlationid = memo_id, thread_id = memo_id,
@@ -482,6 +483,21 @@ Behaviour worth knowing:
   not cut. The size and etag of the object are recorded at discovery; a download
   that differs is held `download/object_changed` (`memo:retry` takes the object
   as it is now).
+- **Transcription takes the warm GPU first.** `holocene-whisper.service` keeps
+  large-v3-turbo fp16 resident on the GPU (about 2.4 GB of VRAM) at
+  `127.0.0.1:8766` (`MEMO_WHISPER_URL`; empty turns it off): about 0.5 s for a
+  7 s car clip. The watcher POSTs the clip there first and runs the `transcribe`
+  CLI instead on any failure: server down, slower than `MEMO_WHISPER_TIMEOUT_S`
+  (8) + 0.1 s per audio second, an error, a malformed answer, or a junk
+  transcript (empty, "Thank you.": the CLI gives a second opinion before the memo
+  fails). Recordings over `MEMO_WHISPER_MAX_AUDIO_S` (900) go straight to the
+  CLI. The `transcribed` fact says which path ran (`backend`
+  `faster-whisper-server` or `faster-whisper`, `device`, `fallback_reason`) and
+  so does `memo:trace`. The CLI alone was 5-6 s cold on the GPU and 8-17 s on
+  CPU whenever another transcription (Wax, Telnyx intake, HeyMa) held its heavy
+  lock: every car memo of 2026-10-21 took that CPU `small` fast lane. The server
+  is the same `~/code/infra/scripts/vocalinux-faster-whisper-server.py` that
+  VocaLinux dictation runs on :8765 (CPU); `install.sh` installs both units.
 - **Nothing blocks the loop.** transcribe, dispatch and speak run on worker
   threads (one transcription at a time); `tick()` keeps discovering, polling the
   journal, flushing the outbox and writing `heartbeat.json` (which lists which
