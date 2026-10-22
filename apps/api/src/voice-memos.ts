@@ -182,8 +182,22 @@ export type Routed = {
   action: string;
   /** The fast desk spoke this turn itself: no agent command for the memo (a confirm's delegation is a follow-up). */
   fast: boolean;
-  /** fast (a model call) | confirm_only / cancel_only (a lexicon short-circuit, no model call) | ... as the watcher names it. */
+  /**
+   * fast (a model call) | confirm_only / cancel_only / end_only / force_direct (a lexicon short-circuit, no model call) |
+   * fallback (every rung failed: the agent path, with fallbackReason).
+   */
   path?: string;
+  /** The model's own action when the deterministic guard changed it (e.g. confirm -> reply, no pending draft). */
+  decidedAction?: string;
+  /** Why the guard changed or clamped the decision: handoff_not_named, perm_clamped:..., already_sent, ... */
+  guard?: string[];
+  /** The agent card's age when the desk answered (its facts are only as fresh as this). */
+  cardAgeSeconds?: number;
+  /** A confirm that sent the brief: the agent it went to. */
+  delegateTo?: string;
+  perm?: string;
+  /** No routed fact (bb-emit's start-up gate kept it log-only): rebuilt from the replied fact's conv block. */
+  inferred?: boolean;
   /** The `model` field of the answer that was used (never an Anthropic route). Absent: no model call. */
   modelAnswered?: string;
   /** The ladder rung that answered (r1, r2, r3a, ...). */
@@ -228,7 +242,7 @@ export function routedOf(e: JourneyEvent, ownDispatch = false): Routed | undefin
   const path = str(d.path);
   const cached = num(d.cached_tokens) ?? num(rec(usage.prompt_tokens_details).cached_tokens);
   return {
-    eventId: e.id, at: e.at, convId, turn: num(d.turn) ?? num(d.conv_turn), action,
+    eventId: e.id, at: e.at, convId, turn: num(d.conv_turn) ?? num(d.turn), action,
     // A shadow decision (if the watcher ever publishes one) only logs: the memo still took the agent path.
     fast: action !== DIRECT_ACTION && path !== "shadow" && !ownDispatch,
     ...(path ? { path } : {}),
@@ -241,9 +255,28 @@ export function routedOf(e: JourneyEvent, ownDispatch = false): Routed | undefin
     ...(num(usage.completion_tokens) !== undefined ? { completionTokens: num(usage.completion_tokens) } : {}),
     ...(cached !== undefined ? { cachedTokens: cached } : {}),
     ...(str(d.fallback_reason) ? { fallbackReason: str(d.fallback_reason) } : {}),
+    ...(str(d.decided_action) && str(d.decided_action) !== action ? { decidedAction: str(d.decided_action) } : {}),
+    ...(Array.isArray(d.guard) && d.guard.some((g) => str(g)) ? { guard: d.guard.map(str).filter((g): g is string => g !== undefined) } : {}),
+    ...(num(d.card_age_s) !== undefined ? { cardAgeSeconds: num(d.card_age_s) } : {}),
+    ...(str(d.delegate_to) ? { delegateTo: str(d.delegate_to) } : {}),
+    ...(str(d.perm) ? { perm: str(d.perm) } : {}),
     ...(str(d.title) ?? str(d.draft_title) ? { title: str(d.title) ?? str(d.draft_title) } : {}),
     ...(str(d.target) ? { target: str(d.target) } : {})
   };
+}
+
+/**
+ * A memo the desk decided whose routed fact is not in the collection (bb-emit's start-up gate kept it log-only): its
+ * replied fact still says so in its conv block {conv_id, sid, turn, action, path}. The routed hop then shows as missing.
+ */
+export function routedFromReply(e: JourneyEvent, ownDispatch = false): Routed | undefined {
+  const c = rec(e.data.conv);
+  const convId = str(c.conv_id) ?? str(c.sid);
+  const action = str(c.action);
+  if (!convId || !action) return undefined;
+  const path = str(c.path);
+  return { eventId: e.id, at: e.at, convId, turn: num(c.turn), action, fast: action !== DIRECT_ACTION && path !== "shadow" && !ownDispatch,
+    ...(path ? { path } : {}), inferred: true };
 }
 
 export const convChipOf = (r: Routed): ConvChip => ({
@@ -267,13 +300,17 @@ export function routedDetail(r: Routed): string {
   const tokens = r.promptTokens !== undefined || r.completionTokens !== undefined ? `${r.promptTokens ?? "?"}+${r.completionTokens ?? "?"} tokens` : undefined;
   return [
     `action ${r.action}`,
+    r.decidedAction ? `the model said ${r.decidedAction}` : undefined,
+    r.guard?.length ? `guard: ${r.guard.join(", ")}` : undefined,
+    r.delegateTo ? `sent to ${r.delegateTo}` : undefined,
     r.path && r.path !== "fast" ? `path ${r.path}` : undefined,
     modelAtRoute(r) ?? (r.fast ? "no model call" : undefined),
     r.attempts !== undefined && r.attempts > 1 ? `${r.attempts} attempts` : undefined,
     r.latencyMs !== undefined ? `${Math.round(r.latencyMs)} ms` : undefined,
     tokens,
     r.cachedTokens !== undefined ? `${r.cachedTokens} cached` : undefined,
-    r.fallbackReason ? `fell back: ${r.fallbackReason}` : undefined
+    r.fallbackReason ? `fell back: ${r.fallbackReason}` : undefined,
+    r.cardAgeSeconds !== undefined ? `card ${Math.round(r.cardAgeSeconds)} s old` : undefined
   ].filter(Boolean).join(" · ");
 }
 
@@ -980,7 +1017,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
 
   // The fast desk's decision (the newest, should a restarted stage publish it again). A fast turn has no agent hops.
   const routedFact = memoFacts.filter((e) => e.type === ROUTED_TYPE).at(-1);
-  const routed = routedFact ? routedOf(routedFact, dispatches.length > 0) : undefined;
+  const ownReply = memoFacts.filter((e) => e.type === "bloodbank.audio.memo.replied" && !isFollowupFact(e.data)).at(-1);
+  const routed = routedFact ? routedOf(routedFact, dispatches.length > 0)
+    : ownReply ? routedFromReply(ownReply, dispatches.length > 0) : undefined;
   const specs = routed ? withRouted(escalation ? ESCALATED_HOPS : HOPS, routed) : escalation ? ESCALATED_HOPS : HOPS;
   const proof = hopEvents(relevant, escalation ? { escalation, sideOf } : undefined);
 
@@ -1053,7 +1092,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       failures, events: evs
     };
     if (spec.id === "uploaded") out.capture = memoFacts.map((e) => captureLevelOf(e.data)).find(Boolean);
-    if (spec.id === "routed" && routed) out.routed = routed;
+    if (spec.id === "routed" && routed) {
+      out.routed = routed;
+      if (routed.inferred && !evs.length) out.detail = `no audio.memo.routed fact (bb-emit's start-up check may have kept it log-only); the reply says the desk decided: ${routedDetail(routed)}`;
+    }
     if (spec.id === "replied" && evs[0]) out.reply = withLateMirror(replyInfoOf(evs[0].data), memoFacts.filter((e) => e.type === "bloodbank.audio.memo.mirrored").at(-1));
     if (spec.id === "transcribed") {
       out.audio = (evs[0] ? audioLevelOf(evs[0].data) : undefined) ?? failures.map((f) => f.audio).filter(Boolean).at(-1);
@@ -1274,14 +1316,15 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   }
   chunks.sort((a, b) => a.n - b.n);
   // A fast turn has no agent: its answer is the routed decision, so "after the agent finished" counts from there.
-  const agentDone = routed?.fast ? routed.at : [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
+  const routedAt = routed && !routed.inferred ? routed.at : undefined;
+  const agentDone = routed?.fast ? routedAt : [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
   const playedStarted = memoFacts.find((e) => e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")?.at;
   const timing = memoTiming(startedAt, progress, narrations, speech,
     // reply_up_at: the replied fact waits for the phone decision, so the reply was up (and the car could start) before it
     // A reply spoken as one file has no first chunk: its voiced fact (chunk 1 of 1) is the moment the whole reply was up.
     { firstChunkAt: chunks[0] && chunks[0].of > 1 ? chunks[0].at : undefined,
       repliedAt: (repliedEvent && str(repliedEvent.data.reply_up_at)) ?? (chunks[0] && chunks[0].of === 1 ? chunks[0].at : undefined) ?? repliedEvent?.at,
-      agentDoneAt: agentDone, playedAt: playedStarted, routedAt: routed?.at });
+      agentDoneAt: agentDone, playedAt: playedStarted, routedAt });
   const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
 
   const summary: MemoSummary = {

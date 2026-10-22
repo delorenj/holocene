@@ -264,7 +264,7 @@ function FollowUps({ memo }: { memo: MemoDetail }) {
               {f.seconds !== undefined ? ` · ${f.status === "running" ? "running for" : "took"} ${formatDuration(f.seconds)}` : ""}
               {f.afterAnswerSeconds !== undefined ? ` · spoken ${formatDuration(f.afterAnswerSeconds)} after the quick answer` : ""}
             </p>
-            {f.plan ? <blockquote><span className="hub-label">{f.kind === "delegation" ? "Brief sent" : "Handed off"}</span><p>{f.plan}</p></blockquote> : null}
+            {f.plan && f.plan !== f.title ? <blockquote><span className="hub-label">{f.kind === "delegation" ? "Brief sent" : "Handed off"}</span><p>{f.plan}</p></blockquote> : null}
             {f.replyText ? <blockquote><span className="hub-label">{f.kind === "delegation" ? "Agent said (result)" : "Agent said (follow-up)"}</span><p>{f.replyText}</p></blockquote> : null}
             {f.error ? <p className="hub-note">{f.error}</p> : null}
             <dl className="voice-ids">

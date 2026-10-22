@@ -48,7 +48,11 @@ export type RouteAttempt = { route?: string; model?: string; ok?: boolean; error
  * cancel | end), no agent command for the memo; otherwise (direct) the memo took today's agent path.
  */
 export type Routed = {
-  eventId: string; at: string; convId: string; turn?: number; action: string; fast: boolean; path?: string;
+  eventId: string; at: string; convId: string; turn?: number; action: string; fast: boolean;
+  /** fast | confirm_only | cancel_only | end_only | force_direct | fallback */
+  path?: string; decidedAction?: string; guard?: string[]; cardAgeSeconds?: number; delegateTo?: string; perm?: string;
+  /** No routed fact in the collection: rebuilt from the replied fact's conv block. */
+  inferred?: boolean;
   modelAnswered?: string; route?: string; attempts?: number; attemptLog?: RouteAttempt[]; latencyMs?: number;
   promptTokens?: number; completionTokens?: number; cachedTokens?: number; fallbackReason?: string; title?: string; target?: string;
 };

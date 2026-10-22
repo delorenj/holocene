@@ -963,3 +963,42 @@ test("the list scan reads the routed and delegated facts with the stage facts", 
   assert.ok(MEMO_STAGE_TYPES.includes("bloodbank.audio.memo.routed"));
   assert.ok(MEMO_STAGE_TYPES.includes("bloodbank.audio.memo.delegated"));
 });
+
+test("the watcher's routed fact: conv_turn, the guard's reasons, the model's own action and the card's age", () => {
+  const routed = routedFact(2, { sid: "a1b2", conv_turn: 3, action: "reply", decided_action: "confirm", guard: ["no_pending_draft"],
+    model_answered: "deepseek-v4.1-flash-1017", route: "r1", attempts: 1, latency_ms: 700, path: "fast", lexicon: false, card_age_s: 41.6,
+    reply_s3_key: "replies/x.ogg" });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), routed, fastReplied(5)], now(20))!;
+  assert.equal(d.routed?.turn, 3);
+  assert.equal(d.hops.find(h => h.id === "routed")!.detail,
+    "action reply · the model said confirm · guard: no_pending_draft · deepseek-v4.1-flash-1017@r1 · 700 ms · card 42 s old");
+});
+
+test("a fast turn whose routed fact never reached the collection is still a fast turn, from its reply's conv block", () => {
+  const reply = fact("audio.memo.replied", 5, { occurred_at: iso(5), reply_text: "Draft for Holocene PM: spool. Read-only. Say send it.", reply_s3_key: "replies/x.ogg",
+    conv: { conv_id: "c-9", sid: "c9", turn: 1, action: "propose", path: "fast" } });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), reply], now(20))!;
+  assert.deepEqual(d.hops.map(h => h.id), ["uploaded", "received", "transcribed", "routed", "replied", "played"]);
+  const hop = d.hops.find(h => h.id === "routed")!;
+  assert.equal(hop.status, "missing");
+  assert.match(hop.detail, /no audio.memo.routed fact/);
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Complete · draft read back");
+  assert.equal(d.timing.routedSeconds, undefined);
+  assert.deepEqual(d.conv, { convId: "c-9", turn: 1, action: "propose", fast: true, modelAnswered: undefined, route: undefined });
+});
+
+test("the watcher's delegation dispatch (brief_title, delegated_to) and delegated fact read as one delegation", () => {
+  const confirm = routedFact(1.4, { action: "confirm", path: "confirm_only", lexicon: true, delegate_to: "holocene-pm", attempts: 0 });
+  const disp = fact("audio.memo.dispatched", 8, { occurred_at: iso(8), command_id: DCMD, lane: "batch", lane_reason: "voice_delegation", followup: 1,
+    followup_plan: "Why the audio spool is disabled", target_agent_id: "holocene-pm", tile_agent_id: "holocene-pm", delegated_to: "holocene-pm",
+    conv_id: "c-1", brief_id: BRIEF, brief_title: "Why the audio spool is disabled", perm: "read_only" });
+  const del = fact("audio.memo.delegated", 8.1, { occurred_at: iso(8.1), target_agent_id: "holocene-pm", tile_agent_id: "holocene-pm", conv_id: "c-1",
+    brief_id: BRIEF, brief_sha256: "b".repeat(64), command_id: DCMD, lane: "batch", perm: "read_only", title: "Why the audio spool is disabled" });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), confirm, fastReplied(5), disp, del], now(30))!;
+  assert.equal(d.followups.length, 1);
+  assert.equal(d.followups[0].title, "Why the audio spool is disabled");
+  assert.equal(d.followups[0].target, "holocene-pm");
+  assert.equal(d.stageLabel, "Sent to holocene-pm · running");
+  assert.match(d.hops.find(h => h.id === "routed")!.detail, /^action confirm · sent to holocene-pm · path confirm_only · no model call$/);
+});
