@@ -231,7 +231,7 @@ class Ladder(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(res["route"], "r3")
         final, _ = g(res["decision"], session(), "Have the PM check which tests cover the converse stage and report back")
-        self.assertEqual(final["draft"]["title"], "Have the PM check which tests cover the")
+        self.assertEqual(final["draft"]["title"], "Check which tests cover the converse stage")
         self.assertIn("Have the PM check which tests cover the converse stage and report back", final["draft"]["body"])
 
     def test_a_title_made_from_the_drivers_words(self):
