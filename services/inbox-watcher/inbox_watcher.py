@@ -878,6 +878,30 @@ class Watcher:
         log("fact_unavailable", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], fact=f"audio.memo.{action}",
             note="bb-emit --check refused this type at start-up: logged only, never queued", data=payload)
 
+    def fact_async(self, action: str, m: dict, payload: dict) -> None:
+        """A fast-desk fact (routed) published off the critical path: bb-emit is a subprocess (0.2-0.4 s) and the reply must not
+        wait for it (the routed fact is for the operator's views, nothing reads it before the voice is up). Same gate and the
+        same outbox-on-failure as fact(); the causation chain picks up its id when it lands. Lock held by the caller."""
+        if not self.contract_ok.get(action):
+            return self.fact_gated(action, m, payload)
+        data = {"memo_id": m["memo_id"], "s3_key": m["key"], "target_agent_id": m["agent"],
+                "occurred_at": iso(now_utc()), **payload}
+        rec = {"action": action, "memo_id": m["memo_id"], "data": data, "causation": m.get("last_fact_id")}
+
+        def work():
+            try:
+                ids = self._emit_raw(rec)
+                with self.mu:
+                    m["last_fact_id"] = ids.get("id") or m.get("last_fact_id")
+                log("fact_published", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=action,
+                    fact=f"audio.memo.{action}", fact_id=ids.get("id"), async_=True)
+            except Exception as e:  # noqa: BLE001
+                with self.mu:
+                    self.s.data["outbox"].append(rec)
+                log("fact_queued", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=action,
+                    error=str(e)[:300], outbox=len(self.s.data["outbox"]))
+        threading.Thread(target=work, name="converse-fact", daemon=True).start()
+
     def check_contracts(self) -> dict:
         """Start-up gate: does bb-emit accept audio.memo.routed and audio.memo.delegated? A dry run (--check), no NATS."""
         sample = {"memo_id": str(uuid.uuid4()), "s3_key": "inbox/holocene-pm/2026/01/01/check.ogg",
@@ -1908,7 +1932,7 @@ class Watcher:
             self.close_session(sk, "end")
         card = raw.get("card") or {}
         draft = final["draft"] or sent or final.get("already") or {}
-        self.fact_gated("routed", m, {
+        routed_payload = {
             "conv_id": sess["conv_id"], "sid": sess["sid"], "conv_turn": n, "conv_opened": opened, "action": action,
             "decided_action": dec.get("action"), "say": final["say"][:600] if action != "direct" else None,
             "say_chars": len(final["say"]) if action != "direct" else None,
@@ -1921,13 +1945,14 @@ class Watcher:
             "card_sha256": card.get("sha256"), "recall": card.get("recall"),
             "card_age_s": round(now - float(card["built_at"]), 1) if card.get("built_at") else None,
             "device": sender.get("device"), "decide_ms": int(took * 1000),
-            "reply_s3_key": m["conv"]["reply_key"]})
+            "reply_s3_key": m["conv"]["reply_key"]}
         log("converse_decided", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"], turn=n, action=action,
             path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), llm_ms=llm.get("latency_ms"),
             cached_tokens=llm.get("cached_tokens"), fallback_reason=raw.get("fallback_reason"),
             say=(final["say"] or "")[:120] or None, delegate_to=(sent or {}).get("target"))
         self.done_stage(m, "converse", "dispatch" if action == "direct" else "speak", ms=took * 1000, action=action,
                         path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), conv=sess["sid"], turn=n)
+        self.fact_async("routed", m, routed_payload)  # last: nothing after it can fail, and the voice does not wait for it
 
     def _cancel_sending(self, sess: dict, cs: dict, mid: str, say: str, reasons: list[str]) -> str:
         """Lock held. "Cancel that" while the read-back of a confirmed brief is still being spoken: if the brief has not been

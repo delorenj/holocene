@@ -289,15 +289,15 @@ class PipelineReview(ConverseHarness, unittest.TestCase):
 
     def test_a_failure_half_way_through_the_apply_rolls_the_conversation_back(self):
         self.propose()
-        real = self.w.fact_gated
+        real = self.w.done_stage
         n = {"c": 0}
 
-        def flaky(action, m, payload):
-            if action == "routed" and payload.get("action") == "confirm" and n["c"] == 0:
+        def flaky(m, stage, nxt, *a, **kw):
+            if stage == "converse" and kw.get("action") == "confirm" and n["c"] == 0:
                 n["c"] += 1
                 raise RuntimeError("boom after mutation")
-            return real(action, m, payload)
-        with unittest.mock.patch.object(self.w, "fact_gated", side_effect=flaky):
+            return real(m, stage, nxt, *a, **kw)
+        with unittest.mock.patch.object(self.w, "done_stage", side_effect=flaky):
             key, m = self.say("Send it.")
         self.assertIn("Sending to Holocene PM", self.last_said)
         self.assertNotIn("Already sent", self.last_said)
