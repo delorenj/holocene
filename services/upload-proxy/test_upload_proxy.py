@@ -261,6 +261,21 @@ class HttpBehaviour(unittest.TestCase):
         self.assertIn(b" 202 ", self.client_event(json.dumps({"event": "speech", "speech": {"action": "explode"}}).encode()))
         self.assertEqual(len(self.published), n0 + 1)
 
+    def test_a_reply_speech_decision_settles_that_replys_claim_not_the_memos_newest(self):
+        # Recheck 2026-10-22: _speech settled claims by memo only, so a quick answer's late start/end could land on its
+        # follow-up's claim. The reply utterance's id is its reply key; pass it through.
+        import json
+        from unittest import mock
+        mid = mc.memo_id_for(KEY)
+        rkey = f"replies/2026/10/22/063546Z-holocene-pm-{mid}.ogg"
+        start = {"action": "start", "kind": "reply", "id": rkey, "seq": 9, "reason": "", "mic": "idle",
+                 "at": 1760990100123, "mono_ms": 5512, "memo_id": mid}
+        with mock.patch.object(up.CLAIMS, "played", return_value=True) as played:
+            self.client_event(json.dumps({"event": "speech", "key": KEY, "speech": start}).encode())
+            self.client_event(json.dumps({"event": "speech", "key": KEY, "speech": {**start, "id": "chunk-1"}}).encode())
+        self.assertEqual(played.call_args_list[0], mock.call(mid, "start", reply_key=rkey))
+        self.assertEqual(played.call_args_list[1], mock.call(mid, "start", reply_key=None), "not a reply key: the memo")
+
     def test_good_beacon_is_logged_and_published(self):
         import json
         n0 = len(self.published)

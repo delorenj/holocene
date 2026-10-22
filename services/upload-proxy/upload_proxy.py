@@ -1321,8 +1321,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if env:
             publish_async(env, key or memo_id)
         if d and memo_id and d.get("speech_kind") == "reply" and d.get("speech_action") in ("start", "end"):
-            if not CLAIMS.played(memo_id, d["speech_action"]):
-                log("claim_conflict", memo_id=memo_id, by="car", action=d["speech_action"], source="speech",
+            # The reply utterance's id is its reply key: settle THAT reply's claim, not the memo's newest (a quick
+            # answer's late start must not land on its follow-up). Ids that are not a full reply key fall back to the memo.
+            parsed = parse_reply_key(d.get("speech_id") or "")
+            rkey = d["speech_id"] if parsed and parsed[0] == memo_id else None
+            if not CLAIMS.played(memo_id, d["speech_action"], reply_key=rkey):
+                log("claim_conflict", memo_id=memo_id, by="car", action=d["speech_action"], source="speech", key=rkey,
                     note="the car spoke a reply the phone had taken: it was heard twice")
 
     def _heard(self):
