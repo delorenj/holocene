@@ -1,6 +1,7 @@
 """The uploaded fact the proxy publishes must satisfy the Bloodbank contract and match the watcher's memo id."""
 import json
 import sys
+import time
 import tempfile
 import unittest
 import urllib.parse
@@ -13,6 +14,7 @@ sys.path.insert(0, str(HERE.parent / "inbox-watcher"))
 import upload_proxy as up  # noqa: E402
 import memo_common as mc  # noqa: E402
 
+up.WAKE_URL = ""  # no test PUT should reach for a real watcher; WakeHint passes its own URL
 BB_HOOKS = Path("/home/delorenj/code/33GOD/bloodbank/services/agent-hooks")
 KEY = "inbox/holocene-pm/2026/10/15/20261015T201500Z.ogg"
 
@@ -1297,3 +1299,126 @@ class ReplyClaimsHttp(unittest.TestCase):
         self.assertEqual(self.call("/upload/played", {"reply_key": rkey, "phase": "started"})[0], 200)
         self.assertEqual(self.call(f"/upload/claim?memo={memo}")[1]["car"], "started")
         self.assertFalse(self.call("/upload/claim", {"by": "watcher", "action": "take", "memo_id": memo})[1]["ok"])
+
+
+class WakeHint(unittest.TestCase):
+    """The proxy tells the inbox watcher a memo landed (key, size, md5 etag), fail-open, off the PUT's own path."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server, threading
+        cls.got, cls.delay = [], 0.0
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", 0))
+                cls.got.append((self.path, json.loads(self.rfile.read(n))))
+                time.sleep(cls.delay)
+                self.send_response(202)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}/wake"
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def setUp(self):
+        self.got.clear()
+        type(self).delay = 0.0
+
+    def wait(self, n=1):
+        for _ in range(100):
+            if len(self.got) >= n:
+                return
+            time.sleep(0.02)
+
+    def test_hint_carries_what_a_listing_would(self):
+        import hashlib
+        body = b"OggS" + b"\x01" * 500
+        h = up.build_wake_hint(KEY, body, "dev-12345678", "car")
+        self.assertEqual((h["key"], h["size"], h["etag"], h["memo_id"], h["device"], h["host"]),
+                         (KEY, len(body), hashlib.md5(body).hexdigest(), mc.memo_id_for(KEY), "dev-12345678", "car"))
+        self.assertTrue(h["uploaded_at"].endswith("Z"))
+
+    def test_a_large_body_sends_no_etag(self):
+        self.assertNotIn("etag", up.build_wake_hint(KEY, b"\0" * (up.WAKE_ETAG_MAX_BYTES + 1)))
+
+    def test_the_hint_is_posted(self):
+        up.wake_watcher_async(KEY, b"OggS1234", None, None, url=self.url)
+        self.wait()
+        self.assertEqual(self.got[0][0], "/wake")
+        self.assertEqual(self.got[0][1]["key"], KEY)
+
+    def test_only_inbox_memos_with_an_agent_are_hinted(self):
+        up.wake_watcher_async("replies/2026/10/15/x.ogg", b"OggS", url=self.url)
+        up.wake_watcher_async("inbox/loose.ogg", b"OggS", url=self.url)
+        up.wake_watcher_async(KEY, b"OggS", url="")
+        time.sleep(0.2)
+        self.assertEqual(self.got, [])
+
+    def test_a_slow_watcher_never_delays_the_caller(self):
+        type(self).delay = 1.0
+        t0 = time.time()
+        up.wake_watcher_async(KEY, b"OggS1234", url=self.url)
+        self.assertLess(time.time() - t0, 0.1)
+        self.wait()  # let the request land before the next test clears the list
+
+    def test_a_dead_watcher_is_fail_open(self):
+        up.wake_watcher_async(KEY, b"OggS1234", url="http://127.0.0.1:9/wake")
+        time.sleep(0.3)  # nothing raised into the caller
+
+    def test_a_put_hints_the_watcher_after_the_object_is_stored(self):
+        import socketserver, threading
+        real_mc, real_url = up.MC_BIN, up.WAKE_URL
+        up.MC_BIN, up.WAKE_URL, up.EMIT_FACTS = "/bin/true", self.url, False
+        real_route = up.agent_route
+        up.agent_route = lambda agent: {"ok": True, "reason": None}
+        srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            import socket
+            body = b"OggS" + b"\0" * 64
+            s = socket.create_connection(("127.0.0.1", srv.server_address[1]), timeout=5)
+            s.sendall((f"PUT /upload/{KEY} HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\nContent-Type: audio/ogg\r\n"
+                       f"X-Holocene-Device: abcdef0123456789\r\nX-Holocene-Host: car\r\nConnection: close\r\n\r\n").encode() + body)
+            out = b""
+            while True:
+                d = s.recv(4096)
+                if not d:
+                    break
+                out += d
+            s.close()
+            self.assertIn(b" 200 ", out.split(b"\r\n")[0])
+            self.wait()
+            self.assertEqual((self.got[0][1]["key"], self.got[0][1]["size"], self.got[0][1]["host"]), (KEY, len(body), "car"))
+        finally:
+            srv.shutdown()
+            up.MC_BIN, up.WAKE_URL, up.agent_route = real_mc, real_url, real_route
+
+    def test_a_failed_store_sends_no_hint(self):
+        import threading, socket
+        real_mc, real_url = up.MC_BIN, up.WAKE_URL
+        up.MC_BIN, up.WAKE_URL = "/bin/false", self.url
+        real_route = up.agent_route
+        up.agent_route = lambda agent: {"ok": True, "reason": None}
+        srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            body = b"OggS" + b"\0" * 64
+            s = socket.create_connection(("127.0.0.1", srv.server_address[1]), timeout=5)
+            s.sendall((f"PUT /upload/{KEY} HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode() + body)
+            while s.recv(4096):
+                pass
+            s.close()
+            time.sleep(0.2)
+            self.assertEqual(self.got, [])
+        finally:
+            srv.shutdown()
+            up.MC_BIN, up.WAKE_URL, up.agent_route = real_mc, real_url, real_route

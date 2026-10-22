@@ -90,6 +90,8 @@ import http.server
 import socketserver
 import subprocess
 import tempfile
+import hashlib
+import http.client
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -102,6 +104,13 @@ MC_BIN = os.environ.get("MC_BIN", "/usr/local/bin/mc")
 NATS_HOST = os.environ.get("NATS_HOST", "host.docker.internal")
 NATS_PORT = int(os.environ.get("NATS_PORT", "4222"))
 EMIT_FACTS = os.environ.get("EMIT_FACTS", "1") != "0"
+# Wake hint to the inbox watcher: it lists inbox/ with `mc ls` on a 1 s tick (2+ s of listing on a loaded host, so a
+# memo waited 0.7 s typical and 6 s p50 under load to be noticed). The proxy knows the moment the object is stored, so it
+# tells the watcher (key, size, md5 = the object's etag) and the watcher starts the memo at once. Fail-open: the poll
+# still finds every memo. Empty URL turns it off.
+WAKE_URL = os.environ.get("WATCHER_WAKE_URL", "http://host.docker.internal:8697/wake")
+WAKE_TIMEOUT_S = float(os.environ.get("WATCHER_WAKE_TIMEOUT_S", "0.5"))
+WAKE_ETAG_MAX_BYTES = 8 * 1024 * 1024  # a larger object may be a multipart upload, whose etag is not its md5
 SERVICE = "agent-pad-upload"
 
 
@@ -957,6 +966,51 @@ def nats_publish(subject: str, body: bytes, timeout: float = 3.0) -> None:
                 raise IOError(line.decode(errors="replace").strip())
 
 
+def build_wake_hint(key: str, body: bytes, device=None, host=None) -> dict:
+    """What the watcher needs to start a memo without listing S3: the same fields its listing yields."""
+    hint = {"key": key, "size": len(body), "uploaded_at": now_iso(), "memo_id": memo_id_for(key)}
+    if len(body) <= WAKE_ETAG_MAX_BYTES:
+        hint["etag"] = hashlib.md5(body).hexdigest()
+    if device:
+        hint["device"] = device
+    if host:
+        hint["host"] = host
+    return hint
+
+
+def wake_post(url: str, hint: dict, timeout: float) -> int:
+    """POST the hint (http only, stdlib). Returns the status; raises on a refused or slow watcher."""
+    u = urllib.parse.urlparse(url)
+    c = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
+    try:
+        c.request("POST", u.path or "/", body=json.dumps(hint, separators=(",", ":")).encode(),
+                  headers={"Content-Type": "application/json"})
+        r = c.getresponse()
+        r.read()
+        return r.status
+    finally:
+        c.close()
+
+
+def wake_watcher_async(key: str, body: bytes, device=None, host=None, url: str | None = None) -> None:
+    """Tell the inbox watcher a memo just landed (see WAKE_URL). A thread, so the PUT's own answer never waits on it."""
+    url = WAKE_URL if url is None else url
+    if not url or not key.startswith("inbox/") or agent_from_key(key) is None:
+        return
+    t0 = time.time()
+
+    def work():
+        try:
+            hint = build_wake_hint(key, body, device, host)
+            status = wake_post(url, hint, WAKE_TIMEOUT_S)
+            log("wake_hint", key=key, memo_id=hint["memo_id"], status=status, ms=int((time.time() - t0) * 1000))
+        except Exception as e:  # noqa: BLE001 - fail open: the watcher's own poll finds the memo
+            log("wake_hint", key=key, memo_id=memo_id_for(key), status=0, error=f"{type(e).__name__}: {e}"[:160],
+                ms=int((time.time() - t0) * 1000))
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None,
                         device=None, host=None) -> None:
     if not EMIT_FACTS or not key.startswith("inbox/") or agent_from_key(key) is None:
@@ -1266,7 +1320,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 sent_anyway=capture and capture.get("sent_anyway"), device=device, host=host,
                 remote=self.client_address[0], ua=ua)
             if key.startswith("inbox/"):
-                PRESENCE.sent(memo_id_for(key), device, host)
+                PRESENCE.sent(memo_id_for(key), device, host)  # before the hint: the watcher asks for it at once
+                wake_watcher_async(key, body, device, host)
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()

@@ -587,8 +587,7 @@ class LaneProbe:
 def put_status_object(key: str, body: bytes) -> tuple[bool, str]:
     """Upload one status document (mc pipe, JSON, no-store). (ok, error)."""
     try:
-        r = subprocess.run([mc_.MC_BIN, "pipe", "--quiet", "--attr", STATUS_ATTR, mc_.s3_url(key)],
-                           input=body, capture_output=True, timeout=20)
+        r = mc_.mc_pipe(mc_.s3_url(key), body, STATUS_ATTR)
     except Exception as e:  # noqa: BLE001
         return False, f"{type(e).__name__}: {e}"[:200]
     if r.returncode != 0:
@@ -4131,6 +4130,94 @@ def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None
 
 # ------------------------------------------------------------------ main
 
+# ---- wake listener (HOLOC-23 phase 2) ---------------------------------------------------------------------------
+# The upload proxy POSTs /wake {key, size, etag, uploaded_at} the moment it has stored a memo, so the memo starts then
+# instead of at the next `mc ls` tick (0.7 s typical, 6 s p50 on a loaded host; the main loop is also BLOCKED for the
+# whole listing, so a stage that finished meanwhile waited too). The hint is exactly one listing entry: discover() takes
+# it like a listing and skips keys it knows (memo ids are uuid5 of the key), so a hint plus the poll can never start a
+# memo twice. Fail-open: no hint, a bad hint, a closed port -> the poll finds the memo as before. MEMO_WAKE_PORT=0 off.
+WAKE_PORT = int(os.environ.get("MEMO_WAKE_PORT", "8697"))
+WAKE_KEY_RE = re.compile(r"^inbox/[A-Za-z0-9_.-]+/\d{4}/\d{2}/\d{2}/[^/\\\x00-\x1f]+$")
+
+
+def wake_entry(raw) -> dict | None:
+    """The listing entry for one hint body, or None when it is not a plausible inbox audio object."""
+    if not isinstance(raw, dict):
+        return None
+    key, size = raw.get("key"), raw.get("size")
+    if (not isinstance(key, str) or len(key) > 300 or not WAKE_KEY_RE.match(key) or ".." in key.split("/")
+            or not key.lower().endswith(mc_.AUDIO_EXTS)):
+        return None
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        return None
+    etag = raw.get("etag")
+    etag = etag if isinstance(etag, str) and re.fullmatch(r"[0-9a-f]{32}", etag) else None
+    when = mc_.parse_iso(raw.get("uploaded_at")) if isinstance(raw.get("uploaded_at"), str) else None
+    return {"key": key, "size": size, "etag": etag, "last_modified": when or now_utc()}
+
+
+def wake_apply(w: "Watcher", entry: dict) -> bool:
+    """Discover the memo and run its quick stage now, in the caller's thread, under the watcher lock. The main loop may
+    be inside a 2 s listing, so waiting for it to notice WAKE would waste the time this exists to save."""
+    with w.mu:
+        before = len(w.s.memos)
+        w.discover(([entry], None))
+        m = w.s.memos.get(entry["key"])
+        new = len(w.s.memos) > before
+        # tick()'s own gate for a memo: active, not running, due. receive is inline, transcribe goes to its pool.
+        for _ in range(2):
+            if (new and m and m.get("status") == "active" and m["stage"] in ("receive", "transcribe")
+                    and m["key"] not in w.running and m.get("next_at", 0) <= time.time() and not STOP):
+                w.advance(m)
+    WAKE.set()
+    if new and m:
+        log("wake_hint", memo_id=m["memo_id"], key=entry["key"], agent=m.get("agent"), stage=m.get("stage"),
+            note="started by the upload proxy's hint, not the listing")
+    return new
+
+
+def start_wake_listener(w: "Watcher", port: int = WAKE_PORT) -> "http.server.ThreadingHTTPServer | None":
+    import http.server
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            entry = None
+            try:
+                n = min(int(self.headers.get("Content-Length", 0)), 4096)
+                entry = wake_entry(json.loads(self.rfile.read(n) or b"{}")) if self.path == "/wake" else None
+            except (ValueError, OSError):
+                pass
+            self.send_response(202 if entry else 400)  # answered first: the proxy never waits for the work below
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            if entry:
+                try:
+                    wake_apply(w, entry)
+                except Exception as e:  # noqa: BLE001 - the poll still finds it
+                    log("wake_failed", "warn", key=entry["key"], error=f"{type(e).__name__}: {e}"[:200])
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *_):
+            pass
+
+    if port <= 0:
+        return None
+    try:
+        srv = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    except OSError as e:
+        log("wake_listener_unavailable", "warn", port=port, error=str(e)[:200], note="the 1 s poll still finds every memo")
+        return None
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, name="wake-listener", daemon=True).start()
+    log("wake_listener", port=port)
+    return srv
+
+
 def main() -> int:
     global STOP
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -4167,6 +4254,7 @@ def main() -> int:
     w.lane_probe.start()
     w.status_writer.start()
     w.start_progress_watch()
+    start_wake_listener(w)
     # The fast desk: bb-emit must accept its two facts before they are ever queued, and its keys are read once now (off
     # the critical path, memory only) so the heartbeat can say whether they work before the switch is flipped on.
     w.check_contracts()
