@@ -706,7 +706,7 @@ turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_
 record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
 
 **The ladder (never Anthropic).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order, inside `MEMO_CONVERSE_BUDGET_S`
-(8 s): r1 Hyper `deepseek-v4.1-flash-1017` (3 s), r2 Hyper `deepseek-v4.1-flash` (4 s; skipped in a call where r1 timed out
+(8 s): r1 Hyper `deepseek-v4.1-flash-1017` (4 s), r2 Hyper `deepseek-v4.1-flash` (4 s; skipped in a call where r1 timed out
 or could not connect, same host), r3a gateway `automaticai/personal/kimi-k3s` (temperature 1, effort medium), r3b gateway
 `automaticai/personal/glm-5.3-flash` (effort medium; the gateway refuses `low`). A rung is skipped while its breaker is
 open (3 failures in 120 s: 60 s) or its key is unreadable (retried every 300 s); a 401 re-reads the key once. Keys are
@@ -715,7 +715,10 @@ is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^au
 route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field matches. If every
 rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never failed
 for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; the gateway
-rungs are an availability fallback, not a latency path.
+rungs are an availability fallback, not a latency path. Live on 2026-10-22 with the real card (~3k prompt tokens): r1 answered a
+propose in 1.0-1.4 s (2944 of 3030 prompt tokens cached after the first call, 0.007 hypercredits per cached turn), and
+once took over 3 s, hence its 4 s timeout. Hyper's `usage` carries `cost` and `remaining.hypercredits` and lands on the
+routed fact as is: the shared key had about 9.5 hypercredits left that day, not hundreds.
 
 **State.** `state.json` `conversations` keyed `<device>|<agent>` (`conv_id`, `sid`, `turns[]` upserted by memo id,
 `pending` draft, `delegations[]`) and `conversations_closed` (the last 20). Idle `MEMO_CONVERSE_IDLE_S` (900 s) closes one
