@@ -175,6 +175,11 @@
 .hub-root .voice-flag.is-followup { color: var(--working); }
 .hub-root .voice-flag.is-followup.is-spoken { color: var(--cleared); }
 .hub-root .voice-flag.is-followup.is-failed { color: var(--broken); }
+/* the fast conversation desk: which conversation and turn, and what it did (filled when it spoke the turn itself) */
+.hub-root .voice-flag.is-conv { color: var(--ink-2); border-style: dotted; text-transform: none; letter-spacing: 0.04em; }
+.hub-root .voice-flag.is-action { color: var(--ink-2); }
+.hub-root .voice-flag.is-action.is-fast { color: var(--cleared); }
+.hub-root .voice-model { overflow-wrap: anywhere; }
 
 /* ---------- detail ---------- */
 
@@ -290,6 +295,7 @@
 .hub-root .voice-followup blockquote { margin: 0; padding-left: 10px; border-left: 2px solid var(--line-strong); }
 .hub-root .voice-followup blockquote p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hub-root .voice-followup.is-failed { color: var(--ink-2); }
+.hub-root .voice-followup-title { font: 700 13px/18px var(--font-mono); overflow-wrap: anywhere; }
 .hub-root .voice-note p {
   margin-top: 4px;
   font: 400 12px/18px var(--font-mono);

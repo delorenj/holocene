@@ -1,5 +1,5 @@
 import type { Signal } from "../hub/types";
-import type { AudioLevel, CaptureLevel, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary, ReplyInfo } from "./types";
+import type { AudioLevel, CaptureLevel, ConvChip, Lane, LaneStatus, HopStatus, MemoStatus, MemoSummary, ReplyInfo, RouteAttempt } from "./types";
 
 export const HOP_SIGNAL: Record<HopStatus, Signal> = {
   ok: "cleared", failed: "broken", waiting: "working", stuck: "stuck", pending: "quiet", missing: "unknown",
@@ -72,8 +72,10 @@ export function statement(memos: MemoSummary[]): string {
   if (escalated) parts.push(`${escalated} escalated to the batch lane.`);
   const detached = memos.filter((m) => m.detached && (m.status === "running" || m.status === "stuck")).length;
   if (detached) parts.push(`${detached} detached, running on.`);
-  const background = memos.filter((m) => m.followup?.status === "running").length;
+  const background = memos.filter((m) => m.followup?.status === "running" && m.followup.kind !== "delegation").length;
   if (background) parts.push(`${background} answered, follow-up running.`);
+  const delegated = memos.filter((m) => m.followup?.status === "running" && m.followup.kind === "delegation").length;
+  if (delegated) parts.push(`${delegated} delegated, running.`);
   if (count("complete")) parts.push(`${count("complete")} complete.`);
   if (count("cancelled")) parts.push(`${count("cancelled")} cancelled.`);
   return parts.join(" ");
@@ -133,4 +135,34 @@ export function phoneCopyText(r: ReplyInfo | undefined): string | null {
     skip_off: "every reply is mirrored (MEMO_EARSHOT_SKIP_CAR=0)"
   };
   return `Mirrored to the phone: ${why[r.earshotReason] ?? r.earshotReason}.`;
+}
+
+// ---- the fast in-car conversation desk (audio.memo.routed / audio.memo.delegated) ----
+
+/** "conv c-1 #2": a uuid conversation id is cut to its first 8 characters. */
+export function convLabel(c: Pick<ConvChip, "convId" | "turn">): string {
+  const id = /^[0-9a-f]{8}-/i.test(c.convId) ? c.convId.slice(0, 8) : c.convId;
+  return `conv ${id}${c.turn !== undefined ? ` #${c.turn}` : ""}`;
+}
+
+/** "deepseek-v4.1-flash-1017@r1" · undefined when no model answered. */
+export function modelAtRoute(c: Pick<ConvChip, "modelAnswered" | "route">): string | undefined {
+  return c.modelAnswered ? `${c.modelAnswered}${c.route ? `@${c.route}` : ""}` : undefined;
+}
+
+/** "Delegated to Flume PM: Why the audio spool is disabled" */
+export function delegationLabel(target: string | undefined, title: string | undefined): string {
+  return `Delegated to ${target ?? "the agent"}${title ? `: ${title}` : ""}`;
+}
+
+/** read_only -> "read-only" · changes_ok -> "code changes OK, no deploy" · deploy_ok -> "deploy OK" (the read-back's words). */
+export function permText(perm: string): string {
+  const words: Record<string, string> = { read_only: "read-only", read: "read-only", changes_ok: "code changes OK, no deploy", deploy_ok: "deploy OK" };
+  return words[perm] ?? perm;
+}
+
+/** "1. r1 failed: timeout · 4.0 s" · "3. r3a answered · 3.9 s" */
+export function attemptText(a: RouteAttempt, i: number): string {
+  const what = a.ok === true ? "answered" : a.ok === false ? `failed${a.error ? `: ${a.error}` : ""}` : a.error ?? "tried";
+  return [`${i + 1}. ${a.route ?? "?"}${a.model ? ` (${a.model})` : ""} ${what}`, a.ms !== undefined ? formatLatency(a.ms) : undefined].filter(Boolean).join(" · ");
 }

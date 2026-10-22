@@ -10,7 +10,11 @@ export const MEMO_STAGE_TYPES = [
   "bloodbank.audio.memo.uploaded",
   "bloodbank.audio.memo.received",
   "bloodbank.audio.memo.transcribed",
+  // The fast in-car conversation layer (services/inbox-watcher converse stage): one routed fact per fast-model decision,
+  // one delegated fact per brief the driver confirmed aloud. One each per memo at most, so they are scanned with the stages.
+  "bloodbank.audio.memo.routed",
   "bloodbank.audio.memo.dispatched",
+  "bloodbank.audio.memo.delegated",
   "bloodbank.audio.memo.replied",
   "bloodbank.audio.memo.played",
   "bloodbank.audio.memo.failed"
@@ -45,7 +49,10 @@ export const AGENT_TYPES = [
 ] as const;
 
 export type HopId =
-  | "uploaded" | "received" | "transcribed" | "dispatched" | "agent_started" | "agent_done"
+  | "uploaded" | "received" | "transcribed"
+  // Only on a memo the fast conversation desk decided (an audio.memo.routed fact): what it did, and with which model.
+  | "routed"
+  | "dispatched" | "agent_started" | "agent_done"
   // Only on an escalated memo: the second dispatch on the batch lane and the batch turn it started.
   | "escalated" | "batch_started" | "batch_done"
   | "replied" | "played";
@@ -139,11 +146,142 @@ const ESCALATED_HOPS: readonly Spec[] = (() => {
 export const ESCALATED_REASON = "turn_timeout_escalated";
 /** dispatched fact lane_reason of a background follow-up: the quick answer's BACKGROUND: plan sent back to the same agent. */
 export const FOLLOWUP_REASON = "voice_followup";
+/** dispatched fact lane_reason of a delegation: the brief the driver confirmed aloud ("send it"), sent as follow-up n. */
+export const DELEGATION_REASON = "voice_delegation";
 
-/** A dispatched, voiced or replied fact of a background follow-up (answer-then-background), not of the memo's own turn. */
+/** A dispatched, voiced or replied fact of a background follow-up (answer-then-background, or a delegation), not of the memo's own turn. */
 export function isFollowupFact(d: Record<string, unknown>): boolean {
-  return num(d.followup) !== undefined || str(d.lane_reason) === FOLLOWUP_REASON;
+  return num(d.followup) !== undefined || str(d.lane_reason) === FOLLOWUP_REASON || str(d.lane_reason) === DELEGATION_REASON;
 }
+
+/** A follow-up that is a confirmed delegation (the fast desk's brief), not the quick answer's own BACKGROUND: plan. */
+export function isDelegationFact(d: Record<string, unknown>): boolean {
+  return str(d.lane_reason) === DELEGATION_REASON || str(d.followup_kind) === "delegation" || str(d.kind) === "delegation";
+}
+
+// ---- the fast in-car conversation layer (2026-10-22): the watcher's converse stage, between transcribe and speak ----
+
+export const ROUTED_TYPE = "bloodbank.audio.memo.routed";
+export const DELEGATED_TYPE = "bloodbank.audio.memo.delegated";
+/** The watcher's MEMO_CONVERSE_BUDGET_S: the whole fast-model ladder gets this long before the memo takes the agent path. */
+export const ROUTED_BUDGET_SECONDS = 8;
+/** The one routed action that hands the memo to today's agent path; every other action is spoken by the fast desk itself. */
+export const DIRECT_ACTION = "direct";
+
+/** One rung the fast-model ladder tried, when the routed fact lists them (S11: hyper failures, then a gateway rung). */
+export type RouteAttempt = { route?: string; model?: string; ok?: boolean; error?: string; ms?: number };
+
+/** From the audio.memo.routed fact: what the fast desk decided for this memo, and which model answered. */
+export type Routed = {
+  eventId: string;
+  at: string;
+  convId: string;
+  /** 1..n within the conversation, when the watcher says. */
+  turn?: number;
+  /** reply | propose | confirm | cancel | end (spoken by the fast desk) or direct (today's agent path). Open set. */
+  action: string;
+  /** The fast desk spoke this turn itself: no agent command for the memo (a confirm's delegation is a follow-up). */
+  fast: boolean;
+  /** fast (a model call) | confirm_only / cancel_only (a lexicon short-circuit, no model call) | ... as the watcher names it. */
+  path?: string;
+  /** The `model` field of the answer that was used (never an Anthropic route). Absent: no model call. */
+  modelAnswered?: string;
+  /** The ladder rung that answered (r1, r2, r3a, ...). */
+  route?: string;
+  /** How many rungs were tried. */
+  attempts?: number;
+  attemptLog?: RouteAttempt[];
+  latencyMs?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedTokens?: number;
+  /** Why the memo went to the agent path instead (all_routes_failed, an exception, ...). */
+  fallbackReason?: string;
+  /** The draft's or delegation's title and target, when the fact carries them. */
+  title?: string;
+  target?: string;
+};
+
+/** The conversation chips the list and the header draw: conv id, turn, action and model@route. */
+export type ConvChip = Pick<Routed, "convId" | "turn" | "action" | "fast" | "modelAnswered" | "route">;
+
+export function routedOf(e: JourneyEvent, ownDispatch = false): Routed | undefined {
+  const d = e.data;
+  const convId = str(d.conv_id);
+  const action = str(d.action);
+  if (!convId || !action) return undefined; // both are required by memo.routed.json
+  const usage = rec(d.usage);
+  const rawLog = Array.isArray(d.attempts) ? d.attempts : Array.isArray(d.attempt_log) ? d.attempt_log : Array.isArray(d.route_attempts) ? d.route_attempts : undefined;
+  const attemptLog = rawLog?.map(rec).map((a): RouteAttempt => ({
+    route: str(a.route) ?? str(a.id), model: str(a.model), ok: typeof a.ok === "boolean" ? a.ok : undefined,
+    error: str(a.error) ?? str(a.reason) ?? str(a.code) ?? (num(a.status) !== undefined ? `HTTP ${num(a.status)}` : undefined),
+    ms: num(a.ms) ?? num(a.latency_ms)
+  }));
+  const path = str(d.path);
+  const cached = num(d.cached_tokens) ?? num(rec(usage.prompt_tokens_details).cached_tokens);
+  return {
+    eventId: e.id, at: e.at, convId, turn: num(d.turn) ?? num(d.conv_turn), action,
+    // A shadow decision (if the watcher ever publishes one) only logs: the memo still took the agent path.
+    fast: action !== DIRECT_ACTION && path !== "shadow" && !ownDispatch,
+    ...(path ? { path } : {}),
+    ...(str(d.model_answered) ? { modelAnswered: str(d.model_answered) } : {}),
+    ...(str(d.route) ? { route: str(d.route) } : {}),
+    ...(num(d.attempts) !== undefined ? { attempts: num(d.attempts) } : attemptLog ? { attempts: attemptLog.length } : {}),
+    ...(attemptLog?.length ? { attemptLog } : {}),
+    ...(num(d.latency_ms) !== undefined ? { latencyMs: num(d.latency_ms) } : {}),
+    ...(num(usage.prompt_tokens) !== undefined ? { promptTokens: num(usage.prompt_tokens) } : {}),
+    ...(num(usage.completion_tokens) !== undefined ? { completionTokens: num(usage.completion_tokens) } : {}),
+    ...(cached !== undefined ? { cachedTokens: cached } : {}),
+    ...(str(d.fallback_reason) ? { fallbackReason: str(d.fallback_reason) } : {}),
+    ...(str(d.title) ?? str(d.draft_title) ? { title: str(d.title) ?? str(d.draft_title) } : {}),
+    ...(str(d.target) ? { target: str(d.target) } : {})
+  };
+}
+
+export const convChipOf = (r: Routed): ConvChip => ({
+  convId: r.convId, turn: r.turn, action: r.action, fast: r.fast, modelAnswered: r.modelAnswered, route: r.route
+});
+
+/** "deepseek-v4.1-flash-1017@r1", or undefined when no model answered (a lexicon short-circuit, or the agent path). */
+export function modelAtRoute(r: Pick<Routed, "modelAnswered" | "route">): string | undefined {
+  return r.modelAnswered ? `${r.modelAnswered}${r.route ? `@${r.route}` : ""}` : undefined;
+}
+
+/** The routed hop's name: what the fast desk did with the memo. */
+export function routedLabel(r: Routed): string {
+  if (r.path === "shadow") return "Fast model (shadow, not used)";
+  if (!r.fast) return "Routed to the full agent";
+  return r.modelAnswered ? "Fast model answered" : "Fast desk answered (no model call)";
+}
+
+/** "action reply · deepseek-v4.1-flash-1017@r1 · 812 ms · 900+40 tokens · 640 cached", plus the attempts and any fallback. */
+export function routedDetail(r: Routed): string {
+  const tokens = r.promptTokens !== undefined || r.completionTokens !== undefined ? `${r.promptTokens ?? "?"}+${r.completionTokens ?? "?"} tokens` : undefined;
+  return [
+    `action ${r.action}`,
+    r.path && r.path !== "fast" ? `path ${r.path}` : undefined,
+    modelAtRoute(r) ?? (r.fast ? "no model call" : undefined),
+    r.attempts !== undefined && r.attempts > 1 ? `${r.attempts} attempts` : undefined,
+    r.latencyMs !== undefined ? `${Math.round(r.latencyMs)} ms` : undefined,
+    tokens,
+    r.cachedTokens !== undefined ? `${r.cachedTokens} cached` : undefined,
+    r.fallbackReason ? `fell back: ${r.fallbackReason}` : undefined
+  ].filter(Boolean).join(" · ");
+}
+
+/** Hops of the memo's own agent turn: a turn the fast desk answered has none (its delegation is a follow-up). */
+const AGENT_HOPS = new Set<HopId>(["dispatched", "agent_started", "agent_done", "escalated", "batch_started", "batch_done"]);
+
+/** The routed hop goes right after transcribed. A fast turn drops the agent hops; a direct turn keeps them after it. */
+function withRouted(base: readonly Spec[], r: Routed): Spec[] {
+  const at = base.findIndex((h) => h.id === "transcribed") + 1;
+  const rest = base.slice(at).filter((h) => !r.fast || !AGENT_HOPS.has(h.id));
+  return [...base.slice(0, at), { id: "routed", label: routedLabel(r), budgetSeconds: ROUTED_BUDGET_SECONDS }, ...rest];
+}
+
+const FAST_DONE: Record<string, string> = {
+  reply: "fast reply", propose: "draft read back", confirm: "confirmed", cancel: "draft dropped", end: "conversation ended"
+};
 
 /** The memo's interactive turn passed the gateway's wall clock and was let run on, slot released (no kill, no re-run). */
 export type Detach = { at: string; elapsedSeconds?: number; ceilingSeconds?: number };
@@ -154,6 +292,18 @@ export type Detach = { at: string; elapsedSeconds?: number; ceilingSeconds?: num
  */
 export type FollowUp = {
   n: number;
+  /**
+   * followup: the quick answer's BACKGROUND: plan, back to the same agent. delegation: a brief the driver confirmed
+   * aloud to the fast desk ("send it"), sent to the tile's agent or the one the driver named (target).
+   */
+  kind: "followup" | "delegation";
+  /** Delegation: the agent the brief went to, its spoken name, the draft's title, the brief id and permission level. */
+  target?: string;
+  targetName?: string;
+  title?: string;
+  briefId?: string;
+  perm?: string;
+  convId?: string;
   commandId?: string;
   ofCommandId?: string;
   /** running: dispatched, not spoken yet; spoken: its reply went out; failed: it did not finish, and the car was told. */
@@ -184,6 +334,7 @@ const STAGE_HOP: Record<string, HopId> = {
   receive: "received",
   download: "received",
   transcribe: "transcribed",
+  converse: "routed",
   dispatch: "dispatched",
   agent: "agent_started",
   agent_reply: "agent_done",
@@ -295,6 +446,8 @@ export type Hop = {
   reply?: ReplyInfo;
   /** Set on the hop a `memo:cancel` stopped the memo at. */
   cancel?: Cancellation;
+  /** Routed hop: the fast desk's decision. */
+  routed?: Routed;
 };
 
 /** From the audio.memo.replied fact. */
@@ -394,6 +547,8 @@ export type ReplyChunk = {
 
 /** Seconds from the memo's start (its upload) to the first time the driver heard each kind of thing. */
 export type MemoTiming = {
+  /** The fast conversation desk decided (audio.memo.routed). */
+  routedSeconds?: number;
   ackSeconds?: number;
   heardEchoSeconds?: number;
   firstProgressSeconds?: number;
@@ -435,8 +590,10 @@ export type MemoSummary = {
   detached?: boolean;
   /** The reply was a quick answer that handed the long part to a background follow-up. */
   background?: boolean;
-  /** The newest background follow-up and where it is. */
-  followup?: { n: number; status: FollowUp["status"]; seconds?: number };
+  /** The newest background follow-up (or delegation) and where it is. */
+  followup?: { n: number; status: FollowUp["status"]; seconds?: number; kind?: FollowUp["kind"]; target?: string; title?: string };
+  /** The fast conversation desk decided this memo (an audio.memo.routed fact): conv id, turn, action, model@route. */
+  conv?: ConvChip;
   /** Set when `memo:cancel` ended the memo. Cancelled is not an error. */
   cancelled?: Cancellation;
   transcriptPreview?: string;
@@ -468,8 +625,10 @@ export type MemoDetail = MemoSummary & {
   timing: MemoTiming;
   /** The detach of the memo's interactive turn, when it ran past the wall clock. */
   detach?: Detach;
-  /** Answer-then-background: every follow-up the quick answer handed off, oldest first. */
+  /** Answer-then-background: every follow-up the quick answer handed off (or delegation the driver confirmed), oldest first. */
   followups: FollowUp[];
+  /** The fast desk's decision for this memo, when it made one. */
+  routed?: Routed;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
@@ -620,6 +779,10 @@ function hopDetail(id: HopId, e: JourneyEvent | undefined): string {
       ].filter(Boolean);
       return bits.join(" · ");
     }
+    case "routed": {
+      const r = routedOf(e);
+      return r ? routedDetail(r) : "";
+    }
     case "dispatched":
     case "escalated":
       return dispatchDetail(d);
@@ -681,6 +844,7 @@ function hopEvents(events: JourneyEvent[], split?: Split): Record<HopId, Journey
     uploaded: byType("bloodbank.audio.memo.uploaded"),
     received: byType("bloodbank.audio.memo.received"),
     transcribed: byType("bloodbank.audio.memo.transcribed"),
+    routed: byType(ROUTED_TYPE),
     dispatched: split ? dispatches.filter((e) => e !== split.escalation) : dispatches,
     escalated: split ? [split.escalation] : [],
     agent_started: on(byType(...AGENT_STARTED), "first"),
@@ -694,7 +858,7 @@ function hopEvents(events: JourneyEvent[], split?: Split): Record<HopId, Journey
 
 const AGENT_FAILED = ["bloodbank.agent.invocation.failed", "bloodbank.agent.invocation.skipped", "bloodbank.conversation.turn.failed"];
 /** Facts that show the watcher moving a memo along (see `movedPast`); the `received` ones include its revive marker. */
-const STAGE_FACTS = ["received", "transcribed", "dispatched", "replied"].map((t) => `bloodbank.audio.memo.${t}`);
+const STAGE_FACTS = ["received", "transcribed", "routed", "dispatched", "replied"].map((t) => `bloodbank.audio.memo.${t}`);
 
 const preview = (text: string | undefined, max: number) => {
   if (!text) return undefined;
@@ -703,25 +867,52 @@ const preview = (text: string | undefined, max: number) => {
 };
 
 /**
- * Every background follow-up of a memo, oldest first: its dispatched fact (lane_reason voice_followup, data.followup = n),
- * the gateway's facts for its command, and the replied fact the watcher published for it (data.followup = n).
+ * Every background follow-up of a memo, oldest first: its dispatched fact (lane_reason voice_followup or voice_delegation,
+ * data.followup = n), the gateway's facts for its command, and the replied fact the watcher published for it
+ * (data.followup = n). A delegation's audio.memo.delegated fact (same command id) names its target, brief and permission;
+ * one that arrives before its dispatched fact still shows the delegation, as running.
  */
 export function followupsOf(events: JourneyEvent[], answer: JourneyEvent | undefined, now: number, cancelledAt?: string): FollowUp[] {
   const out: FollowUp[] = [];
-  for (const d of events.filter((e) => e.type === "bloodbank.audio.memo.dispatched" && isFollowupFact(e.data))) {
+  const dispatched = events.filter((e) => e.type === "bloodbank.audio.memo.dispatched" && isFollowupFact(e.data));
+  const delegated = events.filter((e) => e.type === DELEGATED_TYPE);
+  const heads: { d?: JourneyEvent; dl?: JourneyEvent; at: string }[] = dispatched.map((d) => {
     const cid = str(d.data.command_id);
+    return { d, dl: cid ? delegated.find((x) => str(x.data.command_id) === cid) : undefined, at: d.at };
+  });
+  for (const dl of delegated) {
+    const cid = str(dl.data.command_id);
+    if (!heads.some((h) => h.dl === dl || (cid !== undefined && str(h.d?.data.command_id) === cid))) heads.push({ dl, at: dl.at });
+  }
+  heads.sort((a, b) => (ms(a.at) ?? 0) - (ms(b.at) ?? 0));
+  for (const { d, dl, at } of heads) {
+    const dd = d?.data ?? {};
+    const ld = dl?.data ?? {};
+    const cid = str(dd.command_id) ?? str(ld.command_id);
     const of = (types: string[]) => events.filter((e) => types.includes(e.type) && cid !== undefined && str(e.data.command_id) === cid);
     const started = of(AGENT_STARTED)[0];
     const done = of(AGENT_DONE).find((e) => e.type.endsWith(".completed")) ?? of(AGENT_DONE)[0];
-    const rep = events.find((e) => e.type === "bloodbank.audio.memo.replied" && isFollowupFact(e.data) && str(e.data.command_id) === cid);
-    const gone = !rep && cancelledAt !== undefined && (ms(cancelledAt) ?? 0) >= (ms(d.at) ?? 0);
+    const rep = events.find((e) => e.type === "bloodbank.audio.memo.replied" && isFollowupFact(e.data) && cid !== undefined && str(e.data.command_id) === cid);
+    const gone = !rep && cancelledAt !== undefined && (ms(cancelledAt) ?? 0) >= (ms(at) ?? 0);
     const status: FollowUp["status"] = rep ? (rep.data.followup_failed === true ? "failed" : "spoken") : gone ? "failed" : "running";
-    const t0 = ms(d.at);
+    const t0 = ms(at);
     const t1 = ms(rep?.at) ?? (gone ? ms(cancelledAt) : undefined) ?? now;
     const a = ms(answer?.at), r = ms(rep?.at);
+    const delegation = dl !== undefined || isDelegationFact(dd);
+    const pick = (...keys: string[]) => keys.map((k) => str(ld[k]) ?? str(dd[k])).find(Boolean);
     out.push({
-      n: num(d.data.followup) ?? out.length + 1, commandId: cid, ofCommandId: str(d.data.followup_of_command_id), status,
-      plan: str(d.data.followup_plan), lane: laneOfDispatch(d.data), model: str(d.data.model), dispatchedAt: d.at,
+      n: num(dd.followup) ?? num(ld.followup) ?? out.length + 1,
+      kind: delegation ? "delegation" : "followup",
+      ...(delegation ? {
+        // the delegated fact names the agent the brief went to; a dispatched fact alone says it as its target
+        target: str(ld.target_agent_id) ?? str(dd.delegate_target) ?? str(dd.target_agent_id),
+        targetName: pick("target_display_name", "display_name", "followup_display_name", "delegate_display_name"),
+        title: pick("title", "followup_title", "delegation_title", "brief_title"),
+        briefId: pick("brief_id"), perm: pick("perm"), convId: pick("conv_id")
+      } : {}),
+      commandId: cid, ofCommandId: str(dd.followup_of_command_id), status,
+      plan: str(dd.followup_plan), lane: d ? laneOfDispatch(dd) : str(ld.lane) === "interactive" ? "interactive" : "batch",
+      model: str(dd.model), dispatchedAt: at,
       startedAt: started?.at, doneAt: done?.at, repliedAt: rep?.at, replyText: str(rep?.data.reply_text), replyKey: str(rep?.data.reply_s3_key),
       afterAnswerSeconds: a !== undefined && r !== undefined ? Math.round((r - a) / 100) / 10 : undefined,
       seconds: t0 !== undefined && t1 !== undefined ? Math.max(0, Math.round((t1 - t0) / 100) / 10) : undefined,
@@ -760,10 +951,15 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     return (ms(e.at) ?? 0) >= escalatedAt ? "batch" : "first";
   };
   const ours = new Set([commandId, firstCommandId].filter((c): c is string => c !== undefined));
+  // A follow-up's (or delegation's) command is its own record (`followups`), never the memo's turn: a turn the fast desk
+  // answered has no command of its own, so without this its delegation's agent facts would read as the memo's.
+  const followupCommands = new Set(events.filter((e) => (e.type === "bloodbank.audio.memo.dispatched" && isFollowupFact(e.data)) || e.type === DELEGATED_TYPE)
+    .map((e) => str(e.data.command_id)).filter((c): c is string => c !== undefined && !ours.has(c)));
   // Agent facts must belong to this memo's command(s) when the ids are known.
   const relevant = events.filter((e) => {
     if (e.type.startsWith("bloodbank.audio.memo.")) return true;
     const cid = str(e.data.command_id);
+    if (cid && followupCommands.has(cid)) return false;
     return !ours.size || !cid || ours.has(cid);
   });
   // The gateway's detach of the live command (its own fact, a progressed fact flagged detached, or the terminal fact).
@@ -774,7 +970,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     ? { at: detachedFact.at, elapsedSeconds: num(detachedFact.data.elapsed_seconds), ceilingSeconds: num(detachedFact.data.ceiling_seconds) }
     : detachedDone ? { at: detachedDone.at, elapsedSeconds: num(detachedDone.data.detached_after_seconds) } : undefined;
 
-  const specs = escalation ? ESCALATED_HOPS : HOPS;
+  // The fast desk's decision (the newest, should a restarted stage publish it again). A fast turn has no agent hops.
+  const routedFact = memoFacts.filter((e) => e.type === ROUTED_TYPE).at(-1);
+  const routed = routedFact ? routedOf(routedFact, dispatches.length > 0) : undefined;
+  const specs = routed ? withRouted(escalation ? ESCALATED_HOPS : HOPS, routed) : escalation ? ESCALATED_HOPS : HOPS;
   const proof = hopEvents(relevant, escalation ? { escalation, sideOf } : undefined);
 
   // `memo:cancel` is a verdict, not a failure: it is kept apart from the failed facts.
@@ -820,7 +1019,8 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   const unplaced: HopFailure[] = [];
   for (const f of failedFacts) {
     const hop = hopOfFailure(f);
-    if (!hop) unplaced.push(f);
+    // A fast turn has no agent hops: a failure aimed at one is shown on the first hop that did not happen instead.
+    if (!hop || !specs.some((s) => s.id === hop)) unplaced.push(f);
     else failuresByHop.set(hop, [...(failuresByHop.get(hop) ?? []), f]);
   }
 
@@ -845,6 +1045,7 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
       failures, events: evs
     };
     if (spec.id === "uploaded") out.capture = memoFacts.map((e) => captureLevelOf(e.data)).find(Boolean);
+    if (spec.id === "routed" && routed) out.routed = routed;
     if (spec.id === "replied" && evs[0]) out.reply = withLateMirror(replyInfoOf(evs[0].data), memoFacts.filter((e) => e.type === "bloodbank.audio.memo.mirrored").at(-1));
     if (spec.id === "transcribed") {
       out.audio = (evs[0] ? audioLevelOf(evs[0].data) : undefined) ?? failures.map((f) => f.audio).filter(Boolean).at(-1);
@@ -996,10 +1197,14 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
 
   let stageLabel: string;
   if (status === "cancelled") stageLabel = `Cancelled ${cancelled?.afterDispatch ? "after" : "before"} dispatch`;
-  else if (status === "complete" && fu) {
+  else if (status === "complete" && fu?.kind === "delegation") {
+    stageLabel = fu.status === "running" ? `Sent to ${fu.targetName ?? fu.target ?? "the agent"} · running`
+      : fu.status === "spoken" ? "Complete · delegated result spoken" : "Complete · delegation failed";
+  } else if (status === "complete" && fu) {
     stageLabel = fu.status === "running" ? "Answered · follow-up running"
       : fu.status === "spoken" ? "Complete · follow-up spoken" : "Complete · follow-up failed";
-  } else if (status === "complete") stageLabel = reply?.late ? "Complete · late reply" : "Complete";
+  } else if (status === "complete" && routed?.fast) stageLabel = `Complete · ${FAST_DONE[routed.action] ?? routed.action}`;
+  else if (status === "complete") stageLabel = reply?.late ? "Complete · late reply" : "Complete";
   else if (status === "failed" && failedHop?.error?.timeout) {
     const secs = failedHop.error.timeout.elapsedSeconds;
     stageLabel = `${failedHop.id === "batch_done" ? "Batch agent" : "Agent"} turn timed out${secs !== undefined ? ` after ${Math.round(secs)}s` : ""}`;
@@ -1060,14 +1265,15 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     });
   }
   chunks.sort((a, b) => a.n - b.n);
-  const agentDone = [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
+  // A fast turn has no agent: its answer is the routed decision, so "after the agent finished" counts from there.
+  const agentDone = routed?.fast ? routed.at : [...hops].reverse().find((h) => (h.id === "batch_done" || h.id === "agent_done") && h.status === "ok")?.at;
   const playedStarted = memoFacts.find((e) => e.type === "bloodbank.audio.memo.played" && e.data.phase === "started")?.at;
   const timing = memoTiming(startedAt, progress, narrations, speech,
     // reply_up_at: the replied fact waits for the phone decision, so the reply was up (and the car could start) before it
     // A reply spoken as one file has no first chunk: its voiced fact (chunk 1 of 1) is the moment the whole reply was up.
     { firstChunkAt: chunks[0] && chunks[0].of > 1 ? chunks[0].at : undefined,
       repliedAt: (repliedEvent && str(repliedEvent.data.reply_up_at)) ?? (chunks[0] && chunks[0].of === 1 ? chunks[0].at : undefined) ?? repliedEvent?.at,
-      agentDoneAt: agentDone, playedAt: playedStarted });
+      agentDoneAt: agentDone, playedAt: playedStarted, routedAt: routed?.at });
   const latest = [...progress].reverse().find((p) => !p.superseded) ?? progress.at(-1);
 
   const summary: MemoSummary = {
@@ -1082,7 +1288,9 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     ...(reply?.late ? { late: true } : {}),
     ...(detach || reply?.detached ? { detached: true } : {}),
     ...(reply?.background ? { background: true } : {}),
-    ...(fu ? { followup: { n: fu.n, status: fu.status, seconds: fu.seconds } } : {}),
+    ...(fu ? { followup: { n: fu.n, status: fu.status, seconds: fu.seconds,
+      ...(fu.kind === "delegation" ? { kind: fu.kind, target: fu.targetName ?? fu.target, title: fu.title } : {}) } } : {}),
+    ...(routed ? { conv: convChipOf(routed) } : {}),
     ...(cancelled ? { cancelled } : {}),
     audio: hops.find((h) => h.id === "transcribed")?.audio,
     capture: hops.find((h) => h.id === "uploaded")?.capture,
@@ -1097,7 +1305,8 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
   };
   return {
     ...summary, commandId, ...(escalation && firstCommandId ? { escalatedFromCommandId: firstCommandId } : {}), transcript, replyText,
-    hops, events: relevant, progress, narrations, speech, chunks, timing, ...(detach ? { detach } : {}), followups
+    hops, events: relevant, progress, narrations, speech, chunks, timing, ...(detach ? { detach } : {}), followups,
+    ...(routed ? { routed } : {})
   };
 }
 
@@ -1106,7 +1315,7 @@ const SPOKEN: Record<string, string[]> = { ack: ["ack"], heard: ["echo", "heard"
 const STARTED = ["start", "started"];
 
 /** Seconds from the memo's start to the first ack, heard echo, progress line, narration and playback the driver got. */
-export type ReplyTimes = { firstChunkAt?: string; repliedAt?: string; agentDoneAt?: string; playedAt?: string };
+export type ReplyTimes = { firstChunkAt?: string; repliedAt?: string; agentDoneAt?: string; playedAt?: string; routedAt?: string };
 export function memoTiming(startedAt: string, progress: ProgressLine[], narrations: Narration[], speech: SpeechDecision[], reply: ReplyTimes = {}): MemoTiming {
   const t0 = ms(startedAt);
   const since = (iso: string | undefined) => {
@@ -1126,6 +1335,7 @@ export function memoTiming(startedAt: string, progress: ProgressLine[], narratio
   // start (device clock, only when no beacon arrived).
   const carAt = reply.playedAt ?? started("reply");
   const out: MemoTiming = {
+    routedSeconds: since(reply.routedAt),
     ackSeconds: since(started("ack")),
     heardEchoSeconds: since(started("heard")),
     firstProgressSeconds: since(firstOf(progress.map((p) => p.at))),
@@ -1150,7 +1360,7 @@ export function toSummary(detail: MemoDetail): MemoSummary {
     stuckAt: detail.stuckAt, lane: detail.lane, laneReason: detail.laneReason, escalated: detail.escalated, late: detail.late, cancelled: detail.cancelled,
     audio: detail.audio, capture: detail.capture, transcriptPreview: detail.transcriptPreview, replyPreview: detail.replyPreview, error: detail.error,
     latestProgress: detail.latestProgress, progressCount: detail.progressCount, narrationCount: detail.narrationCount,
-    detached: detail.detached, background: detail.background, followup: detail.followup
+    detached: detail.detached, background: detail.background, followup: detail.followup, conv: detail.conv
   };
 }
 

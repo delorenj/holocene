@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMemoDetail, carStartedMs, firstAudioUpMs, buildMemoSummaries, replyInfoOf, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
+import { MEMO_STAGE_TYPES, buildMemoDetail, carStartedMs, firstAudioUpMs, buildMemoSummaries, replyInfoOf, toJourneyEvent, toSummary, type JourneyEvent } from "./voice-memos.js";
 import { EventStore } from "./event-store.js";
 
 const MEMO = "d84f8cb5-ad88-5bc9-a573-cf2e297e1b4d";
@@ -826,4 +826,129 @@ test("a spoken follow-up reports its reply and how long after the quick answer i
   const failed = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), quickAnswer(), fuDispatched(), fuStarted(), fuReplied(245, true)], now(300))!;
   assert.equal(failed.followups[0].status, "failed");
   assert.equal(failed.stageLabel, "Complete · follow-up failed");
+});
+
+// ---- the fast in-car conversation desk: audio.memo.routed and audio.memo.delegated (2026-10-22)
+
+const DCMD = "7d3e2f1a-2222-5b2b-9c3c-000000000002";
+const BRIEF = "11111111-1111-5111-8111-111111111111";
+const routedFact = (s: number, data: Record<string, unknown>) => fact("audio.memo.routed", s, { occurred_at: iso(s), conv_id: "c-1", ...data });
+const fastRouted = (s = 2.1) => routedFact(s, { action: "reply", path: "fast", turn: 2, model_answered: "deepseek-v4.1-flash-1017", route: "r1", attempts: 1,
+  latency_ms: 812, usage: { prompt_tokens: 900, completion_tokens: 40 }, cached_tokens: 640 });
+const voicedOne = (s: number) => fact("audio.memo.voiced", s, { occurred_at: iso(s), chunk: 1, chunks: 1, chunk_s3_key: "replies/x.ogg", spoken_text: "It is on HOLOC-22.", tts_seconds: 1.9 });
+const fastReplied = (s = 5) => fact("audio.memo.replied", s, { occurred_at: iso(s), reply_text: "It is on HOLOC-22.", tts_seconds: 1.9, reply_s3_key: "replies/x.ogg" });
+const delegationDispatched = (s = 8) => fact("audio.memo.dispatched", s, { occurred_at: iso(s), command_id: DCMD, lane: "batch", lane_reason: "voice_delegation",
+  followup: 1, followup_plan: "DELEGATE: find why the audio spool is disabled", target_agent_id: "flume-pm" });
+const delegatedFact = (s = 8.1) => fact("audio.memo.delegated", s, { occurred_at: iso(s), target_agent_id: "flume-pm", tile_agent_id: "holocene-pm", conv_id: "c-1",
+  brief_id: BRIEF, brief_sha256: "a".repeat(64), command_id: DCMD, lane: "batch", perm: "read_only", title: "Why the audio spool is disabled", target_display_name: "Flume PM" });
+
+test("a fast reply turn has a routed hop with the model that answered and no agent hops", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), fastRouted(), voicedOne(4.6), fastReplied(), played("started", 5.5)], now(10))!;
+  assert.deepEqual(d.hops.map(h => h.id), ["uploaded", "received", "transcribed", "routed", "replied", "played"]);
+  assert.deepEqual(d.hops.map(h => h.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
+  const hop = d.hops.find(h => h.id === "routed")!;
+  assert.equal(hop.label, "Fast model answered");
+  assert.equal(hop.budgetSeconds, 8);
+  assert.equal(hop.sinceMs, 900);
+  assert.equal(hop.detail, "action reply · deepseek-v4.1-flash-1017@r1 · 812 ms · 900+40 tokens · 640 cached");
+  assert.equal(hop.routed?.fast, true);
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Complete · fast reply");
+  assert.equal(d.commandId, undefined);
+  assert.deepEqual(d.conv, { convId: "c-1", turn: 2, action: "reply", fast: true, modelAnswered: "deepseek-v4.1-flash-1017", route: "r1" });
+  assert.deepEqual(toSummary(d).conv, d.conv);
+  assert.equal(d.timing.routedSeconds, 2.1);
+  // "after the agent finished" counts from the fast desk's answer: the reply was up 2.5 s after it
+  assert.equal(d.timing.agentToReplySeconds, 2.5);
+  assert.equal(d.timing.agentToCarSeconds, 3.4);
+});
+
+test("a direct turn keeps today's agent hops behind the routed hop, with the fallback reason", () => {
+  const routed = routedFact(9.5, { action: "direct", attempts: 4, fallback_reason: "all_routes_failed", target_agent_id: null });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), routed, dispatched(10), started(), completed(), replied()], now(120))!;
+  assert.deepEqual(d.hops.map(h => h.id), ["uploaded", "received", "transcribed", "routed", "dispatched", "agent_started", "agent_done", "replied", "played"]);
+  const hop = d.hops.find(h => h.id === "routed")!;
+  assert.equal(hop.label, "Routed to the full agent");
+  assert.equal(hop.detail, "action direct · 4 attempts · fell back: all_routes_failed");
+  assert.equal(d.hops.find(h => h.id === "dispatched")!.sinceMs, 500);
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Complete");
+  assert.equal(d.conv?.fast, false);
+  assert.equal(d.commandId, CMD);
+});
+
+test("the routed fact's attempt list shows the rungs that failed before one answered", () => {
+  const routed = routedFact(4, { action: "reply", model_answered: "k3-256k", route: "r3a",
+    attempts: [{ route: "r1", ok: false, error: "timeout", ms: 4000 }, { route: "r2", ok: false, status: 502 }, { route: "r3a", ok: true, ms: 3900 }] });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), routed, fastReplied(9)], now(20))!;
+  assert.equal(d.routed?.attempts, 3);
+  assert.deepEqual(d.routed?.attemptLog?.map(a => [a.route, a.ok, a.error]), [["r1", false, "timeout"], ["r2", false, "HTTP 502"], ["r3a", true, undefined]]);
+  assert.match(d.hops.find(h => h.id === "routed")!.detail, /k3-256k@r3a · 3 attempts/);
+});
+
+test("a confirmed delegation is the memo's follow-up: 'Sent to <agent>', its own agent facts, never the memo's hops", () => {
+  const confirm = routedFact(1.4, { action: "confirm", path: "confirm_only", turn: 4, attempts: 0 });
+  const readBack = fact("audio.memo.replied", 5, { occurred_at: iso(5), reply_text: "Sending to Flume PM: Why the audio spool is disabled. I'll call you back.", reply_s3_key: "replies/x.ogg" });
+  const dStarted = fact("agent.invocation.started", 20, { command_id: DCMD }, MEMO, "hermes-agent:flume-pm");
+  const dProgress = fact("agent.invocation.progressed", 30, { command_id: DCMD, seq: 1, text: "Reading the watcher config" }, MEMO, "hermes-agent:flume-pm");
+  const base = [uploaded(), received(0.3), transcribed(1.2), confirm, readBack, delegationDispatched(), delegatedFact(), dStarted, dProgress];
+  const d = buildMemoDetail(MEMO, base, now(60))!;
+  assert.deepEqual(d.hops.map(h => h.id), ["uploaded", "received", "transcribed", "routed", "replied", "played"]);
+  const hop = d.hops.find(h => h.id === "routed")!;
+  assert.equal(hop.label, "Fast desk answered (no model call)");
+  assert.equal(hop.detail, "action confirm · path confirm_only · no model call");
+  assert.equal(d.status, "complete");
+  assert.equal(d.stageLabel, "Sent to Flume PM · running");
+  assert.equal(d.progress.length, 0, "the delegated agent's lines are its own, not the memo's");
+  assert.ok(!d.events.includes(dStarted));
+  assert.equal(d.followups.length, 1);
+  const f = d.followups[0];
+  assert.equal(f.kind, "delegation");
+  assert.equal(f.target, "flume-pm");
+  assert.equal(f.targetName, "Flume PM");
+  assert.equal(f.title, "Why the audio spool is disabled");
+  assert.equal(f.briefId, BRIEF);
+  assert.equal(f.perm, "read_only");
+  assert.equal(f.lane, "batch");
+  assert.equal(f.startedAt, iso(20));
+  assert.equal(f.status, "running");
+  assert.deepEqual(toSummary(d).followup, { n: 1, status: "running", seconds: 52, kind: "delegation", target: "Flume PM", title: "Why the audio spool is disabled" });
+
+  const result = fact("audio.memo.replied", 300, { occurred_at: iso(300), command_id: DCMD, followup: 1, reply_text: "The spool is off in the unit env.", reply_s3_key: "replies/z.ogg" });
+  const done = buildMemoDetail(MEMO, [...base, fact("agent.invocation.completed", 290, { command_id: DCMD }, MEMO, "hermes-agent:flume-pm"), result], now(400))!;
+  assert.equal(done.stageLabel, "Complete · delegated result spoken");
+  assert.equal(done.followups[0].replyText, "The spool is off in the unit env.");
+  assert.equal(done.replyText, "Sending to Flume PM: Why the audio spool is disabled. I'll call you back.", "the memo's own reply is the read-back");
+});
+
+test("a delegated fact that lands before its dispatched fact still shows the delegation", () => {
+  const confirm = routedFact(1.4, { action: "confirm", path: "confirm_only" });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), confirm, fastReplied(), delegatedFact(6)], now(10))!;
+  assert.equal(d.followups.length, 1);
+  assert.equal(d.followups[0].kind, "delegation");
+  assert.equal(d.followups[0].commandId, DCMD);
+  assert.equal(d.followups[0].dispatchedAt, iso(6));
+  const both = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), confirm, fastReplied(), delegatedFact(6), delegationDispatched(6.1)], now(10))!;
+  assert.equal(both.followups.length, 1, "the delegated and dispatched facts of one command are one delegation");
+});
+
+test("the quick answer's own follow-up stays a follow-up, not a delegation", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), quickAnswer(), fuDispatched(), fuStarted()], now(120))!;
+  assert.equal(d.followups[0].kind, "followup");
+  assert.equal(d.followups[0].target, undefined);
+  assert.equal(d.conv, undefined);
+  assert.deepEqual(d.followup, { n: 1, status: "running", seconds: 58 });
+});
+
+test("a fast turn rides on the summaries the list view draws, from the stage facts alone", () => {
+  const list = buildMemoSummaries([uploaded(), received(0.3), transcribed(1.2), fastRouted(), fastReplied()], now(10));
+  assert.equal(list.length, 1);
+  assert.equal(list[0].status, "complete");
+  assert.equal(list[0].conv?.modelAnswered, "deepseek-v4.1-flash-1017");
+  assert.equal(list[0].stageLabel, "Complete · fast reply");
+});
+
+test("the list scan reads the routed and delegated facts with the stage facts", () => {
+  assert.ok(MEMO_STAGE_TYPES.includes("bloodbank.audio.memo.routed"));
+  assert.ok(MEMO_STAGE_TYPES.includes("bloodbank.audio.memo.delegated"));
 });

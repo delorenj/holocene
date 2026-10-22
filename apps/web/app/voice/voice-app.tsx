@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
-import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, phoneCopyText, statement } from "./model";
-import type { FollowUp, Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
+import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, attemptText, audioChip, captureChip, clockTime, convLabel, dayTime, delegationLabel, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, modelAtRoute, permText, phoneCopyText, statement } from "./model";
+import type { ConvChip, FollowUp, Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -173,6 +173,7 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
               ) : null}
               <span className="voice-row-foot">
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
+                {m.conv ? <ConvChips conv={m.conv} /> : null}
                 {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
                 {m.late ? <LateChip /> : null}
                 {m.detached ? <DetachedChip /> : null}
@@ -212,35 +213,63 @@ function DetachedChip() {
 
 const FOLLOWUP_WORD: Record<FollowUp["status"], string> = { running: "running", spoken: "spoken", failed: "failed" };
 
-function FollowupChip({ followup }: { followup: { n: number; status: FollowUp["status"]; seconds?: number } }) {
+function FollowupChip({ followup }: { followup: NonNullable<MemoSummary["followup"]> }) {
+  const delegation = followup.kind === "delegation";
   return (
     <span className={`voice-flag is-followup is-${followup.status}`}
-      title="answer-then-background: the agent answered in a sentence or two and handed the long part to a background follow-up on the same conversation, spoken later as a follow-up">
-      follow-up {FOLLOWUP_WORD[followup.status]}{followup.status === "running" && followup.seconds !== undefined ? ` ${formatDuration(followup.seconds)}` : ""}
+      title={delegation
+        ? `${delegationLabel(followup.target, followup.title)}: the brief the driver confirmed aloud, run on the batch lane and spoken later as "<agent>, follow-up on <title>."`
+        : "answer-then-background: the agent answered in a sentence or two and handed the long part to a background follow-up on the same conversation, spoken later as a follow-up"}>
+      {delegation ? "delegated" : "follow-up"} {FOLLOWUP_WORD[followup.status]}{followup.status === "running" && followup.seconds !== undefined ? ` ${formatDuration(followup.seconds)}` : ""}
     </span>
+  );
+}
+
+/** The fast conversation desk's chips: conv id and turn, the action it took, and the model that answered @ its ladder rung. */
+function ConvChips({ conv }: { conv: ConvChip }) {
+  const model = modelAtRoute(conv);
+  return (
+    <>
+      <span className="voice-flag is-conv" title={`fast conversation desk, conversation ${conv.convId}${conv.turn !== undefined ? `, turn ${conv.turn}` : ""}`}>{convLabel(conv)}</span>
+      <span className={`voice-flag is-action${conv.fast ? " is-fast" : ""}`}
+        title={conv.fast ? "spoken by the fast desk itself: no agent turn for this memo" : "handed to the full agent: today's interactive path"}>
+        {conv.action}
+      </span>
+      {model ? <span className="voice-level voice-model" title="the model that answered @ the ladder rung (never an Anthropic route)">{model}</span>
+        : conv.fast ? <span className="voice-level voice-model" title="a confirm or cancel the lexicon caught: no model call">no model call</span> : null}
+    </>
   );
 }
 
 function FollowUps({ memo }: { memo: MemoDetail }) {
   const list = memo.followups ?? [];
   if (!list.length) return null;
+  const delegations = list.filter((f) => f.kind === "delegation").length;
   return (
-    <section className="voice-followups" aria-label="Background follow-ups">
-      <h3 className="hub-label">Follow-up{list.length > 1 ? "s" : ""}: the long part, after the quick answer</h3>
+    <section className="voice-followups" aria-label={delegations === list.length ? "Delegations" : "Background follow-ups"}>
+      <h3 className="hub-label">
+        {delegations === list.length
+          ? `Delegated: the brief${list.length > 1 ? "s" : ""} the driver confirmed, run by the agent and spoken later`
+          : `Follow-up${list.length > 1 ? "s" : ""}: the long part, after the quick answer`}
+      </h3>
       <ol>
         {list.map((f) => (
-          <li key={f.commandId ?? f.n} className={`voice-followup is-${f.status}`}>
+          <li key={f.commandId ?? f.n} className={`voice-followup is-${f.status}${f.kind === "delegation" ? " is-delegation" : ""}`}>
+            {f.kind === "delegation" ? (
+              <p className="voice-followup-title" title={f.target ? `target agent ${f.target}` : undefined}>{delegationLabel(f.targetName ?? f.target, f.title)}</p>
+            ) : null}
             <p className="voice-followup-head">
               <span className={`voice-flag is-followup is-${f.status}`}>#{f.n} {FOLLOWUP_WORD[f.status]}</span>
-              {" "}{f.lane ?? "batch"} lane{f.model ? ` · ${f.model}` : ""}
+              {" "}{f.lane ?? "batch"} lane{f.model ? ` · ${f.model}` : ""}{f.perm ? ` · ${permText(f.perm)}` : ""}
               {f.seconds !== undefined ? ` · ${f.status === "running" ? "running for" : "took"} ${formatDuration(f.seconds)}` : ""}
               {f.afterAnswerSeconds !== undefined ? ` · spoken ${formatDuration(f.afterAnswerSeconds)} after the quick answer` : ""}
             </p>
-            {f.plan ? <blockquote><span className="hub-label">Handed off</span><p>{f.plan}</p></blockquote> : null}
-            {f.replyText ? <blockquote><span className="hub-label">Agent said (follow-up)</span><p>{f.replyText}</p></blockquote> : null}
+            {f.plan ? <blockquote><span className="hub-label">{f.kind === "delegation" ? "Brief sent" : "Handed off"}</span><p>{f.plan}</p></blockquote> : null}
+            {f.replyText ? <blockquote><span className="hub-label">{f.kind === "delegation" ? "Agent said (result)" : "Agent said (follow-up)"}</span><p>{f.replyText}</p></blockquote> : null}
             {f.error ? <p className="hub-note">{f.error}</p> : null}
             <dl className="voice-ids">
               {f.commandId ? <div><dt>command</dt><dd><CopyRef value={f.commandId} /></dd></div> : null}
+              {f.briefId ? <div><dt>brief</dt><dd><CopyRef value={f.briefId} /></dd></div> : null}
               {f.replyKey ? <div><dt>reply</dt><dd><CopyRef value={f.replyKey} /></dd></div> : null}
             </dl>
           </li>
@@ -281,6 +310,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
             </p>
             <p className="hub-note">
               {dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}
+              {memo.conv ? <> · <ConvChips conv={memo.conv} /></> : null}
               {memo.lane ? <> · <LaneChip lane={memo.lane} reason={memo.laneReason} /></> : null}
               {memo.late ? <> · <LateChip /></> : null}
               {memo.detached ? <> · <DetachedChip /></> : null}
@@ -342,7 +372,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
       {memo.transcript || memo.replyText ? (
         <div className="voice-text">
           {memo.transcript ? <blockquote><span className="hub-label">Heard</span><p>{memo.transcript}</p></blockquote> : null}
-          {memo.replyText ? <blockquote><span className="hub-label">Agent said{memo.background ? " (quick answer)" : memo.late ? " (late reply)" : ""}</span><p>{memo.replyText}</p></blockquote> : null}
+          {memo.replyText ? <blockquote><span className="hub-label">{memo.routed?.fast ? "Fast desk said" : `Agent said${memo.background ? " (quick answer)" : memo.late ? " (late reply)" : ""}`}</span><p>{memo.replyText}</p></blockquote> : null}
         </div>
       ) : null}
 
@@ -361,6 +391,7 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
 
 const TIMING: { key: keyof MemoTiming; label: string; title: string }[] = [
   { key: "ackSeconds", label: "ack", title: "the car's instant acknowledgement started (device clock)" },
+  { key: "routedSeconds", label: "fast desk decided", title: "the fast conversation desk decided the turn (audio.memo.routed): a fast answer, or the agent path" },
   { key: "heardEchoSeconds", label: "heard echo", title: "the car said what it heard" },
   { key: "firstProgressSeconds", label: "first progress", title: "the agent wrote its first line while working" },
   { key: "firstNarrationSeconds", label: "first narration", title: "the watcher spoke a progress line for the car" },
@@ -407,7 +438,7 @@ function WhileWaiting({ memo }: { memo: MemoDetail }) {
       ) : null}
       {after.length ? (
         <p className="voice-timing">
-          <span className="hub-label">After the agent finished</span>
+          <span className="hub-label">{memo.routed?.fast ? "After the fast model answered" : "After the agent finished"}</span>
           {after.map((t) => (
             <span key={t.key} className="voice-timing-item" title={t.title}>{t.label} <strong>{signed(memo.timing![t.key]!)}</strong></span>
           ))}
@@ -502,6 +533,12 @@ function HopRow({ hop, last, now, basis, watcher, lane }: { hop: Hop; last: bool
             {phoneCopyText(hop.reply)}
           </p>
         ) : null}
+        {hop.routed?.attemptLog?.length ? (
+          <ul className="voice-attempts" aria-label="Fast-model ladder attempts">
+            {hop.routed.attemptLog.map((a, i) => <li key={i}>{attemptText(a, i)}</li>)}
+          </ul>
+        ) : null}
+        {hop.routed?.title ? <p className="voice-hop-detail">Draft: {hop.routed.title}</p> : null}
         {hop.reply?.earshotTextKey ? (
           <p className="voice-hop-detail voice-sidecar" title="The phone gets the full reply text as a sibling object of the reply audio, uploaded before it">
             Earshot text sidecar <CopyRef value={hop.reply.earshotTextKey} />
