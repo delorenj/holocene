@@ -1099,11 +1099,13 @@ EXPIRED_LINE = "That draft timed out, so nothing was sent. Tell me again what yo
 DRAFT_CHANGED_LINE = "That draft changed since I read it back, so nothing was sent. Tell me again what you want done."
 DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 
-# The hold cue (HOLOC-23): while the desk's answer is slow the car hears one of these, in the tile's voice. Under a second of
-# speech each, pre-rendered in the PhraseBank. HOLD_CUE_LINES at ~3 s, HOLD_CUE2_LINES at ~9 s and as the keep-alive while a
-# memo that fell through to the full agent has said nothing for a while. Never the same line twice in a row.
-HOLD_CUE_LINES = ("One sec.", "Thinking.", "Hold on.", "Let me see.")
-HOLD_CUE2_LINES = ("Still on it.", "Still working on it.")
+# The hold cue (HOLOC-23): while the desk's answer is slow the car hears one of these, in the tile's voice. Each is about a
+# second of speech or less, pre-rendered in the PhraseBank; the watcher measures the clip it is about to upload and drops (and
+# stops using) a line whose render is longer than MEMO_CONVERSE_HOLD_MAX_CLIP_S (default 1.2 s), because a cue that plays long
+# holds the pad's speech queue and delays the echo behind it. HOLD_CUE_LINES at ~3 s, HOLD_CUE2_LINES at ~9 s and as the
+# keep-alive while a memo that fell through to the full agent has said nothing for a while. Never the same line twice in a row.
+HOLD_CUE_LINES = ("One sec.", "Thinking.", "Hold on.")
+HOLD_CUE2_LINES = ("Still on it.", "Still here.", "Working on it.")
 
 
 def pick_hold_line(lines: tuple[str, ...], last: str | None, rnd=None) -> str:

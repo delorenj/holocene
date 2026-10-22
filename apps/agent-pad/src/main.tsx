@@ -717,7 +717,11 @@ function App() {
     const blob = await getBlob(`${BUCKET_BASE}/${pick.key}`)
     if (f.finalAt) return // the reply landed while the clip downloaded
     const n = nativeSpeech()
-    if (n) n.speechProgress(f.memoId, pick.seq, await blobToBase64(blob), replyExt(pick.key))
+    const b64 = n ? await blobToBase64(blob) : ''
+    // The driver may have pressed record (or the reply landed) while the clip downloaded and was encoded: a hold cue is gated
+    // again here, right before it reaches the queue, so the drop-while-recording rule holds for the whole of the await.
+    if (f.finalAt || !mayPlayProgress(pick, { recording: recordingRef.current, arming: arming.current })) return
+    if (n) n.speechProgress(f.memoId, pick.seq, b64, replyExt(pick.key))
     else {
       // Newest wins: an older clip for the same memo that has not played yet is dropped.
       progressQ.current = [...progressQ.current.filter((p) => p.memoId !== f.memoId), { memoId: f.memoId, seq: pick.seq, key: pick.key, blob }]

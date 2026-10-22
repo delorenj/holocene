@@ -932,14 +932,20 @@ heard the stop tone and then nothing for up to ~27 s. Now:
 
 | when | what the car hears | knob (default) |
 |---|---|---|
-| the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." / "Let me see." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
-| still waiting at 9 s | "Still on it." / "Still working on it." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
-| the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | "Still on it." / "Still working on it." (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
+| the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
+| still waiting at 9 s | one of "Still on it." / "Still here." / "Working on it." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
+| the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | the same second-cue lines (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
 
 - **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES`, warmed per tile voice at
   start-up), spoken in the tile's own voice (`tiles[agent].voice`; a voice vox lacks falls back to the default), so a cue is a
   file copy (~1 ms, engine `phrasebank`), never a vox render on the critical path. The same line is never heard twice in a row
-  per tile. Every line is under a second of speech.
+  per tile. Every line is about a second of speech or less, and that is **measured, not assumed**: the watcher probes the clip it
+  is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s; `hold_cue_dropped` reason `too_long`,
+  and the line is not used again until a restart). Measured on `rick` (the default voice): One sec. 0.97 s, Thinking. 0.65 s,
+  Hold on. 0.65 s, Still on it. 0.97 s. On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
+  hand-off, so keep the lines short: a longer line delays the echo behind it. While the cue waits for its mark the watcher
+  also renders and banks the chosen line if the tile voice has no banked copy (a voice changed at run time), so the cue is a
+  file copy at the mark rather than a 1.5-3.5 s live render.
 - **Wire.** A cue is a progress clip: `progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>h.ogg` (the `h` suffix marks a hold cue; it shares
   the `<n>` numbering with the agent's narration, so a later narration never overwrites a cue) announced as
   `audio.memo.narrated` with `kind` `hold_cue` | `hold_cue2` | `hold_keepalive` (`command_id` null while the desk is still
@@ -947,11 +953,19 @@ heard the stop tone and then nothing for up to ~27 s. Now:
   with the early-push hint. A pad from before this does not match the `-<n>h.ogg` name and never plays it.
 - **Invariants.** A cue is checked before the render, after it and after the upload: if the desk's decision (or the agent turn)
   is over by then it is dropped and never uploaded (`hold_cue_dropped`, reason `answer_ready` | `turn_finished` | ...), so the
-  answer never waits behind a stale cue. The pad's speech queue ranks a progress clip below the reply and the heard echo, drops
+  answer never waits behind a stale cue. A cue that went up just before the decision landed is removed from the bucket again
+  (`removed: true`), so the pad cannot list and play it while the reply renders. Hold clips are counted apart from the agent's
+  narrations (`NARRATE_MAX` counts real narrations only), and the status object's `narration` block names the hold clip with
+  its own text, `kind` and a null `seq`. The pad's speech queue ranks a progress clip below the reply and the heard echo, drops
   it once the memo has its reply, and never overlaps utterances; the pad itself drops a hold cue (`mayPlayProgress`) while the
-  driver is arming or recording instead of deferring it. A cue already playing is under a second, so the answer simply follows.
+  driver is arming or recording instead of deferring it, checked at the pick and again after the clip has downloaded and been
+  encoded, right before it reaches the queue. A cue already playing is about a second, so the answer simply follows.
   Kill switch `mise run memo:converse off` skips the desk and so the cue; non-converse memos have none.
 - **Trace.** `memo:trace` shows `car:hold-cue#<n>` hops and a "first hold cue" timing for an agent turn.
+- **Not covered (on purpose).** After the agent's first real narration the keep-alives stop and `MEMO_NARRATE_GAP_S` (30 s)
+  applies again. The reply's own TTS render (about 2-3 s once the decision is in) has no cue. The cue ranks as `progress` on the
+  pad (below the echo), not as `cue`: a JS-driven clip at the cue rank would need a Kotlin change. A watcher restart or
+  `memo:retry` during the desk call restarts the 3 s / 9 s timers.
 
 
 ## Latency levers in the watcher (HOLOC-23 phase 2)

@@ -32,6 +32,7 @@ class HoldHarness(ConverseHarness):
         for p in (unittest.mock.patch.object(iw, "log", side_effect=spy),
                   unittest.mock.patch.object(iw, "HOLD_CUE_S", 0.4),
                   unittest.mock.patch.object(iw, "HOLD_CUE2_S", 1.0),
+                  unittest.mock.patch.object(iw, "HOLD_MAX_CLIP_S", 60.0),   # the fake vox's clip is 9 s long
                   unittest.mock.patch.object(mc_, "progress_events", side_effect=lambda mid, limit=200: list(self.events))):
             p.start()
             self.addCleanup(p.stop)
@@ -94,6 +95,9 @@ class DeskWait(HoldHarness, unittest.TestCase):
         self.assertGreaterEqual(doc["spoken_seq"], 2)
         for c in (c1, c2):
             self.assertTrue(c["progress_s3_key"] and c["seq"] >= 1 and c["target_agent_id"] == "holocene-pm")
+        # the status object's narration block names the hold clip with its own text and kind, never the previous real line
+        self.assertEqual((doc["narration"]["kind"], doc["narration"]["text"], doc["narration"]["seq"]),
+                         ("hold_cue2", c2["spoken_text"], None))
 
     def test_a_desk_that_answers_before_the_first_mark_says_nothing(self):
         with unittest.mock.patch.object(iw, "HOLD_CUE_S", 1.5), unittest.mock.patch.object(iw, "HOLD_CUE2_S", 3.0):
@@ -181,6 +185,59 @@ class DeskWait(HoldHarness, unittest.TestCase):
         for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES):
             self.assertIn(line, bank)
             self.assertLessEqual(len(line), 24)                   # well under a second of speech
+
+    def test_a_cue_whose_render_is_longer_than_the_cap_is_dropped_and_the_line_not_used_again(self):
+        with unittest.mock.patch.object(mc_, "probe_audio", return_value={"ok": True, "duration": 2.0, "error": None}), \
+                unittest.mock.patch.object(iw, "HOLD_CUE2_S", 0), unittest.mock.patch.object(cv, "HOLD_CUE_LINES", ("One sec.",)), \
+                unittest.mock.patch.object(iw, "HOLD_MAX_CLIP_S", 1.2):
+            self.slow(1.0)
+            key, m = self.say("What's Holocene working on?")
+            self.wait_for(lambda: bool(self.dropped()), "the drop")
+        self.assertEqual(self.holds(key), [])
+        d = self.dropped()[0]
+        self.assertEqual((d["reason"], d["text"], d["max_s"]), ("too_long", "One sec.", 1.2))
+        self.assertFalse(list((BUCKET_DIR / "progress").rglob(f"{m['memo_id']}-*")) if (BUCKET_DIR / "progress").exists() else False)
+        self.assertIsNone(self.w.hold_line("holocene-pm", ("One sec.",)))      # excluded from now on
+        self.assertEqual(self.w.hold_line("holocene-pm", ("One sec.", "Hold on.")), "Hold on.")
+
+    def test_every_shipped_cue_line_fits_the_duration_cap_in_the_banked_renders_we_know(self):
+        # the cap is enforced on the real clip at run time; here the line set itself stays short and few-worded
+        for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES):
+            self.assertLessEqual(len(line.split()), 3, line)
+
+    def test_a_cue_uploaded_just_before_the_answer_is_removed_from_the_bucket(self):
+        key, m = self.say("What's Holocene working on?")
+        answers = iter([None, "answer_ready"])         # fresh at the render check, stale at the post-upload check
+        with self.w.mu:
+            self.w.narrating.add(m["key"])
+        self.w._hold_run(m, 77, "One sec.", "hold_cue", lambda mm: next(answers), since=time.time(), cid=None)
+        d = [kw for ev, kw in self.logs if ev == "hold_cue_dropped" and kw.get("stage") == "uploaded"]
+        self.assertEqual(len(d), 1)
+        self.assertTrue(d[0]["removed"])
+        self.assertFalse((BUCKET_DIR / d[0]["progress_key"]).exists())
+        self.assertEqual(self.holds(key), [])
+        self.assertNotEqual(m.get("narr_count"), 77)
+
+    def test_hold_cues_do_not_count_toward_the_narration_limit(self):
+        key, m = self.say("What's Holocene working on?")
+        m.update(stage="await_agent", status="active", progress_text="x", progress_cmd="c", progress_seq=1,
+                 dispatched_ts=time.time() - 100, narr_cmd=None, narr_src_seq=None, narr_last_ts=0)
+        m.update(narr_count=iw.NARRATE_MAX, hold_count=2)
+        self.assertNotEqual(self.w.narration_due(m), "max_reached")
+        m.update(hold_count=0)
+        self.assertEqual(self.w.narration_due(m), "max_reached")
+
+    def test_a_voice_that_is_not_banked_is_rendered_during_the_wait_not_at_the_mark(self):
+        self.w.phrases = iw.PhraseBank(Path(tempfile.mkdtemp(prefix="pb-prime-")), enabled=True)
+        self.flag(mode="on", agents="holocene-pm", routes=self.routes, tiles={"holocene-pm": {"voice": "walken"}})
+        with unittest.mock.patch.object(cv, "HOLD_CUE_LINES", ("One sec.",)), unittest.mock.patch.object(iw, "HOLD_CUE2_S", 0), \
+                unittest.mock.patch.object(iw, "HOLD_CUE_S", 0.8):
+            self.slow(1.4)
+            key, m = self.say("What's Holocene working on?")
+            self.wait_for(lambda: len(self.holds(key)) == 1, "the cue")
+        (c1,) = self.holds(key)
+        self.assertEqual(c1["tts_engine"], "phrasebank")        # primed during the wait: a file copy at the mark
+        self.assertEqual(VOX_TEXTS.count("One sec."), 1)
 
     def test_a_cancelled_memo_gets_no_cue(self):
         self.slow(1.5)
