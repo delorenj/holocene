@@ -14,6 +14,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# never a real vox, alias table or skill scope from these tests
+os.environ.setdefault("MEMO_VOX_URL", "http://127.0.0.1:9")
+os.environ.setdefault("MEMO_CONVERSE_TOOLS_DIR", tempfile.mkdtemp(prefix="no-car-desk-scope-"))
+os.environ.setdefault("MEMO_CONVERSE_ALIASES", str(Path(tempfile.mkdtemp(prefix="no-aliases-")) / "none.json"))
 import converse as cv  # noqa: E402
 
 SECRET = "fake-hyper-key-0123456789abcdef"  # a fake: the tests prove it never leaks
@@ -67,16 +71,32 @@ class FakeLLM(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(blob)))
+            if srv.route_header and status == 200:
+                self.send_header("X-AutomaticAI-Route", srv.route_header)  # the gateway names the route that served
             self.end_headers()
             self.wfile.write(blob)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def do_GET(self):
+        """GET <prefix>/models: the token's scope as the gateway lists it (server.listing)."""
+        srv = self.server
+        srv.gets.append({"path": self.path, "auth": self.headers.get("Authorization")})
+        blob = json.dumps({"object": "list", "data": [{"id": m, "object": "model"} for m in srv.listing]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(blob)))
+        self.end_headers()
+        self.wfile.write(blob)
 
 
 def fake_server():
     srv = ThreadingHTTPServer(("127.0.0.1", 0), FakeLLM)
     srv.daemon_threads = True
     srv.modes, srv.default, srv.calls, srv.sleep, srv.model, srv.decision = [], "ok", [], 2.0, None, decision()
+    srv.route_header, srv.gets = None, []
+    srv.listing = ["automaticai/auto", "automaticai/auto/fast", "automaticai/free", "automaticai/personal/glm-5.3-flash",
+                   "automaticai/personal/kimi-k3s", "automaticai/deepseek/deepseek-flash"]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -114,13 +134,21 @@ class Routes(unittest.TestCase):
         raw = line.split("=", 2)[2].rstrip("'")
         routes, refused = cv.parse_routes(raw)
         self.assertEqual(refused, [])
-        self.assertEqual([r["id"] for r in routes], ["r1", "r2", "r3m", "r3c", "r3a", "r3b"])
-        self.assertEqual(routes[0]["model"], "deepseek-v4.1-flash-1017")
+        # operator decision 2026-10-22: r1 Hyper flash on the Holocene Auto key, r2 DeepSeek's own API, r3 the autorouter
+        self.assertEqual([(r["id"], r["model"]) for r in routes],
+                         [("r1", "deepseek-v4.1-flash-1017"), ("r2", "deepseek-flash"), ("r3", "automaticai/auto/fast")])
+        self.assertEqual(routes[0]["key_ref"], "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential")
+        self.assertEqual((routes[1]["base_url"], routes[1]["key_ref"]),
+                         ("https://api.deepseek.com", "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja"))
         self.assertTrue(all(r["key_ref"].startswith("op://DeLoSecrets/") for r in routes))
-        kimi = next(r for r in routes if r["id"] == "r3a")
-        self.assertEqual((kimi["temperature"], kimi["reasoning_effort"]), (1.0, "medium"))  # kimi-k3s 400s any other temperature
-        self.assertFalse(any(cv.forbidden(r["model"]) for r in routes))
-        self.assertNotIn("sk-", unit)
+        r3 = routes[2]
+        self.assertTrue(r3["scoped_auto"])
+        self.assertEqual(r3["key_ref"], "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse")
+        self.assertEqual((r3["temperature"], r3["reasoning_effort"]), (1.0, None))  # kimi 400s any other temperature
+        self.assertFalse(any(cv.forbidden(r["model"]) for r in routes if not r["scoped_auto"]))
+        self.assertNotIn("tflaecgcrdgxrh2ovgi5ysjkzq", unit)  # the Hindsight item is no longer the car desk's key
+        self.assertIn("Environment=MEMO_CONVERSE_BUDGET_S=12", unit)
+        self.assertNotRegex(unit, r"\bsk-[A-Za-z0-9_-]{12,}")  # no pasted key ("car-desk-scope" is a path)
 
 
 class Ladder(unittest.TestCase):
@@ -136,6 +164,7 @@ class Ladder(unittest.TestCase):
     def setUp(self):
         for s in self.srvs:
             s.modes, s.default, s.calls, s.sleep, s.model, s.decision = [], "ok", [], 2.0, None, decision()
+            s.route_header, s.gets = None, []
         self.logs = []
         self.reads = []
 

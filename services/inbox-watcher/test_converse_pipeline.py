@@ -49,6 +49,7 @@ class ConverseHarness(MemoHarness):
         super().setUp()
         for s in (self.hyper, self.gateway):
             s.modes, s.default, s.calls, s.sleep, s.model, s.decision = [], "ok", [], 2.0, None, decision()
+            s.route_header, s.gets = None, []
         self.routes = [
             {"id": "r1", "base_url": f"http://127.0.0.1:{self.hyper.server_port}/v1", "key_ref": "op://DeLoSecrets/hyper/credential",
              "model": "deepseek-v4.1-flash-1017", "timeout_s": 3},

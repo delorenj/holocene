@@ -142,6 +142,14 @@ run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py
 description = "The fast in-car desk's conversation: turns (model@route, ms), the pending draft and delegations: memo:conv [latest|<agent>|<conv id>]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' conv"
 
+[tasks."memo:voice"]
+description = "A tile's car reply voice (car only; Telegram/Hermes untouched), persisted in the desk's flag file: memo:voice <agent> [<voice>|--clear] [--json]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' voice"
+
+[tasks."memo:model"]
+description = "A tile's desk model alias (car_desk_aliases.json: deepseek-flash | deepseek-pro | free | auto), its routes in front of the default ladder: memo:model <agent> [<alias>|--clear] [--json]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' model"
+
 [tasks."memo:converse"]
 description = "Flip the fast in-car conversation desk at runtime (flag file, no restart) or show it: memo:converse on|off|shadow|status [--agents a,b|'*'] [--devices id] [--handoff named|off]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' converse"

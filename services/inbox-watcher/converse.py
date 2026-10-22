@@ -19,7 +19,16 @@ This module is pure logic plus the HTTP ladder; the watcher (inbox_watcher.py) o
 
 THE NEVER-ANTHROPIC RULE: no rung may name Claude, Anthropic, Sonnet, Opus, Haiku, Fable or automaticai/auto. A configured
 route that matches FORBIDDEN_MODEL_RE is refused when the routes are parsed, and an answer whose `model` field matches is
-thrown away and counted as a failure of that rung.
+thrown away and counted as a failure of that rung. The one exception (2026-10-22, operator): exactly `automaticai/auto/fast`
+and `automaticai/free`, and only on a route that carries the scoped holocene-converse gateway token
+(MEMO_CONVERSE_SCOPED_KEY_REFS), whose scope holds no Anthropic route: the gateway intersects auto's candidates with the
+token's scope. Such a rung is also used only while a scope proof (GET /models with that token lists no Anthropic id) is
+fresh, and its answer must name the route that served it (X-AutomaticAI-Route) and that route must not be forbidden.
+
+Per tile (agent) the flag file carries `tiles: {<agent>: {voice, model}}`: the car reply voice and the desk model alias
+(car_desk_aliases.json), written under an fcntl lock by `memo_trace.py voice|model`, the car-desk skills and the desk's own
+phrase short-circuit ("use walken voice", "switch to deepseek pro"). A decision may also be action `tool` with `tool_name`
+and `args`, validated against the tool.json contracts of the car-desk skill scope and run as the skill's entrypoint.
 
 Keys never live in a file: a route carries an op:// reference, read with `op read` on first use and kept in memory only.
 Stdlib only.
@@ -27,7 +36,9 @@ Stdlib only.
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import fcntl
 import hashlib
 import http.client
 import json
@@ -36,6 +47,7 @@ import re
 import socket
 import ssl
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -51,20 +63,47 @@ FORBIDDEN_MODEL_RE = re.compile(
 _ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), None)
 
 
+def _clean_name(name: str) -> str:
+    return unicodedata.normalize("NFKC", name).translate(_ZERO_WIDTH).strip()
+
+
 def forbidden(name) -> bool:
     """True for any model, route id or host that names an Anthropic model, the automaticai/auto pool or an OpenRouter auto
     router. The name is NFKC-normalised and stripped of zero-width characters first, and a name with any non-ASCII
     character is refused outright (no real model id has one; a look-alike letter must not slip past the pattern)."""
     if not isinstance(name, str):
         return False
-    t = unicodedata.normalize("NFKC", name).translate(_ZERO_WIDTH).strip()
+    t = _clean_name(name)
     return (not t.isascii()) or bool(FORBIDDEN_MODEL_RE.search(t))
+
+
+# Anthropic by name only (no auto pattern): what a token's scope listing (GET /models) must not contain. The listing of
+# an auto-scoped token names the auto family itself, which is fine; a Claude route in it is not.
+ANTHROPIC_RE = re.compile(r"(claude|anthropic|sonnet|opus|haiku|fable)", re.IGNORECASE)
+# The only router names a rung may use, and only on a scoped token (MEMO_CONVERSE_SCOPED_KEY_REFS). Never bare
+# automaticai/auto (an orchestrator-class request, frontier tier), never /orchestrator or /subagent, never openrouter/auto.
+SCOPED_AUTO_MODELS = ("automaticai/auto/fast", "automaticai/free")
+# The holocene-converse gateway token (id 88): its scope is Claude-free, so auto/fast and free can only pick from it.
+DEFAULT_SCOPED_KEY_REFS = ("op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse",)
+
+
+def scoped_auto(name) -> bool:
+    """Exactly automaticai/auto/fast or automaticai/free (the router names a scoped token may use)."""
+    return isinstance(name, str) and _clean_name(name) in SCOPED_AUTO_MODELS
+
+
+def scoped_key_refs(env=None) -> tuple[str, ...]:
+    env = os.environ if env is None else env
+    raw = env.get("MEMO_CONVERSE_SCOPED_KEY_REFS")
+    if raw is None:
+        return DEFAULT_SCOPED_KEY_REFS
+    return tuple(x.strip() for x in str(raw).split(",") if x.strip().startswith("op://"))
 
 
 MODES = ("off", "shadow", "on")
 HANDOFF_MODES = ("named", "off")
-ACTIONS = ("reply", "propose", "confirm", "cancel", "direct", "end")
-FAST_ACTIONS = ("reply", "propose", "confirm", "cancel", "end")
+ACTIONS = ("reply", "propose", "confirm", "cancel", "direct", "end", "tool")
+FAST_ACTIONS = ("reply", "propose", "confirm", "cancel", "end", "tool")
 PERMS = ("read_only", "changes_ok", "deploy_ok")
 PERM_TEXT = {"read_only": "Read-only", "changes_ok": "Code changes OK, no deploy", "deploy_ok": "Changes and deploy OK"}
 PERM_RULE = {
@@ -120,12 +159,17 @@ def _log_default(event: str, level: str = "info", **fields) -> None:
 
 # ---------------------------------------------------------------- routes
 
-def parse_routes(raw) -> tuple[list[dict], list[dict]]:
+def parse_routes(raw, scoped_refs: tuple | list | None = None) -> tuple[list[dict], list[dict]]:
     """(usable routes, refused [{id, model, reason}]) from MEMO_CONVERSE_ROUTES (a JSON list, or the list itself).
 
     A route: {id, base_url, key_ref (op://...), model, timeout_s, temperature, reasoning_effort, max_tokens}. Refused:
     a forbidden model, id or host (the never-Anthropic rule), a key_ref that is not an op:// reference (a pasted key is a
-    plaintext credential), no model, a base_url that is not http(s). Order is the ladder order."""
+    plaintext credential), no model, a base_url that is not http(s). Order is the ladder order.
+
+    automaticai/auto/fast and automaticai/free are allowed only on a route whose key_ref is one of `scoped_refs`
+    (MEMO_CONVERSE_SCOPED_KEY_REFS: the holocene-converse token, whose scope holds no Anthropic route); such a route is
+    marked scoped_auto (the ladder then wants a scope proof and the served route's header)."""
+    scoped_refs = tuple(scoped_key_refs() if scoped_refs is None else scoped_refs)
     refused: list[dict] = []
     if raw is None or raw == "":
         return [], []
@@ -147,10 +191,14 @@ def parse_routes(raw) -> tuple[list[dict], list[dict]]:
         ref = str(r.get("key_ref") or "").strip()
         host = urllib.parse.urlsplit(base).hostname or ""
         netloc = urllib.parse.urlsplit(base).netloc
+        is_scoped = scoped_auto(model)
         why = None
         if not model:
             why = "no model"
-        elif forbidden(model) or forbidden(rid) or forbidden(host):
+        elif is_scoped and ref not in scoped_refs:
+            why = ("auto_unscoped: automaticai/auto/fast and automaticai/free only on the scoped holocene-converse token "
+                   "(MEMO_CONVERSE_SCOPED_KEY_REFS)")
+        elif (forbidden(model) and not is_scoped) or forbidden(rid) or forbidden(host):
             why = "forbidden_model: the never-Anthropic rule (claude|anthropic|sonnet|opus|haiku|fable|automaticai/auto)"
         elif not base.startswith(("https://", "http://")) or not host:
             why = f"base_url {base!r} is not http(s)"
@@ -177,7 +225,7 @@ def parse_routes(raw) -> tuple[list[dict], list[dict]]:
             "id": rid, "base_url": base, "host": netloc, "key_ref": ref, "model": model,
             "timeout_s": timeout_s, "temperature": temperature,
             "reasoning_effort": str(effort).strip().lower() if effort else None,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens, "scoped_auto": is_scoped,
         })
     return out, refused
 
@@ -350,14 +398,25 @@ class Http:
                 return
         conn.close()
 
-    def post_json(self, url: str, body: dict, headers: dict, timeout: float) -> tuple[int | None, bytes, str | None]:
-        """(status, raw body, error). error is 'timeout' | 'connect: ...' | None."""
+    def post_json(self, url: str, body: dict, headers: dict, timeout: float,
+                  resp_headers: dict | None = None) -> tuple[int | None, bytes, str | None]:
+        """(status, raw body, error). error is 'timeout' | 'connect: ...' | None. `resp_headers`, when given, is filled
+        with the response's headers (lower-case names)."""
+        return self.request("POST", url, body, headers, timeout, resp_headers)
+
+    def get_json(self, url: str, headers: dict, timeout: float) -> tuple[int | None, bytes, str | None]:
+        return self.request("GET", url, None, headers, timeout)
+
+    def request(self, method: str, url: str, body: dict | None, headers: dict, timeout: float,
+                resp_headers: dict | None = None) -> tuple[int | None, bytes, str | None]:
         u = urllib.parse.urlsplit(url)
         k = (u.scheme, u.hostname, u.port or (443 if u.scheme == "https" else 80))
         path = (u.path or "/") + (f"?{u.query}" if u.query else "")
-        payload = json.dumps(body).encode()
-        hdrs = {"Content-Type": "application/json", "Accept": "application/json", "Connection": "keep-alive",
-                "Content-Length": str(len(payload)), **headers}
+        payload = json.dumps(body).encode() if body is not None else None
+        # No User-Agent: Cloudflare in front of api.automaticai.io refuses Python-urllib's; http.client sends none (works).
+        hdrs = {"Accept": "application/json", "Connection": "keep-alive", **headers}
+        if payload is not None:
+            hdrs.update({"Content-Type": "application/json", "Content-Length": str(len(payload))})
         deadline = time.monotonic() + timeout
         for attempt in (1, 2):
             left = deadline - time.monotonic()
@@ -365,7 +424,7 @@ class Http:
                 return None, b"", "timeout"
             conn, reused = self._take(k, left)
             try:
-                conn.request("POST", path, body=payload, headers=hdrs)
+                conn.request(method, path, body=payload, headers=hdrs)
                 resp = conn.getresponse()
                 data = resp.read()
             except (socket.timeout, TimeoutError):
@@ -379,6 +438,8 @@ class Http:
             except (OSError, http.client.HTTPException) as e:
                 conn.close()
                 return None, b"", f"connect: {type(e).__name__}: {e}"[:160]
+            if resp_headers is not None:
+                resp_headers.update({str(a).lower(): str(b) for a, b in resp.getheaders()})
             if resp.will_close:
                 conn.close()
             else:
@@ -424,7 +485,7 @@ def normalize_decision(obj: dict) -> dict:
         title = " ".join(goal.split()[:8]).rstrip(".,;:")
     perm = _PERM_ALIASES.get(str(obj.get("perm") or "read_only").strip().lower().replace(" ", "_"), "read_only")
     target = obj.get("target")
-    return {
+    out = {
         "say": re.sub(r"\s+", " ", str(obj.get("say") or "")).strip()[:600],
         "action": action,
         "target": str(target).strip() if isinstance(target, str) and target.strip() else None,
@@ -432,6 +493,18 @@ def normalize_decision(obj: dict) -> dict:
         "brief": {"goal": goal, "context": _strs(brief.get("context")), "done_when": _strs(brief.get("done_when"))},
         "perm": perm,
     }
+    if action == "tool":
+        # a tool call: its name and arguments, checked against the loaded tool.json contracts before anything runs
+        name = obj.get("tool_name") or obj.get("tool") or obj.get("name")
+        args = obj.get("args") if obj.get("args") is not None else obj.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except ValueError:
+                args = None
+        out["tool_name"] = str(name).strip()[:80] if isinstance(name, str) else None
+        out["args"] = args if isinstance(args, dict) else {}
+    return out
 
 
 _TITLE_LEAD_RE = re.compile(r"^(?:(?:ok|okay|so|hey|please|can you|could you|i want you to|i need you to|go|and)\s+)*"
@@ -498,10 +571,12 @@ class Ladder:
     `model` in the answer throws it away (never-Anthropic). Never raises for an LLM reason."""
 
     def __init__(self, routes: list[dict], keys: KeyCache, breaker: Breaker, http_: Http | None = None,
-                 budget_s: float = 8.0, clock=time.monotonic, log=None):
+                 budget_s: float = 8.0, clock=time.monotonic, log=None, gate=None):
         self.routes, self.keys, self.breaker = routes, keys, breaker
         self.http = http_ or Http()
         self.budget_s, self.clock, self.log = budget_s, clock, log or _log_default
+        # gate(route) -> None (use it) or the outcome it is skipped with (a scoped auto rung without a fresh scope proof)
+        self.gate = gate
 
     def call(self, messages: list[dict]) -> dict:
         t0 = self.clock()
@@ -523,6 +598,10 @@ class Ladder:
             if r["host"] in dead_hosts or _domain(r) in dead_hosts:
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "host_down", "ms": 0})
                 continue
+            skip = self.gate(r) if self.gate is not None else None
+            if skip:
+                attempts.append({"route": r["id"], "model": r["model"], "outcome": skip, "ms": 0})
+                continue
             key = self.keys.get(r["key_ref"], timeout=max(0.3, left - 0.3))
             if key is None:
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "key_unreadable", "ms": 0})
@@ -538,8 +617,8 @@ class Ladder:
             if res.get("decision") is not None:
                 self.breaker.ok(r["id"])
                 return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"],
-                        "requested_model": r["model"], "attempts": attempts, "usage": res.get("usage"),
-                        "cached_tokens": res.get("cached_tokens"),
+                        "requested_model": r["model"], "served_route": res.get("served_route"), "attempts": attempts,
+                        "usage": res.get("usage"), "cached_tokens": res.get("cached_tokens"),
                         "latency_ms": int((self.clock() - t0) * 1000), "fallback_reason": None}
             opened = self.breaker.fail(r["id"])
             if res["attempt"].get("http_status") == 402:
@@ -555,6 +634,7 @@ class Ladder:
         if weak is not None:  # no rung did better than the incomplete proposal: the guard builds the brief from the driver's words
             r, res = weak
             return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"], "requested_model": r["model"],
+                    "served_route": res.get("served_route"),
                     "attempts": attempts, "usage": res.get("usage"), "cached_tokens": res.get("cached_tokens"),
                     "latency_ms": int((self.clock() - t0) * 1000), "fallback_reason": None}
         if attempts and all(a["outcome"] == "key_unreadable" for a in attempts):
@@ -567,10 +647,13 @@ class Ladder:
         if r.get("reasoning_effort"):
             body["reasoning_effort"] = r["reasoning_effort"]
         t0 = self.clock()
+        hdr_box: dict = {}
 
         def post(k: str):
             hdrs = {"Authorization": f"Bearer {k}"} if k else {}
-            return self.http.post_json(f"{r['base_url']}/chat/completions", body, hdrs, max(0.1, timeout - (self.clock() - t0)))
+            hdr_box.clear()
+            return self.http.post_json(f"{r['base_url']}/chat/completions", body, hdrs, max(0.1, timeout - (self.clock() - t0)),
+                                       resp_headers=hdr_box)
 
         status, raw, err = post(key)
         if status == 401 and r["key_ref"]:
@@ -589,9 +672,17 @@ class Ladder:
         except ValueError:
             return {"attempt": {**att, "outcome": "bad_json", "http_status": status}}
         model = (data.get("model") if isinstance(data, dict) else None) or None
-        if forbidden(model):
+        # the gateway names the route that served an auto / free request (and may for an explicit one)
+        served = (hdr_box.get("x-automaticai-route") or "").strip() or None
+        if served:
+            att["served_route"] = served
+        if ((forbidden(model) and not scoped_auto(model)) or (served and ANTHROPIC_RE.search(served))
+                or (served and forbidden(served) and not scoped_auto(served))):
             # the never-Anthropic rule: an answer from a forbidden model is never used, whatever it says
             return {"attempt": {**att, "outcome": "forbidden_model", "answered_model": model, "http_status": status}}
+        if r.get("scoped_auto") and not served:
+            # a router rung must say which route answered: an answer it cannot attribute is never used
+            return {"attempt": {**att, "outcome": "route_unproven", "answered_model": model, "http_status": status}}
         try:
             content = data["choices"][0]["message"].get("content") or ""
         except (KeyError, IndexError, TypeError, AttributeError):
@@ -608,7 +699,7 @@ class Ladder:
             det = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
             cached = det.get("cached_tokens") if det.get("cached_tokens") is not None else usage.get("prompt_cache_hit_tokens")
         return {"attempt": {**att, "outcome": "ok", "answered_model": model, "http_status": status},
-                "decision": decision, "model": model, "usage": usage,
+                "decision": decision, "model": model, "usage": usage, "served_route": served,
                 "cached_tokens": int(cached) if isinstance(cached, (int, float)) else None}
 
 
@@ -740,6 +831,149 @@ def perm_allowed(words: list[str]) -> str:
 def clamp_perm(requested: str, words: list[str]) -> str:
     req = requested if requested in PERMS else "read_only"
     return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words)))]
+
+
+# ---------------------------------------------------------------- per-tile voice and model: names and phrases (no LLM)
+
+TOOL_VOICE, TOOL_MODEL = "car_set_voice", "car_set_model"
+# The two setting tools' argument contracts, for the in-process fallback when the skill scope is missing (the skills'
+# tool.json files say the same).
+BUILTIN_SCHEMAS = {
+    TOOL_VOICE: {"type": "object", "properties": {"voice": {"type": "string", "maxLength": 64}}, "required": ["voice"],
+                 "additionalProperties": False},
+    TOOL_MODEL: {"type": "object", "properties": {"model": {"type": "string", "maxLength": 64}}, "required": ["model"],
+                 "additionalProperties": False},
+}
+DEFAULT_WORDS = ("default", "the default", "normal", "the normal", "usual", "the usual", "standard", "the standard")
+_NUM_WORDS = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five", "6": "six", "7": "seven",
+              "8": "eight", "9": "nine"}
+
+
+def _key(text: str) -> str:
+    """A phrase as a lookup key: lower case, no spaces, apostrophes or hyphens ('Deep Seek Pro' == 'deepseek-pro')."""
+    return re.sub(r"[^a-z0-9]+", "", norm(text))
+
+
+def voice_spoken(name: str) -> str:
+    """How a voice is named aloud: 'walken2' -> 'Walken two', 'rick' -> 'Rick'."""
+    m = re.fullmatch(r"([a-z_-]*?)(\d+)", name or "")
+    if m and m.group(1):
+        return f"{m.group(1).replace('_', ' ').title()} {' '.join(_NUM_WORDS.get(d, d) for d in m.group(2))}"
+    return (name or "").replace("_", " ").replace("-", " ").title()
+
+
+def voice_index(catalog: list[dict]) -> dict[str, str]:
+    """Phrase key -> voice name, from vox's catalog ([{name, display_name}]): the name, the name with its digits spoken
+    ('walken two'), the display name ('Christopher Walken', the shortest name on a tie), and a display name's first or last
+    word when no other voice shares it ('freeman' -> morgan). Earlier entries win."""
+    names = sorted({str(v.get("name")) for v in catalog if isinstance(v, dict) and v.get("name")}, key=lambda n: (len(n), n))
+    disp = {str(v["name"]): norm(str(v.get("display_name") or "")) for v in catalog if isinstance(v, dict) and v.get("name")}
+    idx: dict[str, str] = {}
+
+    def put(phrase: str, name: str) -> None:
+        k = _key(phrase)
+        if k and k not in idx:
+            idx[k] = name
+    for n in names:
+        put(n, n)
+        put(re.sub(r"\d", lambda d: f" {_NUM_WORDS[d.group(0)]}", n), n)
+    for n in names:
+        if disp.get(n):
+            put(disp[n], n)
+    for pick in (lambda w: w[-1], lambda w: w[0]):
+        words: dict[str, set[str]] = {}
+        for n in names:
+            w = disp.get(n, "").split()
+            if len(w) > 1:
+                words.setdefault(pick(w), set()).add(n)
+        for w, owners in words.items():
+            if len(owners) == 1:
+                put(w, next(iter(owners)))
+    return idx
+
+
+def resolve_voice(said: str, catalog: list[dict]) -> str | None:
+    """The voice name a spoken or typed value means, or None. 'default' resolves to the literal 'default'."""
+    k = _key(said)
+    if not k:
+        return None
+    if k in {_key(w) for w in DEFAULT_WORDS}:
+        return "default"
+    return voice_index(catalog).get(k)
+
+
+def _alias_key(text: str) -> str:
+    return _key(re.sub(r"^(?:the|a)\s+", "", re.sub(r"\b(?:model|models|brain|llm)\b", " ", norm(text)).strip()))
+
+
+def alias_index(table: dict | None) -> dict[str, str]:
+    """Phrase key -> model alias, from car_desk_aliases.json: the alias itself, its label and every phrase (the words
+    model / brain do not count: 'the free model' is 'free')."""
+    idx: dict[str, str] = {}
+    for alias, e in ((table or {}).get("models") or {}).items():
+        if not isinstance(e, dict):
+            continue
+        for p in [alias, e.get("label") or "", e.get("spoken") or "", *(e.get("phrases") or [])]:
+            k = _alias_key(str(p))
+            if k and k not in idx:
+                idx[k] = alias
+    return idx
+
+
+def resolve_alias(said: str, table: dict | None) -> str | None:
+    """The model alias a spoken or typed value means, or None. 'default' resolves to the literal 'default'."""
+    k = _alias_key(said)
+    if not k:
+        return None
+    if k in {_key(w) for w in DEFAULT_WORDS}:
+        return "default"
+    return alias_index(table).get(k)
+
+
+_SET_LEAD = (r"(?:(?:hey|ok|okay|alright|all right|so|and|now|please|can you|could you|would you|let's|lets|i want to|"
+             r"i'd like to|id like to|go ahead and)\s+)*")
+_SET_TAIL = r"(?:\s+(?:please|now|instead|then|thanks|thank you|for me|from now on|for this tile|for this agent))*"
+_VOICE_RES = [
+    re.compile(_SET_LEAD + r"(?:use|switch to|switch over to|switch back to|change to|go with|go back to|try|give me|talk with|"
+               r"talk in|speak with|speak in)\s+(?:the\s+|a\s+)?(?P<v>.+?)(?:'s)?\s+voice" + _SET_TAIL),
+    re.compile(_SET_LEAD + r"(?:switch|change|set|make)\s+(?:the\s+|your\s+|my\s+|its\s+)?voice\s+(?:to|over to|back to)\s+"
+               r"(?:the\s+|a\s+)?(?P<v>.+?)(?:'s)?(?:\s+voice)?" + _SET_TAIL),
+    re.compile(_SET_LEAD + r"(?P<reset>reset|clear)\s+(?:the\s+|your\s+|my\s+)?voice" + _SET_TAIL),
+]
+_MODEL_RES = [
+    re.compile(_SET_LEAD + r"(?:switch|change|set|make)\s+(?:the\s+|your\s+|my\s+|its\s+)?(?:model|brain)\s+(?:to|over to|back to)\s+"
+               r"(?:the\s+)?(?P<a>.+?)" + _SET_TAIL),
+    re.compile(_SET_LEAD + r"(?:use|switch to|switch over to|switch back to|change to|go with|go back to|try|think with)\s+"
+               r"(?:the\s+)?(?P<a>.+?)" + _SET_TAIL),
+    re.compile(_SET_LEAD + r"(?P<reset>reset|clear)\s+(?:the\s+|your\s+|my\s+)?(?:model|brain)" + _SET_TAIL),
+]
+
+
+def setting_phrase(text: str, catalog: list[dict], table: dict | None) -> dict | None:
+    """A whole utterance that only changes the tile's voice or model: {"tool_name", "args"}, else None (the model decides).
+    "use walken two voice", "switch the voice to Morgan Freeman", "reset the voice"; "switch to deepseek pro", "use the
+    free model", "switch the model to auto", "reset the model". A bare name is a voice only next to the word voice, so
+    "switch to marge" (an agent) is never read as a voice."""
+    n = norm(text)
+    if not n or len(n) > 120:
+        return None
+    for rx in _VOICE_RES:
+        m = rx.fullmatch(n)
+        if m is None:
+            continue
+        v = "default" if m.groupdict().get("reset") else resolve_voice(m.group("v"), catalog)
+        if v:
+            return {"tool_name": TOOL_VOICE, "args": {"voice": v}}
+    for rx in _MODEL_RES:
+        m = rx.fullmatch(n)
+        if m is None:
+            continue
+        a = "default" if m.groupdict().get("reset") else resolve_alias(m.group("a"), table)
+        if a == "default" and not re.search(r"\b(?:model|brain)\b", n):
+            continue  # "use the usual" alone names nothing: the default model only when the model is named
+        if a:
+            return {"tool_name": TOOL_MODEL, "args": {"model": a}}
+    return None
 
 
 # ---------------------------------------------------------------- names (handoff)
@@ -1053,6 +1287,12 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         return out, reasons
     if action == "direct":
         return out, reasons
+    if action == "tool":
+        # a setting the watcher already applied (or refused) before the guard: what is said comes from that outcome, a
+        # template, never model prose; a pending draft is untouched
+        if not (out["say"] or "").strip():
+            out["say"] = "Okay."
+        return out, reasons
     # reply
     say, hit = filter_sent_claims(out["say"], about)
     if hit:
@@ -1258,11 +1498,38 @@ Return one JSON object and nothing else, with the keys say, action, target, titl
 {{"say":"I can have the PM look into that.","action":"propose","target":"{agent}","title":"Why the audio spool is disabled","brief":{{"goal":"Find out why the audio spool is disabled and report back.","context":["The driver noticed it while driving."],"done_when":["The cause is named and a fix is proposed."]}},"perm":"read_only"}}"""
 
 
+def tools_block(tools: list[dict]) -> str:
+    """The TOOLS section of the system prompt (byte-stable while the tool.json files are): each tool's name, what it
+    does and its arguments, plus the one output example for a tool call."""
+    if not tools:
+        return ""
+    lines = ["TOOLS (the desk's own settings; use one only when the driver asks for that change)"]
+    first = None
+    for t in tools:
+        props = ((t.get("parameters") or {}).get("properties") or {})
+        args = []
+        for k, p in props.items():
+            p = p if isinstance(p, dict) else {}
+            choice = f" one of {', '.join(map(str, p['enum']))}" if p.get("enum") else ""
+            args.append(f"{k}: {p.get('type', 'string')}{choice}")
+        lines.append(f"- {t['name']}({'; '.join(args)}): {str(t.get('description') or '').strip()[:300]}")
+        if first is None and props:
+            k0 = next(iter(props))
+            p0 = props[k0] if isinstance(props[k0], dict) else {}
+            first = (t["name"], k0, (p0.get("enum") or [p0.get("example") or "walken"])[0])
+    lines.append('For a tool call set action "tool", "tool_name" and "args", for example:')
+    if first:
+        lines.append(json.dumps({"say": "", "action": "tool", "tool_name": first[0], "args": {first[1]: first[2]}},
+                                separators=(",", ":")))
+    return "\n".join(lines)
+
+
 def build_messages(*, agent: str, name: str, card: dict, sess: dict | None, transcript: str, board: str = "",
-                   recent: str = "", now: float | None = None, window: int = 12) -> list[dict]:
+                   recent: str = "", now: float | None = None, window: int = 12, tools: str = "") -> list[dict]:
     """Stable prefix first (rules, card, roster: byte-identical across turns for the provider's prefix cache), then the
     conversation window as user/assistant pairs (append-only), then the volatile desk state and the new transcript."""
-    system = (SYSTEM_RULES.format(name=name, agent=agent) + "\n\nAGENT CARD\n" + (card.get("text") or "-")
+    system = (SYSTEM_RULES.format(name=name, agent=agent) + (f"\n\n{tools}" if tools else "")
+              + "\n\nAGENT CARD\n" + (card.get("text") or "-")
               + "\n\nROSTER (agents work can be sent to)\n" + (card.get("roster") or "-"))
     msgs = [{"role": "system", "content": system}]
     for t in driver_turns(sess)[-window:]:
@@ -1320,23 +1587,334 @@ class FlagFile:
         return doc
 
 
-def write_flag(path: Path, drop: tuple = (), **updates) -> dict:
-    """Merge updates into the flag file (and remove the `drop` keys), atomically (tmp + rename). Returns the new document."""
+@contextlib.contextmanager
+def flag_lock(path: Path):
+    """An exclusive fcntl lock around a read-modify-write of the flag file: the CLI (memo:converse, memo:voice, memo:model,
+    the car-desk skills through it) and the watcher (the desk's phrase short-circuit) all write the same file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name(f".{path.name}.lock"), "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _read_flag_doc(path: Path) -> dict:
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(doc, dict):
-            doc = {}
+        return doc if isinstance(doc, dict) else {}
     except (OSError, ValueError):
-        doc = {}
-    doc.update({k: v for k, v in updates.items() if v is not None})
-    for k in drop:
-        doc.pop(k, None)
+        return {}
+
+
+def _write_flag_doc(path: Path, doc: dict) -> None:
     doc["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
     os.replace(tmp, path)
-    return doc
+
+
+def write_flag(path: Path, drop: tuple = (), **updates) -> dict:
+    """Merge updates into the flag file (and remove the `drop` keys), atomically (tmp + rename), under the flag lock.
+    Returns the new document. Keys it is not given (tiles, routes) are kept."""
+    with flag_lock(path):
+        doc = _read_flag_doc(path)
+        doc.update({k: v for k, v in updates.items() if v is not None})
+        for k in drop:
+            doc.pop(k, None)
+        _write_flag_doc(path, doc)
+        return doc
+
+
+_UNSET = object()
+
+
+def update_tile(path: Path, agent: str, *, voice=_UNSET, model=_UNSET, by: str = "cli") -> dict:
+    """Set (a string) or clear (None) one tile's car voice and/or desk model alias in the flag file's `tiles` map, under
+    the flag lock. Returns the tile's new settings ({} when nothing is left)."""
+    if not agent or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", agent):
+        raise ValueError(f"bad agent id {agent!r}")
+    with flag_lock(path):
+        doc = _read_flag_doc(path)
+        tiles = doc.get("tiles") if isinstance(doc.get("tiles"), dict) else {}
+        tile = dict(tiles.get(agent) or {}) if isinstance(tiles.get(agent), dict) else {}
+        for k, v in (("voice", voice), ("model", model)):
+            if v is _UNSET:
+                continue
+            if v is None:
+                tile.pop(k, None)
+            else:
+                tile[k] = str(v)
+            tile[f"{k}_set_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            tile[f"{k}_set_by"] = by
+        if any(k in tile for k in ("voice", "model")):
+            tiles[agent] = tile
+        else:
+            tiles.pop(agent, None)
+        doc["tiles"] = tiles
+        _write_flag_doc(path, doc)
+        return tiles.get(agent) or {}
+
+
+# ---------------------------------------------------------------- the model alias table (car_desk_aliases.json)
+
+ALIASES_PATH = Path(__file__).resolve().parent / "car_desk_aliases.json"
+
+
+def load_aliases(path: Path | None = None) -> dict:
+    """The versioned alias table shared by the watcher, memo_trace.py model and the car-set-model skill: {version,
+    models: {<alias>: {label, spoken, phrases[], budget_s?, routes[]}}}. {} when it cannot be read."""
+    try:
+        doc = json.loads(Path(path or ALIASES_PATH).read_text(encoding="utf-8"))
+        return doc if isinstance(doc, dict) and isinstance(doc.get("models"), dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def alias_label(table: dict | None, alias: str | None, spoken: bool = False) -> str:
+    e = ((table or {}).get("models") or {}).get(alias or "") or {}
+    return str((e.get("spoken") if spoken else None) or e.get("label") or alias or "")
+
+
+def _route_target(r: dict) -> tuple[str, str]:
+    return (r.get("base_url") or "").rstrip("/"), r.get("model") or ""
+
+
+def merge_ladder(front: list[dict], base: list[dict]) -> list[dict]:
+    """The alias's routes in front of the default ladder, every (base_url, model) once. An alias rung that IS a default
+    rung keeps the default rung's id (one breaker per upstream); an id clash with another target gets a suffix."""
+    by_target = {_route_target(r): r for r in base}
+    base_ids = {r["id"] for r in base}
+    out: list[dict] = []
+    seen_t: set[tuple] = set()
+    seen_id: set[str] = set()
+    for r in front:
+        t = _route_target(r)
+        if t in seen_t:
+            continue
+        r = dict(r)
+        if t in by_target:
+            r["id"] = by_target[t]["id"]
+        else:
+            while r["id"] in base_ids or r["id"] in seen_id:
+                r["id"] = f"{r['id']}~"  # never borrow a default rung's id (and so its breaker) for another upstream
+        seen_t.add(t)
+        seen_id.add(r["id"])
+        out.append(r)
+    out += [r for r in base if _route_target(r) not in seen_t]
+    return out
+
+
+# ---------------------------------------------------------------- the desk's tools (Skillex skills, scope car-desk)
+
+TOOLS_DIR_DEFAULT = Path.home() / ".local/state/holocene-auto/car-desk-scope"
+TOOL_TIMEOUT_S = 3.0
+
+
+def _frontmatter(text: str) -> dict:
+    """SKILL.md's YAML frontmatter as a dict ({} without one). PyYAML when present, else the few keys the desk needs."""
+    m = re.match(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", text or "", re.S)
+    if not m:
+        return {}
+    try:
+        import yaml  # type: ignore
+        doc = yaml.safe_load(m.group(1))
+        return doc if isinstance(doc, dict) else {}
+    except Exception:  # noqa: BLE001 - no PyYAML: read metadata.tool's scalars by hand
+        doc: dict = {"metadata": {"tool": {}}}
+        for k in ("name", "description"):
+            mm = re.search(rf"^{k}:\s*(.+)$", m.group(1), re.M)
+            if mm:
+                doc[k] = mm.group(1).strip().strip("'\"")
+        tool = doc["metadata"]["tool"]
+        for k in ("contract", "entrypoint", "effect"):
+            mm = re.search(rf"^\s+{k}:\s*(.+)$", m.group(1), re.M)
+            if mm:
+                tool[k] = mm.group(1).strip().strip("'\"")
+        mm = re.search(r"^\s+consumers:\s*\[(.*?)\]", m.group(1), re.M)
+        if mm:
+            tool["consumers"] = [x.strip().strip("'\"") for x in mm.group(1).split(",") if x.strip()]
+        return doc
+
+
+def _check_args(schema: dict, args) -> str | None:
+    """The tool's JSON Schema (the subset tool.json uses: an object of scalar properties, enum, required,
+    additionalProperties false, maxLength) against the model's args. None when valid, else why not."""
+    if not isinstance(args, dict):
+        return "args must be an object"
+    props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    for k in schema.get("required") or []:
+        if k not in args:
+            return f"missing argument {k!r}"
+    if schema.get("additionalProperties") is False:
+        extra = [k for k in args if k not in props]
+        if extra:
+            return f"unknown argument {extra[0]!r}"
+    types = {"string": str, "boolean": bool, "integer": int, "number": (int, float)}
+    for k, v in args.items():
+        p = props.get(k) if isinstance(props.get(k), dict) else {}
+        want = types.get(p.get("type", "string"))
+        if want and (not isinstance(v, want) or (p.get("type") in ("integer", "number") and isinstance(v, bool))):
+            return f"argument {k!r} must be {p.get('type', 'string')}"
+        if p.get("enum") and v not in p["enum"]:
+            return f"argument {k!r} must be one of {', '.join(map(str, p['enum']))}"
+        if isinstance(v, str) and (len(v) > int(p.get("maxLength") or 120) or not v.strip()):
+            return f"argument {k!r} is empty or too long"
+    return None
+
+
+class ToolBox:
+    """The car desk's tools: each skill under <scope>/.agents/skills/* (a Skillex scope with the car-desk pack enabled)
+    whose SKILL.md `metadata.tool.consumers` names `car-desk`, with its tool.json (an OpenAI function object) and its
+    entrypoint script. Read at start-up and again whenever the directory, a SKILL.md or a tool.json changes (mtime)."""
+
+    def __init__(self, scope_dir: Path, consumer: str = "car-desk", log=None):
+        self.scope_dir = Path(scope_dir)
+        self.consumer = consumer
+        self.log = log or _log_default
+        self._lock = threading.Lock()
+        self._key: tuple | None = None
+        self._tools: dict[str, dict] = {}
+        self.errors: list[str] = []
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.scope_dir / ".agents" / "skills"
+
+    def _fingerprint(self) -> tuple:
+        d = self.skills_dir
+        parts = [_mtime(d)]
+        try:
+            for sk in sorted(d.iterdir()):
+                parts += [sk.name, _mtime(sk / "SKILL.md"), _mtime(sk / "tool.json")]
+        except OSError:
+            pass
+        return tuple(parts)
+
+    def tools(self) -> dict[str, dict]:
+        key = self._fingerprint()
+        with self._lock:
+            if key == self._key:
+                return self._tools
+        tools: dict[str, dict] = {}
+        errors: list[str] = []
+        try:
+            skills = sorted(p for p in self.skills_dir.iterdir() if p.is_dir())
+        except OSError:
+            skills = []
+        for sk in skills:
+            try:
+                meta = _frontmatter((sk / "SKILL.md").read_text(encoding="utf-8"))
+                tool = ((meta.get("metadata") or {}).get("tool") or {}) if isinstance(meta.get("metadata"), dict) else {}
+                if not isinstance(tool, dict) or self.consumer not in (tool.get("consumers") or []):
+                    continue
+                contract = json.loads((sk / str(tool.get("contract") or "tool.json")).read_text(encoding="utf-8"))
+                fn = contract.get("function") if contract.get("type") == "function" else contract
+                name = str(fn.get("name") or "").strip()
+                entry = (sk / str(tool.get("entrypoint") or "")).resolve()
+                if not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", name):
+                    raise ValueError(f"bad tool name {name!r}")
+                if not tool.get("entrypoint") or not entry.is_file() or sk.resolve() not in entry.parents:
+                    raise ValueError(f"entrypoint {tool.get('entrypoint')!r} is not a file inside the skill")
+                params = fn.get("parameters") if isinstance(fn.get("parameters"), dict) else {"type": "object", "properties": {}}
+                tools[name] = {"name": name, "description": str(fn.get("description") or ""), "parameters": params,
+                               "entrypoint": str(entry), "skill": sk.name, "effect": tool.get("effect"),
+                               "dir": str(sk.resolve())}
+            except Exception as e:  # noqa: BLE001 - one broken skill never hides the others
+                errors.append(f"{sk.name}: {type(e).__name__}: {e}"[:200])
+        with self._lock:
+            first = self._key is None
+            changed = not first and set(tools) != set(self._tools)
+            self._key, self._tools, self.errors = key, tools, errors
+        if first or changed or errors:
+            self.log("converse_tools_loaded", "warn" if errors else "info", dir=str(self.skills_dir),
+                     tools=sorted(tools) or None, errors=errors or None)
+        return tools
+
+    def listing(self) -> list[dict]:
+        return [self.tools()[k] for k in sorted(self.tools())]
+
+    def validate(self, name: str | None, args) -> tuple[dict | None, str | None]:
+        t = self.tools().get(name or "")
+        if t is None:
+            return None, f"no tool called {name!r}"
+        why = _check_args(t["parameters"], args if args is not None else {})
+        return (t, None) if why is None else (None, why)
+
+    def run(self, name: str, args: dict, agent: str, by: str = "car", timeout: float = TOOL_TIMEOUT_S,
+            env: dict | None = None) -> dict:
+        """Run the tool's entrypoint (no shell): `<entrypoint> --json --agent <tile> --by <by> --<arg> <value> ...`, stdin
+        closed, at most `timeout` seconds. {ok, exit, out (its JSON), error, ms}. Never raises."""
+        t0 = time.time()
+        t, why = self.validate(name, args)
+        if t is None:
+            return {"ok": False, "exit": None, "out": None, "error": why, "ms": 0}
+        entry = Path(t["entrypoint"])
+        argv = ([sys.executable, str(entry)] if entry.suffix == ".py" else [str(entry)])
+        argv += ["--json", "--agent", agent, "--by", by]
+        for k, v in args.items():
+            if isinstance(v, bool):
+                argv += [f"--{k}"] if v else []
+            else:
+                argv += [f"--{k}", str(v)]
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=t["dir"],
+                               stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})})
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "exit": None, "out": None, "error": f"timed out after {timeout:g} s",
+                    "ms": int((time.time() - t0) * 1000)}
+        except OSError as e:
+            return {"ok": False, "exit": None, "out": None, "error": f"{type(e).__name__}: {e}"[:200],
+                    "ms": int((time.time() - t0) * 1000)}
+        out = None
+        for line in reversed((r.stdout or "").strip().splitlines()):
+            try:
+                out = json.loads(line)
+                break
+            except ValueError:
+                continue
+        ok = r.returncode == 0 and isinstance(out, dict) and out.get("ok") is not False
+        err = None if ok else (str((out or {}).get("error") or (r.stderr or "").strip()[-200:] or f"exit {r.returncode}"))[:200]
+        return {"ok": ok, "exit": r.returncode, "out": out if isinstance(out, dict) else None, "error": err,
+                "ms": int((time.time() - t0) * 1000)}
+
+
+# ---------------------------------------------------------------- the voices vox has (for the phrase short-circuit)
+
+class VoiceCatalog:
+    """vox's voices ([{name, display_name}], GET <vox>/voices, the same list `voxxy voice list --json` prints), cached for
+    ttl_s; a failed refresh keeps the last good list."""
+
+    def __init__(self, url: str | None = None, ttl_s: float = 600.0, fetch=None, clock=time.time):
+        self.url = (url or os.environ.get("MEMO_VOX_URL", "https://vox.delo.sh")).rstrip("/")
+        self.ttl_s, self.clock = ttl_s, clock
+        self._fetch = fetch or self._http
+        self._at, self._list = 0.0, []
+        self._lock = threading.Lock()
+
+    def _http(self, timeout: float) -> list[dict]:
+        import urllib.request
+        with urllib.request.urlopen(f"{self.url}/voices", timeout=timeout) as resp:
+            data = json.loads(resp.read())
+        return data if isinstance(data, list) else (data.get("voices") or [])
+
+    def get(self, timeout: float = 1.5) -> list[dict]:
+        with self._lock:
+            if self._list and self.clock() - self._at < self.ttl_s:
+                return self._list
+        try:
+            rows = [{"name": str(v.get("name")), "display_name": str(v.get("display_name") or "")}
+                    for v in self._fetch(timeout) if isinstance(v, dict) and v.get("name")]
+        except Exception:  # noqa: BLE001
+            rows = []
+        with self._lock:
+            if rows:
+                self._at, self._list = self.clock(), rows
+            return self._list
+
+    def names(self) -> list[str]:
+        return [v["name"] for v in self.get()]
 
 
 class Desk:
@@ -1344,7 +1922,8 @@ class Desk:
     file (runtime switch, wins over the environment)."""
 
     def __init__(self, state_dir: Path, env=None, keys: KeyCache | None = None, http_: Http | None = None,
-                 cards: CardCache | None = None, log=None, clock=time.time):
+                 cards: CardCache | None = None, log=None, clock=time.time, tools: ToolBox | None = None,
+                 voices: VoiceCatalog | None = None, aliases_path: Path | None = None):
         env = os.environ if env is None else env
         self.env = env
         self.log = log or _log_default
@@ -1361,8 +1940,17 @@ class Desk:
         self.max_audio_s = _env_float(env, "MEMO_CONVERSE_MAX_AUDIO_S", 90.0)
         self.max_input_chars = _env_int(env, "MEMO_CONVERSE_MAX_INPUT_CHARS", 4000)
         self.window = _env_int(env, "MEMO_CONVERSE_WINDOW", 12)
+        self.scoped_refs = scoped_key_refs(env)
+        self.tools = tools or ToolBox(Path(env.get("MEMO_CONVERSE_TOOLS_DIR") or TOOLS_DIR_DEFAULT), log=self.log)
+        self.voices = voices or VoiceCatalog(env.get("MEMO_VOX_URL"))
+        self.aliases_path = Path(aliases_path or env.get("MEMO_CONVERSE_ALIASES") or ALIASES_PATH)
+        self._aliases: tuple[int | None, dict] = (None, {})
         self._routes: dict[str, tuple[list[dict], list[dict]]] = {}
         self._warned: set[str] = set()
+        # scope proofs of the router rungs' tokens: (key_ref, base_url) -> {ok, at, anthropic, ids, error}
+        self._proofs: dict[tuple, dict] = {}
+        self._proving: set[tuple] = set()
+        self._proof_lock = threading.Lock()
 
     # -- settings
 
@@ -1383,10 +1971,14 @@ class Desk:
         if flag is not None:
             source = "flag"
             fm = str(flag.get("mode") or "off").strip().lower()
-            if fm in MODES and not flag.get("error"):
+            if flag.get("error") or ("mode" not in flag and not flag.get("tiles") and not flag.get("routes")):
+                mode, err = "off", flag.get("error") or "flag file without a mode: converse is off"
+            elif "mode" not in flag:
+                source = "env+flag"  # a file that only carries tile settings (memo:voice / memo:model): the env's mode
+            elif fm in MODES:
                 mode, err = fm, None
             else:
-                mode, err = "off", flag.get("error") or f"flag mode {fm!r} is not off|shadow|on: converse is off"
+                mode, err = "off", f"flag mode {fm!r} is not off|shadow|on: converse is off"
             if "agents" in flag:
                 agents = _list(flag["agents"])
             if "devices" in flag:
@@ -1404,20 +1996,153 @@ class Desk:
         if err and err not in self._warned:
             self._warned.add(err)
             self.log("converse_config", "warn", error=err)
+        tiles = flag.get("tiles") if isinstance(flag, dict) and isinstance(flag.get("tiles"), dict) else {}
         return {"mode": mode, "source": source, "agents": agents, "devices": devices, "handoff": handoff,
-                "routes": routes, "refused": refused, "error": err}
+                "routes": routes, "refused": refused, "error": err,
+                "tiles": {a: t for a, t in tiles.items() if isinstance(t, dict)}}
 
     def routes(self, raw) -> tuple[list[dict], list[dict]]:
         k = raw if isinstance(raw, str) else json.dumps(raw)
         if k not in self._routes:
             try:
-                routes, refused = parse_routes(raw)
+                routes, refused = parse_routes(raw, self.scoped_refs)
             except Exception as e:  # noqa: BLE001 - a malformed route list turns the desk off, never the watcher
                 routes, refused = [], [{"id": None, "model": None, "reason": f"routes unusable: {type(e).__name__}: {e}"[:200]}]
             for r in refused:
                 self.log("converse_route_refused", "warn", route=r.get("id"), model=r.get("model"), reason=r["reason"])
             self._routes[k] = (routes, refused)
         return self._routes[k]
+
+    # -- per tile: the car voice and the desk model (flag file `tiles`, car_desk_aliases.json)
+
+    def aliases(self) -> dict:
+        """The alias table, re-read when the file changes."""
+        mt = _mtime(self.aliases_path)
+        if mt is not None and mt == self._aliases[0]:
+            return self._aliases[1]
+        table = load_aliases(self.aliases_path)
+        self._aliases = (mt, table)
+        return table
+
+    def tile(self, agent: str | None, s: dict | None = None) -> dict:
+        tiles = (s or {}).get("tiles") if s is not None else (self.flag.read() or {}).get("tiles")
+        t = (tiles or {}).get(agent or "") if isinstance(tiles, dict) else None
+        return t if isinstance(t, dict) else {}
+
+    def voice_for(self, agent: str | None, default: str) -> str:
+        """The car reply voice of this tile: its own (memo:voice, the car-set-voice skill, "use walken voice"), else the
+        watcher's default (MEMO_VOX_VOICE)."""
+        v = self.tile(agent).get("voice")
+        return v if isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", v) else default
+
+    def routes_for(self, s: dict, agent: str | None) -> tuple[list[dict], dict]:
+        """The ladder for this tile: its model alias's routes (car_desk_aliases.json) in front of the default ladder,
+        deduplicated; the default ladder alone without an alias. (routes, info {model, label, budget_s, error})."""
+        alias = self.tile(agent, s).get("model")
+        if not alias:
+            return s["routes"], {"model": None}
+        entry = (self.aliases().get("models") or {}).get(alias)
+        if not isinstance(entry, dict):
+            return s["routes"], {"model": alias, "error": "unknown alias: the default ladder"}
+        front, _ = self.routes(entry.get("routes") or [])
+        info = {"model": alias, "label": entry.get("label") or alias}
+        try:
+            if entry.get("budget_s"):
+                info["budget_s"] = max(self.budget_s, float(entry["budget_s"]))
+        except (TypeError, ValueError):
+            pass
+        return merge_ladder(front, s["routes"]), info
+
+    def setting_phrase(self, transcript: str) -> dict | None:
+        """The deterministic voice / model switch ("use walken voice", "switch to deepseek pro"), or None."""
+        if not re.search(r"\b(?:voice|model|brain|use|switch|change|set|try|go|think|reset|clear)\b", norm(transcript)):
+            return None  # no setting verb at all: never fetch the voice list for an ordinary question
+        return setting_phrase(transcript, self.voices.get(), self.aliases())
+
+    # -- scope proofs (a router rung is used only while its token is proven Claude-free)
+
+    PROOF_TTL_S = 1800.0
+    PROOF_REFRESH_S = 600.0
+    PROOF_RETRY_S = 60.0
+
+    def prove_scope(self, r: dict) -> dict:
+        """GET <base>/models with the rung's token: the token's scope as the gateway sees it. Proven when it lists models
+        and none of them is Anthropic (the auto family itself is expected in an auto-scoped token's listing)."""
+        k = (r["key_ref"], r["base_url"])
+        now = self.clock()
+        res: dict = {"ok": False, "checked_at": now}
+        key = self.keys.get(r["key_ref"])
+        if key is None:
+            res["error"] = "key unreadable"
+        else:
+            status, raw, err = self.http.get_json(f"{r['base_url']}/models", {"Authorization": f"Bearer {key}"} if key else {}, 8.0)
+            try:
+                ids = [x.get("id") for x in (json.loads(raw.decode("utf-8", "replace")).get("data") or [])
+                       if isinstance(x, dict)] if status == 200 else []
+            except (ValueError, AttributeError):
+                ids = []
+            bad = [i for i in ids if not isinstance(i, str) or ANTHROPIC_RE.search(i) or not i.isascii()]
+            res.update(ids=len(ids), anthropic=bad[:5] or None, http_status=status, error=err)
+            if status == 200 and ids and not bad:
+                res.update(ok=True, at=now)
+            elif not res.get("error"):
+                res["error"] = "an Anthropic route is in the token's scope" if bad else f"/models answered {status}"
+        with self._proof_lock:
+            prev = self._proofs.get(k) or {}
+            if not res["ok"] and not res.get("anthropic") and prev.get("ok"):
+                res.update(ok=True, at=prev["at"], stale_error=res.get("error"))  # a failed re-check keeps the proof until it expires
+            self._proofs[k] = res
+            self._proving.discard(k)
+        if not res["ok"] or res.get("anthropic"):
+            self.log("converse_scope_unproven", "warn", key_ref=ref_label(r["key_ref"]), base=r["host"],
+                     error=res.get("error"), anthropic=res.get("anthropic"))
+        return res
+
+    def _prove_later(self, r: dict) -> None:
+        k = (r["key_ref"], r["base_url"])
+        with self._proof_lock:
+            if k in self._proving:
+                return
+            self._proving.add(k)
+
+        def run():
+            try:
+                self.prove_scope(r)
+            except Exception as e:  # noqa: BLE001
+                with self._proof_lock:
+                    self._proving.discard(k)
+                self.log("converse_scope_proof_failed", "warn", error=f"{type(e).__name__}: {e}"[:200])
+        threading.Thread(target=run, name="converse-scope-proof", daemon=True).start()
+
+    def scope_gate(self, r: dict) -> str | None:
+        """The ladder's gate: None for an ordinary rung and for a router rung with a fresh proof; else the outcome the
+        rung is skipped with (scope_unsafe: an Anthropic route is in the scope; scope_unproven: no proof yet)."""
+        if not r.get("scoped_auto"):
+            return None
+        k = (r["key_ref"], r["base_url"])
+        now = self.clock()
+        with self._proof_lock:
+            p = dict(self._proofs.get(k) or {})
+        if p.get("anthropic"):
+            if now - float(p.get("checked_at") or 0) > self.PROOF_RETRY_S:
+                self._prove_later(r)
+            return "scope_unsafe"
+        if p.get("ok") and now - float(p.get("at") or 0) < self.PROOF_TTL_S:
+            if now - float(p.get("checked_at") or 0) > self.PROOF_REFRESH_S:
+                self._prove_later(r)
+            return None
+        if not p or now - float(p.get("checked_at") or 0) > self.PROOF_RETRY_S:
+            self._prove_later(r)
+        return "scope_unproven"
+
+    def all_routes(self, s: dict | None = None) -> list[dict]:
+        """Every route the desk may call: the default ladder and every alias's routes."""
+        s = s or self.settings()
+        out = list(s["routes"])
+        for e in (self.aliases().get("models") or {}).values():
+            if isinstance(e, dict):
+                out += self.routes(e.get("routes") or [])[0]
+        return out
 
     @staticmethod
     def agent_allowed(s: dict, agent: str | None) -> bool:
@@ -1432,8 +2157,9 @@ class Desk:
             return False
         return s["mode"] != "off" and self.agent_allowed(s, agent)
 
-    def usable_routes(self, s: dict) -> list[dict]:
-        return [r for r in s["routes"] if self.keys.status(r["key_ref"]) != "unreadable"]
+    def usable_routes(self, s: dict, agent: str | None = None) -> list[dict]:
+        routes = self.routes_for(s, agent)[0] if agent else s["routes"]
+        return [r for r in routes if self.keys.status(r["key_ref"]) != "unreadable"]
 
     def ineligible(self, s: dict, agent: str | None, sender: dict | None, audio_s, transcript: str,
                    dispatched: bool) -> str | None:
@@ -1453,14 +2179,16 @@ class Desk:
             return "audio_too_long"
         if len(transcript or "") > self.max_input_chars:
             return "input_too_long"
-        if not self.usable_routes(s):
+        if not self.usable_routes(s, agent):
             return "key_unreadable"
         return None
 
     # -- deciding
 
-    def ladder(self, s: dict) -> Ladder:
-        return Ladder(s["routes"], self.keys, self.breaker, self.http, self.budget_s, log=self.log)
+    def ladder(self, s: dict, agent: str | None = None) -> Ladder:
+        routes, info = self.routes_for(s, agent) if agent else (s["routes"], {})
+        return Ladder(routes, self.keys, self.breaker, self.http, info.get("budget_s") or self.budget_s, log=self.log,
+                      gate=self.scope_gate)
 
     def decide(self, s: dict, *, agent: str, name: str, transcript: str, sess: dict | None, card: dict, board: str = "",
                recent: str = "", now: float | None = None) -> dict:
@@ -1470,6 +2198,7 @@ class Desk:
         pend = pending_draft(sess, now, self.draft_ttl_s)
         lex = None
         exp = (sess or {}).get("expired")
+        tile = self.tile(agent, s)
         if confirm_only(transcript) and (pend is not None or recent_delegation(sess, now, self.dedupe_s)
                                          or (isinstance(exp, dict) and now - float(exp.get("at") or 0) < self.dedupe_s)):
             lex = ("confirm_only", {"action": "confirm"})
@@ -1481,44 +2210,157 @@ class Desk:
             lex = ("end_only", {"action": "end", "say": END_LINE})
         elif force_direct(transcript):
             lex = ("force_direct", {"action": "direct"})
+        else:
+            hit = self.setting_phrase(transcript)
+            if hit is not None:
+                lex = ("setting_phrase", {"action": "tool", **hit})
         if lex is not None:
             return {"decision": normalize_decision(lex[1]), "path": lex[0], "lexicon": True, "llm": None,
-                    "forced_by": force_direct(transcript) if lex[0] == "force_direct" else None}
+                    "forced_by": force_direct(transcript) if lex[0] == "force_direct" else None,
+                    "tile_model": tile.get("model"), "tile_voice": tile.get("voice")}
         msgs = build_messages(agent=agent, name=name, card=card, sess=sess, transcript=transcript, board=board,
-                              recent=recent, now=now, window=self.window)
-        res = self.ladder(s).call(msgs)
+                              recent=recent, now=now, window=self.window, tools=tools_block(self.tools.listing()))
+        res = self.ladder(s, agent).call(msgs)
         if not res.get("ok"):
             return {"decision": normalize_decision({"action": "direct"}), "path": "fallback", "lexicon": False,
-                    "llm": res, "fallback_reason": res.get("fallback_reason")}
+                    "llm": res, "fallback_reason": res.get("fallback_reason"),
+                    "tile_model": tile.get("model"), "tile_voice": tile.get("voice")}
         return {"decision": res["decision"], "path": "fast", "lexicon": False, "llm": res,
-                "prompt_chars": sum(len(m["content"]) for m in msgs)}
+                "prompt_chars": sum(len(m["content"]) for m in msgs),
+                "tile_model": tile.get("model"), "tile_voice": tile.get("voice")}
+
+    # -- the tool action (car-desk skills): validated, run, spoken from a template
+
+    def run_tool(self, agent: str, tile_name: str, name: str | None, args, by: str = "car") -> dict:
+        """Validate a tool call against the loaded tool.json contracts and run the skill's entrypoint (no shell, at most
+        TOOL_TIMEOUT_S). {ok, tool, args, via, exit, ms, error, out, say}: `say` is what the driver hears, from a template
+        (the new voice / model by its spoken name), never from the model. A setting tool the scope does not offer (the
+        scope dir missing) is applied in process through the same locked writer (via=builtin)."""
+        args = args if isinstance(args, dict) else {}
+        loaded = self.tools.tools()
+        res: dict = {"tool": name, "args": args, "via": "skill"}
+        if name in loaded:
+            # the skill writes through this watcher's own verb, into this desk's flag file and alias table
+            r = self.tools.run(name, args, agent, by=by, env={
+                "MEMO_STATE_DIR": str(self.flag.path.parent), "MEMO_CONVERSE_ALIASES": str(self.aliases_path),
+                "HOLOCENE_CAR_DESK_ALIASES": str(self.aliases_path),
+                "HOLOCENE_MEMO_TRACE": str(Path(__file__).resolve().parent / "memo_trace.py")})
+        elif name in (TOOL_VOICE, TOOL_MODEL) and not _check_args(BUILTIN_SCHEMAS[name], args):
+            res["via"] = "builtin"
+            r = self._builtin_tool(agent, name, args, by)
+        else:
+            why = self.tools.validate(name, args)[1] if loaded else "no tools are loaded"
+            r = {"ok": False, "exit": None, "out": None, "error": why, "ms": 0}
+        res.update(ok=r["ok"], exit=r.get("exit"), ms=r.get("ms"), error=r.get("error"), out=r.get("out"))
+        res["say"] = self.tool_say(tile_name, name, args, r)
+        self.log("converse_tool", "info" if r["ok"] else "warn", agent=agent, tool=name, args=args, via=res["via"],
+                 ok=r["ok"], exit=r.get("exit"), ms=r.get("ms"), error=r.get("error"))
+        return res
+
+    def _builtin_tool(self, agent: str, name: str, args: dict, by: str) -> dict:
+        t0 = time.time()
+        path = self.flag.path
+        try:
+            if name == TOOL_VOICE:
+                v = resolve_voice(args["voice"], self.voices.get())
+                if v is None:
+                    return {"ok": False, "exit": 3, "out": None, "error": f"no voice called {args['voice']!r}", "ms": 0}
+                tile = update_tile(path, agent, voice=None if v == "default" else v, by=by)
+                out = {"ok": True, "agent": agent, "voice": tile.get("voice"), "cleared": v == "default"}
+            else:
+                a = resolve_alias(args["model"], self.aliases())
+                if a is None:
+                    return {"ok": False, "exit": 3, "out": None, "error": f"no model called {args['model']!r}", "ms": 0}
+                tile = update_tile(path, agent, model=None if a == "default" else a, by=by)
+                out = {"ok": True, "agent": agent, "model": tile.get("model"), "cleared": a == "default"}
+        except (OSError, ValueError) as e:
+            return {"ok": False, "exit": 1, "out": None, "error": f"{type(e).__name__}: {e}"[:200], "ms": 0}
+        return {"ok": True, "exit": 0, "out": out, "error": None, "ms": int((time.time() - t0) * 1000)}
+
+    def tool_say(self, tile_name: str, name: str | None, args: dict, r: dict) -> str:
+        """The spoken outcome of a tool call (a template)."""
+        out = r.get("out") or {}
+        if not r.get("ok"):
+            what = {TOOL_VOICE: "the voice", TOOL_MODEL: "the model"}.get(name or "", "that")
+            why = re.sub(r"\s+", " ", str(out.get("error") or r.get("error") or "")).strip().rstrip(".")
+            why = why if why and len(why) <= 120 and "/" not in why and "Error" not in why else "it didn't go through"
+            return f"I couldn't change {what}: {why}."
+        if name == TOOL_VOICE:
+            if out.get("cleared") or not out.get("voice"):
+                return f"{tile_name} is back to the default voice."
+            return f"Switched {tile_name} to {voice_spoken(str(out['voice']))}."
+        if name == TOOL_MODEL:
+            if out.get("cleared") or not out.get("model"):
+                return f"{tile_name} is back on the default model."
+            return f"{tile_name} now thinks with {alias_label(self.aliases(), out['model'], spoken=True)}."
+        say = re.sub(r"\s+", " ", str(out.get("say") or "")).strip()
+        return say[:200] if say else "Done."
 
     # -- operator surfaces
 
     def warm_keys(self) -> None:
-        """Read every configured key once, off the critical path (start-up): the heartbeat then says ok or unreadable."""
+        """Read every configured key once, off the critical path (start-up): the heartbeat then says ok or unreadable.
+        Then prove the router rungs' token scopes, load the tools and the voice list."""
         s = self.settings()
-        for r in s["routes"]:
+        routes = self.all_routes(s)
+        for r in routes:
             self.keys.get(r["key_ref"])
+        done: set[tuple] = set()
+        for r in routes:
+            if r.get("scoped_auto") and (r["key_ref"], r["base_url"]) not in done:
+                done.add((r["key_ref"], r["base_url"]))
+                try:
+                    self.prove_scope(r)
+                except Exception as e:  # noqa: BLE001
+                    self.log("converse_scope_proof_failed", "warn", error=f"{type(e).__name__}: {e}"[:200])
+        self.tools.tools()
+        self.voices.get(timeout=5.0)
 
-    def heartbeat(self, open_conversations: int = 0, contract: dict | None = None) -> dict:
+    def _route_row(self, r: dict) -> dict:
+        st = self.keys.status(r["key_ref"])
+        until = self.breaker.open_until(r["id"])
+        row = {"id": r["id"], "model": r["model"], "host": r["host"], "key": st, "timeout_s": r["timeout_s"],
+               "fails_2m": self.breaker.recent_fails(r["id"]),
+               "breaker_open_until": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until)) if until else None}
+        if r.get("scoped_auto"):
+            with self._proof_lock:
+                p = self._proofs.get((r["key_ref"], r["base_url"])) or {}
+            row["scope_proof"] = ("unsafe" if p.get("anthropic") else "ok" if p.get("ok") else "unproven")
+            row["scope_checked_at"] = (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(p["checked_at"]))
+                                       if p.get("checked_at") else None)
+        return row
+
+    def heartbeat(self, open_conversations: int = 0, contract: dict | None = None, default_voice: str | None = None) -> dict:
         s = self.settings()
         keys = {}
         routes = []
         for r in s["routes"]:
-            st = self.keys.status(r["key_ref"])
-            keys[r["id"]] = st
-            until = self.breaker.open_until(r["id"])
-            routes.append({"id": r["id"], "model": r["model"], "host": r["host"], "key": st,
-                           "fails_2m": self.breaker.recent_fails(r["id"]),
-                           "breaker_open_until": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until)) if until else None})
+            row = self._route_row(r)
+            keys[r["id"]] = row["key"]
+            routes.append(row)
+        for r in self.all_routes(s) if s["mode"] != "off" else []:
+            if r.get("scoped_auto"):
+                self.scope_gate(r)  # a stale proof is refreshed in the background, off the critical path
         vals = set(keys.values()) - {"none"}
         agg = ("no_routes" if not s["routes"] else "ok" if vals <= {"ok"} else "unreadable" if vals == {"unreadable"}
                else "unread" if vals == {"unread"} else "partial")
+        table = self.aliases()
+        tiles = {}
+        for agent, t in sorted((s.get("tiles") or {}).items()):
+            lad, info = self.routes_for(s, agent)
+            tiles[agent] = {"voice": t.get("voice") or default_voice, "voice_own": bool(t.get("voice")),
+                            "model": t.get("model"), "model_label": info.get("label"), "model_error": info.get("error"),
+                            "ladder": [r["id"] for r in lad], "budget_s": info.get("budget_s") or self.budget_s,
+                            "extra_routes": [self._route_row(r) for r in lad if r["id"] not in keys]}
+        tools = self.tools.listing()
         return {"mode": s["mode"], "source": s["source"], "agents": s["agents"], "devices": s["devices"],
                 "handoff": s["handoff"], "error": s["error"], "open_conversations": open_conversations,
                 "routes": routes, "refused": s["refused"], "key_status": agg, "keys": keys, "contract": contract,
-                "budget_s": self.budget_s}
+                "budget_s": self.budget_s, "default_voice": default_voice, "tiles": tiles,
+                "aliases": {"version": table.get("version"), "models": sorted((table.get("models") or {}))},
+                "tools": {"dir": str(self.tools.skills_dir), "loaded": [t["name"] for t in tools],
+                          "skills": [t["skill"] for t in tools], "errors": self.tools.errors or None},
+                "voices": len(self.voices._list)}
 
 
 def snapshot(obj):

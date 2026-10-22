@@ -181,16 +181,31 @@ HERMES = ROOT / "profiles"
 (HERMES / "holocene-pm").mkdir(parents=True)
 
 VOX_TEXTS = []   # every text the watcher asked the fake vox to speak, in order
+VOX_VOICES = []  # the voice of each of those renders (None = the request named none)
+# the fake vox's voice list (GET /voices, as vox.delo.sh); a render in any other voice is vox's 500 "voice 'x' not found"
+VOX_CATALOG = [{"name": n, "display_name": d} for n, d in (
+    ("carlin", "George Carlin"), ("morgan", "Morgan Freeman"), ("rick", "Rick Sanchez"), ("walken", "Christopher Walken"),
+    ("walken2", "Christopher Walken"))]
 
 
 class Vox(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
-        VOX_TEXTS.append(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["text"])
+        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        voice = req.get("voice")
+        if voice and voice not in {v["name"] for v in VOX_CATALOG}:
+            body = json.dumps({"detail": f"synthesis failed: 404: voice '{voice}' not found"}).encode()
+            self.send_response(500); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        VOX_TEXTS.append(req["text"])
+        VOX_VOICES.append(voice)
         body = json.dumps({"audio_url": f"http://127.0.0.1:{self.server.server_port}/a.ogg", "engine": "fakevox"}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
-        blob = b"OggS" + b"\0" * 400
+        if self.path.rstrip("/") == "/voices":
+            blob = json.dumps(VOX_CATALOG).encode()
+        else:
+            blob = b"OggS" + b"\0" * 400
         self.send_response(200); self.send_header("Content-Length", str(len(blob))); self.end_headers(); self.wfile.write(blob)
 
 vox = HTTPServer(("127.0.0.1", 0), Vox)
@@ -211,6 +226,8 @@ os.environ.update({
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
     # The warm GPU whisper server is off unless a test points it at its fake (WhisperServer): never the live :8766.
     "MEMO_WHISPER_URL": "",
+    # The fast desk never reaches a real alias table, skill scope or vox voice list from a test (HOLOC-23 tiles)
+    "MEMO_CONVERSE_ALIASES": str(ROOT / "no-aliases.json"), "MEMO_CONVERSE_TOOLS_DIR": str(ROOT / "no-car-desk-scope"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memo_common as mc_  # noqa: E402
@@ -1561,6 +1578,7 @@ class MemoHarness:
         self.keys = []
         journal(str(uuid.uuid4()), "holocene-pm")  # the gateway journal exists before any memo has a row in it
         VOX_TEXTS.clear()
+        VOX_VOICES.clear()
 
     def tearDown(self):
         EMITS.write_text(self.before)

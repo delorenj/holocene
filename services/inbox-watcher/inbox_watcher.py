@@ -43,6 +43,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -1234,7 +1235,7 @@ class Watcher:
                 counts[m["status"]] = counts.get(m["status"], 0) + 1
             try:
                 converse_hb = self.desk.heartbeat(open_conversations=len(self.s.data.get("conversations") or {}),
-                                                  contract=dict(self.contract_ok))
+                                                  contract=dict(self.contract_ok), default_voice=VOICE)
             except Exception as e:  # noqa: BLE001 - the heartbeat never stops the loop
                 converse_hb = {"error": f"{type(e).__name__}: {e}"[:200]}
             self.s.heartbeat({
@@ -1805,6 +1806,13 @@ class Watcher:
                 raw = self.desk.decide(s, agent=agent, name=name, transcript=transcript, sess=snap["sess"], card=card,
                                        board=snap["board"], recent=snap["recent"], now=now)
                 raw["card"] = {k: card.get(k) for k in ("sha256", "built_at", "recall", "chars", "cached")}
+                if raw["decision"].get("action") == "tool":
+                    # a voice / model switch (the phrase short-circuit or the model's tool call): validated against the
+                    # car-desk tool.json contracts and run as the skill's entrypoint now, before the decision is stored, so
+                    # a restart re-applies the outcome and never runs the tool twice; what is said is a template
+                    raw["tool"] = self.desk.run_tool(agent, name, raw["decision"].get("tool_name"),
+                                                     raw["decision"].get("args"), by="car")
+                    raw["decision"]["say"] = raw["tool"]["say"]
             except WatcherStopping:
                 raise
             except Exception as e:  # noqa: BLE001 - never a failed memo for a desk bug: today's path
@@ -1908,6 +1916,13 @@ class Watcher:
                 "say": final["say"] if action != "direct" else "", "action": action, "path": raw.get("path"),
                 "model": llm.get("model"), "route": llm.get("route"), "ms": llm.get("latency_ms"),
                 "device": sender.get("device"), "guard": reasons or None}
+        tool = raw.get("tool") if isinstance(raw.get("tool"), dict) else None
+        if tool is not None:
+            turn["tool"] = {"name": tool.get("tool"), "args": tool.get("args"), "ok": tool.get("ok"), "via": tool.get("via")}
+        try:
+            tile_now = self.desk.tile(agent)
+        except Exception:  # noqa: BLE001
+            tile_now = {}
         pend_now = sess.get("pending") if isinstance(sess.get("pending"), dict) else None
         if action == "propose" and pend_now is not None and pend_now.get("state") == "proposed":
             turn["readback"] = pend_now.get("brief_id")  # what the driver just heard read back: a bare "yes" confirms this
@@ -1945,11 +1960,17 @@ class Watcher:
             "card_sha256": card.get("sha256"), "recall": card.get("recall"),
             "card_age_s": round(now - float(card["built_at"]), 1) if card.get("built_at") else None,
             "device": sender.get("device"), "decide_ms": int(took * 1000),
-            "reply_s3_key": m["conv"]["reply_key"]}
+            "reply_s3_key": m["conv"]["reply_key"],
+            # the tile's settings: the model alias that decided this turn (null = the default ladder), the voice the reply
+            # is spoken in (the tile's own after a switch), and a tool call's outcome
+            "tile_model": raw.get("tile_model"), "tile_voice": tile_now.get("voice") or VOICE,
+            "served_route": llm.get("served_route"),
+            "tool": ({k: tool.get(k) for k in ("tool", "args", "ok", "via", "exit", "ms", "error")} if tool else None)}
         log("converse_decided", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"], turn=n, action=action,
             path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), llm_ms=llm.get("latency_ms"),
             cached_tokens=llm.get("cached_tokens"), fallback_reason=raw.get("fallback_reason"),
-            say=(final["say"] or "")[:120] or None, delegate_to=(sent or {}).get("target"))
+            say=(final["say"] or "")[:120] or None, delegate_to=(sent or {}).get("target"),
+            tile_model=raw.get("tile_model"), tool=(tool or {}).get("tool"), tool_ok=(tool or {}).get("ok"))
         self.done_stage(m, "converse", "dispatch" if action == "direct" else "speak", ms=took * 1000, action=action,
                         path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), conv=sess["sid"], turn=n)
         self.fact_async("routed", m, routed_payload)  # last: nothing after it can fail, and the voice does not wait for it
@@ -2631,6 +2652,51 @@ class Watcher:
         m.pop("reply_up", None)
         self.s.save()
 
+    def _reply_voice(self, m: dict) -> str:
+        """The voice of this reply, locked at its first render: the tile's own car voice (converse.json `tiles`: memo:voice,
+        the car-set-voice skill, "use walken voice") else MEMO_VOX_VOICE. The chunks, the full file and every retry of one
+        reply keep it; the memo's next reply round (a follow-up: a new reply_stamp) locks again."""
+        with self.mu:
+            stamp = m.get("reply_stamp")
+            vl = m.get("voice_lock")
+            if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
+                return vl["voice"]
+            try:
+                v = self.desk.voice_for(m.get("agent"), VOICE)
+            except Exception:  # noqa: BLE001 - a broken flag file never stops a reply: the default voice
+                v = VOICE
+            m["voice_lock"] = {"stamp": stamp, "voice": v, "requested": v, "fallback": None}
+            return v
+
+    def _synth(self, m: dict, text: str, tmp: Path, steps: int | None = None, prio: int | None = None) -> tuple[Path, str]:
+        """synthesize() in this reply's locked voice. A voice vox does not know (removed or mistyped) falls back to the
+        default voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
+        stage for 30 minutes."""
+        v = self._reply_voice(m)
+        try:
+            return synthesize(text, tmp, **synth_kw(steps, prio, v))
+        except VoiceNotFound as e:
+            if v == VOICE:
+                raise
+            with self.mu:
+                vl = m.setdefault("voice_lock", {"stamp": m.get("reply_stamp"), "requested": v})
+                vl.update(voice=VOICE, fallback="voice_not_found")
+                log("voice_fallback", "warn", memo_id=m.get("memo_id"), key=m.get("key"), agent=m.get("agent"),
+                    requested=v, used=VOICE, error=str(e)[:200], note="vox does not know the tile's voice: the default voice")
+            return synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
+
+    def _voice_used(self, m: dict) -> tuple[str, str | None]:
+        """(the voice this reply was rendered in, the tile's voice it fell back from or None)."""
+        with self.mu:
+            vl = m.get("voice_lock") if isinstance(m.get("voice_lock"), dict) else {}
+        used = vl.get("voice") or VOICE
+        return used, (vl.get("requested") if vl.get("fallback") else None)
+
+    def _voice_fields(self, m: dict) -> dict:
+        """The voice facts carry: the one the reply was rendered in, and the tile's voice when it fell back from it."""
+        used, fell = self._voice_used(m)
+        return {"voice": used, **({"voice_requested": fell, "voice_fallback": "voice_not_found"} if fell else {})}
+
     def step_speak(self, m: dict) -> None:
         """Render the reply and put the car's copy up (replies/...). The phone decision and the replied fact are the next
         stage (step_mirror), on a worker of their own: a reply that waits for a car does not hold up the next voice."""
@@ -2662,8 +2728,9 @@ class Watcher:
         elif followup:
             spoken = f"{name}, follow-up. {body}"
         elif fast:
-            # the desk names the agent on the conversation's first turn only; a read-back names its target itself
-            first = conv.get("turn") == 1 and conv.get("action") not in ("propose", "confirm")
+            # the desk names the agent on the conversation's first turn only; a read-back names its target itself, and a
+            # setting switch names the tile in its own line
+            first = conv.get("turn") == 1 and conv.get("action") not in ("propose", "confirm", "tool")
             spoken = f"{name}. {body}" if first else body
         else:
             spoken = f"{name}, late reply. {body}" if late else f"{name}. {body}"
@@ -2685,7 +2752,7 @@ class Watcher:
                     return
                 audio, engine = voiced
             else:
-                audio, engine = synthesize(spoken, tmp, **synth_kw(steps, prio))
+                audio, engine = self._synth(m, spoken, tmp, steps, prio)
             tts_s = time.time() - t0
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken),
@@ -2745,7 +2812,7 @@ class Watcher:
                 self.fact("voiced", m, {
                     "reply_s3_key": rkey, "chunk_s3_key": rkey, "chunk": 1, "chunks": 1, "spoken_text": spoken,
                     "spoken_chars": len(spoken), "command_id": m.get("command_id"), "tts_seconds": round(tts_s, 2),
-                    "tts_engine": engine, "voice": VOICE, "audio_bytes": stat["size"],
+                    "tts_engine": engine, **self._voice_fields(m), "audio_bytes": stat["size"],
                     "since_reply_seconds": round(t_up - t_speak, 2),
                     "since_agent_done_seconds": round(t_up - done_ts, 2) if done_ts else None, "late": late,
                     "followup": (live_followup(m) or {}).get("n")})
@@ -2792,7 +2859,7 @@ class Watcher:
                 "reply_s3_key": rkey, "reply_text": m["reply_text"], "reply_chars": len(m["reply_text"]),
                 "spoken_chars": up["spoken_chars"], "command_id": m.get("command_id"), "profile": m.get("profile"),
                 "session_id": m.get("session_id"), "agent_seconds": m.get("agent_seconds"),
-                "tts_seconds": up["tts_seconds"], "tts_engine": up["tts_engine"], "voice": VOICE,
+                "tts_seconds": up["tts_seconds"], "tts_engine": up["tts_engine"], **self._voice_fields(m),
                 "audio_bytes": up["audio_bytes"], "journey_seconds": up["journey_seconds"],
                 "prompt_match": m.get("prompt_match"), "late": late, "escalated": escalated,
                 "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
@@ -2857,7 +2924,7 @@ class Watcher:
                         "voiced_first_ts", "voiced_first_s", "voiced_last_s", "earshot_key", "earshot_text_key",
                         "earshot_attempted", "earshot_skipped", "earshot_reason", "prompt_match", "agent_seconds",
                         "agent_done_ts", "progress_cmd", "progress_seq", "progress_text", "progress_ts", "progress_full",
-                        "model_override")
+                        "model_override", "voice_lock")
 
     def start_followup(self, m: dict, kind: str = "background") -> None:
         """Under the lock, right after the quick answer's replied fact: mint follow-up N for the memo's BACKGROUND: plan and
@@ -3312,7 +3379,7 @@ class Watcher:
                 d = tmp / f"c{i:02d}"
                 d.mkdir()
                 t0 = time.time()
-                audio, engine = synthesize(text, d, **synth_kw(steps, prio))
+                audio, engine = self._synth(m, text, d, steps, prio)
                 files.append(audio)
                 job = {"i": i, "n": n, "text": text, "audio": audio, "ckey": chunk_key_for(stamp, agent, mid, i, n),
                        "rkey": rkey, "tts_s": time.time() - t0, "engine": engine, "t_speak": t_speak}
@@ -3333,7 +3400,7 @@ class Watcher:
         # ffmpeg could not join them: the full file is rendered whole, as before chunking (slower, never lost)
         log("reply_join_failed", "warn", memo_id=mid, key=key, agent=agent, chunks=n,
             note="rendering the full reply in one piece instead")
-        return synthesize(" ".join(parts), tmp, **synth_kw(steps, prio))
+        return self._synth(m, " ".join(parts), tmp, steps, prio)
 
     def _publish_chunk(self, m: dict, job: dict) -> None:
         """Upload one rendered chunk and publish audio.memo.voiced for it (once per chunk, also across stage retries)."""
@@ -3367,7 +3434,8 @@ class Watcher:
                 self.fact("voiced", m, {
                     "reply_s3_key": job["rkey"], "chunk_s3_key": job["ckey"], "chunk": job["i"], "chunks": job["n"],
                     "spoken_text": job["text"], "spoken_chars": len(job["text"]), "command_id": m.get("command_id"),
-                    "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], "voice": VOICE, "audio_bytes": size,
+                    "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], **self._voice_fields(m),
+                    "audio_bytes": size,
                     "since_reply_seconds": since,
                     "since_agent_done_seconds": round(time.time() - done_ts, 2) if done_ts else None,
                     "late": bool(m.get("late")), "followup": (live_followup(m) or {}).get("n")})
@@ -3522,8 +3590,22 @@ class Watcher:
         tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
         try:
             t0 = time.time()
-            audio, engine = synthesize(job["spoken"], tmp, voice=PROGRESS_VOICE, steps=PROGRESS_TTS_STEPS,
-                                       **synth_kw(None, TtsGate.NARRATION))
+            # the tile's own car voice (unless MEMO_PROGRESS_VOICE pins narration to one voice); an unknown one falls back
+            voice = PROGRESS_VOICE
+            if not os.environ.get("MEMO_PROGRESS_VOICE"):
+                try:
+                    voice = self.desk.voice_for(job["agent"], PROGRESS_VOICE)
+                except Exception:  # noqa: BLE001
+                    voice = PROGRESS_VOICE
+            try:
+                audio, engine = synthesize(job["spoken"], tmp, voice=voice, steps=PROGRESS_TTS_STEPS,
+                                           **synth_kw(None, TtsGate.NARRATION))
+            except VoiceNotFound:
+                if voice == PROGRESS_VOICE:
+                    raise
+                voice = PROGRESS_VOICE
+                audio, engine = synthesize(job["spoken"], tmp, voice=voice, steps=PROGRESS_TTS_STEPS,
+                                           **synth_kw(None, TtsGate.NARRATION))
             tts_s = time.time() - t0
             with self.mu:
                 why = self._still_working(self.s.memos.get(key), job)
@@ -3557,7 +3639,7 @@ class Watcher:
             self.fact("narrated", m, {
                 "command_id": job["cid"], "seq": job["seq"], "narration": job["n"], "progress_s3_key": pkey,
                 "spoken_text": job["spoken"], "elapsed_seconds": round(max(0.0, elapsed), 1),
-                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": PROGRESS_VOICE, "audio_bytes": size,
+                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": voice, "audio_bytes": size,
                 # null for a progress line the agent wrote; "detached" for the one-off "still on it" notice
                 "kind": job.get("tag")})
             self.status(m)
@@ -3966,20 +4048,29 @@ class TtsGate:
 TTS_GATE = TtsGate()
 
 
-def synth_kw(steps: int | None, prio: int | None) -> dict:
-    """synthesize()'s optional arguments, only those that differ from a plain reply render."""
+def synth_kw(steps: int | None, prio: int | None, voice: str | None = None) -> dict:
+    """synthesize()'s optional arguments, only those that differ from a plain reply render (a tile's own voice is passed;
+    the default voice is not)."""
     kw = {}
     if steps:
         kw["steps"] = steps
     if prio is not None and prio != TtsGate.REPLY:
         kw["prio"] = prio
+    if voice and voice != VOICE:
+        kw["voice"] = voice
     return kw
+
+
+class VoiceNotFound(StageError):
+    """vox does not know the voice asked for (a tile's voice that was removed or mistyped): the render falls back to the
+    default voice at once, never into the 1800 s TTS retry budget."""
 
 
 def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None,
                prio: int = TtsGate.REPLY) -> tuple[Path, str]:
     """vox /synthesize-url -> OGG/Opus file. Returns (path, engine that served it). `steps` trades quality for speed
-    (diffusion steps; vox defaults to 10): progress updates and fast desk turns use fewer. `prio` orders it in TTS_GATE."""
+    (diffusion steps; vox defaults to 10): progress updates and fast desk turns use fewer. `prio` orders it in TTS_GATE.
+    Raises VoiceNotFound when vox says the voice does not exist (HTTP 500 "voice 'x' not found")."""
     body = {"text": text, "voice": voice or VOICE}
     if steps:
         body["steps"] = steps
@@ -3992,6 +4083,14 @@ def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None
                 meta = json.loads(resp.read())
             with urllib.request.urlopen(meta["audio_url"], timeout=60) as resp:
                 blob = resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        if re.search(r"voice\s+'[^']*'\s+not found", detail, re.I):
+            raise VoiceNotFound("tts", "voice_not_found", f"vox: {detail}", retryable=False) from e
+        raise StageError("tts", "vox_failed", f"vox synth failed: HTTPError {e.code}: {detail or e.reason}") from e
     except Exception as e:  # noqa: BLE001
         raise StageError("tts", "vox_failed", f"vox synth failed: {type(e).__name__}: {e}") from e
     if len(blob) < 200:
@@ -4046,7 +4145,9 @@ def main() -> int:
     cs = w.desk.settings()
     log("starting", lane=LANE, poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
         first_start=state.fresh, converse=cs["mode"], converse_source=cs["source"],
-        converse_routes=[r["id"] for r in cs["routes"]], converse_refused=[r.get("id") for r in cs["refused"]] or None)
+        converse_routes=[r["id"] for r in cs["routes"]], converse_refused=[r.get("id") for r in cs["refused"]] or None,
+        converse_tiles={a: {k: t.get(k) for k in ("voice", "model") if t.get(k)} for a, t in (cs.get("tiles") or {}).items()} or None,
+        converse_budget_s=w.desk.budget_s)
     while True:
         try:
             w.baseline_if_first_start()

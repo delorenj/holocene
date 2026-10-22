@@ -9,6 +9,8 @@
   memo_trace.py conv [latest|<agent>|<conv id>]   the fast desk's conversation: turns, the pending draft, delegations
   memo_trace.py converse on|off|shadow|status [--agents a,b|'*'] [--devices id,..] [--handoff named|off]
                                               flip the fast desk at runtime (flag file, no restart), or show it
+  memo_trace.py voice <agent> [<voice>|--clear] [--json]   a tile's car reply voice (vox name or display name)
+  memo_trace.py model <agent> [<alias>|--clear] [--json]   a tile's desk model alias (car_desk_aliases.json)
 
 Every hop reports OK / MISSING / FAILED / UNKNOWN with a timestamp and the
 latency since the previous hop, and the run ends with ONE verdict line:
@@ -445,6 +447,15 @@ def routed_of(d: dict) -> str:
         parts.append(f"{'delegate to ' + str(d['delegate_to']) + ': ' if d.get('delegate_to') else 'draft: '}{d['title']!r}")
     if d.get("guard"):
         parts.append(f"guard {','.join(map(str, d['guard']))}")
+    t = d.get("tool") or {}
+    if t:
+        parts.append(f"tool {t.get('tool')}({', '.join(f'{k}={v}' for k, v in (t.get('args') or {}).items())}) "
+                     f"{'ok' if t.get('ok') else 'FAILED: ' + str(t.get('error'))} via {t.get('via')}"
+                     + (f" {t.get('ms')} ms" if t.get("ms") is not None else ""))
+    if d.get("served_route"):
+        parts.append(f"served by {d['served_route']}")
+    if d.get("tile_voice") or d.get("tile_model"):
+        parts.append(f"tile voice {d.get('tile_voice') or '-'} model {d.get('tile_model') or 'default ladder'}")
     return " ".join(parts)
 
 
@@ -1273,6 +1284,9 @@ def cmd_conv(args) -> int:
         print(f"      driver: {str(tu.get('user') or '')[:160]!r}")
         said = tu.get("agent_reply") if tu.get("action") == "direct" else tu.get("say")
         print(f"      {'agent' if tu.get('action') == 'direct' else 'desk'}:   {str(said or '')[:160]!r}")
+        if tu.get("tool"):
+            t = tu["tool"]
+            print(f"      tool:   {t.get('name')} {json.dumps(t.get('args'))} {'ok' if t.get('ok') else 'FAILED'} via {t.get('via')}")
     p = pick.get("pending")
     print("\npending draft: " + ("none" if not isinstance(p, dict) else
                                  f"{p.get('title')!r} for {p.get('target_name') or p.get('target')} ({p.get('perm')}), "
@@ -1291,6 +1305,12 @@ def cmd_conv(args) -> int:
     return 0
 
 
+def desk_env() -> dict:
+    """The unit's Environment= defaults, with this shell's own MEMO_CONVERSE_* / MEMO_VOX_* on top (a skill run by the
+    watcher passes the watcher's alias table and state dir that way)."""
+    return {**unit_env(), **{k: v for k, v in os.environ.items() if k.startswith(("MEMO_CONVERSE_", "MEMO_VOX_"))}}
+
+
 def unit_env() -> dict:
     """The watcher unit's Environment= defaults (the repo's unit file is the installed one, a symlink)."""
     env: dict = {}
@@ -1305,7 +1325,7 @@ def unit_env() -> dict:
         try:
             for part in shlex.split(line[len("Environment="):]):
                 k, _, v = part.partition("=")
-                env[k] = v
+                env[k] = v.replace("%h", str(Path.home()))  # the one systemd specifier the unit uses
         except ValueError:
             continue
     return env
@@ -1335,7 +1355,7 @@ def cmd_converse(args) -> int:
         doc = cv.write_flag(path, drop=drop, **upd)
         print(f"wrote {path}: {json.dumps({k: v for k, v in doc.items() if k != 'routes'})}"
               + (f" (+ {len(doc['routes'])} route override)" if doc.get("routes") else ""))
-    desk = cv.Desk(c.STATE_DIR, env=unit_env(), log=lambda *a, **k: None)
+    desk = cv.Desk(c.STATE_DIR, env=desk_env(), log=lambda *a, **k: None)
     s = desk.settings()
     print(f"mode     {s['mode']}  (source: {s['source']}{'; ' + s['error'] if s.get('error') else ''})")
     print(f"agents   {s['agents'] if s['agents'] == '*' else ', '.join(s['agents']) or '(none)'}")
@@ -1343,6 +1363,11 @@ def cmd_converse(args) -> int:
     print(f"handoff  {s['handoff']}")
     print("routes   " + (", ".join(f"{r['id']}={r['model']}" for r in s["routes"]) or "(none)")
           + (f"  refused: {', '.join(str(r.get('id')) for r in s['refused'])}" if s["refused"] else ""))
+    print(f"budget   {desk.budget_s:g} s")
+    print_tiles(desk, s)
+    tools = desk.tools.listing()
+    print(f"tools    {', '.join(t['name'] + ' (' + t['skill'] + ')' for t in tools) or '(none)'}  from {desk.tools.skills_dir}"
+          + (f"  errors: {desk.tools.errors}" if desk.tools.errors else ""))
     hb = watcher_heartbeat() or {}
     cb = hb.get("converse") or {}
     if cb:
@@ -1350,13 +1375,129 @@ def cmd_converse(args) -> int:
         print(f"watcher  mode {cb.get('mode')} (source {cb.get('source')}), keys {cb.get('key_status')} {cb.get('keys')}, "
               f"open conversations {cb.get('open_conversations')}, contract {cb.get('contract')}  [heartbeat {age}]")
         for r in cb.get("routes") or []:
+            bits = [f"{r['id']} {r.get('model')} key {r.get('key')}"]
+            if r.get("scope_proof"):
+                bits.append(f"scope {r['scope_proof']}")
             if r.get("breaker_open_until") or r.get("fails_2m"):
-                print(f"         {r['id']}: {r.get('fails_2m')} failures in 2 min, breaker open until {r.get('breaker_open_until')}")
+                bits.append(f"{r.get('fails_2m')} failures in 2 min, breaker open until {r.get('breaker_open_until')}")
+            print("         " + ", ".join(bits))
+        tl = cb.get("tools") or {}
+        print(f"         tools loaded {tl.get('loaded')}" + (f" errors {tl.get('errors')}" if tl.get("errors") else "")
+              + f", default voice {cb.get('default_voice')}, {cb.get('voices')} vox voices")
+        for agent, t in (cb.get("tiles") or {}).items():
+            print(f"         tile {agent}: voice {t.get('voice')}, model {t.get('model') or 'default'} -> ladder "
+                  f"{' > '.join(t.get('ladder') or [])} ({t.get('budget_s')} s)")
     else:
         print("watcher  no converse block in heartbeat.json (a watcher from before the desk, or not running)")
     if args.action != "status":
         print("the watcher applies it from the next memo, no restart")
     return 0
+
+
+def print_tiles(desk, s: dict) -> None:
+    tiles = s.get("tiles") or {}
+    default = os.environ.get("MEMO_VOX_VOICE") or unit_env().get("MEMO_VOX_VOICE") or "rick"
+    if not tiles:
+        print(f"tiles    (none: every tile speaks {default} and thinks with the default ladder)")
+        return
+    for agent, t in sorted(tiles.items()):
+        lad, info = desk.routes_for(s, agent)
+        print(f"tile     {agent}: voice {t.get('voice') or default + ' (default)'}, model "
+              f"{(t.get('model') + ' (' + str(info.get('label')) + ')') if t.get('model') else 'default'}"
+              f"{' [' + info['error'] + ']' if info.get('error') else ''} -> {' > '.join(r['id'] + '=' + r['model'] for r in lad)}")
+
+
+def _setting_result(args, ok: bool, out: dict, code: int = 0) -> int:
+    if getattr(args, "json", False):
+        print(json.dumps(out))
+    else:
+        print(out.get("message") or json.dumps(out))
+    return 0 if ok else (code or 1)
+
+
+def vox_catalog() -> list[dict]:
+    """vox's voices: GET <vox>/voices (the same list as `voxxy -q voice list --json`), else voxxy itself."""
+    import converse as cv
+    rows = cv.VoiceCatalog(c.VOX_URL).get(timeout=4.0)
+    if rows:
+        return rows
+    try:
+        r = subprocess.run(["voxxy", "-q", "voice", "list", "--json"], capture_output=True, text=True, timeout=15)
+        data = json.loads(r.stdout) if r.returncode == 0 else []
+        return [{"name": str(v.get("name")), "display_name": str(v.get("display_name") or "")}
+                for v in data if isinstance(v, dict) and v.get("name")]
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return []
+
+
+def cmd_voice(args) -> int:
+    """memo:voice <agent> [<voice>|--clear]: the tile's car reply voice (the flag file's `tiles`, under its lock; the
+    watcher reads it per reply, no restart). Car only: the agent's Telegram/Hermes voice is not touched."""
+    import converse as cv
+    path = c.STATE_DIR / "converse.json"
+    default = desk_env().get("MEMO_VOX_VOICE") or "rick"
+    base = {"agent": args.agent, "default_voice": default}
+    if args.value is None and not args.clear:
+        t = cv.Desk(c.STATE_DIR, env=desk_env(), log=lambda *a, **k: None).tile(args.agent)
+        v = t.get("voice")
+        return _setting_result(args, True, {**base, "ok": True, "voice": v or default, "own": bool(v),
+                                            "message": f"{args.agent}: car voice {v or default}{'' if v else ' (default)'}"})
+    if args.clear or str(args.value).strip().lower() in ("default", "--clear", "clear", "none"):
+        tile = cv.update_tile(path, args.agent, voice=None, by=args.by)
+        return _setting_result(args, True, {**base, "ok": True, "voice": default, "cleared": True, "tile": tile,
+                                            "message": f"{args.agent}: car voice back to the default ({default})"})
+    catalog = vox_catalog()
+    if not catalog:
+        return _setting_result(args, False, {**base, "ok": False, "error": "vox's voice list could not be read"}, 1)
+    v = cv.resolve_voice(args.value, catalog)
+    if v in (None, "default"):
+        names = ", ".join(x["name"] for x in catalog)
+        return _setting_result(args, False, {**base, "ok": False, "error": f"no voice called {args.value!r}",
+                                             "valid": [x["name"] for x in catalog],
+                                             "message": f"refused: no voice called {args.value!r} (vox has: {names})"}, 3)
+    tile = cv.update_tile(path, args.agent, voice=v, by=args.by)
+    disp = next((x.get("display_name") for x in catalog if x["name"] == v), v)
+    return _setting_result(args, True, {**base, "ok": True, "voice": v, "display_name": disp, "spoken": cv.voice_spoken(v),
+                                        "tile": tile, "message": f"{args.agent}: car voice {v} ({disp}); the watcher "
+                                        "uses it from the next reply, no restart"})
+
+
+def cmd_model(args) -> int:
+    """memo:model <agent> [<alias>|--clear]: the tile's desk model alias (car_desk_aliases.json): its routes go in front of
+    the default ladder. The agent's own Hermes model is not touched."""
+    import converse as cv
+    path = c.STATE_DIR / "converse.json"
+    desk = cv.Desk(c.STATE_DIR, env=desk_env(), log=lambda *a, **k: None)
+    table = desk.aliases()
+    base = {"agent": args.agent, "aliases": sorted(table.get("models") or {}), "aliases_version": table.get("version")}
+    if args.value is None and not args.clear:
+        s = desk.settings()
+        lad, info = desk.routes_for(s, args.agent)
+        return _setting_result(args, True, {**base, "ok": True, "model": info.get("model"), "label": info.get("label"),
+                                            "ladder": [f"{r['id']}={r['model']}" for r in lad],
+                                            "message": f"{args.agent}: model {info.get('model') or 'default'} -> "
+                                            + " > ".join(f"{r['id']}={r['model']}" for r in lad)})
+    a = "default" if args.clear else cv.resolve_alias(args.value, table)
+    if a is None:
+        return _setting_result(args, False, {**base, "ok": False, "error": f"no model called {args.value!r}",
+                                             "message": f"refused: no model alias {args.value!r} (aliases: "
+                                             f"{', '.join(base['aliases'])}, or default)"}, 3)
+    if a != "default":
+        routes, refused = desk.routes((table["models"][a] or {}).get("routes") or [])
+        if refused or not routes:
+            return _setting_result(args, False, {**base, "ok": False, "error": f"alias {a!r} has a refused route",
+                                                 "refused": refused, "message": f"refused: {json.dumps(refused)}"}, 3)
+    tile = cv.update_tile(path, args.agent, model=None if a == "default" else a, by=args.by)
+    s = desk.settings()
+    lad, info = desk.routes_for(s, args.agent)
+    label = cv.alias_label(table, a) if a != "default" else "the default ladder"
+    return _setting_result(args, True, {**base, "ok": True, "model": None if a == "default" else a, "label": label,
+                                        "spoken": cv.alias_label(table, a, spoken=True) if a != "default" else None,
+                                        "cleared": a == "default", "tile": tile,
+                                        "ladder": [f"{r['id']}={r['model']}" for r in lad],
+                                        "message": f"{args.agent}: model {a} ({label}) -> "
+                                        + " > ".join(f"{r['id']}={r['model']}" for r in lad)
+                                        + "; the watcher uses it from the next turn, no restart"})
 
 
 def main() -> int:
@@ -1380,7 +1521,19 @@ def main() -> int:
     cs.add_argument("--handoff", choices=("named", "off"))
     cs.add_argument("--routes-file", help="a JSON routes list that overrides the unit's ladder (tests, S11)")
     cs.add_argument("--clear-routes", action="store_true", help="drop a routes override from the flag file")
+    for verb, what in (("voice", "a vox voice (name or display name), or default"),
+                       ("model", "a model alias from car_desk_aliases.json, or default")):
+        sp = sub.add_parser(verb, help=f"a tile's car {verb}: {verb} <agent> [<value>|--clear]")
+        sp.add_argument("agent")
+        sp.add_argument("value", nargs="?", help=what)
+        sp.add_argument("--clear", action="store_true", help="back to the default")
+        sp.add_argument("--json", action="store_true", help="one JSON object on stdout (the car-desk skills read it)")
+        sp.add_argument("--by", default="cli", choices=("cli", "car", "skill"), help="who set it (recorded in the tile)")
     args = ap.parse_args()
+    if args.cmd == "voice":
+        return cmd_voice(args)
+    if args.cmd == "model":
+        return cmd_model(args)
     if args.cmd == "list":
         return cmd_list(args)
     if args.cmd == "retry":
