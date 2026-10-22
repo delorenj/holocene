@@ -1886,7 +1886,7 @@ class Watcher:
             # leaving a second object that the pad would play as a second reply.
             stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
         t_speak = time.time()
-        body = clean_for_speech(reply_text, SPEAK_CHARS)
+        body = spoken_summary(reply_text, SPEAK_CHARS) if followup else clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
             raise StageError("tts", "nothing_to_speak", "reply has no speakable text after cleaning", retryable=False)
         spoken = (f"{name}, follow-up. {body}" if followup else f"{name}, late reply. {body}" if late else f"{name}. {body}")
@@ -2522,7 +2522,7 @@ class Watcher:
                     "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], "voice": VOICE, "audio_bytes": size,
                     "since_reply_seconds": since,
                     "since_agent_done_seconds": round(time.time() - done_ts, 2) if done_ts else None,
-                    "late": bool(m.get("late"))})
+                    "late": bool(m.get("late")), "followup": (live_followup(m) or {}).get("n")})
             self.status(m)
             self.s.save()
 
@@ -2960,6 +2960,25 @@ def clean_for_speech(text: str, limit: int) -> str:
         end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
         t = cut[: end + 1] if end > limit // 2 else cut.rsplit(" ", 1)[0] + "..."
     return t
+
+
+def spoken_summary(text: str, limit: int) -> str:
+    """What is said aloud of a follow-up's reply. A background turn writes a full report and, as FOLLOWUP_PREFIX asks,
+    ENDS with a spoken summary: when the whole text is over `limit`, its closing paragraphs (as many as fit) are spoken,
+    not its head (2026-10-22 sim: a 7140-char README report spoke its title and the first list items, while its last
+    paragraph was the summary). A reply that fits is spoken whole, as any reply."""
+    whole = clean_for_speech(text, 10 ** 9)
+    if len(whole) <= limit:
+        return whole
+    picked: list[str] = []
+    for para in reversed([p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]):
+        c = clean_for_speech(para, 10 ** 9)
+        if not c:
+            continue
+        if picked and len(" ".join([c, *picked])) > limit:
+            break
+        picked.insert(0, c)
+    return clean_for_speech(" ".join(picked), limit) if picked else clean_for_speech(text, limit)
 
 
 def reply_key_for(stamp: datetime, agent: str, mid: str) -> str:

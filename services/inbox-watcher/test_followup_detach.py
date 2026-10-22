@@ -50,6 +50,13 @@ def journal_ceiling(command_id):
 
 
 class SplitBackground(unittest.TestCase):
+    def test_a_long_follow_up_speaks_its_closing_summary_not_its_head(self):
+        report = "**Read all 36 READMEs.**\n\n## Services\n\n" + "\n".join(f"- `x{i}/README.md` — does thing {i}." for i in range(60)) \
+            + "\n\nThe READMEs mainly cover the voice pipeline and the design system. None were unreadable."
+        said = iw.spoken_summary(report, 500)
+        self.assertEqual(said, "The READMEs mainly cover the voice pipeline and the design system. None were unreadable.")
+        self.assertEqual(iw.spoken_summary("Short and sweet.", 500), "Short and sweet.")
+
     def test_no_marker_is_the_whole_reply(self):
         self.assertEqual(iw.split_background("All green. Nothing to do."), ("All green. Nothing to do.", None))
 

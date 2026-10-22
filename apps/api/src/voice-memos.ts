@@ -1048,7 +1048,10 @@ export function buildMemoDetail(memoId: string, input: JourneyEvent[], now: numb
     }));
   // The reply chunk by chunk (first announcement per chunk: a stage retry re-uploads under the same key).
   const chunks: ReplyChunk[] = [];
-  for (const e of memoFacts.filter((x) => x.type === "bloodbank.audio.memo.voiced" && !isFollowupFact(x.data))) {
+  // A follow-up's chunks are its own (older watchers did not flag them: they are known by the follow-up's command id).
+  const followupCmds = new Set(followups.map((f) => f.commandId).filter((c): c is string => c !== undefined));
+  for (const e of memoFacts.filter((x) => x.type === "bloodbank.audio.memo.voiced" && !isFollowupFact(x.data)
+    && !followupCmds.has(str(x.data.command_id) ?? ""))) {
     const n = num(e.data.chunk);
     if (n === undefined || chunks.some((c) => c.n === n)) continue;
     chunks.push({

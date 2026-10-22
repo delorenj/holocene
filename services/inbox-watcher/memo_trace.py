@@ -621,7 +621,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                             + (f" (detached after {d.get('detached_after_seconds')}s, {d.get('elapsed_seconds')}s in all)"
                                if d.get("detached") else "")
                             + (f" model {mo.get('requested')}: {'applied' if mo.get('applied') else 'NOT applied'}"
-                               f" ({mo.get('reason')})" if mo else "")))
+                               + (f" ({mo.get('reason')})" if mo.get("reason") else "") if mo else "")))
         elif row and row["state"] == "completed" and row.get("outcome") == "success":
             hops.append(Hop("agent:invocation.done", OK, c.parse_iso(row["updated_at"]), "journal completed/success (fact not in Candystore)"))
         else:
@@ -686,7 +686,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
     turn_hops(command_id, disp)
 
     # 6. reply: chunk by chunk (audio.memo.voiced: the car can start on chunk 1), then the full file (replied)
-    voiced = sorted((e for e in by_type.get("bloodbank.audio.memo.voiced", []) if not is_followup(e)),
+    fcids = {(e.get("data") or {}).get("command_id") for e in fdisps}
+    voiced = sorted((e for e in by_type.get("bloodbank.audio.memo.voiced", [])
+                     if not is_followup(e) and (e.get("data") or {}).get("command_id") not in fcids),
                     key=lambda e: e.get("time") or "")
     firsts: dict = {}
     for e in voiced:  # a stage retry re-uploads a chunk under the same key; its first announcement counts
