@@ -1183,6 +1183,21 @@ class ReplyClaims(unittest.TestCase):
         v = c.view(PUSH_MEMO, now=922, prefer_phone=True)
         self.assertEqual((v["owner"], v["reply_key"]), ("phone", quick))
 
+    def test_the_module_starts_on_a_v2_state_file_keyed_by_reply(self):
+        # 2026-10-22: the live arbiter was built at import before parse_reply_key existed; the first restart after a
+        # reply-keyed claim was written crash-looped the proxy (NameError), taking car uploads down.
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "claims.json"
+            f.write_text(json.dumps({"v": 2, "memos": {self.RKEY: {"owner": "car", "car": "ended", "touched": 9e12,
+                                                                    "memo_id": PUSH_MEMO, "reply_key": self.RKEY}}}))
+            here = Path(up.__file__).resolve().parent
+            r = subprocess.run([sys.executable, "-B", "-c", "import upload_proxy as up; print(up.CLAIMS.loaded)"],
+                               cwd=here, env={**__import__("os").environ, "CLAIM_STATE_FILE": str(f)},
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr[-800:])
+            self.assertEqual(r.stdout.strip().splitlines()[-1], "1")
+
     def test_a_v1_state_file_keyed_by_memo_still_loads(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:

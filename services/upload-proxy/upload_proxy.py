@@ -525,7 +525,7 @@ class ReplyClaims:
             return {**self._view(memo_id, st, now), "ok": True}
 
 
-CLAIMS = ReplyClaims(state_file=CLAIM_STATE_FILE)
+# CLAIMS (the live arbiter) is built below parse_reply_key: reading a v2 state file back needs it.
 
 
 def claim_request(body, claims: "ReplyClaims" = None, presence: "Presence" = None, lookup=None, hub=None):
@@ -659,6 +659,10 @@ def parse_reply_key(key: str):
     except ValueError:
         rendered = None
     return m.group("memo"), m.group("agent"), rendered
+
+
+# The live arbiter, read back from CLAIM_STATE_FILE: built here, after parse_reply_key, which reading its keys needs.
+CLAIMS = ReplyClaims(state_file=CLAIM_STATE_FILE)
 
 
 def _envelope(action: str, memo_id: str, data: dict) -> dict:
