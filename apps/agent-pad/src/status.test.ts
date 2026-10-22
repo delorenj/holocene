@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { clockText, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, shorten, statusKey, statusLine } from './status.ts'
+import { clockText, elapsedSeconds, isFinal, keyDay, newestProgress, normConv, normStatus, shorten, statusKey, statusLine } from './status.ts'
 
 const M = '11111111-1111-5111-8111-111111111111'
 
@@ -56,4 +56,18 @@ test('elapsed time uses the watcher clock, not the device clock', () => {
   assert.equal(elapsedSeconds(s, 1000, 0, 3000), 62)
   assert.equal(elapsedSeconds({ ...s, elapsed_s: null }, 0, 0, Date.parse('2000-01-01T00:00:10Z')), 10)
   assert.equal(elapsedSeconds(null, 0, 1000, 6000), 5)
+})
+
+test('the fast desk\'s conv block is optional and parsed defensively', () => {
+  const old = normStatus({ memo_id: M, stage: 'working', heard: 'check the build' }, M)!
+  assert.equal(old.conv, null, 'a status from before the desk still parses, with no conv')
+  assert.equal(old.stage, 'working')
+  const key = `replies/2026/10/22/101500Z-holocene-pm-${M}.ogg`
+  const s = normStatus({ memo_id: M, stage: 'replying', heard: null, conv: { sid: 'holocene-pm:dev-1:7', turn: 2, action: 'propose', reply_key: key, draft_title: 'Why the  spool is off' } }, M)!
+  assert.deepEqual(s.conv, { sid: 'holocene-pm:dev-1:7', turn: 2, action: 'propose', reply_key: key, draft_title: 'Why the spool is off' })
+  assert.equal(normStatus({ stage: 'working', conv: 'nope' }, M)?.conv, null)
+  assert.equal(normConv({ sid: 'c-1' }), null, 'no action: not a decision')
+  assert.equal(normConv({ action: 'reply' }), null, 'no session')
+  assert.equal(normConv([]), null)
+  assert.deepEqual(normConv({ sid: 'c-1', action: 'reply', turn: -1 }), { sid: 'c-1', turn: null, action: 'reply', reply_key: '', draft_title: '' })
 })

@@ -4,7 +4,8 @@ import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
-import { type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
+import { type Conv, type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
+import { convReplyUnit, noteConv, onDeferred } from './convo'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLeaveToPhone, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, takeBackFromPhone, validDeviceId } from './ledger'
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
@@ -563,6 +564,10 @@ function App() {
   const flights = useRef<Map<string, Flight>>(new Map())
   const [flightView, setFlightView] = useState<Record<string, FlightView>>({})
   const progressQ = useRef<{ memoId: string; seq: number; key: string; blob: Blob }[]>([])
+  // The fast conversation desk's own answers this pad has learned of from the status objects (reply unit -> its conv):
+  // one the driver barges into is not replayed after the note (convo.ts). Kept past the flight, which is forgotten as
+  // soon as its reply lands.
+  const fastTurns = useRef<Map<string, Conv>>(new Map())
   // ---- replies as units (replies.ts): the full file, or its chunks first (a long reply, voiced sentence by sentence) ----
   const units = useRef<Map<string, Unit>>(new Map())
   const chunkBlobs = useRef<Map<string, Blob>>(new Map()) // downloaded chunks, kept until the reply is done (a replay after a note)
@@ -662,6 +667,7 @@ function App() {
     if (!st) return
     f.status = st
     f.fetchedAt = Date.now()
+    noteConv(fastTurns.current, st.conv)
     const n = nativeSpeech()
     if (isFinal(st.stage)) { flightFinal(f.memoId); return }
     if (st.heard && !f.echoed) {
@@ -705,6 +711,11 @@ function App() {
   }
   const pollFlightsRef = useRef(pollFlights)
   pollFlightsRef.current = pollFlights
+  // One more read of a memo's status object for its conv block alone (no echo, no progress: the reply is here).
+  const learnConv = async (f: Flight) => {
+    const st = await readStatus(f)
+    if (st) noteConv(fastTurns.current, st.conv)
+  }
 
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
     const key = playingKey.current
@@ -728,7 +739,8 @@ function App() {
     }
     setLedger(closeUnit(ledger.current, key))
   }
-  const finish = useCallback((key: string) => {
+  // pump false: the reply was dropped because a note is starting, and the note's end pumps the queue itself.
+  const finish = useCallback((key: string, pump_ = true) => {
     settle(key)
     queue.current = queue.current.filter((k) => k !== key)
     claims.current.delete(key)
@@ -739,8 +751,24 @@ function App() {
     units.current.delete(key)
     if (streaming.current?.unit === key) streaming.current = null
     speak({ t: 'ended', key })
-    pump.current()
+    if (pump_) pump.current()
   }, [])
+
+  // The driver started a note over the fast desk's own answer to their last turn: the note is their next turn, so that
+  // answer is done (a 'skipped' beacon, error barged_in), not replayed after it (convo.ts). It had started, so its car
+  // claim stays and the phone never says it either. A follow-up result, a direct turn's agent answer and any other reply
+  // go back to the head of the queue as before. True: it was dropped.
+  const dropBarged = (key: string, reason: string): boolean => {
+    if (onDeferred(key, fastTurns.current.get(key), { started: startedKeys.current.has(key), reason }) !== 'skip') return false
+    fastTurns.current.delete(key)
+    if (!beaconsSent.current.has(`${key}:skipped`)) {
+      beaconsSent.current.add(`${key}:skipped`)
+      beacon(key, 'skipped', { error: 'barged_in' })
+    }
+    setStatus('reply skipped: you spoke over it')
+    finish(key, false)
+    return true
+  }
 
   // Park a chunked reply that cannot finish from its chunks: off the queue without moving lastDone, so its full file is
   // still taken when it lands (push, or the per-unit check in the poll tick). Says so once in a playback-failed fact.
@@ -802,7 +830,13 @@ function App() {
       queue.current = [...queue.current, ref.unit].sort()
       void claimReply(ref.unit, 'hold') // this car means to say it: the phone leaves it alone while the hold lives
       const memo = memoOfReply(ref.unit)
-      if (memo && flights.current.has(memo)) flightFinal(memo)
+      const f = memo ? flights.current.get(memo) : undefined
+      if (f) {
+        // A fast turn's answer can land before the pad read the status object that names it: read it once more, so a
+        // barge-in into this answer is known for what it is (the flight itself stops being polled now).
+        if (convReplyUnit(f.status?.conv) !== ref.unit) void learnConv(f)
+        flightFinal(f.memoId)
+      }
     }
     const news = addRef(u, ref)
     if (news && streaming.current?.unit === ref.unit) void feedStream()
@@ -1071,8 +1105,10 @@ function App() {
       // (a chunked reply's stream state is cleared by finish(), after the ended beacon has said how many chunks it had)
       if ((phase === 'deferred' || phase === 'error') && chunked) streaming.current = null
       if (phase === 'deferred') {
-        // The host's speech queue stopped it (a note is starting): it stays at the head of the queue, not a failure.
+        // The host's speech queue stopped it (a note is starting): it stays at the head of the queue, not a failure,
+        // unless it is the fast desk's own answer the driver just spoke over (dropBarged).
         playingKey.current = ''
+        if (dropBarged(key, detail || 'recording')) return
         speak({ t: 'interrupted' })
         return
       }
@@ -1129,7 +1165,7 @@ function App() {
   }, [speaking])
 
   // Stop whatever reply is playing (a note is about to be recorded): it stays at the head of the queue and plays
-  // again when the note is done.
+  // again when the note is done, unless it is the fast desk's own answer the driver is speaking over (dropBarged).
   const interruptReply = () => {
     if (!playingKey.current) return
     if (playingProgress.current) {
@@ -1138,10 +1174,12 @@ function App() {
       playingProgress.current = false
       return
     }
+    const key = playingKey.current
     try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
     try { audioRef.current?.pause() } catch { /* nothing playing */ }
     playingKey.current = ''
     streaming.current = null
+    if (dropBarged(key, 'stopped')) return
     speak({ t: 'interrupted' })
   }
 

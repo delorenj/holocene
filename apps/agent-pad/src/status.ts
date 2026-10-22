@@ -4,6 +4,13 @@
 
 export type Stage = 'received' | 'transcribing' | 'heard' | 'working' | 'replying' | 'done' | 'failed'
 const STAGES: Stage[] = ['received', 'transcribing', 'heard', 'working', 'replying', 'done', 'failed']
+/**
+ * The fast in-car conversation desk's turn (the watcher's converse stage), when it decided this memo: the session id, the
+ * turn, the action (reply | propose | confirm | cancel | end, spoken by the desk itself; direct: the agent path) and the
+ * reply key of the desk's own answer (replies/<day>/<HHMMSS>Z-<agent>-<memo_id>.ogg), so the pad knows which reply is a
+ * fast-turn answer. Absent on a watcher from before the desk, or a memo it did not decide.
+ */
+export type Conv = { sid: string; turn: number | null; action: string; reply_key: string; draft_title: string }
 export type MemoStatus = {
   memo_id: string
   stage: Stage
@@ -16,6 +23,7 @@ export type MemoStatus = {
   updated_at: number | null
   elapsed_s: number | null
   error: string
+  conv: Conv | null
 }
 
 const MEMO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -26,6 +34,17 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : n
 const time = (v: unknown) => {
   const t = typeof v === 'string' ? Date.parse(v) : typeof v === 'number' ? v : NaN
   return Number.isFinite(t) ? t : null
+}
+
+/** The conv block of a status object, or null: it needs a session id and an action; everything else is optional. */
+export function normConv(raw: unknown): Conv | null {
+  const c = raw as Record<string, unknown> | null
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null
+  const sid = str(c.sid, 80)
+  const action = str(c.action, 20)
+  if (!sid || !action) return null
+  const turn = num(c.turn)
+  return { sid, turn: turn !== null && turn >= 0 ? Math.floor(turn) : null, action, reply_key: str(c.reply_key, 300), draft_title: str(c.draft_title, 160) }
 }
 
 /** A status object we can trust, or null. An unknown stage is not guessed at. */
@@ -51,6 +70,7 @@ export function normStatus(raw: unknown, memoId: string): MemoStatus | null {
     updated_at: time(s.updated_at),
     elapsed_s: num(s.elapsed_s),
     error: str(s.error, 200),
+    conv: normConv(s.conv),
   }
 }
 
