@@ -1,0 +1,52 @@
+[
+ {
+  "id": "y0",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/tflaecgcrdgxrh2ovgi5ysjkzq/credential",
+  "model": "deepseek-v4.1-flash-1017",
+  "timeout_s": 4,
+  "temperature": 0.3
+ },
+ {
+  "id": "y1",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/tflaecgcrdgxrh2ovgi5ysjkzq/credential",
+  "model": "deepseek-v4.1-flash",
+  "timeout_s": 4,
+  "temperature": 0.3
+ },
+ {
+  "id": "y2",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse",
+  "model": "automaticai/mistral-allowance/ministral-14b",
+  "timeout_s": 3,
+  "temperature": 0.3
+ },
+ {
+  "id": "y3",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse",
+  "model": "automaticai/gemini-free/gemini-3.5-flash-lite",
+  "timeout_s": 3,
+  "temperature": 0.3
+ },
+ {
+  "id": "y4",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse",
+  "model": "automaticai/personal/kimi-k3s",
+  "timeout_s": 5,
+  "temperature": 1,
+  "reasoning_effort": "medium"
+ },
+ {
+  "id": "y5",
+  "base_url": "http://127.0.0.1:9/v1",
+  "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse",
+  "model": "automaticai/personal/glm-5.3-flash",
+  "timeout_s": 5,
+  "temperature": 0.3,
+  "reasoning_effort": "medium"
+ }
+]

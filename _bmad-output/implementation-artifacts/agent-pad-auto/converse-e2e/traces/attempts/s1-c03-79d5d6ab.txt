@@ -1,0 +1,34 @@
+memo_id  79d5d6ab-00b4-546d-9886-640fec37fab2
+key      inbox/holocene-pm/2026/10/22/20261022T112103Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=79d5d6ab-00b4-546d-9886-640fec37fab2&limit=100'
+
+  OK      s3_object                  2026-10-22T11:21:12.000Z           inbox/holocene-pm/2026/10/22/20261022T112103Z.ogg  15862 bytes
+  OK      upload_proxy_log           2026-10-22T11:21:12.254Z  +0.3s    {"ts":"2026-10-22T11:21:12.253Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T112103Z.ogg","memo_id":"79d5d6ab-00b4-54
+  OK      fact:uploaded              2026-10-22T11:21:12.255Z  +0.0s    15862 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -5 dBFS, window avg -12 dBFS
+  OK      fact:received              2026-10-22T11:21:13.148Z  +0.9s    watcher saw it, lag 903ms
+  OK      fact:transcribed           2026-10-22T11:21:14.359Z  +1.2s    30 chars in 0.54s (large-v3-turbo, gpu server, cuda), audio max -6 dBFS, mean -26 dBFS over 3.9 s: 'Which agents are on my roster?'
+  OK      fast:routed                2026-10-22T11:21:15.621Z  +1.3s    reply gemini-3.5-flash-lite@r3c (3 attempts, 1004 ms, 3671 in / 50 out) failed: r1 http_402, r2 http_402 conv f1f51857 turn 15
+  OK      audio_level                2026-10-22T11:21:14.359Z  +0.0s    max -6 dBFS, mean -26 dBFS over 3.9 s  -> audible | device heard peak -5 dBFS, window avg -12 dBFS
+  OK      car:chunk#1of1             2026-10-22T11:21:19.779Z  +5.4s    99 chars, tts 3.4s, 4.16s after the agent finished -> replies/2026/10/22/112115Z-holocene-pm-79d5d6ab-00b4-546d-9886-640fec37fab2.ogg
+  OK      fact:replied               2026-10-22T11:21:21.169Z  +1.4s    99 chars, tts 3.4s (voxcpm) -> replies/2026/10/22/112115Z-holocene-pm-79d5d6ab-00b4-546d-9886-640fec37fab2.ogg
+  OK      reply_object               2026-10-22T11:21:19.000Z  +0.0s    replies/2026/10/22/112115Z-holocene-pm-79d5d6ab-00b4-546d-9886-640fec37fab2.ogg  23747 bytes
+  OK      pad_playback_log           2026-10-22T11:21:20.352Z  +1.4s    {"ts":"2026-10-22T11:21:20.352Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/112115Z-holocene-pm-79d5d6ab-00b4-546d-9886-640fec37fab2.
+  OK      played_on_pad              2026-10-22T11:21:20.352Z  +0.0s    reply started 0.6s after the reply was up (5352 ms after the key stamp, TTS included), ended after 5.76s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      car_status_object          2026-10-22T11:21:21.333Z  +1.0s    status/2026/10/22/79d5d6ab-00b4-546d-9886-640fec37fab2.json: stage=done progress_seq=0 narrations=0 elapsed=9.1s
+
+car speech (7 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.1s     ack       deferred     reason recording  while recording  mic recording
+  -0.1s     ack       start        reason waited_ms=138
+  +2.8s     ack       end          
+  +2.8s     ack       start        reason waited_ms=2690
+  +3.4s     ack       end          
+  +8.1s     reply     start        reason waited_ms=4
+  +14.4s    reply     end          
+
+timing   since upload (server clock): transcribed +2.1s | routed +3.4s | ack -0.1s | first audio up +7.5s | phone decided +8.9s | reply played +8.1s
+
+VERDICT  COMPLETE in 7.0s; played on the pad 0.6s after the reply was up

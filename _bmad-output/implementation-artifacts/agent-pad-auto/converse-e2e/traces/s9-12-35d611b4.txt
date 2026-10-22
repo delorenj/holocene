@@ -1,0 +1,44 @@
+memo_id  35d611b4-56be-5fff-bcd9-3de8ddab6aac
+key      inbox/holocene-pm/2026/10/22/20261022T124541Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=35d611b4-56be-5fff-bcd9-3de8ddab6aac&limit=100'
+
+  OK      s3_object                  2026-10-22T12:45:48.000Z           inbox/holocene-pm/2026/10/22/20261022T124541Z.ogg  9410 bytes
+  OK      upload_proxy_log           2026-10-22T12:45:48.828Z  +0.8s    {"ts":"2026-10-22T12:45:48.828Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T124541Z.ogg","memo_id":"35d611b4-56be-5f
+  OK      fact:uploaded              2026-10-22T12:45:48.828Z  +0.0s    9410 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -4 dBFS, window avg -15 dBFS
+  OK      fact:received              2026-10-22T12:45:49.373Z  +0.5s    watcher saw it, lag 549ms
+  OK      fact:transcribed           2026-10-22T12:45:50.358Z  +1.0s    8 chars in 0.43s (large-v3-turbo, gpu server, cuda), audio max -5 dBFS, mean -32 dBFS over 2.7 s: 'Send it!'
+  OK      fast:routed                2026-10-22T12:45:50.490Z  +0.1s    confirm by the lexicon (confirm_only, no LLM call) conv f5b73ff0 turn 40 delegate to holocene-pm: 'After the PM, count the lines in the'
+  OK      audio_level                2026-10-22T12:45:50.358Z  +0.0s    max -5 dBFS, mean -32 dBFS over 2.7 s  -> audible | device heard peak -4 dBFS, window avg -15 dBFS
+  OK      car:chunk#1of1             2026-10-22T12:45:54.029Z  +3.7s    81 chars, tts 2.76s, 3.54s after the agent finished -> replies/2026/10/22/124550Z-holocene-pm-35d611b4-56be-5fff-bcd9-3de8ddab6aac.ogg
+  OK      fact:replied               2026-10-22T12:45:55.331Z  +1.3s    81 chars, tts 2.76s (voxcpm) -> replies/2026/10/22/124550Z-holocene-pm-35d611b4-56be-5fff-bcd9-3de8ddab6aac.ogg
+  OK      reply_object               2026-10-22T12:45:53.000Z  +0.0s    replies/2026/10/22/124550Z-holocene-pm-35d611b4-56be-5fff-bcd9-3de8ddab6aac.ogg  20174 bytes
+  OK      pad_playback_log           2026-10-22T12:48:42.009Z  +169.0s  {"ts":"2026-10-22T12:48:42.008Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/124827Z-holocene-pm-35d611b4-56be-5fff-bcd9-3de8ddab6aac.
+  OK      played_on_pad              2026-10-22T12:45:54.547Z  +0.0s    reply started 0.5s after the reply was up (4547 ms after the key stamp, TTS included), ended after 4.96s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      followup#1:dispatched      2026-10-22T12:45:55.806Z  +1.3s    command 9b99f9d1-e2f8-584d-a207-da4028980e2c -> bloodbank.cmd.agent.invocation.start lane=batch DELEGATED to holocene-pm: 'After the PM, count the lines in the' (brief c0746307, read_only, conversation f5b73ff0)
+  OK      followup#1:gateway_journal 2026-10-22T12:47:27.106Z  +91.3s   lane=batch profile=holocene-pm state=completed outcome=success created=2026-10-22T12:47:27.106767Z updated=2026-10-22T12:48:27.725138Z
+  OK      followup#1:agent:invocation.started 2026-10-22T12:47:27.105Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      followup#1:agent:progress#1 2026-10-22T12:47:56.462Z  +29.4s   27.6s into the turn: 'search_files is failing on the home tree — switching to a direct shell search in the likely locations (code di'
+  OK      followup#1:agent:progress#2 2026-10-22T12:48:05.635Z  +9.2s    36.8s into the turn: 'No direct hit yet. Searching the whole home tree for the file and for folder names with "Inbox" or "Watcher":'
+  OK      followup#1:agent:progress#3 2026-10-22T12:48:23.126Z  +17.5s   54.3s into the turn: 'Found it. The "Inbox Watcher folder" is `services/inbox-watcher/` in the holocene repo, and "converse.topy" is'
+  OK      followup#1:agent:invocation.done 2026-10-22T12:48:27.724Z  +4.6s    invocation.completed
+  OK      followup#1:replied         2026-10-22T12:48:43.698Z  +16.0s   381 chars -> replies/2026/10/22/124827Z-holocene-pm-35d611b4-56be-5fff-bcd9-3de8ddab6aac.ogg: "`converse.py` in the holocene repo's `services/inbox-watcher/` folder is **1,336 lines** ("
+  OK      car_status_object          2026-10-22T12:48:43.817Z  +0.1s    status/2026/10/22/35d611b4-56be-5fff-bcd9-3de8ddab6aac.json: stage=done progress_seq=3 narrations=0 elapsed=175.0s
+
+car speech (9 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.6s     ack       deferred     reason recording  while recording  mic recording
+  -0.6s     ack       start        reason waited_ms=146
+  +2.1s     ack       end          
+  +2.1s     ack       start        reason waited_ms=1962
+  +2.5s     ack       end          
+  +5.7s     reply     start        reason waited_ms=6
+  +11.3s    reply     end          
+  +173.2s   reply     start        reason waited_ms=3380
+  +198.9s   reply     end          reason chunks=3
+
+timing   since upload (server clock): transcribed +1.5s | routed +1.7s | ack -0.6s | first progress +127.6s | first audio up +5.2s | phone decided +6.5s | reply played +5.7s
+
+VERDICT  COMPLETE (read-back) in 5.0s; played on the pad 0.5s after the reply was up; delegated to holocene-pm: follow-up 1 spoken 170.7s after the quick answer

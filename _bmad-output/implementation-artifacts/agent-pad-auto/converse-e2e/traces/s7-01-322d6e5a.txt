@@ -1,0 +1,62 @@
+memo_id  322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f
+key      inbox/holocene-pm/2026/10/22/20261022T120859Z.ogg
+agent    holocene-pm
+command  29100337-e863-4796-85d1-56d40f121560
+lane     interactive   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f&limit=100'
+
+  OK      s3_object                  2026-10-22T12:09:09.000Z           inbox/holocene-pm/2026/10/22/20261022T120859Z.ogg  21899 bytes
+  OK      upload_proxy_log           2026-10-22T12:09:09.291Z  +0.3s    {"ts":"2026-10-22T12:09:09.291Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T120859Z.ogg","memo_id":"322d6e5a-4ea9-53
+  OK      fact:uploaded              2026-10-22T12:09:09.291Z  +0.0s    21899 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -5 dBFS, window avg -10 dBFS
+  OK      fact:received              2026-10-22T12:09:09.825Z  +0.5s    watcher saw it, lag 543ms
+  OK      fact:transcribed           2026-10-22T12:09:10.864Z  +1.0s    46 chars in 0.43s (large-v3-turbo, gpu server, cuda), audio max -5 dBFS, mean -24 dBFS over 4.9 s: 'Ask Holocene PM directly what is on the board.'
+  OK      fast:routed                2026-10-22T12:09:11.236Z  +0.4s    direct by the lexicon (force_direct, no LLM call) conv f5b73ff0 turn 21
+  OK      audio_level                2026-10-22T12:09:10.864Z  +0.0s    max -5 dBFS, mean -24 dBFS over 4.9 s  -> audible | device heard peak -5 dBFS, window avg -10 dBFS
+  OK      fact:dispatched            2026-10-22T12:09:11.625Z  +0.8s    command 29100337-e863-4796-85d1-56d40f121560 -> bloodbank.cmd.agent.invocation.invoke lane=interactive model=automaticai/personal/sol-6.1
+  OK      gateway_journal            2026-10-22T12:09:11.680Z  +0.1s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-22T12:09:11.680516Z updated=2026-10-22T12:10:21.929350Z
+  OK      agent:invocation.started   2026-10-22T12:09:11.680Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:progress#1           2026-10-22T12:09:30.365Z  +18.7s   18.1s into the turn: 'I’ll check the live Holocene board, rather than rely on the earlier updates.'
+  OK      car:narrated#1             2026-10-22T12:09:34.127Z  +3.8s    spoke progress #1 -> progress/2026/10/22/322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f-1.ogg (tts 2.72s voxcpm, 22.5s after dispatch)
+  OK      agent:progress#2           2026-10-22T12:09:35.464Z  +1.3s    23.2s into the turn: 'I’ll confirm which Plane project this checkout uses.'
+  OK      agent:progress#3           2026-10-22T12:09:55.268Z  +19.8s   43.0s into the turn: 'I’ll read the current tickets and their board states without changing anything.'
+  OK      car:narrated#2             2026-10-22T12:10:08.628Z  +13.4s   spoke progress #3 -> progress/2026/10/22/322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f-2.ogg (tts 2.67s voxcpm, 57.0s after dispatch)
+  OK      agent:invocation.done      2026-10-22T12:10:21.929Z  +13.3s   invocation.completed model automaticai/personal/sol-6.1: applied
+  OK      hermes_session             2026-10-22T12:09:11.680Z  +0.0s    agent was given exactly what the watcher sent (2085 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiti'
+  OK      car:chunk#1of2             2026-10-22T12:10:26.295Z  +74.6s   109 chars, tts 3.46s, 3.92s after the agent finished -> replies/2026/10/22/121022Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f-c01of02.opus
+  OK      car:chunk#2of2             2026-10-22T12:10:29.993Z  +3.7s    123 chars, tts 3.77s, 7.62s after the agent finished -> replies/2026/10/22/121022Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f-c02of02.opus
+  OK      fact:replied               2026-10-22T12:10:31.180Z  +1.2s    220 chars, tts 7.94s (voxcpm) -> replies/2026/10/22/121022Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f.ogg, 2 chunks (first up 3.91s, last 7.6s after the reply text); QUICK ANSWER, background plan: 'Read the live Holocene Plane board, read-only. Load the pilot skill and use its '
+  OK      reply_object               2026-10-22T12:10:30.000Z  +0.0s    replies/2026/10/22/121022Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f.ogg  61768 bytes
+  OK      pad_playback_log           2026-10-22T12:11:42.443Z  +72.4s   {"ts":"2026-10-22T12:11:42.442Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/121128Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f.
+  OK      played_on_pad              2026-10-22T12:10:27.876Z  +0.0s    reply started 1.6s after the first chunk was up (5876 ms after the key stamp, TTS included), ended after 12.64s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      followup#1:dispatched      2026-10-22T12:10:31.588Z  +3.7s    command 6edfbf7f-8a87-40b1-8423-4497cfdb621f -> bloodbank.cmd.agent.invocation.start lane=batch FOLLOW-UP 1 of command 29100337-e863-4796-85d1-56d40f121560: 'Read the live Holocene Plane board, read-only. Load the pilot skill and use its configured'
+  OK      followup#1:gateway_journal 2026-10-22T12:10:31.960Z  +0.4s    lane=batch profile=holocene-pm state=completed outcome=success created=2026-10-22T12:10:31.960342Z updated=2026-10-22T12:11:28.679816Z
+  OK      followup#1:agent:invocation.started 2026-10-22T12:10:31.960Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      followup#1:agent:progress#1 2026-10-22T12:10:45.740Z  +13.8s   13.3s into the turn: 'Loading the pilot skill for its configured authentication path.'
+  OK      followup#1:agent:progress#2 2026-10-22T12:10:53.669Z  +7.9s    21.2s into the turn: '`px` resolves its own credential from config or 1Password — running the bound-board check and full ticket list'
+  OK      followup#1:agent:progress#3 2026-10-22T12:11:03.433Z  +9.8s    31.0s into the turn: 'Board read succeeded — 23 tickets, two In Progress. Now pulling the audio-spool-relevant tickets with their co'
+  OK      followup#1:agent:invocation.done 2026-10-22T12:11:28.679Z  +25.2s   invocation.completed
+  OK      followup#1:replied         2026-10-22T12:11:47.680Z  +19.0s   2082 chars -> replies/2026/10/22/121128Z-holocene-pm-322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f.ogg: 'Board read complete, read-only — no writes made.\n\n**Holocene board (HOLOC, live, not archi'
+  OK      car_status_object          2026-10-22T12:11:47.805Z  +0.1s    status/2026/10/22/322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f.json: stage=done progress_seq=3 narrations=2 elapsed=158.5s
+
+car speech (15 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.2s     ack       deferred     reason recording  while recording  mic recording
+  -0.2s     ack       start        reason waited_ms=137
+  +2.4s     ack       end          
+  +2.4s     ack       start        reason waited_ms=2229
+  +2.8s     ack       end          
+  +3.0s     echo      start        reason waited_ms=0
+  +8.9s     echo      end          
+  +25.2s    progress  start        reason waited_ms=3
+  +31.1s    progress  end          
+  +60.3s    progress  start        reason waited_ms=12
+  +66.5s    progress  end          
+  +78.4s    reply     start        reason waited_ms=17
+  +92.8s    reply     end          reason chunks=2
+  +153.1s   reply     start        reason waited_ms=8
+  +181.0s   reply     end          reason chunks=3
+
+timing   since upload (server clock): transcribed +1.6s | routed +1.9s | ack -0.2s | heard-echo +3.0s | first progress +21.1s | first narration +24.8s | progress played +25.2s | first audio up +77.0s | full reply up +80.7s | reply played +78.4s
+         after the agent finished: first audio up +4.4s | full reply up +8.1s | car speaking +5.9s
+
+VERDICT  COMPLETE (quick answer) in 81.0s; played on the pad 1.6s after the first chunk was up; follow-up 1 spoken 77.7s after the quick answer

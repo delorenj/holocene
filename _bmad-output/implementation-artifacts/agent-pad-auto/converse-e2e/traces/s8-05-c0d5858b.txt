@@ -1,0 +1,45 @@
+memo_id  c0d5858b-aeb1-564f-a02d-f2253f9012fa
+key      inbox/holocene-pm/2026/10/22/20261022T121528Z.ogg
+agent    holocene-pm
+command  9051f665-d025-48c4-a77b-826f224638d5
+lane     interactive   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=c0d5858b-aeb1-564f-a02d-f2253f9012fa&limit=100'
+
+  OK      s3_object                  2026-10-22T12:15:37.000Z           inbox/holocene-pm/2026/10/22/20261022T121528Z.ogg  17513 bytes
+  OK      upload_proxy_log           2026-10-22T12:15:37.306Z  +0.3s    {"ts":"2026-10-22T12:15:37.305Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T121528Z.ogg","memo_id":"c0d5858b-aeb1-56
+  OK      fact:uploaded              2026-10-22T12:15:37.305Z  +0.0s    17513 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -5 dBFS, window avg -13 dBFS
+  OK      fact:received              2026-10-22T12:15:38.327Z  +1.0s    watcher saw it, lag 1089ms
+  OK      fact:transcribed           2026-10-22T12:15:39.342Z  +1.0s    30 chars in 0.44s (large-v3-turbo, gpu server, cuda), audio max -5 dBFS, mean -25 dBFS over 4.4 s: 'Send that to Flume PM instead.'
+  OK      fast:routed                2026-10-22T12:15:39.631Z  +0.3s    direct failed: r1 breaker_open, r2 breaker_open, r3m http_503, r3c http_503, r3a http_503, r3b http_503 -> today's agent path (all_routes_failed) conv f5b73ff0 turn 26
+  OK      audio_level                2026-10-22T12:15:39.342Z  +0.0s    max -5 dBFS, mean -25 dBFS over 4.4 s  -> audible | device heard peak -5 dBFS, window avg -13 dBFS
+  OK      fact:dispatched            2026-10-22T12:15:39.949Z  +0.6s    command 9051f665-d025-48c4-a77b-826f224638d5 -> bloodbank.cmd.agent.invocation.invoke lane=interactive model=automaticai/personal/sol-6.1
+  OK      gateway_journal            2026-10-22T12:15:39.985Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-22T12:15:39.985621Z updated=2026-10-22T12:18:04.962452Z
+  OK      agent:invocation.started   2026-10-22T12:15:39.985Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:progress#1           2026-10-22T12:17:00.037Z  +80.1s   79.3s into the turn: 'Sending the read-only converse-stage test query to Flume PM now — first, checking how to emit a Bloodbank comm'
+  OK      agent:progress#2           2026-10-22T12:17:14.886Z  +14.8s   94.1s into the turn: 'Checking the command vocabulary for routing to another agent.'
+  OK      agent:progress#3           2026-10-22T12:17:25.004Z  +10.1s   104.3s into the turn: 'Composing the command to Flume PM and checking the envelope before emitting.'
+  OK      agent:progress#4           2026-10-22T12:17:35.848Z  +10.8s   115.1s into the turn: 'bb-emit takes typed flags, not a raw envelope. Rebuilding the command with flags and emitting.'
+  OK      agent:progress#5           2026-10-22T12:17:44.323Z  +8.5s    123.6s into the turn: 'Checking available lifecycle.request schemas to pick a valid one.'
+  OK      agent:progress#6           2026-10-22T12:17:55.408Z  +11.1s   134.7s into the turn: 'Using the registered task.invoke command schema instead.'
+  OK      agent:invocation.done      2026-10-22T12:18:04.962Z  +9.6s    invocation.completed model automaticai/personal/sol-6.1: applied
+  OK      hermes_session             2026-10-22T12:15:39.985Z  +0.0s    agent was given exactly what the watcher sent (2093 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiti'
+  MISSING fact:replied               -                                  no bloodbank.audio.memo.replied with correlationid=c0d5858b-aeb1-564f-a02d-f2253f9012fa
+  MISSING reply_object               -                                  no reply key recorded
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      car_status_object          2026-10-22T12:17:02.771Z  +82.8s   status/2026/10/22/c0d5858b-aeb1-564f-a02d-f2253f9012fa.json: stage=failed progress_seq=1 narrations=0 elapsed=85.5s error=cancelled
+  FAILED  fact:failed[cancelled]     2026-10-22T12:17:02.620Z           cancelled: cancelled at await_agent by memo:cancel after the command was published: the agent may still run, its reply is not spoken (retryable=False, attempt=1, after_dispatch=True)
+
+car speech (7 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.4s     ack       deferred     reason recording  while recording  mic recording
+  -0.4s     ack       start        reason waited_ms=291
+  +2.8s     ack       end          
+  +2.8s     ack       start        reason waited_ms=2382
+  +3.4s     ack       end          
+  +4.2s     echo      start        reason waited_ms=4
+  +9.9s     echo      end          
+
+timing   since upload (server clock): transcribed +2.0s | routed +2.3s | ack -0.4s | heard-echo +4.2s | first progress +82.7s
+
+VERDICT  CANCELLED after dispatch; reply not spoken
+
+watcher log (20 lines, journalctl --user -u holocene-inbox-watcher.service):

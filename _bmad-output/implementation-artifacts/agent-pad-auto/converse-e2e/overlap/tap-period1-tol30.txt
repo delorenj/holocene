@@ -1,0 +1,1483 @@
+# with the speaker tap (period 1), tolerance 30 ms
+intervals (device clock, epoch s):
+  1792666704.741   +3.994s  speech    progress progress:0b5b97fc-b5b2-5af2-a11a-97 0b5b97fc-b5b2-5af2-a11a-972498f6e1d3 -> end 
+  1792666705.609   +0.963s  audio     speaker output                               rms<=307
+  1792666707.063   +1.472s  audio     speaker output                               rms<=326
+  1792666738.369   +5.553s  speech    progress progress:0b5b97fc-b5b2-5af2-a11a-97 0b5b97fc-b5b2-5af2-a11a-972498f6e1d3 -> end 
+  1792666739.005   +1.241s  audio     speaker output                               rms<=282
+  1792666740.383   +3.535s  audio     speaker output                               rms<=296
+  1792666856.142  +34.778s  speech    reply 110051Z-holocene-pm-0b5b...98f6e1d3.og 0b5b97fc-b5b2-5af2-a11a-972498f6e1d3 -> end chunks=3
+  1792666857.293   +1.010s  audio     speaker output                               rms<=402
+  1792666858.565   +2.224s  audio     speaker output                               rms<=380
+  1792666860.998   +0.114s  audio     speaker output                               rms<=384
+  1792666861.233   +1.658s  audio     speaker output                               rms<=433
+  1792666863.100   +1.437s  audio     speaker output                               rms<=410
+  1792666865.792   +5.090s  audio     speaker output                               rms<=325
+  1792666871.095   +0.923s  audio     speaker output                               rms<=332
+  1792666872.227   +0.272s  audio     speaker output                               rms<=244
+  1792666872.654   +1.494s  audio     speaker output                               rms<=329
+  1792666875.518   +2.184s  audio     speaker output                               rms<=386
+  1792666877.827   +0.785s  audio     speaker output                               rms<=281
+  1792666878.840   +0.779s  audio     speaker output                               rms<=338
+  1792666879.750   +0.296s  audio     speaker output                               rms<=507
+  1792666880.173   +0.257s  audio     speaker output                               rms<=265
+  1792666880.707   +1.794s  audio     speaker output                               rms<=347
+  1792666882.725   +3.440s  audio     speaker output                               rms<=338
+  1792666886.579   +2.614s  audio     speaker output                               rms<=412
+  1792666889.337   +1.347s  audio     speaker output                               rms<=333
+  1792666928.092   +2.582s  speech    arming arm:16199522                          - -> end 
+  1792666928.740   +1.312s  audio     speaker output                               rms<=594
+  1792666930.470   +0.259s  audio     speaker output                               rms<=659
+  1792666931.711   +3.395s  recording app mic                                     
+  1792666931.719   +3.304s  recording OS capture active                           
+  1792666935.109   +3.942s  speech    ack ack:stopped:16206525                     - -> end 
+  1792666935.886   +0.258s  audio     speaker output                               rms<=658
+  1792666936.621   +0.383s  audio     speaker output                               rms<=457
+  1792666937.349   +1.158s  audio     speaker output                               rms<=565
+  1792666939.142   +1.019s  speech    ack ack:sent:16208054                        - -> end 
+  1792666939.732   +0.372s  audio     speaker output                               rms<=701
+  1792666940.483   +2.878s  speech    reply 110218Z-holocene-pm-9ab5...8a797685.og 9ab5155a-9b91-5331-88ec-3e6d8a797685 -> end 
+  1792666941.319   +0.479s  audio     speaker output                               rms<=305
+  1792666942.457   +0.681s  audio     speaker output                               rms<=371
+  1792667021.465   +2.805s  speech    arming arm:16293030                          - -> end 
+  1792667022.215   +1.510s  audio     speaker output                               rms<=627
+  1792667024.061   +0.267s  audio     speaker output                               rms<=659
+  1792667025.281   +5.565s  recording app mic                                     
+  1792667025.416   +5.413s  recording OS capture active                           
+  1792667030.848   +3.659s  speech    ack ack:stopped:16302331                     - -> end 
+  1792667031.183   +0.320s  audio     speaker output                               rms<=659
+  1792667032.630   +0.401s  audio     speaker output                               rms<=448
+  1792667033.397   +0.839s  audio     speaker output                               rms<=596
+  1792667034.514   +0.690s  speech    ack ack:sent:16304503                        - -> end 
+  1792667034.957   +0.326s  audio     speaker output                               rms<=654
+  1792667038.912   +9.705s  speech    reply 110356Z-holocene-pm-d7f0...588985c4.og d7f083df-4983-5fb4-92d4-f4f7588985c4 -> end chunks=2
+  1792667040.152   +3.911s  audio     speaker output                               rms<=372
+  1792667045.281   +2.185s  audio     speaker output                               rms<=321
+  1792667047.628   +1.012s  audio     speaker output                               rms<=345
+  1792667064.707   +2.308s  speech    arming arm:16336293                          - -> end 
+  1792667065.125   +1.373s  audio     speaker output                               rms<=598
+  1792667066.797   +0.267s  audio     speaker output                               rms<=686
+  1792667068.015   +5.055s  recording OS capture active                           
+  1792667068.019   +5.110s  recording app mic                                     
+  1792667073.168   +3.244s  speech    ack ack:stopped:16344525                     - -> end 
+  1792667073.587   +0.266s  audio     speaker output                               rms<=661
+  1792667074.507   +0.366s  audio     speaker output                               rms<=459
+  1792667075.162   +0.911s  audio     speaker output                               rms<=557
+  1792667076.426   +0.753s  speech    ack ack:sent:16345597                        - -> end 
+  1792667076.946   +0.318s  audio     speaker output                               rms<=657
+  1792667079.982   +5.472s  speech    reply 110437Z-holocene-pm-2b6c...166b9f8e.og 2b6cd6bf-d4b8-561d-921c-a754166b9f8e -> end 
+  1792667081.361   +3.555s  audio     speaker output                               rms<=334
+  1792667095.500   +2.521s  speech    arming arm:16366975                          - -> end 
+  1792667096.047   +1.306s  audio     speaker output                               rms<=615
+  1792667097.754   +0.291s  audio     speaker output                               rms<=656
+  1792667098.832   +3.714s  recording app mic                                     
+  1792667098.840   +3.645s  recording OS capture active                           
+  1792667102.548   +2.706s  speech    ack ack:stopped:16374051                     - -> end 
+  1792667102.840   +0.285s  audio     speaker output                               rms<=657
+  1792667103.515   +0.376s  audio     speaker output                               rms<=455
+  1792667104.210   +0.914s  audio     speaker output                               rms<=561
+  1792667105.255   +0.536s  speech    ack ack:sent:16374657                        - -> end 
+  1792667105.584   +0.305s  audio     speaker output                               rms<=659
+  1792667110.400   +7.120s  speech    reply 110507Z-holocene-pm-1800...2429db6a.og 1800cb0d-6f69-53f7-8a39-e69c2429db6a -> end 
+  1792667111.043   +1.488s  audio     speaker output                               rms<=349
+  1792667112.669   +2.493s  audio     speaker output                               rms<=376
+  1792667115.436   +1.862s  audio     speaker output                               rms<=385
+  1792667127.009   +2.188s  speech    arming arm:16398597                          - -> end 
+  1792667127.462   +1.310s  audio     speaker output                               rms<=595
+  1792667129.010   +0.275s  audio     speaker output                               rms<=657
+  1792667129.713   +4.089s  recording OS capture active                           
+  1792667129.721   +4.094s  recording app mic                                     
+  1792667133.820   +2.710s  speech    ack ack:stopped:16405367                     - -> end 
+  1792667134.129   +0.268s  audio     speaker output                               rms<=658
+  1792667134.785   +0.355s  audio     speaker output                               rms<=453
+  1792667135.469   +0.910s  audio     speaker output                               rms<=550
+  1792667136.531   +0.568s  speech    ack ack:sent:16405816                        - -> end 
+  1792667136.861   +0.326s  audio     speaker output                               rms<=657
+  1792667140.020   +4.384s  speech    reply 110537Z-holocene-pm-4505...ba11e7ba.og 4505b12f-2949-5347-a4cb-3988ba11e7ba -> end 
+  1792667140.542   +3.665s  audio     speaker output                               rms<=288
+  1792667154.044   +2.507s  speech    arming arm:16425601                          - -> end 
+  1792667154.481   +1.281s  audio     speaker output                               rms<=611
+  1792667156.314   +0.306s  audio     speaker output                               rms<=651
+  1792667157.147   +3.102s  recording app mic                                     
+  1792667157.185   +3.058s  recording OS capture active                           
+  1792667160.250   +2.693s  speech    ack ack:stopped:16431871                     - -> end 
+  1792667160.528   +0.287s  audio     speaker output                               rms<=654
+  1792667161.162   +0.376s  audio     speaker output                               rms<=456
+  1792667161.858   +0.889s  audio     speaker output                               rms<=552
+  1792667162.947   +0.665s  speech    ack ack:sent:16432208                        - -> end 
+  1792667163.388   +0.336s  audio     speaker output                               rms<=659
+  1792667166.807   +4.926s  speech    reply 110604Z-holocene-pm-7743...56fe2d5a.og 7743ae3d-6866-5b7f-b336-8dd956fe2d5a -> end 
+  1792667167.454   +1.335s  audio     speaker output                               rms<=454
+  1792667168.927   +1.532s  audio     speaker output                               rms<=363
+  1792667170.810   +0.788s  audio     speaker output                               rms<=359
+  1792667185.310   +2.143s  speech    arming arm:16456887                          - -> end 
+  1792667185.717   +1.311s  audio     speaker output                               rms<=595
+  1792667187.258   +0.276s  audio     speaker output                               rms<=655
+  1792667187.955   +3.872s  recording app mic                                     
+  1792667187.970   +3.846s  recording OS capture active                           
+  1792667191.828   +2.720s  speech    ack ack:stopped:16463373                     - -> end 
+  1792667192.149   +0.278s  audio     speaker output                               rms<=662
+  1792667192.792   +0.363s  audio     speaker output                               rms<=457
+  1792667193.514   +0.878s  audio     speaker output                               rms<=549
+  1792667194.548   +0.571s  speech    ack ack:sent:16463790                        - -> end 
+  1792667194.851   +0.325s  audio     speaker output                               rms<=656
+  1792667198.231   +3.687s  speech    reply 110636Z-holocene-pm-8e49...48d1d844.og 8e492cba-e533-5d87-bfeb-c41448d1d844 -> end 
+  1792667198.840   +2.790s  audio     speaker output                               rms<=368
+  1792667211.674   +2.094s  speech    arming arm:16483268                          - -> end 
+  1792667212.027   +1.307s  audio     speaker output                               rms<=609
+  1792667213.592   +0.255s  audio     speaker output                               rms<=656
+  1792667214.197   +5.062s  recording app mic                                     
+  1792667214.205   +5.041s  recording OS capture active                           
+  1792667219.261   +2.739s  speech    ack ack:stopped:16490822                     - -> end 
+  1792667219.595   +0.278s  audio     speaker output                               rms<=662
+  1792667220.250   +0.365s  audio     speaker output                               rms<=450
+  1792667220.934   +0.911s  audio     speaker output                               rms<=560
+  1792667222.004   +0.601s  speech    ack ack:sent:16491262                        - -> end 
+  1792667222.356   +0.301s  audio     speaker output                               rms<=656
+  1792667224.918   +1.586s  speech    reply 110703Z-holocene-pm-0b89...58f44c1b.og 0b89fe2a-fe46-550f-9334-625858f44c1b -> end 
+  1792667225.537   +0.838s  audio     speaker output                               rms<=370
+  1792667236.654   +2.275s  speech    arming arm:16508248                          - -> end 
+  1792667237.071   +1.339s  audio     speaker output                               rms<=626
+  1792667238.707   +0.275s  audio     speaker output                               rms<=656
+  1792667239.400   +4.174s  recording app mic                                     
+  1792667239.402   +4.146s  recording OS capture active                           
+  1792667243.579   +2.954s  speech    ack ack:stopped:16515168                     - -> end 
+  1792667243.954   +0.288s  audio     speaker output                               rms<=661
+  1792667244.800   +0.366s  audio     speaker output                               rms<=457
+  1792667245.495   +0.877s  audio     speaker output                               rms<=556
+  1792667246.534   +0.519s  speech    ack ack:sent:16516193                        - -> end 
+  1792667246.862   +0.305s  audio     speaker output                               rms<=655
+  1792667247.971   +4.182s  speech    echo echo:6aa18ae3-161e-58b3-ae34-286c6a41.. 6aa18ae3-161e-58b3-ae34-286c6a4139f1 -> end 
+  1792667249.058   +0.788s  audio     speaker output                               rms<=506
+  1792667250.175   +1.898s  audio     speaker output                               rms<=653
+  1792667261.003   +2.155s  speech    arming arm:16532609                          - -> end 
+  1792667261.409   +1.306s  audio     speaker output                               rms<=596
+  1792667262.974   +0.255s  audio     speaker output                               rms<=655
+  1792667263.609   +3.650s  recording app mic                                     
+  1792667263.613   +3.618s  recording OS capture active                           
+  1792667267.260   +2.735s  speech    ack ack:stopped:16538796                     - -> end 
+  1792667267.568   +0.268s  audio     speaker output                               rms<=661
+  1792667268.266   +0.354s  audio     speaker output                               rms<=455
+  1792667268.971   +0.878s  audio     speaker output                               rms<=564
+  1792667269.996   +0.529s  speech    ack ack:sent:16539304                        - -> end 
+  1792667270.318   +0.295s  audio     speaker output                               rms<=655
+  1792667270.525   +5.014s  speech    progress progress:6aa18ae3-161e-58b3-ae34-28 6aa18ae3-161e-58b3-ae34-286c6a4139f1 -> end 
+  1792667271.012   +0.950s  audio     speaker output                               rms<=258
+  1792667272.466   +2.818s  audio     speaker output                               rms<=273
+  1792667275.546   +3.989s  speech    echo echo:eadeff9e-e28f-5cee-86cf-ce3d847c.. eadeff9e-e28f-5cee-86cf-ce3d847c2d29 -> end 
+  1792667276.709   +0.787s  audio     speaker output                               rms<=517
+  1792667277.792   +1.634s  audio     speaker output                               rms<=700
+  1792667288.364   +2.145s  speech    arming arm:16559978                          - -> end 
+  1792667288.762   +1.331s  audio     speaker output                               rms<=597
+  1792667290.320   +0.284s  audio     speaker output                               rms<=655
+  1792667291.252   +3.681s  recording OS capture active                           
+  1792667291.262   +3.690s  recording app mic                                     
+  1792667294.953   +3.355s  speech    ack ack:stopped:16566528                     - -> end 
+  1792667295.251   +0.277s  audio     speaker output                               rms<=654
+  1792667295.895   +0.389s  audio     speaker output                               rms<=456
+  1792667296.604   +0.878s  audio     speaker output                               rms<=560
+  1792667298.384   +0.519s  speech    ack ack:sent:16566887                        - -> end error:focus_denied
+  1792667299.650   +4.668s  speech    echo echo:12d04a43-fc61-592c-b98c-2ea5b559.. 12d04a43-fc61-592c-b98c-2ea5b5597caf -> end 
+  1792667301.174   +0.790s  audio     speaker output                               rms<=504
+  1792667302.293   +1.967s  audio     speaker output                               rms<=577
+  1792667304.319   +5.618s  speech    progress progress:6aa18ae3-161e-58b3-ae34-28 6aa18ae3-161e-58b3-ae34-286c6a4139f1 -> end 
+  1792667304.892   +0.628s  audio     speaker output                               rms<=191
+  1792667305.658   +0.576s  audio     speaker output                               rms<=203
+  1792667306.674   +1.400s  audio     speaker output                               rms<=289
+  1792667308.282   +1.513s  audio     speaker output                               rms<=313
+  1792667319.761   +2.161s  speech    arming arm:16591362                          - -> end 
+  1792667320.150   +1.312s  audio     speaker output                               rms<=608
+  1792667321.720   +0.254s  audio     speaker output                               rms<=658
+  1792667322.367   +4.561s  recording OS capture active                           
+  1792667322.368   +4.564s  recording app mic                                     
+  1792667326.932   +2.783s  speech    ack ack:stopped:16598516                     - -> end 
+  1792667327.229   +0.267s  audio     speaker output                               rms<=662
+  1792667327.900   +0.367s  audio     speaker output                               rms<=460
+  1792667328.596   +0.900s  audio     speaker output                               rms<=548
+  1792667329.721   +0.624s  speech    ack ack:sent:16598890                        - -> end 
+  1792667330.100   +0.325s  audio     speaker output                               rms<=656
+  1792667330.346   +4.873s  speech    echo echo:aa7f923b-9dbf-54f7-90ee-5760a02f.. aa7f923b-9dbf-54f7-90ee-5760a02fcc1f -> end 
+  1792667331.561   +0.791s  audio     speaker output                               rms<=509
+  1792667332.663   +2.433s  audio     speaker output                               rms<=726
+  1792667344.209   +2.491s  speech    arming arm:16615831                          - -> end 
+  1792667344.608   +1.329s  audio     speaker output                               rms<=604
+  1792667346.408   +0.275s  audio     speaker output                               rms<=659
+  1792667347.254   +2.852s  recording app mic                                     
+  1792667347.269   +2.832s  recording OS capture active                           
+  1792667350.107   +2.858s  speech    ack ack:stopped:16621730                     - -> end 
+  1792667350.395   +0.270s  audio     speaker output                               rms<=662
+  1792667351.034   +0.375s  audio     speaker output                               rms<=450
+  1792667351.748   +0.890s  audio     speaker output                               rms<=558
+  1792667352.977   +0.676s  speech    ack ack:sent:16622015                        - -> end 
+  1792667353.439   +0.325s  audio     speaker output                               rms<=655
+  1792667356.103   +3.797s  speech    echo echo:4f53fcb9-9902-57c1-9725-005bdd9b.. 4f53fcb9-9902-57c1-9725-005bdd9bef7c -> end 
+  1792667357.138   +0.803s  audio     speaker output                               rms<=484
+  1792667358.317   +0.468s  audio     speaker output                               rms<=364
+  1792667358.993   +0.739s  audio     speaker output                               rms<=498
+  1792667402.269  +20.433s  speech    reply 110957Z-holocene-pm-eade...847c2d29.og eadeff9e-e28f-5cee-86cf-ce3d847c2d29 -> end chunks=3
+  1792667403.158   +1.070s  audio     speaker output                               rms<=433
+  1792667404.385   +2.882s  audio     speaker output                               rms<=457
+  1792667407.405   +0.307s  audio     speaker output                               rms<=442
+  1792667410.477   +2.932s  audio     speaker output                               rms<=348
+  1792667413.638   +1.191s  audio     speaker output                               rms<=342
+  1792667414.987   +1.211s  audio     speaker output                               rms<=377
+  1792667416.376   +0.305s  audio     speaker output                               rms<=327
+  1792667416.848   +0.114s  audio     speaker output                               rms<=147
+  1792667417.150   +1.246s  audio     speaker output                               rms<=361
+  1792667419.167   +1.285s  audio     speaker output                               rms<=346
+  1792667420.579   +2.074s  audio     speaker output                               rms<=394
+  1792667422.707   +3.971s  speech    progress progress:aa7f923b-9dbf-54f7-90ee-57 aa7f923b-9dbf-54f7-90ee-5760a02fcc1f -> end 
+  1792667423.291   +1.210s  audio     speaker output                               rms<=213
+  1792667424.659   +1.603s  audio     speaker output                               rms<=283
+  1792667426.399   +0.235s  audio     speaker output                               rms<=210
+  1792667426.682   +7.527s  speech    reply 110958Z-holocene-pm-6aa1...6a4139f1.og 6aa18ae3-161e-58b3-ae34-286c6a4139f1 -> end 
+  1792667427.265   +0.934s  audio     speaker output                               rms<=449
+  1792667428.357   +3.093s  audio     speaker output                               rms<=414
+  1792667431.749   +2.170s  audio     speaker output                               rms<=379
+  1792667435.116   +3.381s  speech    reply 111007Z-holocene-pm-12d0...b5597caf.og 12d04a43-fc61-592c-b98c-2ea5b5597caf -> end 
+  1792667435.956   +0.023s  audio     speaker output                               rms<=97
+  1792667436.187   +1.261s  audio     speaker output                               rms<=381
+  1792667437.606   +0.739s  audio     speaker output                               rms<=367
+  1792667546.283   +6.275s  speech    reply 111222Z-holocene-pm-4f53...dd9bef7c.og 4f53fcb9-9902-57c1-9725-005bdd9bef7c -> end 
+  1792667546.944   +0.829s  audio     speaker output                               rms<=288
+  1792667548.135   +0.556s  audio     speaker output                               rms<=324
+  1792667548.849   +0.887s  audio     speaker output                               rms<=282
+  1792667549.945   +0.506s  audio     speaker output                               rms<=306
+  1792667550.688   +0.598s  audio     speaker output                               rms<=290
+  1792667551.455   +0.998s  audio     speaker output                               rms<=333
+  1792667579.076   +2.161s  speech    arming arm:16850683                          - -> end 
+  1792667579.486   +1.324s  audio     speaker output                               rms<=627
+  1792667581.068   +0.255s  audio     speaker output                               rms<=655
+  1792667581.666   +3.248s  recording app mic                                     
+  1792667581.667   +3.225s  recording OS capture active                           
+  1792667584.915   +2.760s  speech    ack ack:stopped:16856459                     - -> end 
+  1792667585.266   +0.258s  audio     speaker output                               rms<=657
+  1792667585.931   +0.356s  audio     speaker output                               rms<=452
+  1792667586.636   +0.878s  audio     speaker output                               rms<=546
+  1792667587.677   +0.550s  speech    ack ack:sent:16856883                        - -> end 
+  1792667588.010   +0.295s  audio     speaker output                               rms<=658
+  1792667589.266   +2.927s  speech    reply 111307Z-holocene-pm-839d...5261d4ad.og 839decb0-91bb-59c7-ae53-b01b5261d4ad -> end 
+  1792667589.720   +0.748s  audio     speaker output                               rms<=274
+  1792667591.260   +0.748s  audio     speaker output                               rms<=316
+  1792667601.636   +2.180s  speech    arming arm:16873239                          - -> end 
+  1792667602.059   +1.322s  audio     speaker output                               rms<=605
+  1792667603.618   +0.274s  audio     speaker output                               rms<=656
+  1792667604.249   +4.527s  recording app mic                                     
+  1792667604.259   +4.506s  recording OS capture active                           
+  1792667608.777   +2.751s  speech    ack ack:stopped:16880344                     - -> end 
+  1792667609.077   +0.267s  audio     speaker output                               rms<=659
+  1792667609.734   +0.366s  audio     speaker output                               rms<=454
+  1792667610.418   +0.908s  audio     speaker output                               rms<=562
+  1792667611.547   +1.051s  speech    ack ack:sent:16880701                        - -> end 
+  1792667612.109   +0.309s  audio     speaker output                               rms<=659
+  1792667612.613   +5.313s  speech    echo echo:73f1f363-9b3a-5555-933d-b41833f0.. 73f1f363-9b3a-5555-933d-b41833f0fb35 -> end 
+  1792667613.913   +0.768s  audio     speaker output                               rms<=479
+  1792667615.070   +0.094s  audio     speaker output                               rms<=340
+  1792667615.332   +0.436s  audio     speaker output                               rms<=396
+  1792667616.137   +1.636s  audio     speaker output                               rms<=595
+  1792667626.994   +2.155s  speech    arming arm:16898601                          - -> end 
+  1792667627.421   +1.330s  audio     speaker output                               rms<=614
+  1792667628.959   +0.274s  audio     speaker output                               rms<=656
+  1792667629.566   +4.416s  recording app mic                                     
+  1792667629.576   +4.394s  recording OS capture active                           
+  1792667633.989   +3.397s  speech    ack ack:stopped:16905530                     - -> end 
+  1792667634.433   +0.267s  audio     speaker output                               rms<=661
+  1792667635.664   +0.365s  audio     speaker output                               rms<=443
+  1792667636.358   +0.879s  audio     speaker output                               rms<=551
+  1792667637.387   +0.774s  speech    ack ack:sent:16907009                        - -> end 
+  1792667637.779   +0.305s  audio     speaker output                               rms<=657
+  1792667639.010   +5.186s  speech    progress progress:73f1f363-9b3a-5555-933d-b4 73f1f363-9b3a-5555-933d-b41833f0fb35 -> end 
+  1792667639.684   +0.981s  audio     speaker output                               rms<=370
+  1792667640.944   +3.012s  audio     speaker output                               rms<=326
+  1792667644.197   +4.247s  speech    reply 111358Z-holocene-pm-5e0f...3ef1cd4b.og 5e0f044b-f175-5e49-96e2-e2b43ef1cd4b -> end 
+  1792667644.759   +3.664s  audio     speaker output                               rms<=394
+  1792667657.706   +2.662s  speech    arming arm:16929292                          - -> end 
+  1792667658.292   +1.321s  audio     speaker output                               rms<=596
+  1792667660.154   +0.283s  audio     speaker output                               rms<=657
+  1792667660.951   +3.399s  recording app mic                                     
+  1792667661.013   +3.329s  recording OS capture active                           
+  1792667664.351   +3.233s  speech    ack ack:stopped:16935949                     - -> end 
+  1792667664.659   +0.294s  audio     speaker output                               rms<=658
+  1792667665.766   +0.381s  audio     speaker output                               rms<=451
+  1792667666.472   +0.902s  audio     speaker output                               rms<=553
+  1792667667.595   +0.730s  speech    ack ack:sent:16937204                        - -> end 
+  1792667668.047   +0.319s  audio     speaker output                               rms<=656
+  1792667668.325  +25.806s  speech    reply 111419Z-holocene-pm-73f1...33f0fb35.og 73f1f363-9b3a-5555-933d-b41833f0fb35 -> end chunks=3
+  1792667669.089   +1.258s  audio     speaker output                               rms<=353
+  1792667670.645   +3.065s  audio     speaker output                               rms<=348
+  1792667673.898   +0.984s  audio     speaker output                               rms<=341
+  1792667676.694   +2.875s  audio     speaker output                               rms<=324
+  1792667679.709   +0.439s  audio     speaker output                               rms<=310
+  1792667680.295   +0.507s  audio     speaker output                               rms<=322
+  1792667681.034   +0.651s  audio     speaker output                               rms<=330
+  1792667681.824   +1.908s  audio     speaker output                               rms<=304
+  1792667684.385   +2.117s  audio     speaker output                               rms<=373
+  1792667686.703   +0.585s  audio     speaker output                               rms<=314
+  1792667687.470   +1.398s  audio     speaker output                               rms<=351
+  1792667689.025   +0.974s  audio     speaker output                               rms<=341
+  1792667690.239   +1.994s  audio     speaker output                               rms<=325
+  1792667692.482   +1.549s  audio     speaker output                               rms<=344
+  1792667694.428   +7.206s  speech    reply 111430Z-holocene-pm-0c4f...5443d2f8.og 0c4fae64-fb27-51ea-b03c-8e9c5443d2f8 -> end 
+  1792667694.960   +2.045s  audio     speaker output                               rms<=415
+  1792667697.145   +1.366s  audio     speaker output                               rms<=363
+  1792667698.898   +0.378s  audio     speaker output                               rms<=337
+  1792667699.417   +1.784s  audio     speaker output                               rms<=366
+  1792667701.342   +0.023s  audio     speaker output                               rms<=31
+  1792667713.000   +2.274s  speech    arming arm:16984544                          - -> end 
+  1792667713.527   +1.314s  audio     speaker output                               rms<=597
+  1792667715.116   +0.274s  audio     speaker output                               rms<=658
+  1792667715.779   +4.586s  recording OS capture active                           
+  1792667715.785   +4.618s  recording app mic                                     
+  1792667720.459   +3.801s  speech    ack ack:stopped:16991746                     - -> end 
+  1792667721.126   +0.257s  audio     speaker output                               rms<=659
+  1792667722.468   +0.370s  audio     speaker output                               rms<=453
+  1792667723.127   +0.912s  audio     speaker output                               rms<=560
+  1792667724.261   +0.500s  speech    ack ack:sent:16993983                        - -> end 
+  1792667724.588   +0.329s  audio     speaker output                               rms<=653
+  1792667728.947   +3.188s  speech    reply 111526Z-holocene-pm-64de...8227e7cb.og 64dee805-383b-5a91-b30e-3f228227e7cb -> end 
+  1792667729.686   +1.896s  audio     speaker output                               rms<=279
+  1792667731.714   +0.114s  audio     speaker output                               rms<=50
+  1792667741.618   +2.313s  speech    arming arm:17013179                          - -> end 
+  1792667742.182   +1.335s  audio     speaker output                               rms<=609
+  1792667743.778   +0.278s  audio     speaker output                               rms<=658
+  1792667744.375   +3.087s  recording app mic                                     
+  1792667744.380   +3.093s  recording OS capture active                           
+  1792667747.462   +3.070s  speech    ack ack:stopped:17018948                     - -> end 
+  1792667747.890   +0.250s  audio     speaker output                               rms<=657
+  1792667748.631   +0.368s  audio     speaker output                               rms<=464
+  1792667749.323   +0.880s  audio     speaker output                               rms<=551
+  1792667750.559   +0.371s  speech    ack ack:sent:17019820                        - -> end error:focus_denied
+  1792667754.398   +3.708s  speech    reply 111552Z-holocene-pm-bef8...826727b1.og bef805c4-1836-5aa1-aea7-6dbb826727b1 -> end 
+  1792667755.008   +2.972s  audio     speaker output                               rms<=360
+  1792667768.353   +2.355s  speech    arming arm:17039891                          - -> end 
+  1792667768.794   +1.383s  audio     speaker output                               rms<=627
+  1792667770.549   +0.260s  audio     speaker output                               rms<=659
+  1792667771.333   +3.808s  recording app mic                                     
+  1792667771.366   +3.758s  recording OS capture active                           
+  1792667775.142   +2.860s  speech    ack ack:stopped:17046660                     - -> end 
+  1792667775.511   +0.283s  audio     speaker output                               rms<=662
+  1792667776.213   +0.364s  audio     speaker output                               rms<=453
+  1792667776.901   +0.929s  audio     speaker output                               rms<=563
+  1792667778.024   +0.710s  speech    ack ack:sent:17047211                        - -> end 
+  1792667778.508   +0.335s  audio     speaker output                               rms<=658
+  1792667781.924   +3.140s  speech    reply 111619Z-holocene-pm-24d7...972592c2.og 24d7fae1-6ba1-57cf-af2b-772b972592c2 -> end 
+  1792667782.676   +2.368s  audio     speaker output                               rms<=402
+  1792667795.054   +2.186s  speech    arming arm:17066662                          - -> end 
+  1792667795.509   +1.335s  audio     speaker output                               rms<=617
+  1792667797.063   +0.287s  audio     speaker output                               rms<=655
+  1792667797.738   +5.525s  recording app mic                                     
+  1792667797.778   +5.474s  recording OS capture active                           
+  1792667803.264   +2.788s  speech    ack ack:stopped:17074603                     - -> end 
+  1792667803.618   +0.266s  audio     speaker output                               rms<=662
+  1792667804.312   +0.368s  audio     speaker output                               rms<=452
+  1792667805.016   +0.889s  audio     speaker output                               rms<=550
+  1792667806.053   +0.551s  speech    ack ack:sent:17075305                        - -> end 
+  1792667806.370   +0.318s  audio     speaker output                               rms<=657
+  1792667809.429   +1.441s  speech    reply 111647Z-holocene-pm-f266...37226a18.og f2664812-1038-5cd1-a38c-aa5c37226a18 -> end 
+  1792667810.123   +0.609s  audio     speaker output                               rms<=352
+  1792667821.239   +2.277s  speech    arming arm:17092796                          - -> end 
+  1792667821.707   +1.341s  audio     speaker output                               rms<=615
+  1792667823.344   +0.259s  audio     speaker output                               rms<=655
+  1792667824.012   +4.353s  recording app mic                                     
+  1792667824.019   +4.388s  recording OS capture active                           
+  1792667828.366   +2.777s  speech    ack ack:stopped:17099860                     - -> end 
+  1792667828.709   +0.256s  audio     speaker output                               rms<=662
+  1792667829.415   +0.342s  audio     speaker output                               rms<=450
+  1792667830.115   +0.875s  audio     speaker output                               rms<=550
+  1792667831.144   +0.581s  speech    ack ack:sent:17100479                        - -> end 
+  1792667831.505   +0.297s  audio     speaker output                               rms<=659
+  1792667836.342   +9.497s  speech    reply 111713Z-holocene-pm-3dee...34a7219a.og 3dee81af-89ef-5b77-8d23-1aa834a7219a -> end chunks=2
+  1792667837.842   +1.158s  audio     speaker output                               rms<=389
+  1792667839.128   +1.453s  audio     speaker output                               rms<=292
+  1792667841.923   +3.919s  audio     speaker output                               rms<=294
+  1792667855.650   +2.270s  speech    arming arm:17127240                          - -> end 
+  1792667856.112   +1.323s  audio     speaker output                               rms<=609
+  1792667857.670   +0.299s  audio     speaker output                               rms<=656
+  1792667858.376   +4.337s  recording app mic                                     
+  1792667858.391   +4.303s  recording OS capture active                           
+  1792667862.715   +2.825s  speech    ack ack:stopped:17134269                     - -> end 
+  1792667863.156   +0.253s  audio     speaker output                               rms<=658
+  1792667863.791   +0.367s  audio     speaker output                               rms<=457
+  1792667864.489   +0.900s  audio     speaker output                               rms<=548
+  1792667865.542   +0.564s  speech    ack ack:sent:17134952                        - -> end 
+  1792667865.883   +0.296s  audio     speaker output                               rms<=655
+  1792667871.078   +0.392s  speech    reply 111748Z-holocene-pm-a927...0a743756.og a9278675-2b3c-50d9-98ef-52810a743756 -> halt focus_denied
+  1792667873.122   +9.221s  speech    reply 111748Z-holocene-pm-a927...0a743756.og a9278675-2b3c-50d9-98ef-52810a743756 -> halt stopped
+  1792667873.856   +1.857s  audio     speaker output                               rms<=312
+  1792667875.847   +0.631s  audio     speaker output                               rms<=336
+  1792667876.943   +0.436s  audio     speaker output                               rms<=305
+  1792667877.550   +1.096s  audio     speaker output                               rms<=178
+  1792667878.827   +0.349s  audio     speaker output                               rms<=170
+  1792667879.599   +1.439s  audio     speaker output                               rms<=231
+  1792667881.198   +0.216s  audio     speaker output                               rms<=216
+  1792667881.715   +0.134s  audio     speaker output                               rms<=121
+  1792667881.987   +0.375s  audio     speaker output                               rms<=164
+  1792667882.698   +2.656s  speech    arming arm:17154086                          - -> end 
+  1792667883.166   +1.303s  audio     speaker output                               rms<=632
+  1792667885.147   +0.277s  audio     speaker output                               rms<=659
+  1792667885.941   +3.543s  recording OS capture active                           
+  1792667885.943   +3.546s  recording app mic                                     
+  1792667889.490   +2.700s  speech    ack ack:stopped:17161092                     - -> end 
+  1792667889.790   +0.263s  audio     speaker output                               rms<=661
+  1792667890.414   +0.370s  audio     speaker output                               rms<=455
+  1792667891.126   +0.886s  audio     speaker output                               rms<=543
+  1792667892.195   +0.660s  speech    ack ack:sent:17161552                        - -> end 
+  1792667892.642   +0.306s  audio     speaker output                               rms<=657
+  1792667895.071   +3.103s  speech    reply 111813Z-holocene-pm-b836...c773a075.og b836379b-eaf9-5cf9-aa83-d136c773a075 -> end 
+  1792667895.805   +0.146s  audio     speaker output                               rms<=264
+  1792667896.111   +1.868s  audio     speaker output                               rms<=384
+  1792667908.334   +2.127s  speech    arming arm:17179937                          - -> end 
+  1792667908.724   +1.322s  audio     speaker output                               rms<=594
+  1792667910.305   +0.260s  audio     speaker output                               rms<=659
+  1792667911.844   +3.868s  recording app mic                                     
+  1792667911.936   +3.773s  recording OS capture active                           
+  1792667915.713   +2.814s  speech    ack ack:stopped:17187305                     - -> end 
+  1792667916.035   +0.258s  audio     speaker output                               rms<=658
+  1792667916.706   +0.393s  audio     speaker output                               rms<=460
+  1792667917.447   +0.855s  audio     speaker output                               rms<=798
+  1792667918.532   +0.606s  speech    ack ack:sent:17187647                        - -> end 
+  1792667918.881   +0.312s  audio     speaker output                               rms<=658
+  1792667921.609   +3.266s  speech    reply 111839Z-holocene-pm-0bf2...de4e68b9.og 0bf2e267-a3b7-5e81-b966-1f05de4e68b9 -> end 
+  1792667922.440   +1.988s  audio     speaker output                               rms<=422
+  1792667935.067   +2.266s  speech    arming arm:17206664                          - -> end 
+  1792667935.501   +1.315s  audio     speaker output                               rms<=594
+  1792667937.121   +0.279s  audio     speaker output                               rms<=657
+  1792667938.070   +5.045s  recording app mic                                     
+  1792667938.112   +4.961s  recording OS capture active                           
+  1792667943.116   +2.758s  speech    ack ack:stopped:17214553                     - -> end 
+  1792667943.474   +0.260s  audio     speaker output                               rms<=658
+  1792667944.137   +0.358s  audio     speaker output                               rms<=454
+  1792667944.821   +0.908s  audio     speaker output                               rms<=558
+  1792667945.875   +0.702s  speech    ack ack:sent:17215210                        - -> end 
+  1792667946.227   +0.311s  audio     speaker output                               rms<=659
+  1792667949.331   +6.757s  speech    reply 111907Z-holocene-pm-8413...6e6eaf20.og 8413f6ae-9daf-5101-ba92-7ab16e6eaf20 -> end chunks=2
+  1792667949.797   +2.719s  audio     speaker output                               rms<=412
+  1792667953.601   +2.444s  audio     speaker output                               rms<=353
+  1792667986.929   +2.159s  speech    arming arm:17258531                          - -> end 
+  1792667987.349   +1.310s  audio     speaker output                               rms<=670
+  1792667988.919   +0.278s  audio     speaker output                               rms<=656
+  1792667989.528   +3.944s  recording OS capture active                           
+  1792667989.529   +3.956s  recording app mic                                     
+  1792667993.486   +2.792s  speech    ack ack:stopped:17265039                     - -> end 
+  1792667993.836   +0.257s  audio     speaker output                               rms<=661
+  1792667994.531   +0.390s  audio     speaker output                               rms<=446
+  1792667995.246   +0.885s  audio     speaker output                               rms<=543
+  1792667996.279   +0.591s  speech    ack ack:sent:17265496                        - -> end 
+  1792667996.597   +0.322s  audio     speaker output                               rms<=656
+  1792667998.868   +5.041s  speech    echo echo:4c380a5f-4356-5102-9a3d-934d8873.. 4c380a5f-4356-5102-9a3d-934d8873993d -> end 
+  1792668000.139   +0.798s  audio     speaker output                               rms<=512
+  1792668001.351   +0.084s  audio     speaker output                               rms<=336
+  1792668001.598   +0.467s  audio     speaker output                               rms<=409
+  1792668002.441   +1.433s  audio     speaker output                               rms<=612
+  1792668013.382   +2.235s  speech    arming arm:17284988                          - -> end 
+  1792668013.808   +1.326s  audio     speaker output                               rms<=595
+  1792668015.451   +0.259s  audio     speaker output                               rms<=657
+  1792668016.162   +4.615s  recording app mic                                     
+  1792668016.167   +4.583s  recording OS capture active                           
+  1792668020.779   +2.789s  speech    ack ack:stopped:17292302                     - -> end 
+  1792668021.151   +0.259s  audio     speaker output                               rms<=659
+  1792668021.816   +0.369s  audio     speaker output                               rms<=446
+  1792668022.475   +0.940s  audio     speaker output                               rms<=565
+  1792668023.576   +0.613s  speech    ack ack:sent:17292925                        - -> end 
+  1792668023.963   +0.326s  audio     speaker output                               rms<=654
+  1792668024.190   +6.786s  speech    progress progress:4c380a5f-4356-5102-9a3d-93 4c380a5f-4356-5102-9a3d-934d8873993d -> end 
+  1792668024.849   +1.514s  audio     speaker output                               rms<=319
+  1792668026.574   +3.639s  audio     speaker output                               rms<=322
+  1792668030.393   +0.350s  audio     speaker output                               rms<=322
+  1792668030.983   +4.540s  speech    reply 112024Z-holocene-pm-dd6a...34086c79.og dd6a4437-6ebf-5993-b7a2-171234086c79 -> end 
+  1792668031.572   +3.940s  audio     speaker output                               rms<=306
+  1792668035.718  +18.511s  speech    reply 112031Z-holocene-pm-4c38...8873993d.og 4c380a5f-4356-5102-9a3d-934d8873993d -> end chunks=3
+  1792668036.321   +0.951s  audio     speaker output                               rms<=312
+  1792668037.624   +3.317s  audio     speaker output                               rms<=372
+  1792668041.948   +4.024s  audio     speaker output                               rms<=396
+  1792668046.639   +3.913s  audio     speaker output                               rms<=439
+  1792668050.720   +2.047s  audio     speaker output                               rms<=427
+  1792668052.901   +1.203s  audio     speaker output                               rms<=309
+  1792668063.852   +2.295s  speech    arming arm:17335427                          - -> end 
+  1792668064.411   +1.323s  audio     speaker output                               rms<=613
+  1792668065.984   +0.277s  audio     speaker output                               rms<=655
+  1792668066.678   +4.025s  recording app mic                                     
+  1792668066.687   +3.981s  recording OS capture active                           
+  1792668070.704   +3.179s  speech    ack ack:stopped:17342222                     - -> end 
+  1792668071.129   +0.261s  audio     speaker output                               rms<=660
+  1792668071.882   +0.379s  audio     speaker output                               rms<=455
+  1792668072.579   +0.921s  audio     speaker output                               rms<=551
+  1792668073.917   +0.612s  speech    ack ack:sent:17342883                        - -> end 
+  1792668074.343   +0.295s  audio     speaker output                               rms<=655
+  1792668079.065   +6.468s  speech    reply 112115Z-holocene-pm-79d5...ec37fab2.og 79d5d6ab-00b4-546d-9886-640fec37fab2 -> end 
+  1792668079.758   +4.759s  audio     speaker output                               rms<=368
+  1792668084.656   +0.720s  audio     speaker output                               rms<=326
+  1792668095.299   +2.232s  speech    arming arm:17366873                          - -> end 
+  1792668095.821   +1.322s  audio     speaker output                               rms<=598
+  1792668097.352   +0.277s  audio     speaker output                               rms<=656
+  1792668098.032   +4.109s  recording app mic                                     
+  1792668098.061   +4.027s  recording OS capture active                           
+  1792668102.144   +2.704s  speech    ack ack:stopped:17373637                     - -> end 
+  1792668102.467   +0.259s  audio     speaker output                               rms<=658
+  1792668103.116   +0.375s  audio     speaker output                               rms<=457
+  1792668103.819   +0.879s  audio     speaker output                               rms<=557
+  1792668104.848   +0.532s  speech    ack ack:sent:17374227                        - -> end 
+  1792668105.187   +0.304s  audio     speaker output                               rms<=657
+  1792668109.395   +3.746s  speech    reply 112147Z-holocene-pm-f6c3...a536e3f7.og f6c33c88-099e-54dd-a115-bdcda536e3f7 -> end 
+  1792668109.969   +0.736s  audio     speaker output                               rms<=410
+  1792668110.983   +2.171s  audio     speaker output                               rms<=386
+  1792668121.448   +2.483s  speech    arming arm:17393048                          - -> end 
+  1792668121.885   +1.324s  audio     speaker output                               rms<=598
+  1792668123.438   +0.579s  audio     speaker output                               rms<=656
+  1792668124.529   +3.531s  recording app mic                                     
+  1792668124.616   +3.382s  recording OS capture active                           
+  1792668128.062   +2.844s  speech    ack ack:stopped:17399392                     - -> end 
+  1792668128.483   +0.264s  audio     speaker output                               rms<=658
+  1792668129.183   +0.377s  audio     speaker output                               rms<=445
+  1792668129.893   +0.877s  audio     speaker output                               rms<=557
+  1792668130.907   +0.531s  speech    ack ack:sent:17400233                        - -> end 
+  1792668131.227   +0.331s  audio     speaker output                               rms<=658
+  1792668131.439   +3.793s  speech    echo echo:8a7c43de-9204-502f-b907-5af08d14.. 8a7c43de-9204-502f-b907-5af08d148e4e -> end 
+  1792668132.840   +0.751s  audio     speaker output                               rms<=485
+  1792668133.921   +1.274s  audio     speaker output                               rms<=522
+  1792668146.366   +2.167s  speech    arming arm:17417975                          - -> end 
+  1792668146.778   +1.320s  audio     speaker output                               rms<=597
+  1792668148.347   +0.265s  audio     speaker output                               rms<=655
+  1792668149.590   +4.424s  recording app mic                                     
+  1792668149.617   +4.388s  recording OS capture active                           
+  1792668154.014   +2.751s  speech    ack ack:stopped:17425609                     - -> end 
+  1792668154.321   +0.259s  audio     speaker output                               rms<=661
+  1792668154.998   +0.366s  audio     speaker output                               rms<=454
+  1792668155.706   +0.890s  audio     speaker output                               rms<=543
+  1792668156.768   +0.612s  speech    ack ack:sent:17425946                        - -> end 
+  1792668157.166   +0.308s  audio     speaker output                               rms<=657
+  1792668160.463   +4.383s  speech    reply 112238Z-holocene-pm-8498...248b1dd3.og 8498dce8-29c8-5751-af42-ed79248b1dd3 -> end 
+  1792668161.785   +2.936s  audio     speaker output                               rms<=356
+  1792668165.104   +5.328s  speech    progress progress:8a7c43de-9204-502f-b907-5a 8a7c43de-9204-502f-b907-5af08d148e4e -> end 
+  1792668165.743   +0.995s  audio     speaker output                               rms<=337
+  1792668167.294   +3.000s  audio     speaker output                               rms<=320
+  1792668176.424   +4.443s  speech    reply 112253Z-holocene-pm-8a7c...8d148e4e.og 8a7c43de-9204-502f-b907-5af08d148e4e -> halt stopped
+  1792668177.071   +0.934s  audio     speaker output                               rms<=368
+  1792668178.265   +2.666s  audio     speaker output                               rms<=422
+  1792668181.226   +2.458s  speech    arming arm:17452554                          - -> end 
+  1792668181.979   +1.275s  audio     speaker output                               rms<=606
+  1792668183.518   +0.275s  audio     speaker output                               rms<=656
+  1792668184.104   +4.984s  recording app mic                                     
+  1792668184.120   +4.958s  recording OS capture active                           
+  1792668189.089   +2.676s  speech    ack ack:stopped:17460654                     - -> end 
+  1792668189.415   +0.266s  audio     speaker output                               rms<=658
+  1792668190.038   +0.359s  audio     speaker output                               rms<=464
+  1792668190.727   +0.900s  audio     speaker output                               rms<=566
+  1792668191.766   +0.545s  speech    ack ack:sent:17461103                        - -> end 
+  1792668192.088   +0.327s  audio     speaker output                               rms<=658
+  1792668192.311  +14.799s  speech    reply 112253Z-holocene-pm-8a7c...8d148e4e.og 8a7c43de-9204-502f-b907-5af08d148e4e -> end 
+  1792668192.818   +0.902s  audio     speaker output                               rms<=340
+  1792668193.948   +3.106s  audio     speaker output                               rms<=452
+  1792668197.490   +3.379s  audio     speaker output                               rms<=343
+  1792668201.366   +0.867s  audio     speaker output                               rms<=404
+  1792668202.353   +0.605s  audio     speaker output                               rms<=286
+  1792668203.187   +0.090s  audio     speaker output                               rms<=74
+  1792668203.408   +3.701s  audio     speaker output                               rms<=403
+  1792668207.372   +1.667s  speech    reply 112312Z-holocene-pm-0f70...43cd795a.og 0f70ad4a-e737-5c37-8778-f14543cd795a -> end 
+  1792668207.953   +0.972s  audio     speaker output                               rms<=389
+  1792668219.327   +2.468s  speech    arming arm:17490781                          - -> end 
+  1792668219.979   +1.297s  audio     speaker output                               rms<=611
+  1792668221.593   +0.276s  audio     speaker output                               rms<=657
+  1792668222.236   +3.480s  recording app mic                                     
+  1792668222.245   +3.464s  recording OS capture active                           
+  1792668225.716   +2.665s  speech    ack ack:stopped:17497320                     - -> end 
+  1792668225.996   +0.257s  audio     speaker output                               rms<=659
+  1792668226.610   +0.379s  audio     speaker output                               rms<=456
+  1792668227.295   +0.912s  audio     speaker output                               rms<=551
+  1792668228.384   +0.602s  speech    ack ack:sent:17497575                        - -> end 
+  1792668228.767   +0.325s  audio     speaker output                               rms<=655
+  1792668230.952   +6.712s  speech    reply 112349Z-holocene-pm-863b...4559c859.og 863ba9b4-a89b-53e5-b64e-64034559c859 -> end chunks=2
+  1792668231.483   +1.276s  audio     speaker output                               rms<=335
+  1792668232.886   +1.254s  audio     speaker output                               rms<=372
+  1792668234.740   +2.489s  audio     speaker output                               rms<=310
+  1792668237.367   +0.305s  audio     speaker output                               rms<=174
+  1792668247.575   +2.344s  speech    arming arm:17519013                          - -> end 
+  1792668248.198   +1.302s  audio     speaker output                               rms<=597
+  1792668249.739   +0.274s  audio     speaker output                               rms<=659
+  1792668250.364   +5.620s  recording app mic                                     
+  1792668250.373   +5.596s  recording OS capture active                           
+  1792668255.985   +2.824s  speech    ack ack:stopped:17527565                     - -> end 
+  1792668256.260   +0.266s  audio     speaker output                               rms<=658
+  1792668256.883   +0.375s  audio     speaker output                               rms<=451
+  1792668257.578   +0.966s  audio     speaker output                               rms<=565
+  1792668258.817   +0.589s  speech    ack ack:sent:17527868                        - -> end 
+  1792668259.235   +0.315s  audio     speaker output                               rms<=657
+  1792668261.896   +8.592s  speech    reply 112420Z-holocene-pm-94d3...34a400ec.og 94d312b6-3297-5b29-92f7-f1bc34a400ec -> end chunks=2
+  1792668262.828   +1.665s  audio     speaker output                               rms<=245
+  1792668264.673   +0.418s  audio     speaker output                               rms<=291
+  1792668265.941   +0.335s  audio     speaker output                               rms<=254
+  1792668266.403   +1.121s  audio     speaker output                               rms<=256
+  1792668268.107   +2.298s  audio     speaker output                               rms<=291
+  1792668279.355   +2.260s  speech    arming arm:17550951                          - -> end 
+  1792668279.848   +1.331s  audio     speaker output                               rms<=597
+  1792668281.408   +0.284s  audio     speaker output                               rms<=657
+  1792668282.051   +4.340s  recording app mic                                     
+  1792668282.064   +4.313s  recording OS capture active                           
+  1792668286.392   +2.756s  speech    ack ack:stopped:17557951                     - -> end 
+  1792668286.730   +0.267s  audio     speaker output                               rms<=658
+  1792668287.405   +0.401s  audio     speaker output                               rms<=450
+  1792668288.127   +0.889s  audio     speaker output                               rms<=552
+  1792668289.148   +0.557s  speech    ack ack:sent:17558372                        - -> end 
+  1792668289.476   +0.335s  audio     speaker output                               rms<=658
+  1792668291.809   +2.638s  speech    reply 112450Z-holocene-pm-5f65...0d35dc46.og 5f65680f-82f9-59cc-82de-658c0d35dc46 -> end 
+  1792668292.381   +1.999s  audio     speaker output                               rms<=336
+  1792668304.382   +2.238s  speech    arming arm:17575981                          - -> end 
+  1792668304.757   +1.315s  audio     speaker output                               rms<=597
+  1792668306.421   +0.276s  audio     speaker output                               rms<=656
+  1792668307.360   +6.100s  recording OS capture active                           
+  1792668307.362   +6.101s  recording app mic                                     
+  1792668313.465   +2.734s  speech    ack ack:stopped:17585017                     - -> end 
+  1792668313.781   +0.259s  audio     speaker output                               rms<=657
+  1792668314.458   +0.365s  audio     speaker output                               rms<=455
+  1792668315.152   +0.909s  audio     speaker output                               rms<=561
+  1792668316.199   +0.546s  speech    ack ack:sent:17586038                        - -> end 
+  1792668316.522   +0.325s  audio     speaker output                               rms<=656
+  1792668320.367   +2.924s  speech    reply 112518Z-holocene-pm-52df...5bdf8b60.og 52dfcf66-774c-5f3d-ba29-23a95bdf8b60 -> end 
+  1792668320.966   +1.453s  audio     speaker output                               rms<=445
+  1792668322.556   +0.606s  audio     speaker output                               rms<=327
+  1792668333.113   +2.112s  speech    arming arm:17604715                          - -> end 
+  1792668333.523   +1.307s  audio     speaker output                               rms<=606
+  1792668335.070   +0.275s  audio     speaker output                               rms<=656
+  1792668335.647   +4.493s  recording app mic                                     
+  1792668335.667   +4.476s  recording OS capture active                           
+  1792668340.141   +3.136s  speech    ack ack:stopped:17611656                     - -> end 
+  1792668340.732   +0.330s  audio     speaker output                               rms<=658
+  1792668341.483   +0.365s  audio     speaker output                               rms<=450
+  1792668342.195   +0.963s  audio     speaker output                               rms<=562
+  1792668343.278   +0.432s  speech    ack ack:sent:17612828                        - -> end 
+  1792668343.618   +0.315s  audio     speaker output                               rms<=655
+  1792668346.662   +6.970s  speech    reply 112544Z-holocene-pm-1bac...d4a77582.og 1bacbaa3-e805-572e-a552-f176d4a77582 -> end chunks=2
+  1792668347.460   +0.675s  audio     speaker output                               rms<=165
+  1792668348.273   +0.023s  audio     speaker output                               rms<=31
+  1792668348.424   +0.871s  audio     speaker output                               rms<=213
+  1792668349.430   +0.214s  audio     speaker output                               rms<=67
+  1792668349.984   +0.325s  audio     speaker output                               rms<=99
+  1792668350.841   +2.441s  audio     speaker output                               rms<=296
+  1792668407.612   +2.603s  speech    arming arm:17679003                          - -> end 
+  1792668408.445   +1.330s  audio     speaker output                               rms<=601
+  1792668410.014   +0.254s  audio     speaker output                               rms<=655
+  1792668410.641   +4.356s  recording app mic                                     
+  1792668410.650   +4.315s  recording OS capture active                           
+  1792668414.998   +2.718s  speech    ack ack:stopped:17686527                     - -> end 
+  1792668415.303   +0.268s  audio     speaker output                               rms<=660
+  1792668415.997   +0.346s  audio     speaker output                               rms<=466
+  1792668416.692   +0.823s  audio     speaker output                               rms<=559
+  1792668417.716   +0.555s  speech    ack ack:sent:17687002                        - -> end 
+  1792668418.028   +0.325s  audio     speaker output                               rms<=658
+  1792668419.887   +2.246s  speech    reply 112658Z-holocene-pm-83f0...f8574fcf.og 83f0a473-2775-5db0-a9a4-2722f8574fcf -> end 
+  1792668420.793   +0.325s  audio     speaker output                               rms<=357
+  1792668421.507   +0.515s  audio     speaker output                               rms<=321
+  1792668429.487   +2.501s  speech    arming arm:17701081                          - -> end 
+  1792668429.940   +1.304s  audio     speaker output                               rms<=592
+  1792668431.686   +0.285s  audio     speaker output                               rms<=658
+  1792668432.519   +4.185s  recording app mic                                     
+  1792668432.534   +4.160s  recording OS capture active                           
+  1792668436.705   +3.620s  speech    ack ack:stopped:17708310                     - -> end 
+  1792668437.015   +0.258s  audio     speaker output                               rms<=658
+  1792668438.395   +0.442s  audio     speaker output                               rms<=458
+  1792668439.166   +0.844s  audio     speaker output                               rms<=751
+  1792668440.341   +0.651s  speech    ack ack:sent:17708573                        - -> end 
+  1792668440.743   +0.315s  audio     speaker output                               rms<=648
+  1792668444.161  +12.669s  speech    reply 112721Z-holocene-pm-780d...5d4f926c.og 780d677a-312a-5e09-ab92-b8365d4f926c -> end chunks=2
+  1792668444.689   +1.241s  audio     speaker output                               rms<=316
+  1792668446.370   +1.505s  audio     speaker output                               rms<=310
+  1792668448.002   +0.174s  audio     speaker output                               rms<=273
+  1792668448.394   +0.456s  audio     speaker output                               rms<=206
+  1792668448.999   +1.969s  audio     speaker output                               rms<=240
+  1792668451.572   +2.648s  audio     speaker output                               rms<=320
+  1792668454.388   +2.417s  audio     speaker output                               rms<=300
+  1792668465.872   +2.160s  speech    arming arm:17737475                          - -> end 
+  1792668466.269   +1.312s  audio     speaker output                               rms<=609
+  1792668467.867   +0.335s  audio     speaker output                               rms<=934
+  1792668468.650   +3.828s  recording OS capture active                           
+  1792668468.652   +3.842s  recording app mic                                     
+  1792668472.496   +4.708s  speech    ack ack:stopped:17744012                     - -> end 
+  1792668473.526   +0.315s  audio     speaker output                               rms<=661
+  1792668474.522   +0.324s  audio     speaker output                               rms<=469
+  1792668475.225   +1.748s  audio     speaker output                               rms<=705
+  1792668477.210   +0.671s  speech    ack ack:sent:17745165                        - -> end 
+  1792668477.588   +0.451s  audio     speaker output                               rms<=656
+  1792668479.685   +4.536s  speech    reply 112757Z-holocene-pm-c927...8e7d8a98.og c927132d-a588-5fa7-94e9-37018e7d8a98 -> end 
+  1792668480.205   +3.753s  audio     speaker output                               rms<=354
+  1792668484.127   +0.094s  audio     speaker output                               rms<=44
+  1792668495.327   +2.384s  speech    arming arm:17766769                          - -> end 
+  1792668495.991   +1.263s  audio     speaker output                               rms<=596
+  1792668497.521   +0.287s  audio     speaker output                               rms<=658
+  1792668498.186   +4.665s  recording app mic                                     
+  1792668498.188   +4.629s  recording OS capture active                           
+  1792668502.852   +2.959s  speech    ack ack:stopped:17774338                     - -> end 
+  1792668503.315   +0.282s  audio     speaker output                               rms<=662
+  1792668503.967   +0.357s  audio     speaker output                               rms<=460
+  1792668504.678   +0.882s  audio     speaker output                               rms<=547
+  1792668505.860   +0.778s  speech    ack ack:sent:17775057                        - -> end 
+  1792668506.418   +0.326s  audio     speaker output                               rms<=656
+  1792668509.769   +4.482s  speech    echo echo:54f424c7-8591-5853-bf6c-cd3e678d.. 54f424c7-8591-5853-bf6c-cd3e678d9d12 -> end 
+  1792668511.473   +0.802s  audio     speaker output                               rms<=493
+  1792668512.579   +1.550s  audio     speaker output                               rms<=614
+  1792668523.297   +2.122s  speech    arming arm:17794909                          - -> end 
+  1792668523.705   +1.330s  audio     speaker output                               rms<=609
+  1792668525.233   +0.284s  audio     speaker output                               rms<=655
+  1792668525.870   +4.037s  recording app mic                                     
+  1792668525.879   +4.022s  recording OS capture active                           
+  1792668529.908   +2.725s  speech    ack ack:stopped:17801493                     - -> end 
+  1792668530.240   +0.257s  audio     speaker output                               rms<=662
+  1792668530.904   +0.369s  audio     speaker output                               rms<=449
+  1792668531.601   +0.878s  audio     speaker output                               rms<=546
+  1792668532.633   +0.879s  speech    ack ack:sent:17802047                        - -> end 
+  1792668532.984   +0.326s  audio     speaker output                               rms<=658
+  1792668533.529   +3.785s  speech    progress progress:54f424c7-8591-5853-bf6c-cd 54f424c7-8591-5853-bf6c-cd3e678d9d12 -> end 
+  1792668534.390   +1.274s  audio     speaker output                               rms<=400
+  1792668535.995   +1.275s  audio     speaker output                               rms<=319
+  1792668537.314   +4.529s  speech    echo echo:1aeaa8a8-5b62-5d33-b230-5d53292c.. 1aeaa8a8-5b62-5d33-b230-5d53292c8b61 -> end 
+  1792668538.570   +0.801s  audio     speaker output                               rms<=505
+  1792668539.701   +1.951s  audio     speaker output                               rms<=604
+  1792668550.937   +2.190s  speech    arming arm:17822471                          - -> end 
+  1792668551.456   +1.306s  audio     speaker output                               rms<=594
+  1792668552.924   +0.269s  audio     speaker output                               rms<=734
+  1792668553.616   +3.608s  recording app mic                                     
+  1792668553.665   +3.510s  recording OS capture active                           
+  1792668557.225   +2.795s  speech    ack ack:stopped:17828729                     - -> end 
+  1792668557.594   +0.362s  audio     speaker output                               rms<=660
+  1792668558.326   +0.365s  audio     speaker output                               rms<=456
+  1792668559.022   +0.888s  audio     speaker output                               rms<=562
+  1792668560.021   +0.445s  speech    ack ack:sent:17829232                        - -> end 
+  1792668560.344   +0.335s  audio     speaker output                               rms<=657
+  1792668560.467  +29.060s  speech    reply 112910Z-holocene-pm-54f4...678d9d12.og 54f424c7-8591-5853-bf6c-cd3e678d9d12 -> end chunks=3
+  1792668561.209   +0.879s  audio     speaker output                               rms<=464
+  1792668562.457   +0.164s  audio     speaker output                               rms<=304
+  1792668562.782   +1.124s  audio     speaker output                               rms<=350
+  1792668564.316   +1.292s  audio     speaker output                               rms<=392
+  1792668565.764   +1.250s  audio     speaker output                               rms<=351
+  1792668568.060   +1.139s  audio     speaker output                               rms<=306
+  1792668569.498   +2.417s  audio     speaker output                               rms<=337
+  1792668572.093   +3.883s  audio     speaker output                               rms<=400
+  1792668576.644   +0.811s  audio     speaker output                               rms<=358
+  1792668577.784   +0.768s  audio     speaker output                               rms<=400
+  1792668578.762   +0.647s  audio     speaker output                               rms<=452
+  1792668579.550   +0.620s  audio     speaker output                               rms<=470
+  1792668580.388   +0.899s  audio     speaker output                               rms<=398
+  1792668581.455   +0.416s  audio     speaker output                               rms<=345
+  1792668582.049   +1.033s  audio     speaker output                               rms<=385
+  1792668583.220   +0.583s  audio     speaker output                               rms<=527
+  1792668583.950   +1.414s  audio     speaker output                               rms<=352
+  1792668585.501   +1.757s  audio     speaker output                               rms<=355
+  1792668587.416   +0.638s  audio     speaker output                               rms<=378
+  1792668588.211   +0.445s  audio     speaker output                               rms<=394
+  1792668588.834   +0.797s  audio     speaker output                               rms<=296
+  1792668589.545   +3.135s  speech    echo echo:ca3716f7-465a-5a59-a6f7-39b9fad3.. ca3716f7-465a-5a59-a6f7-39b9fad33c16 -> end 
+  1792668590.090   +0.789s  audio     speaker output                               rms<=503
+  1792668591.208   +1.249s  audio     speaker output                               rms<=534
+  1792668592.702  +10.419s  speech    reply 112919Z-holocene-pm-1aea...292c8b61.og 1aeaa8a8-5b62-5d33-b230-5d53292c8b61 -> end 
+  1792668593.398   +0.858s  audio     speaker output                               rms<=348
+  1792668594.654   +2.059s  audio     speaker output                               rms<=391
+  1792668596.951   +2.047s  audio     speaker output                               rms<=466
+  1792668599.298   +3.623s  audio     speaker output                               rms<=346
+  1792668603.820  +18.712s  speech    reply 112948Z-holocene-pm-ca37...fad33c16.og ca3716f7-465a-5a59-a6f7-39b9fad33c16 -> end 
+  1792668604.713   +3.836s  audio     speaker output                               rms<=346
+  1792668608.687   +2.180s  audio     speaker output                               rms<=418
+  1792668611.056   +1.120s  audio     speaker output                               rms<=412
+  1792668612.478   +1.503s  audio     speaker output                               rms<=374
+  1792668614.331   +2.119s  audio     speaker output                               rms<=424
+  1792668616.659   +3.493s  audio     speaker output                               rms<=409
+  1792668620.642   +1.763s  audio     speaker output                               rms<=378
+  1792668652.530   +2.395s  speech    arming arm:17924140                          - -> end 
+  1792668652.954   +1.312s  audio     speaker output                               rms<=608
+  1792668654.636   +0.307s  audio     speaker output                               rms<=654
+  1792668655.499   +3.555s  recording app mic                                     
+  1792668655.520   +3.517s  recording OS capture active                           
+  1792668659.055   +2.963s  speech    ack ack:stopped:17930638                     - -> end 
+  1792668659.366   +0.269s  audio     speaker output                               rms<=657
+  1792668659.955   +0.386s  audio     speaker output                               rms<=459
+  1792668660.734   +1.049s  audio     speaker output                               rms<=694
+  1792668662.032   +0.490s  speech    ack ack:sent:17930974                        - -> end 
+  1792668662.384   +0.315s  audio     speaker output                               rms<=654
+  1792668664.934   +4.218s  speech    echo echo:0f11aeb4-5419-5981-a534-8b288f94.. 0f11aeb4-5419-5981-a534-8b288f9462c3 -> end 
+  1792668665.997   +0.779s  audio     speaker output                               rms<=503
+  1792668667.204   +0.555s  audio     speaker output                               rms<=694
+  1792668667.900   +1.162s  audio     speaker output                               rms<=532
+  1792668679.556   +2.181s  speech    arming arm:17951151                          - -> end 
+  1792668680.038   +1.318s  audio     speaker output                               rms<=606
+  1792668681.585   +0.255s  audio     speaker output                               rms<=659
+  1792668682.221   +4.146s  recording OS capture active                           
+  1792668682.225   +4.129s  recording app mic                                     
+  1792668686.355   +3.818s  speech    ack ack:stopped:17957914                     - -> end 
+  1792668686.806   +0.583s  audio     speaker output                               rms<=661
+  1792668688.403   +0.375s  audio     speaker output                               rms<=496
+  1792668689.117   +0.899s  audio     speaker output                               rms<=551
+  1792668690.175   +0.488s  speech    ack ack:sent:17958548                        - -> end 
+  1792668690.527   +0.305s  audio     speaker output                               rms<=655
+  1792668691.443   +6.282s  speech    reply 113127Z-holocene-pm-0f11...8f9462c3.og 0f11aeb4-5419-5981-a534-8b288f9462c3 -> end 
+  1792668691.974   +0.761s  audio     speaker output                               rms<=229
+  1792668693.418   +2.595s  audio     speaker output                               rms<=438
+  1792668696.313   +1.263s  audio     speaker output                               rms<=301
+  1792668697.725   +4.681s  speech    echo echo:2a2411e7-fd6f-59be-91b2-88122595.. 2a2411e7-fd6f-59be-91b2-88122595bab8 -> end 
+  1792668698.978   +0.763s  audio     speaker output                               rms<=499
+  1792668700.061   +1.923s  audio     speaker output                               rms<=634
+  1792668705.514   +2.623s  speech    reply 113143Z-holocene-pm-2a24...2595bab8.og 2a2411e7-fd6f-59be-91b2-88122595bab8 -> end 
+  1792668706.089   +1.014s  audio     speaker output                               rms<=350
+  1792668707.526   +0.558s  audio     speaker output                               rms<=310
+  1792668712.062   +2.173s  speech    arming arm:17983673                          - -> end 
+  1792668712.506   +1.313s  audio     speaker output                               rms<=607
+  1792668714.078   +0.276s  audio     speaker output                               rms<=655
+  1792668714.677   +4.765s  recording app mic                                     
+  1792668714.681   +4.749s  recording OS capture active                           
+  1792668719.443   +2.744s  speech    ack ack:stopped:17991007                     - -> end 
+  1792668719.789   +0.257s  audio     speaker output                               rms<=659
+  1792668720.451   +0.378s  audio     speaker output                               rms<=444
+  1792668721.149   +0.908s  audio     speaker output                               rms<=561
+  1792668722.187   +0.527s  speech    ack ack:sent:17991422                        - -> end 
+  1792668722.518   +0.298s  audio     speaker output                               rms<=655
+  1792668725.376   +4.142s  speech    echo echo:b9631a03-e4fa-58e2-a70a-014e70c2.. b9631a03-e4fa-58e2-a70a-014e70c21553 -> end 
+  1792668726.569   +0.810s  audio     speaker output                               rms<=517
+  1792668727.720   +1.667s  audio     speaker output                               rms<=575
+  1792668738.643   +2.528s  speech    arming arm:18010271                          - -> end 
+  1792668739.035   +1.324s  audio     speaker output                               rms<=610
+  1792668740.801   +0.257s  audio     speaker output                               rms<=659
+  1792668742.037   +3.811s  recording app mic                                     
+  1792668742.041   +3.790s  recording OS capture active                           
+  1792668745.849   +2.848s  speech    ack ack:stopped:18017400                     - -> end 
+  1792668746.171   +0.258s  audio     speaker output                               rms<=658
+  1792668746.949   +0.371s  audio     speaker output                               rms<=457
+  1792668747.652   +0.877s  audio     speaker output                               rms<=568
+  1792668748.701   +0.612s  speech    ack ack:sent:18017822                        - -> end 
+  1792668749.089   +0.297s  audio     speaker output                               rms<=656
+  1792668749.314   +3.591s  speech    progress progress:b9631a03-e4fa-58e2-a70a-01 b9631a03-e4fa-58e2-a70a-014e70c21553 -> end 
+  1792668749.897   +2.996s  audio     speaker output                               rms<=345
+  1792668753.897   +3.787s  speech    echo echo:19313975-4157-56cd-8dff-78f97419.. 19313975-4157-56cd-8dff-78f974192eeb -> end 
+  1792668754.478   +0.818s  audio     speaker output                               rms<=495
+  1792668755.617   +1.992s  audio     speaker output                               rms<=574
+  1792668767.554   +2.136s  speech    arming arm:18039161                          - -> end 
+  1792668768.002   +1.304s  audio     speaker output                               rms<=609
+  1792668769.514   +0.274s  audio     speaker output                               rms<=656
+  1792668770.132   +6.263s  recording OS capture active                           
+  1792668770.135   +6.272s  recording app mic                                     
+  1792668776.411   +3.438s  speech    ack ack:stopped:18047688                     - -> end 
+  1792668776.959   +0.260s  audio     speaker output                               rms<=662
+  1792668778.071   +0.365s  audio     speaker output                               rms<=442
+  1792668778.766   +0.926s  audio     speaker output                               rms<=532
+  1792668779.850   +0.445s  speech    ack ack:sent:18049390                        - -> end 
+  1792668780.182   +0.296s  audio     speaker output                               rms<=656
+  1792668780.296   +2.387s  speech    reply 113257Z-holocene-pm-1931...74192eeb.og 19313975-4157-56cd-8dff-78f974192eeb -> end 
+  1792668780.877   +0.979s  audio     speaker output                               rms<=366
+  1792668782.133   +0.577s  audio     speaker output                               rms<=394
+  1792668782.685   +1.571s  speech    progress progress:b9631a03-e4fa-58e2-a70a-01 b9631a03-e4fa-58e2-a70a-014e70c21553 -> halt memo_final
+  1792668784.516   +0.046s  audio     speaker output                               rms<=97
+  1792668784.840  +25.359s  speech    reply 113301Z-holocene-pm-b963...70c21553.og b9631a03-e4fa-58e2-a70a-014e70c21553 -> end chunks=3
+  1792668785.332   +0.859s  audio     speaker output                               rms<=286
+  1792668786.723   +4.515s  audio     speaker output                               rms<=285
+  1792668791.760   +2.190s  audio     speaker output                               rms<=292
+  1792668794.278   +2.825s  audio     speaker output                               rms<=420
+  1792668797.272   +1.583s  audio     speaker output                               rms<=308
+  1792668799.023   +1.781s  audio     speaker output                               rms<=289
+  1792668801.576   +5.219s  audio     speaker output                               rms<=375
+  1792668807.167   +3.073s  audio     speaker output                               rms<=400
+  1792668810.246   +4.917s  speech    echo echo:ca4d8ebb-e2b6-5a5e-b3ec-f30065b4.. ca4d8ebb-e2b6-5a5e-b3ec-f30065b4b1c1 -> end 
+  1792668811.629   +0.788s  audio     speaker output                               rms<=504
+  1792668812.780   +0.193s  audio     speaker output                               rms<=424
+  1792668813.211   +1.833s  audio     speaker output                               rms<=662
+  1792668815.164   +8.131s  speech    reply 113331Z-holocene-pm-ca4d...65b4b1c1.og ca4d8ebb-e2b6-5a5e-b3ec-f30065b4b1c1 -> end 
+  1792668815.739   +0.986s  audio     speaker output                               rms<=371
+  1792668816.900   +2.089s  audio     speaker output                               rms<=399
+  1792668819.186   +1.293s  audio     speaker output                               rms<=308
+  1792668820.627   +0.596s  audio     speaker output                               rms<=440
+  1792668821.361   +1.961s  audio     speaker output                               rms<=414
+  1792668832.900   +2.426s  speech    arming arm:18104474                          - -> end 
+  1792668833.329   +1.321s  audio     speaker output                               rms<=597
+  1792668835.110   +0.287s  audio     speaker output                               rms<=656
+  1792668835.894   +4.479s  recording app mic                                     
+  1792668835.898   +4.453s  recording OS capture active                           
+  1792668840.374   +3.469s  speech    ack ack:stopped:18111979                     - -> end 
+  1792668840.683   +0.319s  audio     speaker output                               rms<=662
+  1792668841.428   +0.379s  audio     speaker output                               rms<=452
+  1792668842.126   +1.006s  audio     speaker output                               rms<=570
+  1792668843.859   +0.643s  speech    ack ack:sent:18112694                        - -> end 
+  1792668844.353   +0.335s  audio     speaker output                               rms<=654
+  1792668846.542   +7.959s  speech    reply 113404Z-holocene-pm-8f9d...d7eab436.og 8f9d5446-d1b6-58b4-a4ea-7b08d7eab436 -> end chunks=2
+  1792668847.073   +1.168s  audio     speaker output                               rms<=300
+  1792668848.431   +0.628s  audio     speaker output                               rms<=204
+  1792668849.237   +0.818s  audio     speaker output                               rms<=223
+  1792668850.263   +0.516s  audio     speaker output                               rms<=208
+  1792668851.288   +0.164s  audio     speaker output                               rms<=159
+  1792668851.891   +2.227s  audio     speaker output                               rms<=289
+  1792668923.822   +2.096s  speech    arming arm:18195425                          - -> end 
+  1792668924.199   +1.308s  audio     speaker output                               rms<=606
+  1792668925.745   +0.245s  audio     speaker output                               rms<=655
+  1792668926.370   +4.625s  recording app mic                                     
+  1792668926.380   +4.613s  recording OS capture active                           
+  1792668930.996   +2.655s  speech    ack ack:stopped:18202568                     - -> end 
+  1792668931.280   +0.257s  audio     speaker output                               rms<=661
+  1792668931.913   +0.385s  audio     speaker output                               rms<=457
+  1792668932.627   +0.873s  audio     speaker output                               rms<=553
+  1792668933.651   +0.563s  speech    ack ack:sent:18203055                        - -> end 
+  1792668933.989   +0.304s  audio     speaker output                               rms<=654
+  1792669011.431   +4.449s  speech    echo echo:49496ddc-e11e-5ca1-9a03-d3ec4a68.. 49496ddc-e11e-5ca1-9a03-d3ec4a685889 -> end 
+  1792669012.644   +0.825s  audio     speaker output                               rms<=498
+  1792669013.778   +1.989s  audio     speaker output                               rms<=653
+  1792669021.792   +4.697s  speech    progress progress:49496ddc-e11e-5ca1-9a03-d3 49496ddc-e11e-5ca1-9a03-d3ec4a685889 -> end 
+  1792669022.374   +1.048s  audio     speaker output                               rms<=332
+  1792669023.862   +2.389s  audio     speaker output                               rms<=314
+  1792669033.147  +11.657s  speech    reply 113710Z-holocene-pm-4949...4a685889.og 49496ddc-e11e-5ca1-9a03-d3ec4a685889 -> end chunks=2
+  1792669033.686   +0.969s  audio     speaker output                               rms<=315
+  1792669035.003   +4.212s  audio     speaker output                               rms<=475
+  1792669039.584   +0.094s  audio     speaker output                               rms<=351
+  1792669040.741   +1.394s  audio     speaker output                               rms<=471
+  1792669042.505   +2.305s  audio     speaker output                               rms<=410
+  1792669844.511   +2.145s  speech    arming arm:19116094                          - -> end 
+  1792669844.956   +1.297s  audio     speaker output                               rms<=610
+  1792669846.492   +0.254s  audio     speaker output                               rms<=656
+  1792669847.097   +3.175s  recording OS capture active                           
+  1792669847.098   +3.224s  recording app mic                                     
+  1792669850.325   +3.441s  speech    ack ack:stopped:19121804                     - -> end 
+  1792669850.875   +0.258s  audio     speaker output                               rms<=662
+  1792669851.814   +0.448s  audio     speaker output                               rms<=476
+  1792669852.487   +0.976s  audio     speaker output                               rms<=542
+  1792669853.774   +0.773s  speech    ack ack:sent:19123068                        - -> end 
+  1792669854.323   +0.369s  audio     speaker output                               rms<=1140
+  1792669911.105   +4.348s  speech    arming arm:19182572                          - -> end 
+  1792669911.987   +3.076s  audio     speaker output                               rms<=689
+  1792669915.187   +0.388s  audio     speaker output                               rms<=659
+  1792669916.008   +6.010s  recording app mic                                     
+  1792669916.046   +5.804s  recording OS capture active                           
+  1792669922.177   +4.596s  speech    ack ack:stopped:19193024                     - -> end 
+  1792669922.901   +0.255s  audio     speaker output                               rms<=659
+  1792669924.666   +0.371s  audio     speaker output                               rms<=462
+  1792669925.367   +1.011s  audio     speaker output                               rms<=548
+  1792669926.778   +0.860s  speech    ack ack:sent:19196936                        - -> end 
+  1792669927.353   +0.307s  audio     speaker output                               rms<=658
+  1792669931.163  +15.772s  speech    reply 115209Z-holocene-pm-274e...fae6a523.og 274e4e9f-a6d4-50d5-a34b-0b08fae6a523 -> end chunks=3
+  1792669931.844   +1.112s  audio     speaker output                               rms<=334
+  1792669933.125   +1.517s  audio     speaker output                               rms<=338
+  1792669935.346   +0.579s  audio     speaker output                               rms<=301
+  1792669936.053   +1.036s  audio     speaker output                               rms<=319
+  1792669937.416   +1.029s  audio     speaker output                               rms<=287
+  1792669938.831   +0.871s  audio     speaker output                               rms<=243
+  1792669939.870   +0.074s  audio     speaker output                               rms<=176
+  1792669940.082   +1.151s  audio     speaker output                               rms<=230
+  1792669941.964   +1.064s  audio     speaker output                               rms<=275
+  1792669943.257   +0.910s  audio     speaker output                               rms<=264
+  1792669944.354   +2.640s  audio     speaker output                               rms<=341
+  1792669956.385   +2.173s  speech    arming arm:19227958                          - -> end 
+  1792669956.855   +1.307s  audio     speaker output                               rms<=609
+  1792669958.390   +0.265s  audio     speaker output                               rms<=656
+  1792669959.001   +4.151s  recording app mic                                     
+  1792669959.002   +4.125s  recording OS capture active                           
+  1792669963.154   +2.719s  speech    ack ack:stopped:19234700                     - -> end 
+  1792669963.473   +0.288s  audio     speaker output                               rms<=654
+  1792669964.112   +0.366s  audio     speaker output                               rms<=442
+  1792669964.810   +0.882s  audio     speaker output                               rms<=551
+  1792669965.878   +0.659s  speech    ack ack:sent:19235108                        - -> end 
+  1792669966.313   +0.307s  audio     speaker output                               rms<=656
+  1792669968.881   +4.488s  speech    reply 115246Z-holocene-pm-fe84...3f049279.og fe84cfc2-5874-5ef6-aeef-ad523f049279 -> end 
+  1792669969.699   +3.740s  audio     speaker output                               rms<=359
+  1792669982.709   +2.293s  speech    arming arm:19254296                          - -> end 
+  1792669983.270   +1.312s  audio     speaker output                               rms<=609
+  1792669984.841   +0.275s  audio     speaker output                               rms<=656
+  1792669985.448   +3.461s  recording app mic                                     
+  1792669985.464   +3.447s  recording OS capture active                           
+  1792669988.911   +2.781s  speech    ack ack:stopped:19260451                     - -> end 
+  1792669989.298   +0.257s  audio     speaker output                               rms<=661
+  1792669989.963   +0.377s  audio     speaker output                               rms<=452
+  1792669990.660   +0.900s  audio     speaker output                               rms<=565
+  1792669991.692   +0.641s  speech    ack ack:sent:19260875                        - -> end 
+  1792669992.019   +0.336s  audio     speaker output                               rms<=657
+  1792669995.664  +11.646s  speech    reply 115313Z-holocene-pm-4c74...9507cae3.og 4c74df67-68a0-5ef8-a246-86049507cae3 -> end chunks=2
+  1792669996.265   +2.067s  audio     speaker output                               rms<=293
+  1792669998.678   +0.707s  audio     speaker output                               rms<=284
+  1792669999.684   +0.819s  audio     speaker output                               rms<=270
+  1792670000.711   +0.810s  audio     speaker output                               rms<=296
+  1792670002.686   +1.843s  audio     speaker output                               rms<=270
+  1792670004.807   +0.696s  audio     speaker output                               rms<=189
+  1792670005.741   +1.480s  audio     speaker output                               rms<=313
+  1792670016.441   +2.178s  speech    arming arm:19288029                          - -> end 
+  1792670016.885   +1.322s  audio     speaker output                               rms<=608
+  1792670018.435   +0.285s  audio     speaker output                               rms<=654
+  1792670019.077   +4.125s  recording OS capture active                           
+  1792670019.085   +4.139s  recording app mic                                     
+  1792670023.225   +2.689s  speech    ack ack:stopped:19294791                     - -> end 
+  1792670023.513   +0.277s  audio     speaker output                               rms<=654
+  1792670024.167   +0.375s  audio     speaker output                               rms<=460
+  1792670024.864   +0.916s  audio     speaker output                               rms<=551
+  1792670025.916   +0.580s  speech    ack ack:sent:19295195                        - -> end 
+  1792670026.310   +0.295s  audio     speaker output                               rms<=657
+  1792670028.513   +9.640s  speech    reply 115347Z-holocene-pm-a66b...d58024af.og a66b53bd-ad33-5bc4-a282-20c1d58024af -> end chunks=2
+  1792670029.164   +1.180s  audio     speaker output                               rms<=313
+  1792670030.552   +0.396s  audio     speaker output                               rms<=259
+  1792670031.069   +0.184s  audio     speaker output                               rms<=112
+  1792670033.099   +3.108s  audio     speaker output                               rms<=364
+  1792670036.507   +1.565s  audio     speaker output                               rms<=360
+  1792670047.118   +2.145s  speech    arming arm:19318720                          - -> end 
+  1792670047.524   +1.311s  audio     speaker output                               rms<=610
+  1792670049.065   +0.285s  audio     speaker output                               rms<=656
+  1792670049.717   +3.312s  recording app mic                                     
+  1792670049.728   +3.291s  recording OS capture active                           
+  1792670053.030   +2.664s  speech    ack ack:stopped:19324562                     - -> end 
+  1792670053.357   +0.258s  audio     speaker output                               rms<=660
+  1792670053.972   +0.379s  audio     speaker output                               rms<=460
+  1792670054.668   +0.879s  audio     speaker output                               rms<=548
+  1792670055.694   +0.549s  speech    ack ack:sent:19324995                        - -> end 
+  1792670056.036   +0.305s  audio     speaker output                               rms<=655
+  1792670059.259  +11.822s  speech    reply 115417Z-holocene-pm-ff98...78deb0c2.og ff987b9c-be80-5fbd-8709-ef9578deb0c2 -> end chunks=2
+  1792670060.137   +3.820s  audio     speaker output                               rms<=382
+  1792670065.171   +2.067s  audio     speaker output                               rms<=382
+  1792670067.377   +3.573s  audio     speaker output                               rms<=372
+  1792670080.554   +2.173s  speech    arming arm:19352132                          - -> end 
+  1792670080.990   +1.331s  audio     speaker output                               rms<=608
+  1792670082.549   +0.308s  audio     speaker output                               rms<=656
+  1792670083.148   +3.987s  recording app mic                                     
+  1792670083.148   +3.940s  recording OS capture active                           
+  1792670087.136   +2.774s  speech    ack ack:stopped:19358667                     - -> end 
+  1792670087.481   +0.279s  audio     speaker output                               rms<=661
+  1792670088.186   +0.366s  audio     speaker output                               rms<=458
+  1792670088.880   +0.896s  audio     speaker output                               rms<=563
+  1792670089.911   +0.549s  speech    ack ack:sent:19359184                        - -> end 
+  1792670090.246   +0.325s  audio     speaker output                               rms<=656
+  1792670094.220  +11.560s  speech    reply 115452Z-holocene-pm-b92c...64eb6f1c.og b92c55e4-5899-5e59-9aec-914c64eb6f1c -> end chunks=2
+  1792670094.840   +0.297s  audio     speaker output                               rms<=312
+  1792670095.272   +2.794s  audio     speaker output                               rms<=268
+  1792670099.261   +0.307s  audio     speaker output                               rms<=103
+  1792670099.707   +0.190s  audio     speaker output                               rms<=136
+  1792670100.046   +0.286s  audio     speaker output                               rms<=133
+  1792670100.476   +0.198s  audio     speaker output                               rms<=44
+  1792670101.098   +1.207s  audio     speaker output                               rms<=211
+  1792670102.484   +0.053s  audio     speaker output                               rms<=34
+  1792670102.833   +0.166s  audio     speaker output                               rms<=272
+  1792670103.168   +0.409s  audio     speaker output                               rms<=305
+  1792670103.815   +1.674s  audio     speaker output                               rms<=337
+  1792670115.510   +2.623s  speech    arming arm:19387047                          - -> end 
+  1792670116.229   +1.321s  audio     speaker output                               rms<=608
+  1792670117.921   +0.255s  audio     speaker output                               rms<=655
+  1792670119.064   +4.416s  recording app mic                                     
+  1792670119.184   +4.303s  recording OS capture active                           
+  1792670123.481   +2.808s  speech    ack ack:stopped:19395032                     - -> end 
+  1792670123.820   +0.247s  audio     speaker output                               rms<=876
+  1792670124.516   +0.376s  audio     speaker output                               rms<=463
+  1792670125.222   +0.901s  audio     speaker output                               rms<=550
+  1792670126.293   +0.655s  speech    ack ack:sent:19395449                        - -> end 
+  1792670126.753   +0.305s  audio     speaker output                               rms<=655
+  1792670128.323   +3.053s  speech    reply 115526Z-holocene-pm-186d...bf3baf0a.og 186d8b65-6ab5-516b-a235-8a23bf3baf0a -> end 
+  1792670128.894   +2.206s  audio     speaker output                               rms<=386
+  1792670140.828   +2.219s  speech    arming arm:19412397                          - -> end 
+  1792670141.274   +1.321s  audio     speaker output                               rms<=610
+  1792670142.852   +0.287s  audio     speaker output                               rms<=657
+  1792670143.474   +3.829s  recording app mic                                     
+  1792670143.477   +3.816s  recording OS capture active                           
+  1792670147.304   +2.764s  speech    ack ack:stopped:19418865                     - -> end 
+  1792670147.629   +0.443s  audio     speaker output                               rms<=662
+  1792670148.317   +0.369s  audio     speaker output                               rms<=480
+  1792670149.013   +0.909s  audio     speaker output                               rms<=555
+  1792670150.068   +0.548s  speech    ack ack:sent:19419276                        - -> end 
+  1792670150.412   +0.297s  audio     speaker output                               rms<=657
+  1792670153.362  +12.265s  speech    reply 115551Z-holocene-pm-ff1c...076746b2.og ff1c670e-2bae-5867-b9a9-6bf4076746b2 -> end chunks=2
+  1792670154.288   +1.570s  audio     speaker output                               rms<=318
+  1792670156.036   +0.952s  audio     speaker output                               rms<=311
+  1792670157.109   +1.193s  audio     speaker output                               rms<=280
+  1792670159.509   +2.777s  audio     speaker output                               rms<=382
+  1792670162.494   +1.068s  audio     speaker output                               rms<=298
+  1792670163.730   +0.717s  audio     speaker output                               rms<=331
+  1792670164.706   +0.808s  audio     speaker output                               rms<=315
+  1792670174.676   +2.284s  speech    arming arm:19446287                          - -> end 
+  1792670175.190   +1.307s  audio     speaker output                               rms<=595
+  1792670176.827   +0.255s  audio     speaker output                               rms<=655
+  1792670177.465   +3.877s  recording app mic                                     
+  1792670177.502   +3.786s  recording OS capture active                           
+  1792670181.375   +1.579s  speech    ack ack:stopped:19452722                     - -> end error:focus_denied
+  1792670182.066   +0.248s  audio     speaker output                               rms<=1102
+  1792670183.553   +1.172s  speech    ack ack:sent:19455195                        - -> end 
+  1792670184.247   +0.431s  audio     speaker output                               rms<=743
+  1792670189.386   +5.202s  speech    reply 115626Z-holocene-pm-237b...6d28d1d7.og 237be94b-6703-59fe-aa9e-2bf76d28d1d7 -> end 
+  1792670189.975   +2.562s  audio     speaker output                               rms<=427
+  1792670192.836   +0.469s  audio     speaker output                               rms<=471
+  1792670193.521   +0.716s  audio     speaker output                               rms<=346
+  1792670204.236   +2.448s  speech    arming arm:19475747                          - -> end 
+  1792670204.736   +1.336s  audio     speaker output                               rms<=610
+  1792670206.371   +0.277s  audio     speaker output                               rms<=659
+  1792670207.549   +5.147s  recording app mic                                     
+  1792670207.559   +5.059s  recording OS capture active                           
+  1792670212.699   +3.423s  speech    ack ack:stopped:19484091                     - -> end 
+  1792670213.417   +0.257s  audio     speaker output                               rms<=659
+  1792670214.214   +0.365s  audio     speaker output                               rms<=451
+  1792670214.929   +0.902s  audio     speaker output                               rms<=555
+  1792670216.174   +0.717s  speech    ack ack:sent:19485373                        - -> end 
+  1792670216.624   +0.308s  audio     speaker output                               rms<=658
+  1792670221.325  +11.493s  speech    reply 115658Z-holocene-pm-e644...de5bcb92.og e644ac41-1a27-55ee-8d70-43c3de5bcb92 -> end chunks=2
+  1792670222.283   +0.812s  audio     speaker output                               rms<=509
+  1792670223.355   +1.666s  audio     speaker output                               rms<=371
+  1792670225.463   +0.395s  audio     speaker output                               rms<=379
+  1792670226.028   +0.366s  audio     speaker output                               rms<=350
+  1792670226.604   +0.596s  audio     speaker output                               rms<=366
+  1792670228.566   +1.372s  audio     speaker output                               rms<=296
+  1792670230.311   +1.903s  audio     speaker output                               rms<=288
+  1792670232.352   +0.074s  audio     speaker output                               rms<=37
+  1792670242.772   +2.612s  speech    arming arm:19514278                          - -> end 
+  1792670243.462   +1.351s  audio     speaker output                               rms<=614
+  1792670245.162   +0.274s  audio     speaker output                               rms<=655
+  1792670246.019   +4.970s  recording app mic                                     
+  1792670246.027   +4.904s  recording OS capture active                           
+  1792670250.991   +3.310s  speech    ack ack:stopped:19522393                     - -> end 
+  1792670251.615   +0.268s  audio     speaker output                               rms<=658
+  1792670252.496   +0.367s  audio     speaker output                               rms<=456
+  1792670253.194   +0.884s  audio     speaker output                               rms<=560
+  1792670254.306   +0.623s  speech    ack ack:sent:19523652                        - -> end 
+  1792670254.749   +0.325s  audio     speaker output                               rms<=659
+  1792670258.277   +5.223s  speech    reply 115735Z-holocene-pm-40cf...fc31fd41.og 40cfdcdb-1e10-55b9-b02b-8aaefc31fd41 -> end 
+  1792670258.964   +3.671s  audio     speaker output                               rms<=372
+  1792670262.821   +0.536s  audio     speaker output                               rms<=293
+  1792670272.624   +2.180s  speech    arming arm:19544231                          - -> end 
+  1792670273.110   +1.321s  audio     speaker output                               rms<=598
+  1792670274.640   +0.274s  audio     speaker output                               rms<=658
+  1792670275.251   +4.158s  recording app mic                                     
+  1792670275.263   +4.111s  recording OS capture active                           
+  1792670279.410   +2.807s  speech    ack ack:stopped:19550932                     - -> end 
+  1792670279.767   +0.271s  audio     speaker output                               rms<=661
+  1792670280.480   +0.365s  audio     speaker output                               rms<=457
+  1792670281.193   +0.880s  audio     speaker output                               rms<=547
+  1792670282.218   +0.615s  speech    ack ack:sent:19551418                        - -> end 
+  1792670282.535   +0.425s  audio     speaker output                               rms<=663
+  1792670285.634  +10.149s  speech    reply 115803Z-holocene-pm-f99c...de77f617.og f99cb796-f675-5fdd-b9c9-3a25de77f617 -> end chunks=2
+  1792670286.995   +3.290s  audio     speaker output                               rms<=442
+  1792670291.447   +4.067s  audio     speaker output                               rms<=349
+  1792670355.408   +2.519s  speech    arming arm:19626957                          - -> end 
+  1792670356.035   +1.301s  audio     speaker output                               rms<=615
+  1792670357.781   +0.254s  audio     speaker output                               rms<=658
+  1792670358.726   +6.138s  recording app mic                                     
+  1792670358.744   +6.067s  recording OS capture active                           
+  1792670364.868   +3.488s  speech    ack ack:stopped:19636318                     - -> end 
+  1792670365.415   +0.284s  audio     speaker output                               rms<=662
+  1792670366.283   +0.376s  audio     speaker output                               rms<=454
+  1792670366.992   +0.945s  audio     speaker output                               rms<=566
+  1792670368.392   +0.624s  speech    ack ack:sent:19637572                        - -> end 
+  1792670368.757   +0.314s  audio     speaker output                               rms<=656
+  1792670373.618   +8.457s  speech    reply 115929Z-holocene-pm-4d3b...3225b4c7.og 4d3b0968-f9ba-54b2-a878-c4383225b4c7 -> end 
+  1792670374.421   +0.277s  audio     speaker output                               rms<=352
+  1792670374.893   +1.431s  audio     speaker output                               rms<=319
+  1792670376.602   +2.031s  audio     speaker output                               rms<=281
+  1792670378.891   +1.299s  audio     speaker output                               rms<=291
+  1792670380.468   +1.493s  audio     speaker output                               rms<=306
+  1792670393.692   +2.583s  speech    arming arm:19665161                          - -> end 
+  1792670394.283   +1.325s  audio     speaker output                               rms<=607
+  1792670396.001   +0.285s  audio     speaker output                               rms<=656
+  1792670397.059   +3.310s  recording app mic                                     
+  1792670397.059   +3.293s  recording OS capture active                           
+  1792670400.373   +3.932s  speech    ack ack:stopped:19671678                     - -> end 
+  1792670400.983   +0.257s  audio     speaker output                               rms<=660
+  1792670402.186   +0.539s  audio     speaker output                               rms<=439
+  1792670402.933   +1.079s  audio     speaker output                               rms<=551
+  1792670404.312   +0.726s  speech    ack ack:sent:19673189                        - -> end 
+  1792670404.796   +0.335s  audio     speaker output                               rms<=655
+  1792670407.265   +0.312s  speech    reply 120004Z-holocene-pm-8356...5ebb42fb.og 835608b6-ad96-5886-a608-f85f5ebb42fb -> end error:focus_denied
+  1792670408.532   +6.184s  speech    reply 120004Z-holocene-pm-8356...5ebb42fb.og 835608b6-ad96-5886-a608-f85f5ebb42fb -> end 
+  1792670409.757   +1.467s  audio     speaker output                               rms<=326
+  1792670411.545   +1.767s  audio     speaker output                               rms<=284
+  1792670413.520   +0.928s  audio     speaker output                               rms<=428
+  1792670434.034   +2.415s  speech    arming arm:19705637                          - -> end 
+  1792670434.405   +1.322s  audio     speaker output                               rms<=607
+  1792670436.356   +0.277s  audio     speaker output                               rms<=658
+  1792670437.153   +3.112s  recording app mic                                     
+  1792670437.200   +2.999s  recording OS capture active                           
+  1792670440.267   +3.648s  speech    ack ack:stopped:19711575                     - -> end 
+  1792670440.697   +0.270s  audio     speaker output                               rms<=661
+  1792670442.078   +0.370s  audio     speaker output                               rms<=454
+  1792670442.712   +0.885s  audio     speaker output                               rms<=740
+  1792670443.982   +0.795s  speech    ack ack:sent:19713097                        - -> end 
+  1792670444.589   +0.325s  audio     speaker output                               rms<=654
+  1792670448.137   +6.281s  speech    reply 120045Z-holocene-pm-6e2d...cc9d4324.og 6e2d9416-f01e-5e74-9685-6ff5cc9d4324 -> end 
+  1792670449.026   +3.213s  audio     speaker output                               rms<=242
+  1792670452.428   +1.441s  audio     speaker output                               rms<=304
+  1792670662.279   +2.275s  speech    arming arm:19933786                          - -> end 
+  1792670662.855   +1.291s  audio     speaker output                               rms<=597
+  1792670664.407   +0.256s  audio     speaker output                               rms<=655
+  1792670665.133   +3.414s  recording app mic                                     
+  1792670665.139   +3.463s  recording OS capture active                           
+  1792670668.548   +2.915s  speech    ack ack:stopped:19939834                     - -> end 
+  1792670668.972   +0.271s  audio     speaker output                               rms<=662
+  1792670669.717   +0.365s  audio     speaker output                               rms<=455
+  1792670670.450   +0.902s  audio     speaker output                               rms<=566
+  1792670671.463   +0.764s  speech    ack ack:sent:19940934                        - -> end 
+  1792670671.913   +0.429s  audio     speaker output                               rms<=659
+  1792670676.402   +7.088s  speech    reply 120433Z-holocene-pm-4685...4883ed01.og 46851691-9321-5a4e-8ed4-2fdf4883ed01 -> end chunks=2
+  1792670677.507   +2.413s  audio     speaker output                               rms<=338
+  1792670680.052   +0.584s  audio     speaker output                               rms<=222
+  1792670681.092   +1.252s  audio     speaker output                               rms<=321
+  1792670682.652   +0.790s  audio     speaker output                               rms<=346
+  1792670734.522   +2.952s  speech    arming arm:20006071                          - -> end 
+  1792670735.286   +1.412s  audio     speaker output                               rms<=620
+  1792670737.166   +0.366s  audio     speaker output                               rms<=767
+  1792670738.365   +4.144s  recording app mic                                     
+  1792670738.403   +4.088s  recording OS capture active                           
+  1792670742.511   +3.707s  speech    ack ack:stopped:20014068                     - -> end 
+  1792670742.954   +0.207s  audio     speaker output                               rms<=870
+  1792670743.658   +0.368s  audio     speaker output                               rms<=444
+  1792670744.350   +0.905s  audio     speaker output                               rms<=562
+  1792670746.252   +0.710s  speech    ack ack:sent:20014885                        - -> end 
+  1792670746.732   +0.337s  audio     speaker output                               rms<=658
+  1792670753.282   +9.678s  speech    reply 120548Z-holocene-pm-cf7f...21d115e2.og cf7fe6ad-5e60-5d51-8706-819621d115e2 -> end chunks=2
+  1792670754.268   +1.454s  audio     speaker output                               rms<=380
+  1792670755.969   +1.512s  audio     speaker output                               rms<=358
+  1792670758.627   +1.722s  audio     speaker output                               rms<=294
+  1792670760.700   +0.552s  audio     speaker output                               rms<=304
+  1792670761.516   +1.138s  audio     speaker output                               rms<=290
+  1792670780.957   +2.637s  speech    arming arm:20052168                          - -> end 
+  1792670781.803   +1.343s  audio     speaker output                               rms<=596
+  1792670783.471   +0.256s  audio     speaker output                               rms<=655
+  1792670784.215   +3.807s  recording OS capture active                           
+  1792670784.222   +3.826s  recording app mic                                     
+  1792670788.050   +3.250s  speech    ack ack:stopped:20059364                     - -> end 
+  1792670788.496   +0.264s  audio     speaker output                               rms<=654
+  1792670789.227   +0.378s  audio     speaker output                               rms<=452
+  1792670789.871   +1.293s  audio     speaker output                               rms<=581
+  1792670791.300   +0.449s  speech    ack ack:sent:20060359                        - -> end 
+  1792670791.648   +0.306s  audio     speaker output                               rms<=654
+  1792670791.749  +27.551s  speech    reply 120627Z-holocene-pm-8356...5ebb42fb.og 835608b6-ad96-5886-a608-f85f5ebb42fb -> end chunks=3
+  1792670792.394   +0.835s  audio     speaker output                               rms<=302
+  1792670793.414   +2.037s  audio     speaker output                               rms<=438
+  1792670797.195   +0.023s  audio     speaker output                               rms<=42
+  1792670797.418   +0.721s  audio     speaker output                               rms<=307
+  1792670798.324   +5.261s  audio     speaker output                               rms<=353
+  1792670803.806   +1.045s  audio     speaker output                               rms<=361
+  1792670808.555   +2.276s  audio     speaker output                               rms<=343
+  1792670810.998   +2.733s  audio     speaker output                               rms<=330
+  1792670814.073   +5.185s  audio     speaker output                               rms<=326
+  1792670819.506   +2.404s  speech    reply 120631Z-holocene-pm-cf62...6937080a.og cf62ad60-e040-5549-9fab-a30d6937080a -> end 
+  1792670820.260   +0.534s  audio     speaker output                               rms<=349
+  1792670820.984   +0.975s  audio     speaker output                               rms<=342
+  1792670845.113   +2.771s  speech    arming arm:20116652                          - -> end 
+  1792670845.976   +1.513s  audio     speaker output                               rms<=597
+  1792670847.833   +0.293s  audio     speaker output                               rms<=656
+  1792670848.571   +3.784s  recording app mic                                     
+  1792670848.578   +3.762s  recording OS capture active                           
+  1792670852.360   +3.003s  speech    ack ack:stopped:20123837                     - -> end 
+  1792670852.842   +0.247s  audio     speaker output                               rms<=656
+  1792670853.534   +0.378s  audio     speaker output                               rms<=452
+  1792670854.208   +0.978s  audio     speaker output                               rms<=641
+  1792670855.364   +0.495s  speech    ack ack:sent:20124588                        - -> end 
+  1792670855.721   +0.329s  audio     speaker output                               rms<=655
+  1792670859.649  +11.241s  speech    reply 120736Z-holocene-pm-417a...a6f3efc8.og 417aebe5-42d0-5adb-81a5-b257a6f3efc8 -> end chunks=2
+  1792670860.332   +3.070s  audio     speaker output                               rms<=450
+  1792670863.673   +0.836s  audio     speaker output                               rms<=537
+  1792670865.508   +1.806s  audio     speaker output                               rms<=335
+  1792670867.622   +0.997s  audio     speaker output                               rms<=333
+  1792670869.335   +1.018s  audio     speaker output                               rms<=316
+  1792670902.905   +2.219s  speech    arming arm:20174481                          - -> end 
+  1792670903.327   +1.318s  audio     speaker output                               rms<=590
+  1792670904.974   +0.245s  audio     speaker output                               rms<=656
+  1792670905.596   +2.570s  recording app mic                                     
+  1792670905.602   +2.555s  recording OS capture active                           
+  1792670908.167   +2.783s  speech    ack ack:stopped:20179778                     - -> end 
+  1792670908.454   +0.257s  audio     speaker output                               rms<=659
+  1792670909.069   +0.377s  audio     speaker output                               rms<=457
+  1792670909.775   +0.898s  audio     speaker output                               rms<=561
+  1792670910.969   +0.954s  speech    ack ack:sent:20180042                        - -> end 
+  1792670911.499   +0.289s  audio     speaker output                               rms<=710
+  1792670915.301   +7.261s  speech    reply 120831Z-holocene-pm-7727...9976f53c.og 77270f62-60e4-5250-ac93-b64f9976f53c -> end 
+  1792670916.723   +1.743s  audio     speaker output                               rms<=371
+  1792670918.817   +0.750s  audio     speaker output                               rms<=449
+  1792670919.693   +1.025s  audio     speaker output                               rms<=294
+  1792670920.966   +1.488s  audio     speaker output                               rms<=421
+  1792670939.939   +2.233s  speech    arming arm:20211550                          - -> end 
+  1792670940.458   +1.333s  audio     speaker output                               rms<=608
+  1792670941.999   +0.275s  audio     speaker output                               rms<=654
+  1792670942.611   +5.071s  recording app mic                                     
+  1792670942.631   +5.073s  recording OS capture active                           
+  1792670947.684   +2.780s  speech    ack ack:stopped:20219202                     - -> end 
+  1792670948.186   +0.257s  audio     speaker output                               rms<=658
+  1792670948.761   +0.355s  audio     speaker output                               rms<=454
+  1792670949.408   +0.860s  audio     speaker output                               rms<=581
+  1792670950.465   +0.529s  speech    ack ack:sent:20219892                        - -> end 
+  1792670950.786   +0.317s  audio     speaker output                               rms<=658
+  1792670951.179   +5.890s  speech    echo echo:322d6e5a-4ea9-53f9-80d4-fe07b3c6.. 322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f -> end 
+  1792670953.255   +0.775s  audio     speaker output                               rms<=500
+  1792670954.360   +0.225s  audio     speaker output                               rms<=460
+  1792670954.713   +1.940s  audio     speaker output                               rms<=549
+  1792670973.258   +5.916s  speech    progress progress:322d6e5a-4ea9-53f9-80d4-fe 322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f -> end 
+  1792670973.947   +0.981s  audio     speaker output                               rms<=220
+  1792670975.307   +3.200s  audio     speaker output                               rms<=265
+  1792671008.022   +6.471s  speech    progress progress:322d6e5a-4ea9-53f9-80d4-fe 322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f -> end 
+  1792671009.430   +1.263s  audio     speaker output                               rms<=348
+  1792671011.042   +3.277s  audio     speaker output                               rms<=284
+  1792671026.176  +14.656s  speech    reply 121022Z-holocene-pm-322d...b3c61e7f.og 322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f -> end chunks=2
+  1792671027.536   +0.959s  audio     speaker output                               rms<=372
+  1792671028.752   +1.227s  audio     speaker output                               rms<=353
+  1792671030.195   +2.617s  audio     speaker output                               rms<=476
+  1792671032.967   +0.747s  audio     speaker output                               rms<=268
+  1792671034.597   +6.214s  audio     speaker output                               rms<=432
+  1792671075.408   +2.127s  speech    arming arm:20347011                          - -> end 
+  1792671075.818   +1.302s  audio     speaker output                               rms<=609
+  1792671077.380   +0.275s  audio     speaker output                               rms<=657
+  1792671077.966   +5.686s  recording OS capture active                           
+  1792671077.967   +5.737s  recording app mic                                     
+  1792671083.708   +3.097s  speech    ack ack:stopped:20355089                     - -> end 
+  1792671084.140   +0.260s  audio     speaker output                               rms<=661
+  1792671084.949   +0.363s  audio     speaker output                               rms<=455
+  1792671085.645   +0.902s  audio     speaker output                               rms<=561
+  1792671086.832   +0.834s  speech    ack ack:sent:20355901                        - -> end 
+  1792671087.481   +0.334s  audio     speaker output                               rms<=655
+  1792671091.864   +8.057s  speech    reply 121128Z-holocene-pm-a323...08a285a1.og a323d28a-c03a-5e27-935b-eec008a285a1 -> end 
+  1792671092.599   +0.348s  audio     speaker output                               rms<=391
+  1792671093.183   +1.343s  audio     speaker output                               rms<=339
+  1792671094.875   +1.047s  audio     speaker output                               rms<=316
+  1792671096.350   +0.715s  audio     speaker output                               rms<=308
+  1792671097.364   +0.184s  audio     speaker output                               rms<=290
+  1792671097.705   +0.303s  audio     speaker output                               rms<=331
+  1792671098.214   +1.293s  audio     speaker output                               rms<=288
+  1792671100.659  +28.422s  speech    reply 121128Z-holocene-pm-322d...b3c61e7f.og 322d6e5a-4ea9-53f9-80d4-fe07b3c61e7f -> end chunks=3
+  1792671102.135   +1.279s  audio     speaker output                               rms<=369
+  1792671103.594   +0.711s  audio     speaker output                               rms<=679
+  1792671104.772   +1.111s  audio     speaker output                               rms<=436
+  1792671106.239   +2.061s  audio     speaker output                               rms<=430
+  1792671108.459   +1.845s  audio     speaker output                               rms<=461
+  1792671111.034   +0.265s  audio     speaker output                               rms<=296
+  1792671111.688   +0.929s  audio     speaker output                               rms<=315
+  1792671112.770   +3.357s  audio     speaker output                               rms<=426
+  1792671116.386   +2.830s  audio     speaker output                               rms<=340
+  1792671119.727   +2.740s  audio     speaker output                               rms<=372
+  1792671122.635   +0.928s  audio     speaker output                               rms<=370
+  1792671123.721   +0.889s  audio     speaker output                               rms<=395
+  1792671124.857   +1.238s  audio     speaker output                               rms<=401
+  1792671126.374   +2.692s  audio     speaker output                               rms<=442
+  1792671141.017   +2.150s  speech    arming arm:20412621                          - -> end 
+  1792671141.459   +1.338s  audio     speaker output                               rms<=606
+  1792671143.028   +0.286s  audio     speaker output                               rms<=655
+  1792671143.589   +4.028s  recording app mic                                     
+  1792671143.591   +3.990s  recording OS capture active                           
+  1792671147.619   +2.784s  speech    ack ack:stopped:20419083                     - -> end 
+  1792671148.042   +0.269s  audio     speaker output                               rms<=661
+  1792671148.712   +0.312s  audio     speaker output                               rms<=701
+  1792671149.361   +0.861s  audio     speaker output                               rms<=725
+  1792671150.403   +0.611s  speech    ack ack:sent:20419889                        - -> end 
+  1792671150.721   +0.316s  audio     speaker output                               rms<=654
+  1792671155.332   +5.694s  speech    reply 121232Z-holocene-pm-408d...b047a268.og 408d5592-a741-53b3-92b5-d49ab047a268 -> end 
+  1792671155.881   +0.319s  audio     speaker output                               rms<=322
+  1792671156.336   +1.649s  audio     speaker output                               rms<=355
+  1792671158.123   +0.195s  audio     speaker output                               rms<=273
+  1792671158.656   +2.189s  audio     speaker output                               rms<=324
+  1792671263.406   +7.035s  speech    arming arm:20534885                          - -> end 
+  1792671264.191   +3.586s  audio     speaker output                               rms<=760
+  1792671268.005   +1.472s  audio     speaker output                               rms<=514
+  1792671270.007   +0.456s  audio     speaker output                               rms<=658
+  1792671271.916   +3.049s  recording app mic                                     
+  1792671271.983   +2.955s  recording OS capture active                           
+  1792671274.968   +3.183s  speech    ack ack:stopped:20546347                     - -> end 
+  1792671275.388   +0.257s  audio     speaker output                               rms<=658
+  1792671276.144   +0.375s  audio     speaker output                               rms<=445
+  1792671276.849   +0.942s  audio     speaker output                               rms<=562
+  1792671278.161   +0.883s  speech    ack ack:sent:20547989                        - -> end 
+  1792671278.895   +0.298s  audio     speaker output                               rms<=655
+  1792671281.387   +3.002s  speech    reply 121439Z-holocene-pm-0274...22cb5d1d.og 02748d8d-aefa-50fd-a954-2e7222cb5d1d -> end 
+  1792671282.543   +1.668s  audio     speaker output                               rms<=460
+  1792671298.028   +2.804s  speech    arming arm:20569491                          - -> end 
+  1792671298.766   +1.370s  audio     speaker output                               rms<=597
+  1792671300.605   +0.285s  audio     speaker output                               rms<=657
+  1792671301.592   +6.002s  recording app mic                                     
+  1792671301.695   +5.873s  recording OS capture active                           
+  1792671307.595   +2.717s  speech    ack ack:stopped:20579124                     - -> end 
+  1792671308.027   +0.275s  audio     speaker output                               rms<=656
+  1792671308.601   +0.377s  audio     speaker output                               rms<=453
+  1792671309.299   +0.878s  audio     speaker output                               rms<=542
+  1792671310.312   +0.474s  speech    ack ack:sent:20579714                        - -> end 
+  1792671310.668   +0.305s  audio     speaker output                               rms<=655
+  1792671310.786   +5.178s  speech    echo echo:d59568f7-53da-55f9-ac43-15c51f64.. d59568f7-53da-55f9-ac43-15c51f642f60 -> end 
+  1792671311.920   +0.769s  audio     speaker output                               rms<=492
+  1792671312.962   +1.095s  audio     speaker output                               rms<=596
+  1792671314.314   +1.086s  audio     speaker output                               rms<=504
+  1792671328.217   +2.126s  speech    arming arm:20599826                          - -> end 
+  1792671328.623   +1.330s  audio     speaker output                               rms<=625
+  1792671330.182   +0.285s  audio     speaker output                               rms<=657
+  1792671330.768   +4.651s  recording app mic                                     
+  1792671330.777   +4.596s  recording OS capture active                           
+  1792671335.458   +3.316s  speech    ack ack:stopped:20606822                     - -> end 
+  1792671335.983   +0.269s  audio     speaker output                               rms<=803
+  1792671336.892   +0.375s  audio     speaker output                               rms<=467
+  1792671337.616   +0.890s  audio     speaker output                               rms<=665
+  1792671338.782   +0.703s  speech    ack ack:sent:20608055                        - -> end 
+  1792671339.285   +0.325s  audio     speaker output                               rms<=654
+  1792671339.987   +6.049s  speech    echo echo:c0d5858b-aeb1-564f-a02d-f2253f90.. c0d5858b-aeb1-564f-a02d-f2253f9012fa -> end 
+  1792671342.590   +0.920s  audio     speaker output                               rms<=525
+  1792671344.094   +1.760s  audio     speaker output                               rms<=730
+  1792671438.310   +2.173s  speech    arming arm:20709906                          - -> end 
+  1792671438.804   +1.312s  audio     speaker output                               rms<=604
+  1792671440.354   +0.275s  audio     speaker output                               rms<=657
+  1792671441.162   +6.025s  recording app mic                                     
+  1792671441.191   +5.999s  recording OS capture active                           
+  1792671447.188   +2.963s  speech    ack ack:stopped:20718641                     - -> end 
+  1792671447.584   +0.459s  audio     speaker output                               rms<=658
+  1792671448.371   +0.367s  audio     speaker output                               rms<=456
+  1792671449.155   +0.860s  audio     speaker output                               rms<=560
+  1792671450.152   +0.436s  speech    ack ack:sent:20719406                        - -> end 
+  1792671450.525   +0.305s  audio     speaker output                               rms<=656
+  1792671455.619   +6.739s  speech    reply 121732Z-holocene-pm-24fb...fcf0d345.og 24fb1a0f-9993-53d5-b6f8-2229fcf0d345 -> end 
+  1792671456.176   +2.808s  audio     speaker output                               rms<=355
+  1792671459.536   +0.647s  audio     speaker output                               rms<=318
+  1792671460.412   +0.558s  audio     speaker output                               rms<=256
+  1792671461.228   +0.507s  audio     speaker output                               rms<=264
+  1792671461.924   +0.235s  audio     speaker output                               rms<=217
+  1792671477.257   +5.826s  speech    arming arm:20748776                          - -> end 
+  1792671478.519   +3.402s  audio     speaker output                               rms<=633
+  1792671482.904   +0.270s  audio     speaker output                               rms<=658
+  1792671484.174   +8.926s  recording app mic                                     
+  1792671484.268   +8.795s  recording OS capture active                           
+  1792671493.122   +1.485s  speech    ack ack:stopped:20764248                     - -> end error:focus_denied
+  1792671498.927   +0.396s  speech    ack ack:sent:20770573                        - -> end error:focus_denied
+  1792671507.468   +8.835s  speech    reply 121824Z-holocene-pm-fbe3...4574260c.og fbe3463d-13bb-50ec-8b3c-365f4574260c -> end 
+  1792671510.884   +2.595s  audio     speaker output                               rms<=268
+  1792671514.424   +1.850s  audio     speaker output                               rms<=264
+  1792671554.770   +2.199s  speech    arming arm:20826338                          - -> end 
+  1792671555.293   +1.278s  audio     speaker output                               rms<=598
+  1792671556.818   +0.259s  audio     speaker output                               rms<=658
+  1792671557.434   +4.851s  recording OS capture active                           
+  1792671557.449   +4.882s  recording app mic                                     
+  1792671562.333   +3.773s  speech    ack ack:stopped:20833752                     - -> end 
+  1792671562.869   +0.327s  audio     speaker output                               rms<=1113
+  1792671564.206   +0.422s  audio     speaker output                               rms<=486
+  1792671564.957   +0.947s  audio     speaker output                               rms<=538
+  1792671566.112   +1.152s  speech    ack ack:sent:20835594                        - -> end 
+  1792671567.039   +0.308s  audio     speaker output                               rms<=655
+  1792671572.343   +5.958s  speech    reply 121929Z-holocene-pm-125d...9bd36f52.og 125df7aa-d567-5477-b8fe-2b2a9bd36f52 -> end 
+  1792671573.732   +2.242s  audio     speaker output                               rms<=251
+  1792671576.121   +0.976s  audio     speaker output                               rms<=207
+  1792671577.222   +0.488s  audio     speaker output                               rms<=254
+  1792671577.897   +0.234s  audio     speaker output                               rms<=197
+  1792671597.270   +2.401s  speech    arming arm:20868830                          - -> end 
+  1792671597.748   +1.425s  audio     speaker output                               rms<=597
+  1792671599.572   +0.255s  audio     speaker output                               rms<=656
+  1792671600.435   +6.310s  recording app mic                                     
+  1792671600.501   +5.958s  recording OS capture active                           
+  1792671606.880   +1.367s  speech    ack ack:stopped:20876783                     - -> end error:focus_denied
+  1792671612.672   +0.851s  speech    ack ack:sent:20884318                        - -> end error:focus_denied
+  1792671619.841   +0.600s  speech    reply 122015Z-holocene-pm-d4b7...6f8f9fc9.og d4b78844-d9cc-56da-8ea6-df446f8f9fc9 -> end error:focus_denied
+  1792671623.474   +5.859s  speech    reply 122015Z-holocene-pm-d4b7...6f8f9fc9.og d4b78844-d9cc-56da-8ea6-df446f8f9fc9 -> end 
+  1792671624.915   +2.221s  audio     speaker output                               rms<=294
+  1792671627.292   +0.157s  audio     speaker output                               rms<=250
+  1792671627.605   +0.209s  audio     speaker output                               rms<=210
+  1792671628.128   +0.785s  audio     speaker output                               rms<=257
+  1792671642.226   +2.437s  speech    arming arm:20913742                          - -> end 
+  1792671642.859   +1.305s  audio     speaker output                               rms<=599
+  1792671644.483   +0.266s  audio     speaker output                               rms<=658
+  1792671645.379   +3.237s  recording app mic                                     
+  1792671645.497   +3.056s  recording OS capture active                           
+  1792671648.618   +3.356s  speech    ack ack:stopped:20920072                     - -> end 
+  1792671649.045   +0.281s  audio     speaker output                               rms<=661
+  1792671650.028   +0.400s  audio     speaker output                               rms<=447
+  1792671650.856   +0.915s  audio     speaker output                               rms<=574
+  1792671651.987   +0.563s  speech    ack ack:sent:20921207                        - -> end 
+  1792671652.373   +0.326s  audio     speaker output                               rms<=654
+  1792671655.717   +7.169s  speech    reply 122053Z-holocene-pm-44c0...3b9d8ac3.og 44c0d0f8-aac1-52ae-a6a1-5bc03b9d8ac3 -> end chunks=2
+  1792671656.915   +1.651s  audio     speaker output                               rms<=321
+  1792671658.724   +1.393s  audio     speaker output                               rms<=295
+  1792671661.076   +0.812s  audio     speaker output                               rms<=205
+  1792671662.088   +0.448s  audio     speaker output                               rms<=106
+  1792671690.012   +2.451s  speech    arming arm:20961552                          - -> end 
+  1792671690.572   +1.323s  audio     speaker output                               rms<=615
+  1792671692.267   +0.275s  audio     speaker output                               rms<=656
+  1792671693.166   +1.089s  recording app mic                                     
+  1792671693.255   +1.000s  recording OS capture active                           
+
+PASS  1 speech x speech (queue): 0 overlaps
+FAIL  2 speech x recording (queue vs app mic + OS capture, tolerance 30 ms): 2 overlap(s)
+        11 ms  speech ack ack:stopped:17099860 [1792667828.366, 1792667831.143)  x  recording OS capture active [1792667824.019, 1792667828.407)
+        24 ms  speech ack ack:stopped:19939834 [1792670668.548, 1792670671.463)  x  recording OS capture active [1792670665.139, 1792670668.602)
+PASS  3 HAL assistant mix x OS capture (tolerance 30 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 30 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+      speaker output: 932 spans, 932.0 s of sound in the window
+RESULT OVERLAPS FOUND  (370 utterances, 84 app recordings, 84 OS capture windows, 370 HAL mix windows)

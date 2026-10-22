@@ -806,6 +806,47 @@ in the log). After editing it:
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
 
+## Verified live: the fast in-car desk (2026-10-22, sim emulator-5554)
+
+Honda sim, driving mode, holocene-pm, converse on for the sim device only (flag file), watcher at the commits listed in
+`_bmad-output/implementation-artifacts/agent-pad-auto/converse-e2e/evidence.md` (the full record, scenarios S1-S13, traces and
+the overlap files live in that folder). Speech went through the `holo_testmic` null sink. **The model criterion is not met:**
+Hyper (the key shared with Hindsight) was out of credit (`402`), so deepseek-v4.1-flash-1017 answered none of the run; the
+non-Anthropic gateway rungs answered all of it (`ministral-14b` 39 decisions, `gemini-3.5-flash-lite` 36, `k3-256k` 1; none
+Anthropic).
+
+| record stop to the first sound of the answer, 12 fast turns of one conversation | p50 | p90 | max |
+| --- | --- | --- | --- |
+| first speaker-tap packet after the car starts the reply | **7.80 s** | **10.39 s** | 11.59 s |
+| the car starts the reply (`HoloceneSpeech start reply`) | 6.81 s | 9.42 s | 10.90 s |
+
+Every one is `routed action=reply`, no `dispatched` fact; the LLM took 0.6-2.1 s; the rest is upload (p50 0.8 s), whisper
+(p50 +2.4 s from the stop), TTS and the pad's two ack cues in front of the reply (`waited_ms` 2.0-3.3 s).
+
+| scenario | result |
+| --- | --- |
+| S2 propose, S6 "let it change the code", S4 duplicate "send it", S5 "how's that going", S7 "ask <agent> directly", S12 kill switch | pass |
+| S3 confirm | one batch follow-up with a uuid5 command id, one journal row, one `delegated` fact; "Sending to ..." audible at 7.7-10.4 s (the 7 s target is not met: it waits behind the acks) |
+| S8 retarget | live: named `Flume PM` -> `target_agent_id=flume-pm`, journal profile flume-pm; the unnamed refusal is unit-tested only |
+| S9, S10 | a delegation result halted by a new recording replays in full after the note; a fast reply the driver records over is not replayed (`skipped barged_in`) |
+| S11 | Hyper unroutable -> a gateway rung answers; every rung unroutable -> today's path, `fallback_reason=all_routes_failed`, echo back |
+| S13 | drafts expired unsent after 600 s (`converse_draft_expired` x2); the `sim_stop.sh` half was not run |
+
+Gateway journal, per confirmed brief (5): 1 row, `lane=batch`, command id = `uuid5` of the brief id, 1 `audio.memo.delegated`,
+1 follow-up `dispatched`; 6 repeated "send it" turns published nothing.
+
+Overlap audit (`apps/auto/tools/speech_overlap.py`, speaker tap + logcat): period 1 (370 utterances, 84 recordings, tol 60 ms)
+ZERO OVERLAPS on all six checks; period 2 (59 utterances, 14 recordings, **tol 30 ms**) ZERO OVERLAPS on all six; whole session
+logcat only (516 utterances, 117 recordings): ZERO OVERLAPS at 60 ms. At 30 ms, check 2 flags 2 recordings where the pad's own
+`ack:stopped` cue started 1 ms after `mic=idle` and the OS capture dump lagged 41 and 54 ms. The tap has no data from 12:24 to
+12:53Z (its 90 minutes ran out), so checks 4-5 did not run in that gap.
+
+What the run fixed (all in `converse.py`, tested): a 402 opens a rung for 10 minutes; ministral-14b and gemini-3.5-flash-lite
+rungs ahead of kimi/glm; whisper's "S-Send it!" matches the lexicons; "I've sent it" is not rewritten while a delegation exists;
+a propose with no title or brief goes to the next rung, then the guard builds it from the driver's words; an expired draft says
+so; "send it" with nothing pending is never a draft or a direct turn; a gateway timeout blames the upstream channel, not the
+gateway.
+
 ## Verified live: fast model, answer-then-background (2026-10-22, sim emulator-5554)
 
 Four holocene-pm memos from the simulator (flite speech through the null-sink mic), watcher 4e52756 + f9c35f5,

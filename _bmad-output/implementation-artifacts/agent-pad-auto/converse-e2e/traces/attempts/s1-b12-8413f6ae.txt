@@ -1,0 +1,35 @@
+memo_id  8413f6ae-9daf-5101-ba92-7ab16e6eaf20
+key      inbox/holocene-pm/2026/10/22/20261022T111854Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: gateway starting, 0/4 in flight, 0 queued | batch: gateway starting, 1/4 held for re-run, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=8413f6ae-9daf-5101-ba92-7ab16e6eaf20&limit=100'
+
+  OK      s3_object                  2026-10-22T11:19:04.000Z           inbox/holocene-pm/2026/10/22/20261022T111854Z.ogg  21085 bytes
+  OK      upload_proxy_log           2026-10-22T11:19:04.578Z  +0.6s    {"ts":"2026-10-22T11:19:04.578Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T111854Z.ogg","memo_id":"8413f6ae-9daf-51
+  OK      fact:uploaded              2026-10-22T11:19:04.578Z  +0.0s    21085 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -7 dBFS, window avg -13 dBFS
+  OK      fact:received              2026-10-22T11:19:05.276Z  +0.7s    watcher saw it, lag 706ms
+  OK      fact:transcribed           2026-10-22T11:19:06.345Z  +1.1s    49 chars in 0.48s (large-v3-turbo, gpu server, cuda), audio max -7 dBFS, mean -26 dBFS over 4.8 s: 'Repeat your very first answer to me in this chat.'
+  OK      fast:routed                2026-10-22T11:19:07.566Z  +1.2s    reply gemini-3.5-flash-lite@r3c (3 attempts, 898 ms, 3697 in / 47 out) failed: r1 breaker_open, r2 breaker_open conv f1f51857 turn 12
+  OK      audio_level                2026-10-22T11:19:06.345Z  +0.0s    max -7 dBFS, mean -26 dBFS over 4.8 s  -> audible | device heard peak -7 dBFS, window avg -13 dBFS
+  OK      car:chunk#1of2             2026-10-22T11:19:10.122Z  +3.8s    56 chars, tts 1.94s, 2.56s after the agent finished -> replies/2026/10/22/111907Z-holocene-pm-8413f6ae-9daf-5101-ba92-7ab16e6eaf20-c01of02.opus
+  OK      car:chunk#2of2             2026-10-22T11:19:12.025Z  +1.9s    56 chars, tts 1.88s, 4.46s after the agent finished -> replies/2026/10/22/111907Z-holocene-pm-8413f6ae-9daf-5101-ba92-7ab16e6eaf20-c02of02.opus
+  OK      fact:replied               2026-10-22T11:19:13.055Z  +1.0s    113 chars, tts 4.46s (voxcpm) -> replies/2026/10/22/111907Z-holocene-pm-8413f6ae-9daf-5101-ba92-7ab16e6eaf20.ogg, 2 chunks (first up 2.25s, last 4.15s after the reply text)
+  OK      reply_object               2026-10-22T11:19:12.000Z  +0.0s    replies/2026/10/22/111907Z-holocene-pm-8413f6ae-9daf-5101-ba92-7ab16e6eaf20.ogg  30047 bytes
+  OK      pad_playback_log           2026-10-22T11:19:10.531Z  +0.0s    {"ts":"2026-10-22T11:19:10.531Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/111907Z-holocene-pm-8413f6ae-9daf-5101-ba92-7ab16e6eaf20.
+  OK      played_on_pad              2026-10-22T11:19:10.531Z  +0.0s    reply started 0.4s after the first chunk was up (3531 ms after the key stamp, TTS included), ended after 5.44s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      car_status_object          2026-10-22T11:19:13.232Z  +2.7s    status/2026/10/22/8413f6ae-9daf-5101-ba92-7ab16e6eaf20.json: stage=done progress_seq=0 narrations=0 elapsed=8.7s
+
+car speech (7 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.2s     ack       deferred     reason recording  while recording  mic recording
+  -0.2s     ack       start        reason waited_ms=219
+  +2.4s     ack       end          
+  +2.4s     ack       start        reason waited_ms=2312
+  +3.3s     ack       end          
+  +5.9s     reply     start        reason waited_ms=1
+  +12.6s    reply     end          reason chunks=2
+
+timing   since upload (server clock): transcribed +1.8s | routed +3.0s | ack -0.2s | first audio up +5.5s | full reply up +7.4s | reply played +5.9s
+
+VERDICT  COMPLETE in 8.0s; played on the pad 0.4s after the first chunk was up

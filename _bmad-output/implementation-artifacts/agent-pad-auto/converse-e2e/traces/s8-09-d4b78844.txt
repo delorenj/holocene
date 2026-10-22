@@ -1,0 +1,45 @@
+memo_id  d4b78844-d9cc-56da-8ea6-df446f8f9fc9
+key      inbox/holocene-pm/2026/10/22/20261022T121957Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=d4b78844-d9cc-56da-8ea6-df446f8f9fc9&limit=100'
+
+  OK      s3_object                  2026-10-22T12:20:13.000Z           inbox/holocene-pm/2026/10/22/20261022T121957Z.ogg  7587 bytes
+  OK      upload_proxy_log           2026-10-22T12:20:13.164Z  +0.2s    {"ts":"2026-10-22T12:20:13.163Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T121957Z.ogg","memo_id":"d4b78844-d9cc-56
+  OK      fact:uploaded              2026-10-22T12:20:13.165Z  +0.0s    7587 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -6 dBFS, window avg -16 dBFS
+  OK      fact:received              2026-10-22T12:20:13.302Z  +0.1s    watcher saw it, lag 239ms
+  OK      fact:transcribed           2026-10-22T12:20:14.712Z  +1.4s    8 chars in 0.57s (large-v3-turbo, gpu server, cuda), audio max -6 dBFS, mean -28 dBFS over 2.2 s: 'Send it.'
+  OK      fast:routed                2026-10-22T12:20:15.066Z  +0.4s    confirm by the lexicon (confirm_only, no LLM call) conv f5b73ff0 turn 30 delegate to flume-pm: 'Check converse stage tests'
+  OK      audio_level                2026-10-22T12:20:14.712Z  +0.0s    max -6 dBFS, mean -28 dBFS over 2.2 s  -> audible | device heard peak -6 dBFS, window avg -16 dBFS
+  OK      car:chunk#1of1             2026-10-22T12:20:19.522Z  +4.8s    68 chars, tts 2.75s, 4.46s after the agent finished -> replies/2026/10/22/122015Z-holocene-pm-d4b78844-d9cc-56da-8ea6-df446f8f9fc9.ogg
+  OK      fact:replied               2026-10-22T12:20:22.121Z  +2.6s    68 chars, tts 2.75s (voxcpm) -> replies/2026/10/22/122015Z-holocene-pm-d4b78844-d9cc-56da-8ea6-df446f8f9fc9.ogg
+  OK      reply_object               2026-10-22T12:20:19.000Z  +0.0s    replies/2026/10/22/122015Z-holocene-pm-d4b78844-d9cc-56da-8ea6-df446f8f9fc9.ogg  16592 bytes
+  OK      pad_playback_log           2026-10-22T12:26:23.798Z  +364.8s  {"ts":"2026-10-22T12:26:23.798Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/122544Z-holocene-pm-d4b78844-d9cc-56da-8ea6-df446f8f9fc9.
+  OK      played_on_pad              2026-10-22T12:20:25.281Z  +0.0s    reply started 5.8s after the reply was up (10281 ms after the key stamp, TTS included), ended after 4.16s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      followup#1:dispatched      2026-10-22T12:20:22.823Z  +0.0s    command 3652a708-7e62-54e0-a3f9-51a7dfe4efd9 -> bloodbank.cmd.agent.invocation.start lane=batch DELEGATED to flume-pm: 'Check converse stage tests' (brief 0879d570, read_only, conversation f5b73ff0)
+  OK      followup#1:gateway_journal 2026-10-22T12:20:22.858Z  +0.0s    lane=batch profile=flume-pm state=completed outcome=success created=2026-10-22T12:20:22.858283Z updated=2026-10-22T12:25:43.926635Z
+  OK      followup#1:agent:invocation.started 2026-10-22T12:20:22.858Z  +0.0s    producer=hermes-agent:flume-pm
+  OK      followup#1:agent:progress#1 2026-10-22T12:22:01.791Z  +98.9s   98.1s into the turn: 'The driver asked about "converse stage" tests. The only "converse" hit in the flume repo is `bedrock_converse`'
+  OK      followup#1:agent:progress#2 2026-10-22T12:22:21.617Z  +19.8s   117.9s into the turn: 'The driver asked about "converse stage" — in the flume repo this maps to `bedrock_converse` in the copier temp'
+  OK      followup#1:agent:invocation.done 2026-10-22T12:25:43.926Z  +202.3s  invocation.completed
+  OK      followup#1:replied         2026-10-22T12:26:25.562Z  +41.6s   5975 chars -> replies/2026/10/22/122544Z-holocene-pm-d4b78844-d9cc-56da-8ea6-df446f8f9fc9.ogg: 'I have a complete picture. The converse stage lives in **holocene** (not flume — the drive'
+  OK      car_status_object          2026-10-22T12:26:25.698Z  +0.1s    status/2026/10/22/d4b78844-d9cc-56da-8ea6-df446f8f9fc9.json: stage=done progress_seq=2 narrations=0 elapsed=372.6s
+
+car speech (11 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -3.7s     ack       deferred     reason recording  while recording  mic recording
+  -3.7s     ack       start        reason waited_ms=1750
+  -0.5s     ack       end          reason error:focus_denied
+  +2.7s     ack       start        reason waited_ms=8
+  +2.7s     ack       end          reason error:focus_denied
+  +8.5s     reply     start        reason waited_ms=11
+  +8.5s     reply     end          reason error:focus_denied
+  +12.1s    reply     start        reason waited_ms=39
+  +17.5s    reply     end          
+  +370.6s   reply     start        reason waited_ms=3129
+  +404.3s   reply     end          
+
+timing   since upload (server clock): transcribed +1.5s | routed +1.9s | ack -3.7s | first progress +108.6s | first audio up +6.4s | phone decided +9.0s | reply played +8.5s
+
+VERDICT  COMPLETE (read-back) in 6.0s; played on the pad 5.8s after the reply was up; delegated to flume-pm: follow-up 1 spoken 366.6s after the quick answer

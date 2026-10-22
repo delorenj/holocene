@@ -1,0 +1,43 @@
+memo_id  11df7523-1568-56b1-a586-44302dc7b77b
+key      inbox/holocene-pm/2026/10/22/20261022T132846Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=11df7523-1568-56b1-a586-44302dc7b77b&limit=100'
+
+  OK      s3_object                  2026-10-22T13:28:55.000Z           inbox/holocene-pm/2026/10/22/20261022T132846Z.ogg  11170 bytes
+  OK      upload_proxy_log           2026-10-22T13:28:55.873Z  +0.9s    {"ts":"2026-10-22T13:28:55.873Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T132846Z.ogg","memo_id":"11df7523-1568-56
+  OK      fact:uploaded              2026-10-22T13:28:55.873Z  +0.0s    11170 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -6 dBFS, window avg -18 dBFS
+  OK      fact:received              2026-10-22T13:28:56.610Z  +0.7s    watcher saw it, lag 776ms
+  OK      fact:transcribed           2026-10-22T13:28:57.653Z  +1.0s    8 chars in 0.44s (large-v3-turbo, gpu server, cuda), audio max -7 dBFS, mean -31 dBFS over 3.4 s: 'Send it!'
+  OK      fast:routed                2026-10-22T13:28:57.844Z  +0.2s    confirm by the lexicon (confirm_only, no LLM call) conv f5b73ff0 turn 56 delegate to holocene-pm: 'Run the date command on the server'
+  OK      audio_level                2026-10-22T13:28:57.653Z  +0.0s    max -7 dBFS, mean -31 dBFS over 3.4 s  -> audible | device heard peak -6 dBFS, window avg -18 dBFS
+  OK      car:chunk#1of1             2026-10-22T13:29:02.428Z  +4.8s    79 chars, tts 3.09s, 4.58s after the agent finished -> replies/2026/10/22/132857Z-holocene-pm-11df7523-1568-56b1-a586-44302dc7b77b.ogg
+  OK      fact:replied               2026-10-22T13:29:03.835Z  +1.4s    79 chars, tts 3.09s (voxcpm) -> replies/2026/10/22/132857Z-holocene-pm-11df7523-1568-56b1-a586-44302dc7b77b.ogg
+  OK      reply_object               2026-10-22T13:29:01.000Z  +0.0s    replies/2026/10/22/132857Z-holocene-pm-11df7523-1568-56b1-a586-44302dc7b77b.ogg  25727 bytes
+  OK      pad_playback_log           2026-10-22T13:32:22.830Z  +201.8s  {"ts":"2026-10-22T13:32:22.830Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/133214Z-holocene-pm-11df7523-1568-56b1-a586-44302dc7b77b.
+  OK      played_on_pad              2026-10-22T13:29:03.667Z  +0.0s    reply started 1.2s after the reply was up (6666 ms after the key stamp, TTS included), ended after 6.08s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      followup#1:dispatched      2026-10-22T13:29:04.206Z  +0.5s    command 5b2244d1-d113-54b3-a4a2-fb3a9f3ccf94 -> bloodbank.cmd.agent.invocation.start lane=batch DELEGATED to holocene-pm: 'Run the date command on the server' (brief 783b93be, read_only, conversation f5b73ff0)
+  OK      followup#1:gateway_journal 2026-10-22T13:31:51.954Z  +167.7s  lane=batch profile=holocene-pm state=completed outcome=success created=2026-10-22T13:31:51.954517Z updated=2026-10-22T13:32:14.262129Z
+  OK      followup#1:agent:invocation.started 2026-10-22T13:31:51.954Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      followup#1:agent:invocation.done 2026-10-22T13:32:14.261Z  +22.3s   invocation.completed
+  OK      followup#1:replied         2026-10-22T13:32:23.556Z  +9.3s    82 chars -> replies/2026/10/22/133214Z-holocene-pm-11df7523-1568-56b1-a586-44302dc7b77b.ogg: 'The server time is Thursday, October 22nd, 2026, at 9:32 AM Eastern Daylight Time.'
+  OK      car_status_object          2026-10-22T13:32:23.725Z  +0.2s    status/2026/10/22/11df7523-1568-56b1-a586-44302dc7b77b.json: stage=done progress_seq=0 narrations=0 elapsed=207.9s
+
+car speech (11 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.6s     ack       start        reason waited_ms=233
+  -0.6s     ack       deferred     reason recording  while recording  mic recording
+  +2.5s     ack       end          
+  +2.5s     ack       start        reason waited_ms=2103
+  +3.1s     ack       end          
+  +7.7s     reply     start        reason waited_ms=8
+  +14.6s    reply     end          
+  +206.8s   reply     start        reason waited_ms=11
+  +213.2s   reply     halt         reason stopped
+  +226.2s   reply     start        reason waited_ms=3332
+  +235.9s   reply     end          
+
+timing   since upload (server clock): transcribed +1.8s | routed +2.0s | ack -0.6s | first audio up +6.6s | phone decided +8.0s | reply played +7.7s
+
+VERDICT  COMPLETE (read-back) in 6.0s; played on the pad 1.2s after the reply was up; delegated to holocene-pm: follow-up 1 spoken 202.6s after the quick answer

@@ -1,0 +1,34 @@
+memo_id  83f0a473-2775-5db0-a9a4-2722f8574fcf
+key      inbox/holocene-pm/2026/10/22/20261022T112647Z.ogg
+agent    holocene-pm
+command  -
+lane     -   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=83f0a473-2775-5db0-a9a4-2722f8574fcf&limit=100'
+
+  OK      s3_object                  2026-10-22T11:26:56.000Z           inbox/holocene-pm/2026/10/22/20261022T112647Z.ogg  12568 bytes
+  OK      upload_proxy_log           2026-10-22T11:26:56.380Z  +0.4s    {"ts":"2026-10-22T11:26:56.380Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T112647Z.ogg","memo_id":"83f0a473-2775-5d
+  OK      fact:uploaded              2026-10-22T11:26:56.380Z  +0.0s    12568 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -4 dBFS, window avg -15 dBFS
+  OK      fact:received              2026-10-22T11:26:57.393Z  +1.0s    watcher saw it, lag 1019ms
+  OK      fact:transcribed           2026-10-22T11:26:58.404Z  +1.0s    19 chars in 0.47s (large-v3-turbo, gpu server, cuda), audio max -4 dBFS, mean -30 dBFS over 4.2 s: "That's all. Thanks."
+  OK      fast:routed                2026-10-22T11:26:58.532Z  +0.1s    end by the lexicon (end_only, no LLM call) conv f1f51857 turn 25
+  OK      audio_level                2026-10-22T11:26:58.404Z  +0.0s    max -4 dBFS, mean -30 dBFS over 4.2 s  -> audible | device heard peak -4 dBFS, window avg -15 dBFS
+  OK      car:chunk#1of1             2026-10-22T11:27:00.539Z  +2.1s    16 chars, tts 1.31s, 2.01s after the agent finished -> replies/2026/10/22/112658Z-holocene-pm-83f0a473-2775-5db0-a9a4-2722f8574fcf.ogg
+  OK      fact:replied               2026-10-22T11:27:01.848Z  +1.3s    16 chars, tts 1.31s (voxcpm) -> replies/2026/10/22/112658Z-holocene-pm-83f0a473-2775-5db0-a9a4-2722f8574fcf.ogg
+  OK      reply_object               2026-10-22T11:27:00.000Z  +0.0s    replies/2026/10/22/112658Z-holocene-pm-83f0a473-2775-5db0-a9a4-2722f8574fcf.ogg  5771 bytes
+  OK      pad_playback_log           2026-10-22T11:27:01.213Z  +1.2s    {"ts":"2026-10-22T11:27:01.213Z","svc":"agent-pad-upload","event":"playback","key":"replies/2026/10/22/112658Z-holocene-pm-83f0a473-2775-5db0-a9a4-2722f8574fcf.
+  OK      played_on_pad              2026-10-22T11:27:01.213Z  +0.0s    reply started 0.7s after the reply was up (3213 ms after the key stamp, TTS included), ended after 1.6s (Mozilla/5.0 (Linux; Android 13; IVI-SYST)
+  OK      phone_object               -                                  not mirrored to the phone: the car that sent the memo started (or finished) it (a paired phone plays through the car's speakers: the same reply twice, or into a recording)
+  OK      car_status_object          2026-10-22T11:27:01.966Z  +0.8s    status/2026/10/22/83f0a473-2775-5db0-a9a4-2722f8574fcf.json: stage=done progress_seq=0 narrations=0 elapsed=5.6s
+
+car speech (7 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.2s     ack       deferred     reason recording  while recording  mic recording
+  -0.2s     ack       start        reason waited_ms=126
+  +2.5s     ack       end          
+  +2.5s     ack       start        reason waited_ms=2371
+  +3.0s     ack       end          
+  +4.8s     reply     start        reason waited_ms=5
+  +6.8s     reply     end          
+
+timing   since upload (server clock): transcribed +2.0s | routed +2.2s | ack -0.2s | first audio up +4.2s | reply played +4.8s
+
+VERDICT  COMPLETE in 4.0s; played on the pad 0.7s after the reply was up
