@@ -47,20 +47,26 @@ second ack (STOP + SENT).
 |---|---|---|---|---|---|---|---|---|
 | p2-01 | 1.50 | 0.63 | 3.83 (3737) | 1.69 | 53.3 | - | 63.9 | harness artifact: the next turn started recording during the reply and barged it (`playback / barged_in`). Excluded from p50/p90. |
 | p2-03 | 1.06 | 0.65 | 5.64 (5604) | 1.65 | 0.28 | 3.75 | **9.29** | |
-| p2-04 | 3.47 | 0.63 | 4.00 (3929) | 1.96 | 2.42 | 6.77 | **12.51** | 3 focus_denied halts on the reply |
+| p2-04 | 3.47 | 0.63 | 4.00 (3929) | 1.96 | 2.42 | 6.77 | **12.51** (audible 54.51) | the `start reply` was halted `focus_denied` 0.8 s later (twice), then `stopped` by p2-05's recording; the first `playback started` beacon is 20:36:11.871, 54.5 s after stop |
 | p2-05 | 7.84 | 0.82 | 5.31 (5263) | 1.87 | 12.0 | 10.85 | **27.85** | loaded |
 | p2-07 | 0.97 | 0.56 | 3.02 (2986) | - | - | 3.48 | **5.95** | best turn |
-| p2-08 | 1.07 | 0.63 | 3.46 (3417) | 1.91 | 41.1 | 5.20 | **48.18** | reply sat 41 s between chunk 1 landing and the car queueing it; cause not found (host load 90+; no recording was open) |
+| p2-08 | 1.07 | 0.63 | 3.46 (3417) | 1.91 | 41.1 | 5.20 | **48.18** | reply sat 41 s between chunk 1 landing and the car queueing it: it waited behind p2-06's 56 s full-agent reply (1e2280d4 played 20:37:46.050-20:38:42.591; the car held a675bc92 from 20:38:05 and started it at 20:38:47.433). Queue order, not a pad fault |
 | p2-09 | 5.77 | 1.09 | 8.33 (8268) | 1.88 | 11.7 | 12.83 | **28.82** | loaded |
 | p2-13 | 2.36 | 0.78 | 3.88 (3855) | 2.02 | 9.7 | 6.42 | **18.75** | |
 
 Fast-reply turns, n=7 (p2-01 excluded as a harness artifact):
 
-| stat | stop -> first start | stop -> chunk 1 in S3 (server side only) |
-|---|---|---|
-| p50 | **18.75 s** | 9.04 s |
-| p90 (nearest rank) | **28.82 s** | 15.84 s |
-| best / worst | 5.95 / 48.18 | 7.07 / 17.07 |
+| stat | stop -> first `start reply` | stop -> first `playback started` beacon (audible) | stop -> chunk 1 in S3 (server side only, n=6, p2-07 has no chunk) |
+|---|---|---|---|
+| p50 (nearest rank) | 18.75 s | **28.04 s** | 9.04 s |
+| p90 (nearest rank) | 48.18 s | **54.51 s** | 17.07 s |
+| best / worst | 5.95 / 48.18 | 6.02 / 54.51 | 7.07 / 17.07 |
+
+Corrected after review (21:40Z): the first version of this table gave p90 28.82 s and 17.07 -> 15.84 s; with n=7 the
+nearest-rank p90 is rank 7 (48.18 s), and with n=6 server-side values (7.07, 9.00, 9.04, 10.06, 15.84, 17.07) it is
+17.07 s. "First start" also counted p2-04 as 12.51 s, but that start was halted by `focus_denied` within 0.8 s and the
+reply was first heard 54.5 s after stop. The audible column uses the pad's `playback started` beacon in the proxy log
+(each within 0.07-0.36 s of `start reply` except p2-04).
 
 Host load during the run (`uptime`, load 1-min, sampled at each turn start; file `runs/phase2/uptime.txt`): 33.1 (p2-01),
 38.2, 49.6 (p2-03), then 80-106 from p2-04 on (106 at 16:41, 97-105 around the failed propose). For comparison the earlier
@@ -136,3 +142,35 @@ server-side stop -> chunk 1 would be about 5 s, plus the device recorder stop an
 - `runs/phase2/hops-rows.json` per-memo hop rows; `runs/phase2/analyze.py` builds them from logcat + watcher journal.
 - `runs/phase2/p2_driver_patch.py` driver wrapper; `runs/phase2/uptime.txt` load at each turn start.
 - Raw logcat, speaker tap and per-turn JSON stayed in `/tmp/conv-p2` (not committed; large).
+
+## Review fixes (2026-10-22, 21:10-21:45Z, commit 2f81e7a)
+
+What changed after the phase-2 review, and what was measured without the sim:
+
+| issue | fix | verified |
+|---|---|---|
+| 45,80 first beat left a 0.7-1.3 s pause after chunk 1 (major) | `MEMO_CONVERSE_CHUNK_CHARS=55,65,95,180,300`. Rule: chunk n+1 must render while chunk n plays; with render 1.6 s + 18 ms/char and speech about 51 ms/char, c(n+1) <= 2.8 c(n) - 89 | offline bench (below): mid-reply gaps 2.26 s total over 8 real replies -> 0.79 s, 3 replies with a pause -> 1; first chunk ready p50 1.98 -> 2.05 s after the decision |
+| in-process `cp` stored `binary/octet-stream` without `--attr` (major) | s3direct guesses the type the way mc does (`.ogg`/`.opus` -> `audio/ogg`, mimetypes, else `application/octet-stream`) | live probe through the watcher's own `mc()` on `delodrive`: `cp s3direct 0`, stat `Content-Type: audio/ogg`; unit test for 4 extensions |
+| cut download retried onto the same file | the body length is checked against `content-length` (a short `read()` is not an error in http.client), and the retry seeks back and truncates | unit test with a server that drops mid-body: the file equals the object |
+| `mc_cli` ignored the caller's timeout | the timeout is one wall-clock budget across both attempts (capped by `MEMO_S3_DIRECT_TIMEOUT_S`), then mc runs | unit test against a socket that never answers: back in under 2.5 s with timeout 1 |
+| state not saved after the final fact drain | `Watcher.shutdown` saves `state.json` after the drain | unit test: a publish failing in the drain is in the outbox on disk |
+| wake listener started before the baseline | it starts after `baseline_if_first_start()`, beside the discovery watch | wiring test; live journal 21:29:49Z: `starting` then `wake_listener` |
+| PhraseBank kept a fallback engine's render | only `MEMO_PHRASEBANK_ENGINES` (default `voxcpm`) renders are banked; the warm-up skips others | unit test: an `elevenlabs` render is spoken but not banked, the next `voxcpm` one is |
+| tests/bench pushed hints into the live proxy | `MEMO_PUSH_HINT_URL` is off in code and set in the unit; a watcher on any bucket but `holocene-auto` never hints | subprocess test; proxy log shows no `push_hint` from the three full test-suite runs after the change |
+| pad: duplicate holds 7 ms apart, a `drop duplicate` on a focus retry | the gate and the renew interval both go through `holdFor` (one in-flight hold per reply); `feedStream` re-checks that its stream is still current after the base64 encode, so an older stream cannot offer chunk 1 again after a focus retry restarted the reply | tsc, 75 pad tests; deployed bundle `index-DLS9RgDv.js` (same hash as a rebuild from HEAD). Not re-measured on the sim |
+| pad: outbox row written alongside the first PUT | the row is awaited before the PUT again (one IndexedDB write); a failed row write no longer aborts the upload | tsc, pad tests |
+| this file's stats | corrected above | - |
+
+Offline chunk-gap bench (`runs/phase2/gapbench/`): the 8 real fast-reply texts of this run, split with the old and new
+caps and rendered back to back through the live vox at the desk's 6 steps in the default voice, then replayed as the pad
+plays them (chunk i starts at max(end of chunk i-1, landed_i + 0.3 s)). Host load 15-23.
+
+| config | first chunk ready after the decision, p50 | replies with a pause | total pause |
+|---|---|---|---|
+| 45,80,170,300 | 1.98 s (one 4.8 s vox-contention outlier) | 3 of 8 (0.79, 1.04, 0.43 s) | 2.26 s |
+| 55,65,95,180,300 | 2.05 s | 1 of 8 (0.79 s: a 42-character first sentence, then a 58-character chunk that took 3.2 s to render) | 0.79 s |
+
+Latency after the fixes: the sim proof above still stands as the only end-to-end number (audible p50 28.0 s / p90 54.5 s,
+loaded sim, n=7), and the target is NOT demonstrated. No sim rerun was done for these fixes: the only spoken change is
+chunk timing, measured offline above. The server side is unchanged by the fixes apart from +0.07 s to the first chunk.
+The dominant lever is still the LLM route (3.0-8.3 s on `automaticai/auto/fast` -> `glm-5.3`).
