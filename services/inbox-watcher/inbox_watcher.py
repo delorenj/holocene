@@ -971,8 +971,15 @@ class Watcher:
                     error=str(e)[:300], outbox=len(self.s.data["outbox"]))
         self.facts.submit(work)
 
+    PUSH_HINT_KEYS = ("chunk_s3_key", "reply_s3_key", "progress_s3_key", "chunk", "chunks", "narration", "seq")
+
     def fact_fast(self, action: str, m: dict, payload: dict) -> None:
-        """received | transcribed | voiced: async when MEMO_FACTS_ASYNC=1, else exactly fact()."""
+        """received | transcribed | voiced: the car is told over loopback first (push_hint, ~2 ms, on a thread of its own so it
+        never waits behind a publish; the proxy drops the NATS copy as the duplicate it is), then the fact is published:
+        async when MEMO_FACTS_ASYNC=1, else exactly fact()."""
+        if action in PUSH_HINT_ACTIONS and PUSH_HINT_URL:
+            hint = {"target_agent_id": m.get("agent"), **{k: payload[k] for k in self.PUSH_HINT_KEYS if k in payload}}
+            threading.Thread(target=push_hint, args=(action, m["memo_id"], hint), name="push-hint", daemon=True).start()
         if FACTS_ASYNC:
             return self.fact_async(action, m, payload)
         return self.fact(action, m, payload)
@@ -4457,7 +4464,8 @@ def start_wake_listener(w: "Watcher", port: int = WAKE_PORT) -> "http.server.Thr
 # before the fact is emitted; the proxy pushes it at once and drops the NATS copy as a duplicate. Fail-open and bounded: a
 # proxy that is down or slow costs nothing but the time it would have saved. `data` must carry the keys the fact carries
 # (chunk_s3_key / reply_s3_key / progress_s3_key, chunk, chunks, narration, seq) or the duplicate is not recognised.
-PUSH_HINT_URL = os.environ.get("MEMO_PUSH_HINT_URL", "http://127.0.0.1:8698/internal/push")
+# (A test run never reaches the live proxy: with unittest loaded the default is off unless MEMO_PUSH_HINT_URL says otherwise.)
+PUSH_HINT_URL = os.environ.get("MEMO_PUSH_HINT_URL", "" if "unittest" in sys.modules else "http://127.0.0.1:8698/internal/push")
 PUSH_HINT_TIMEOUT_S = float(os.environ.get("MEMO_PUSH_HINT_TIMEOUT_S", "0.3"))
 PUSH_HINT_ACTIONS = ("received", "transcribed", "dispatched", "narrated", "voiced", "replied")
 

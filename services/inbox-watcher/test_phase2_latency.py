@@ -3,6 +3,7 @@ discovery hand-off and the level probe running alongside Whisper. Every external
 in for MinIO)."""
 import concurrent.futures
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -14,8 +15,11 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import inbox_watcher as iw
-import memo_common as mc_
+os.environ["MEMO_PUSH_HINT_URL"] = ""   # never the live upload proxy from a test
+os.environ["MEMO_WAKE_PORT"] = "0"
+
+import inbox_watcher as iw  # noqa: E402
+import memo_common as mc_  # noqa: E402
 import s3direct
 
 
@@ -207,6 +211,24 @@ class AsyncFacts(Harness):
                 self.w.fact_fast("voiced", self.m, {})
             self.assertLess(time.time() - t0, 0.1)   # the caller did not wait for the publish
             self.assertTrue(self.w.facts.wait_idle(3))
+
+    def test_the_car_is_hinted_over_loopback_before_the_publish_with_only_the_keys_the_proxy_needs(self):
+        hints = []
+        done = threading.Event()
+
+        def hint(action, memo_id, data):
+            hints.append((action, memo_id, data))
+            done.set()
+        with self.stub_emit(delay=0.3), unittest.mock.patch.object(iw, "FACTS_ASYNC", True), \
+                unittest.mock.patch.object(iw, "PUSH_HINT_URL", "http://hint"), unittest.mock.patch.object(iw, "push_hint", side_effect=hint):
+            with self.w.mu:
+                self.w.fact_fast("voiced", self.m, {"chunk_s3_key": "replies/x-c01of02.opus", "chunk": 1, "chunks": 2,
+                                                    "spoken_text": "must not be sent", "tts_seconds": 2.0})
+            self.assertTrue(done.wait(1))
+            self.assertEqual(self.emitted, [])   # the hint left before the publish finished
+            self.assertTrue(self.w.facts.wait_idle(3))
+        self.assertEqual(hints, [("voiced", self.m["memo_id"], {"target_agent_id": "holocene-pm",
+                                                                "chunk_s3_key": "replies/x-c01of02.opus", "chunk": 1, "chunks": 2})])
 
     def test_flag_off_is_the_synchronous_fact(self):
         with self.stub_emit(), unittest.mock.patch.object(iw, "FACTS_ASYNC", False):

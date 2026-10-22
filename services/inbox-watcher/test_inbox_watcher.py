@@ -226,6 +226,8 @@ os.environ.update({
     "MEMO_AGENT_TIMEOUT_S": "3", "MEMO_AWAIT_POLL_S": "0", "MEMO_MAX_ATTEMPTS": "2",
     # The warm GPU whisper server is off unless a test points it at its fake (WhisperServer): never the live :8766.
     "MEMO_WHISPER_URL": "",
+    # Never the live upload proxy's early-push door (:8698): a test memo id must not reach a real pad
+    "MEMO_PUSH_HINT_URL": "", "MEMO_WAKE_PORT": "0",
     # The fast desk never reaches a real alias table, skill scope or vox voice list from a test (HOLOC-23 tiles)
     "MEMO_CONVERSE_ALIASES": str(ROOT / "no-aliases.json"), "MEMO_CONVERSE_TOOLS_DIR": str(ROOT / "no-car-desk-scope"),
 })

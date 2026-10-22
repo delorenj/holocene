@@ -661,7 +661,7 @@ system prompt with two literal examples: deepseek-v4.1-flash-1017 ignores json_o
 ```
 
 Prose with no object is a `reply` whose `say` is that prose; JSON that does not parse is a failure of that rung. The
-prompt is stable first (rules, the agent card, the roster: byte-identical across turns, so Hyper caches it), then the last
+prompt is stable first (rules, the agent card, the roster: byte-identical across turns, so the provider's prompt cache can hit it), then the last
 12 turns as user/assistant pairs, then the volatile desk state (pending draft, the 24 h delegation board with live state,
 newest progress line and results, recent memos) and the new transcript.
 
@@ -724,6 +724,11 @@ runtime override of the route set lives in the flag file (`mise run memo:convers
 `mise run memo:converse off`. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk,
 and a route naming it is refused (`key_retired`), so an old routes override from the evidence (`runs/s11*.json`) cannot
 bring it back.
+Costs of the single route, known: the car hears nothing while the desk waits (3-7 s typical, 12 s at worst, then the
+full-agent path; spoken progress only starts 15 s into a dispatched agent turn), and three failed calls in 120 s (an `empty`
+answer counts) open r1's breaker for 60 s, so every memo in that minute goes straight to the full agent. A fresh watcher
+answers `scope_unproven` (full agent) until its background scope proof finishes. A hold cue after about 3 s of desk wait is
+the open follow-up (HOLOC-23).
 The Hyper key is out of credit (`402`; a tile that opts into `deepseek-flash` or `deepseek-pro` skips that rung in ~0.2 s
 and it comes back by itself after a top-up: a 402 opens the rung's breaker for 10 min). DeepSeek accepts `temperature` and
 `reasoning_effort` `low|high|max` (its `/models`; default high); the rungs send neither effort. A rung is also skipped while its breaker is open
@@ -801,7 +806,7 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
   | --- | --- | --- | --- |
   | `deepseek-flash` | deepseek flash, flash | `flash-h` Hyper flash-1017 (4 s), `flash-d` DeepSeek `deepseek-flash` (5 s), budget 21 s | flash-d 1.3-2.8 s (opt-in: it was the old default) |
   | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 30 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
-  | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s) | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
+  | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s), budget 20 s | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
   | `auto` | auto, autorouter | r1 gateway `automaticai/auto/fast` (12 s) = the default | 3.5-10.7 s (glm-5.3) |
   | `default` | default model, reset the model | none (clears the tile's model) | |
 
@@ -865,7 +870,7 @@ the read-back's `replied` fact carries `conv {conv_id, sid, turn, action, path}`
 At start-up the watcher runs `bb-emit --check` for both; a refused type is logged only (`fact_unavailable`) and never
 queued, so it can never block the outbox.
 
-**See it.** `mise run memo:trace <memo>` shows a `fast:routed` hop (`reply deepseek-v4.1-flash-1017@r1 (1 attempt,
+**See it.** `mise run memo:trace <memo>` shows a `fast:routed` hop (`reply glm-5.3@r1 (1 attempt,
 812 ms, 900 in / 40 out, 640 cached) conv 7f3a1b2c turn 3`, failed rungs, guard notes) where dispatch and the agent turn
 would be, a delegation as `followup#1` (`DELEGATED to flume-pm: 'title'`), and a timing line that starts `transcribed |
 routed`. `mise run memo:conv [latest|<agent>|<conv id>]` prints the conversation: turns (model@route, ms, driver words,
@@ -909,7 +914,7 @@ Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess of
   2 s listing cannot delay it. Keys the watcher already knows are skipped (memo id = uuid5 of the key), so a hint and the
   poll can never start a memo twice; the poll still runs and still finds anything the hint missed. Logged as `wake_hint`
   on both sides. Measured on the live host (load 70+), PUT landed to memo discovered: p50 6.1 s -> 0.004 s, p90 9.6 s -> 0.011 s.
-- **Early push (proxy side live, watcher call-site open).** `POST http://127.0.0.1:8698/internal/push {action, memo_id,
+- **Early push (live both sides: the watcher calls it for `received` / `transcribed` / `voiced`, see "Latency levers").** `POST http://127.0.0.1:8698/internal/push {action, memo_id,
   data}` (compose publishes the proxy's 8080 on loopback only; `/internal/` is not under Traefik's `/upload/` rule) pushes
   the same compact event the NATS fact would produce to every open `/upload/events` stream at once, and drops the NATS copy
   of it as a duplicate. `push_hint(action, memo_id, data)` in `inbox_watcher.py` is the fail-open client (300 ms cap, ~2 ms
@@ -918,6 +923,45 @@ Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess of
   `chunks`, `narration`, `seq`) or the duplicate is not recognised and the pad hears it twice.
 - **Claims file.** `ReplyClaims._save` rewrites only the claims touched within `CLAIM_PERSIST_S` (2 h) of the newest one
   (memory keeps all): 15-30 ms -> under 1 ms per hold / start / end on the loaded host.
+
+## Latency levers in the watcher (HOLOC-23 phase 2)
+
+Record stop to first audible answer is the operator's priority. These are the watcher-side levers, each env-gated with the
+old behaviour as the fallback (the unit turns them on; a test run leaves them off). Numbers are measured on this host
+under load (load average 70-85), not estimated.
+
+| lever | env (unit) | what it replaces | measured |
+|---|---|---|---|
+| S3 over the local MinIO port | `MEMO_S3_ALIAS=delodrive` | the `delo` alias = `s3.delo.sh` through Cloudflare for every `mc` call | `mc cp` up 7.1 s p50 -> 0.14 s, down 3.5 s -> 0.07 s, `mc stat` 3.9 s -> 0.07 s |
+| In-process kept-alive S3 (`s3direct.py`) | `MEMO_S3_DIRECT=1` | an `mc` process per cp / ls / stat / cat / pipe | up 65 ms, down 18 ms, stat 3 ms, listing of 415 objects 113 ms vs 147 ms. Falls back to `mc` on any error, any other verb, a missing object |
+| Fast discovery thread | `MEMO_DISCOVER_FAST_S=0.4` | the 1 s tick listing (the proxy's wake hint is faster still and stays) | landed -> discovered p50 0.70 s (p90 4.8 s, today's journal) -> 0.39 s on the poll alone |
+| Level probe beside Whisper | always | ffmpeg `volumedetect` (0.2-0.3 s) in front of the Whisper request | download -> transcript stage 1.07 / 1.35 s -> 0.79 s. A silent clip is still refused (after one GPU call) |
+| Ordered async facts | `MEMO_FACTS_ASYNC=1` | `bb-emit` subprocess (0.16-0.5 s under load) in front of Whisper, the desk and the next chunk | `received` / `transcribed` / `voiced` leave through one ordered thread; any other fact waits for it to drain first, so bus order is unchanged. A failed publish goes to the outbox; shutdown drains the queue |
+| Early push hint | `MEMO_PUSH_HINT_URL` | the pad waited for the fact to travel bb-emit -> NATS -> proxy | `received` / `transcribed` / `voiced` call the proxy's `/internal/push` first (~2 ms, own thread, fail-open); the NATS copy is dropped as a duplicate |
+| PhraseBank | `MEMO_PHRASEBANK=1` | a vox render of "Dropped. Nothing was sent.", "Okay. Talk soon." and the other fixed lines (1.5-3.5 s) | rendered once per voice and kept in `<state>/phrases/` (warmed at start-up at the lowest vox priority, learned on first use); a hit is a file copy, logged `phrasebank_hit`, engine `phrasebank` |
+| Shorter first beat | `MEMO_CONVERSE_CHUNK_CHARS=45,80,170,300`, `..._MIN_CHARS=60` | a 70-character first chunk | vox renders in about 1.6 s + 0.018 s per character at 6 steps (26 chars 1.9 s, 46 chars 2.5 s, 66 chars 2.7 s, 100 chars 3.4 s): the first chunk is about 0.3 s sooner, and the second (80) is ready before the first has finished playing. A reply under 85 characters is still one piece (a tail under 40 characters rejoins) |
+
+Controlled A/B of the real watcher on a scratch bucket (`holo-bench`; same Whisper, LLM ladder and vox; `bb-emit --check` as
+the publisher), 6 spoken memos each, seconds from the PUT returning:
+
+| point | before (alias `delo`, mc, sync facts, 1 s tick) | after | change |
+|---|---|---|---|
+| discovered | 0.81 | 0.39 | -0.42 |
+| download done | 1.97 | 0.59 | -1.38 (the download itself 295 ms -> 3 ms) |
+| `transcribed` stage done | 2.7 | 1.9 | about -0.8 |
+| first chunk uploaded, measured from the decision | 3.07-4.41 | 2.21-3.50 | about -1.0 (TTS 2.5-2.8 s -> 1.9-2.4 s, chunk upload 0.35 s -> 0.07 s) |
+
+The decision itself (the LLM, 2.4-6.7 s through `automaticai/auto/fast` in these runs) was the same code on both sides and
+is now the largest hop.
+
+Not done, with the reason:
+- Streaming the LLM and speaking the first sentence early: the guards rewrite `say` after the full decision (the sent-claim
+  filter, `incomplete_propose`, the forbidden-model check), so speaking early can say "sent" when nothing was sent.
+- TTS at 4 steps: about 0.3 s sooner (2.66 s -> 2.30 s at 66 characters) but the voice quality needs a listen first; env only
+  (`MEMO_CONVERSE_TTS_STEPS`).
+- Card prefetch on `record_started`: `decide_ms - llm_ms` is 6-35 ms and the card is already cached, so it is worth about 0.
+- Whisper tail: Whisper on fast turns was 0.5 / 0.64 s p50 / p90 with a 1.5 s maximum; nothing to fix on this evidence.
+- A queued fact is lost if the process is killed (not stopped) in the ~0.3 s before it publishes; a normal stop drains the queue.
 
 ## Upload proxy
 
