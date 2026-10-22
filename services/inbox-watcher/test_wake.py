@@ -3,6 +3,7 @@
     cd services && /usr/bin/python3 -B -m unittest discover -s inbox-watcher -p 'test_wake.py'
 """
 import json
+import threading
 import time
 import unittest
 import urllib.request
@@ -65,6 +66,39 @@ class WakeApply(MemoHarness, unittest.TestCase):
         iw.wake_apply(self.w, iw.wake_entry(hint(key, len(b"OggS fake audio"))))
         self.assertTrue(iw.WAKE.is_set())
         iw.WAKE.clear()
+
+
+class PushHint(unittest.TestCase):
+    def serve(self, status=202):
+        import http.server
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_address[1]}/internal/push", seen
+
+    def test_the_hint_is_posted_with_the_facts_data(self):
+        url, seen = self.serve()
+        self.assertTrue(iw.push_hint("voiced", "m", {"chunk_s3_key": "replies/x", "chunk": 1}, url=url))
+        self.assertEqual(seen, [{"action": "voiced", "memo_id": "m", "data": {"chunk_s3_key": "replies/x", "chunk": 1}}])
+
+    def test_a_refused_or_dead_proxy_is_just_false(self):
+        url, _ = self.serve(status=400)
+        self.assertFalse(iw.push_hint("voiced", "m", {}, url=url))
+        self.assertFalse(iw.push_hint("voiced", "m", {}, url="http://127.0.0.1:9/internal/push"))
+        self.assertFalse(iw.push_hint("failed", "m", {}, url=url))   # an error is never pushed early
+        self.assertFalse(iw.push_hint("voiced", "m", {}, url=""))
 
 
 class WakeListener(MemoHarness, unittest.TestCase):

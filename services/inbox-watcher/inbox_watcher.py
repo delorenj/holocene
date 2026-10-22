@@ -35,6 +35,7 @@ import hashlib
 import heapq
 import json
 import os
+import queue
 import re
 import shutil
 import signal
@@ -290,6 +291,20 @@ CHUNK_MAX = 20
 # How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
 # between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
 AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
+# Fast discovery (HOLOC-23 phase 2): with the in-process S3 client a listing is ~0.1 s and no process spawn, so a thread lists
+# inbox/ every DISCOVER_FAST_S and wakes the tick the moment an object it has not seen appears (landed -> discovered was
+# 0.67 s p50, up to 4.9 s, on the 1 s mc tick). 0 = off (the 1 s tick lists, as before). The tick's own listing is the fallback.
+DISCOVER_FAST_S = float(os.environ.get("MEMO_DISCOVER_FAST_S", "0"))
+# Facts off the critical path (HOLOC-23 phase 2): `received`, `transcribed` and `voiced` were synchronous bb-emit subprocesses
+# (0.16-0.25 s each) in front of Whisper, the desk and the pad's push. With MEMO_FACTS_ASYNC=1 they go through one ordered
+# publisher thread (FactQueue), the same one the desk's `routed` fact already used; any other fact waits for it to drain first
+# so the order on the bus is unchanged. A failed publish still lands in the outbox.
+FACTS_ASYNC = os.environ.get("MEMO_FACTS_ASYNC", "0") == "1"
+# PhraseBank (HOLOC-23 phase 2): the desk's fixed lines ("Dropped. Nothing was sent.", "Okay. Talk soon." ...) are rendered once
+# per voice and kept on disk, so a turn that ends in one is spoken from a file (a copy, ~1 ms) instead of a 1.5-3.5 s vox
+# render. Warmed in the background at start-up (lowest vox priority) and learned on first use. MEMO_PHRASEBANK=0 turns it off.
+PHRASEBANK = os.environ.get("MEMO_PHRASEBANK", "0") == "1"
+FACT_DRAIN_WAIT_S = float(os.environ.get("MEMO_FACT_DRAIN_WAIT_S", "3"))
 # ---- the fast in-car conversation desk (HOLOC-23; converse.py, README "Fast conversation layer")
 # MEMO_CONVERSE=off|shadow|on is only the default: the flag file <state>/converse.json (`mise run memo:converse ...`) wins,
 # read per memo, no restart. off = today's path for every memo, unchanged.
@@ -595,6 +610,50 @@ def put_status_object(key: str, body: bytes) -> tuple[bool, str]:
     return True, ""
 
 
+class FactQueue:
+    """One thread publishing queued facts in order. Never takes the watcher's lock: a caller that holds it may wait here."""
+
+    def __init__(self):
+        self._q: queue.Queue = queue.Queue()
+        self._cv = threading.Condition()
+        self._pending = 0
+        self._thread: threading.Thread | None = None
+
+    def submit(self, fn) -> None:
+        with self._cv:
+            self._pending += 1
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._run, name="fact-publisher", daemon=True)
+                self._thread.start()
+        self._q.put(fn)
+
+    def _run(self) -> None:
+        while True:
+            fn = self._q.get()
+            try:
+                fn()
+            except Exception as e:  # noqa: BLE001 - a fact never stops the publisher
+                log("fact_publisher_error", "warn", error=f"{type(e).__name__}: {e}"[:200])
+            finally:
+                with self._cv:
+                    self._pending -= 1
+                    self._cv.notify_all()
+
+    def pending(self) -> int:
+        with self._cv:
+            return self._pending
+
+    def wait_idle(self, timeout: float) -> bool:
+        end = time.time() + timeout
+        with self._cv:
+            while self._pending > 0:
+                left = end - time.time()
+                if left <= 0:
+                    return False
+                self._cv.wait(left)
+        return True
+
+
 class StatusWriter:
     """status/<yyyy>/<mm>/<dd>/<memo_id>.json for every memo, newest document wins.
 
@@ -803,6 +862,10 @@ class Watcher:
         # sit at the head of the outbox and block every later fact, so until then they are logged only.
         self.contract_ok = {"routed": True, "delegated": True}
         self.last_conv_sweep = 0.0
+        self.facts = FactQueue()
+        self.phrases = PhraseBank(state.dir / "phrases", enabled=PHRASEBANK)
+        self.fresh_listing: tuple | None = None   # a listing the discovery thread saw a new object in, for the next tick
+        self.fast_listed_at = 0.0                 # when the discovery thread last listed (the tick skips its own then)
 
     def choose_lane(self) -> tuple[str, str | None]:
         """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
@@ -836,6 +899,7 @@ class Watcher:
         return "interactive", None  # unreachable
 
     def shutdown(self, wait: bool) -> None:
+        self.facts.wait_idle(10.0)  # queued facts are published before the process goes
         for p in self.pools.values():
             p.shutdown(wait=wait, cancel_futures=not wait)
 
@@ -857,6 +921,8 @@ class Watcher:
 
     def fact(self, action: str, m: dict, payload: dict) -> None:
         """Publish bloodbank.audio.memo.<action>. Failure queues it in the outbox (never lost, never blocks)."""
+        if self.facts.pending():
+            self.facts.wait_idle(FACT_DRAIN_WAIT_S)  # earlier async facts first: the order on the bus stays the order of events
         data = {"memo_id": m["memo_id"], "s3_key": m["key"], "target_agent_id": m["agent"],
                 "occurred_at": iso(now_utc()), **payload}
         rec = {"action": action, "memo_id": m["memo_id"], "data": data, "causation": m.get("last_fact_id")}
@@ -879,28 +945,37 @@ class Watcher:
             note="bb-emit --check refused this type at start-up: logged only, never queued", data=payload)
 
     def fact_async(self, action: str, m: dict, payload: dict) -> None:
-        """A fast-desk fact (routed) published off the critical path: bb-emit is a subprocess (0.2-0.4 s) and the reply must not
-        wait for it (the routed fact is for the operator's views, nothing reads it before the voice is up). Same gate and the
-        same outbox-on-failure as fact(); the causation chain picks up its id when it lands. Lock held by the caller."""
-        if not self.contract_ok.get(action):
+        """A fact published off the critical path: bb-emit is a subprocess (0.16-0.4 s) and what the driver hears must not
+        wait for it. One ordered publisher thread (FactQueue); the causation id is read when the fact is published, so the
+        chain stays intact; same outbox-on-failure as fact(). Caller holds the lock. `routed` and, with MEMO_FACTS_ASYNC=1,
+        `received` | `transcribed` | `voiced` come through here (fact_fast); the desk's gate applies to the desk's facts."""
+        if action in self.contract_ok and not self.contract_ok.get(action):
             return self.fact_gated(action, m, payload)
+        m.setdefault("last_fact_id", None)  # the key exists before the publisher thread writes it: state.json is never resized under save()
         data = {"memo_id": m["memo_id"], "s3_key": m["key"], "target_agent_id": m["agent"],
                 "occurred_at": iso(now_utc()), **payload}
-        rec = {"action": action, "memo_id": m["memo_id"], "data": data, "causation": m.get("last_fact_id")}
+        rec = {"action": action, "memo_id": m["memo_id"], "data": data, "causation": None}
+        queued_at = time.time()
 
         def work():
+            rec["causation"] = m.get("last_fact_id")
             try:
                 ids = self._emit_raw(rec)
-                with self.mu:
-                    m["last_fact_id"] = ids.get("id") or m.get("last_fact_id")
+                m["last_fact_id"] = ids.get("id") or m.get("last_fact_id")
                 log("fact_published", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=action,
-                    fact=f"audio.memo.{action}", fact_id=ids.get("id"), async_=True)
+                    fact=f"audio.memo.{action}", fact_id=ids.get("id"), async_=True,
+                    queued_ms=int((time.time() - queued_at) * 1000))
             except Exception as e:  # noqa: BLE001
-                with self.mu:
-                    self.s.data["outbox"].append(rec)
+                self.s.data["outbox"].append(rec)
                 log("fact_queued", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=action,
                     error=str(e)[:300], outbox=len(self.s.data["outbox"]))
-        threading.Thread(target=work, name="converse-fact", daemon=True).start()
+        self.facts.submit(work)
+
+    def fact_fast(self, action: str, m: dict, payload: dict) -> None:
+        """received | transcribed | voiced: async when MEMO_FACTS_ASYNC=1, else exactly fact()."""
+        if FACTS_ASYNC:
+            return self.fact_async(action, m, payload)
+        return self.fact(action, m, payload)
 
     def check_contracts(self) -> dict:
         """Start-up gate: does bb-emit accept audio.memo.routed and audio.memo.delegated? A dry run (--check), no NATS."""
@@ -1213,7 +1288,9 @@ class Watcher:
 
     def tick(self, discover: bool = True) -> None:
         # The listing is I/O: run it outside the lock so a slow MinIO never stalls workers applying results.
-        listing = self.list_inbox() if discover else None
+        listing, self.fresh_listing = self.fresh_listing, None
+        if listing is None and discover and not (DISCOVER_FAST_S and time.time() - self.fast_listed_at < 3 * DISCOVER_FAST_S + 1.0):
+            listing = self.list_inbox()
         with self.mu:
             self.flush_outbox()
             self.process_control()
@@ -1246,6 +1323,28 @@ class Watcher:
                             "running": m["key"] in self.running,
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
                            for m in self.active()]})
+
+    def start_discovery_watch(self) -> None:
+        """A thread that lists inbox/ every DISCOVER_FAST_S and wakes the tick as soon as it sees a key the state does not
+        know. It only reads: discover() (under the lock, in the tick) is still the one place a memo is created, and a memo
+        id is a uuid5 of its key, so a listing seen twice (here and by the tick's own) cannot make two memos."""
+        if not DISCOVER_FAST_S:
+            return
+
+        def loop():
+            while not STOP:
+                t0 = time.time()
+                try:
+                    objs, err = self.list_inbox()
+                    if err is None:
+                        self.fast_listed_at = time.time()
+                        if any(o["key"] not in self.s.memos for o in objs):
+                            self.fresh_listing = (objs, None)
+                            WAKE.set()
+                except Exception as e:  # noqa: BLE001 - the tick's own listing covers it
+                    log("discovery_watch_error", "warn", error=f"{type(e).__name__}: {e}"[:200])
+                time.sleep(max(0.05, DISCOVER_FAST_S - (time.time() - t0)))
+        threading.Thread(target=loop, name="discovery-watch", daemon=True).start()
 
     def sleep_for(self, until_discover: float) -> float:
         """Seconds the main loop may sleep: until the earliest due memo or the next listing, never above TICK_S."""
@@ -1367,7 +1466,7 @@ class Watcher:
         up = mc_.parse_iso(m.get("uploaded_at"))
         det = now_utc()
         lag = int((det - up).total_seconds() * 1000) if up else None
-        self.fact("received", m, {"size_bytes": m.get("size"), "content_type": ctype,
+        self.fact_fast("received", m, {"size_bytes": m.get("size"), "content_type": ctype,
                                   "uploaded_at": m.get("uploaded_at"), "detected_at": iso(det),
                                   "detect_lag_ms": lag})
         m["received_ts"] = time.time()
@@ -1417,19 +1516,29 @@ class Watcher:
                 ms=int((time.time() - t0) * 1000), bytes=audio.stat().st_size)
             self._check_object(audio, key, want or {})
 
-            # Fail fast on audio nothing can decode, and size the timeout from the real duration.
-            probe = mc_.probe_audio(audio)
-            if probe["ok"] is False:
-                raise StageError("transcribe", "undecodable_audio", f"ffprobe cannot read the upload: {probe['error']}", retryable=False)
-            audio_s = probe["duration"]
-            if probe["ok"] and audio_s is not None and audio_s < MIN_AUDIO_S:
-                raise StageError("transcribe", "too_short", f"recording is {audio_s:.2f}s (< {MIN_AUDIO_S}s): an accidental tap, not a prompt",
-                                 retryable=False)
+            # The level probe (ffmpeg, 0.2-0.3 s) runs at the same time as ffprobe and, after it, the warm Whisper server:
+            # it used to run in front of Whisper. Its verdict still gates the turn (below), after the transcript is in.
+            lvl_pool = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="levels")
+            levels_f = lvl_pool.submit(mc_.measure_levels, audio)
+            try:
+                # Fail fast on audio nothing can decode, and size the timeout from the real duration.
+                probe = mc_.probe_audio(audio)
+                if probe["ok"] is False:
+                    raise StageError("transcribe", "undecodable_audio", f"ffprobe cannot read the upload: {probe['error']}", retryable=False)
+                audio_s = probe["duration"]
+                if probe["ok"] and audio_s is not None and audio_s < MIN_AUDIO_S:
+                    raise StageError("transcribe", "too_short", f"recording is {audio_s:.2f}s (< {MIN_AUDIO_S}s): an accidental tap, not a prompt",
+                                     retryable=False)
 
-            # Measure the level BEFORE spending a transcription: a dead microphone (a corked emulator capture, a
-            # revoked permission, a muted car mic) records a perfectly valid file of digital silence, and "the
-            # transcript is empty" says nothing about why. Every later failure of this stage carries the levels.
-            levels = mc_.measure_levels(audio)
+                # A dead microphone (a corked emulator capture, a revoked permission, a muted car mic) records a perfectly
+                # valid file of digital silence, and "the transcript is empty" says nothing about why: the level is measured
+                # for every memo and every later failure of this stage carries it. A silent clip is refused after the
+                # server answered (one GPU call spent on a dead mic; the common case saves the probe's 0.2-0.3 s).
+                t_w = time.time()
+                pre = (*self._transcribe_server(audio, mid, key, agent, audio_s, levels_f), t_w)
+                levels = levels_f.result()
+            finally:
+                lvl_pool.shutdown(wait=False)
             lvl = level_fields(levels)
             log("audio_level", memo_id=mid, key=key, agent=agent, stage="transcribe", audio_s=audio_s, **lvl,
                 measured=levels["ok"], error=levels["error"])
@@ -1438,7 +1547,7 @@ class Watcher:
                 raise StageError("transcribe", silent[0], silent[1], retryable=False,
                                  extra={**lvl, "audio_duration_seconds": round(audio_s, 2) if audio_s is not None else None})
             try:
-                return self._transcribe_run(tmp, audio, mid, key, agent, audio_s, levels, lvl, timeouts)
+                return self._transcribe_run(tmp, audio, mid, key, agent, audio_s, levels, lvl, timeouts, pre=pre)
             except StageError as e:
                 e.extra = {**lvl, "audio_duration_seconds": round(audio_s, 2) if audio_s is not None else None, **e.extra}
                 raise
@@ -1469,9 +1578,13 @@ class Watcher:
             raise e
 
     def _transcribe_run(self, tmp: Path, audio: Path, mid: str, key: str, agent: str, audio_s: float | None,
-                        levels: dict, lvl: dict, timeouts: int) -> dict:
-        t1 = time.time()
-        served, fallback = self._transcribe_server(audio, mid, key, agent, audio_s, levels)
+                        levels: dict, lvl: dict, timeouts: int, pre: tuple | None = None) -> dict:
+        # pre: (served, fallback, started_at) when the caller already asked the warm server (concurrently with the level probe)
+        if pre is not None:
+            served, fallback, t1 = pre
+        else:
+            t1 = time.time()
+            served, fallback = self._transcribe_server(audio, mid, key, agent, audio_s, levels)
         if served:
             return {**served, "took": time.time() - t1, "audio_s": audio_s, "levels": lvl}
         timeout = transcribe_timeout(audio_s, timeouts)
@@ -1533,6 +1646,8 @@ class Watcher:
             if not isinstance(d, dict) or not isinstance(d.get("text"), str):
                 raise ValueError(f"no text in the response: {str(d)[:120]}")
             text = d["text"].strip()
+            if isinstance(levels, concurrent.futures.Future):
+                levels = levels.result()  # the level probe ran alongside this request
             junk = junk_reason(text, audio_s or d.get("duration_seconds"), levels)
             if junk:
                 raise ValueError(f"{junk[0]} {text[:40]!r}")
@@ -1558,7 +1673,7 @@ class Watcher:
         m["transcript"] = text
         m["prompt"] = build_prompt(text)
         m["prompt_sha256"] = hashlib.sha256(m["prompt"].encode()).hexdigest()  # saved with the step, before any publish
-        self.fact("transcribed", m, {
+        self.fact_fast("transcribed", m, {
             "transcript_text": m["transcript"], "transcript_chars": len(text),
             "word_count": meta.get("word_count") or len(text.split()),
             "audio_duration_seconds": meta.get("duration_seconds") or w["audio_s"],
@@ -2703,8 +2818,20 @@ class Watcher:
         default voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
         stage for 30 minutes."""
         v = self._reply_voice(m)
+        banked = self.phrases.get(text, v, steps)
+        if banked is not None:
+            out = tmp / "reply.ogg"
+            try:
+                shutil.copyfile(banked, out)
+                self.phrases.hits += 1
+                log("phrasebank_hit", memo_id=m.get("memo_id"), voice=v, chars=len(text))
+                return out, "phrasebank"
+            except OSError:
+                pass
         try:
-            return synthesize(text, tmp, **synth_kw(steps, prio, v))
+            audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, v))
+            self.phrases.put(text, v, steps, audio)
+            return audio, engine
         except VoiceNotFound as e:
             if v == VOICE:
                 raise
@@ -2713,7 +2840,40 @@ class Watcher:
                 vl.update(voice=VOICE, fallback="voice_not_found")
                 log("voice_fallback", "warn", memo_id=m.get("memo_id"), key=m.get("key"), agent=m.get("agent"),
                     requested=v, used=VOICE, error=str(e)[:200], note="vox does not know the tile's voice: the default voice")
-            return synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
+            audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
+            self.phrases.put(text, VOICE, steps, audio)
+            return audio, engine
+
+    def warm_phrases(self) -> None:
+        """Start-up, own thread: the fixed lines in the default voice and the tiles' own voices, at the fast desk's steps."""
+        if not self.phrases.enabled:
+            return
+        voices = [VOICE]
+        try:
+            for t in (self.desk.settings().get("tiles") or {}).values():
+                v = t.get("voice") if isinstance(t, dict) else None
+                if isinstance(v, str) and v and v not in voices:
+                    voices.append(v)
+        except Exception:  # noqa: BLE001
+            pass
+
+        def render(text: str, voice: str) -> Path:
+            d = Path(tempfile.mkdtemp(prefix="memo-phrase-"))
+            try:
+                audio, _ = synthesize(text, d, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, voice))
+                keep = d.with_name(d.name + ".ogg")
+                shutil.copyfile(audio, keep)
+                return keep
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+
+        def work():
+            t0 = time.time()
+            made = 0
+            for v in voices:
+                made += self.phrases.warm([v], CONVERSE_TTS_STEPS, lambda t, vv: render(t, vv))
+            log("phrasebank_warmed", rendered=made, voices=voices, lines=len(self.phrases.lines()), ms=int((time.time() - t0) * 1000))
+        threading.Thread(target=work, name="phrasebank-warm", daemon=True).start()
 
     def _voice_used(self, m: dict) -> tuple[str, str | None]:
         """(the voice this reply was rendered in, the tile's voice it fell back from or None)."""
@@ -2839,7 +2999,7 @@ class Watcher:
                 # of a finished memo under the same key is not.
                 m["voiced_one"] = rkey
                 done_ts = m.get("agent_done_ts")
-                self.fact("voiced", m, {
+                self.fact_fast("voiced", m, {
                     "reply_s3_key": rkey, "chunk_s3_key": rkey, "chunk": 1, "chunks": 1, "spoken_text": spoken,
                     "spoken_chars": len(spoken), "command_id": m.get("command_id"), "tts_seconds": round(tts_s, 2),
                     "tts_engine": engine, **self._voice_fields(m), "audio_bytes": stat["size"],
@@ -3461,7 +3621,7 @@ class Watcher:
                 chars=len(job["text"]))
             if first:
                 done_ts = m.get("agent_done_ts")
-                self.fact("voiced", m, {
+                self.fact_fast("voiced", m, {
                     "reply_s3_key": job["rkey"], "chunk_s3_key": job["ckey"], "chunk": job["i"], "chunks": job["n"],
                     "spoken_text": job["text"], "spoken_chars": len(job["text"]), "command_id": m.get("command_id"),
                     "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], **self._voice_fields(m),
@@ -4089,6 +4249,80 @@ def synth_kw(steps: int | None, prio: int | None, voice: str | None = None) -> d
     return kw
 
 
+def fixed_lines() -> list[str]:
+    """The desk's lines that never change with the turn (converse.py), the texts the PhraseBank keeps rendered."""
+    names = ("NOTHING_PENDING_LINE", "DROPPED_LINE", "NOTHING_TO_CANCEL_LINE", "END_LINE", "EXPIRED_LINE",
+             "SENDING_CANCELLED_LINE", "DRAFT_CHANGED_LINE", "DIDNT_CATCH_LINE")
+    lines = [v for v in (getattr(cv, n, None) for n in names) if isinstance(v, str) and v and "{" not in v]
+    out: list[str] = []
+    for line in lines:  # a long line is voiced in chunks: each chunk is what the bank is asked for
+        for part in split_for_speech(clean_for_speech(line, SPEAK_CHARS), CONVERSE_CHUNK_CHARS, CONVERSE_CHUNK_MIN_CHARS):
+            if part not in out:
+                out.append(part)
+    return out
+
+
+class PhraseBank:
+    """Pre-rendered audio of fixed utterances, per (voice, steps, text), on disk under <state>/phrases/. A lookup is a file
+    check; a miss renders as usual and a fixed line is kept after its first render. Never raises: a broken bank is a miss."""
+
+    def __init__(self, directory: Path, lines=fixed_lines, enabled: bool = True):
+        self.dir = directory
+        self.lines = lines
+        self.enabled = enabled
+        self.hits = 0
+
+    @staticmethod
+    def norm(text: str) -> str:
+        return re.sub(r"\s+", " ", text or "").strip()
+
+    def _path(self, text: str, voice: str, steps: int | None) -> Path:
+        h = hashlib.sha256(f"{voice}|{steps or 0}|{self.norm(text)}".encode()).hexdigest()[:24]
+        return self.dir / f"{h}.ogg"
+
+    def banked(self, text: str) -> bool:
+        return self.norm(text) in {self.norm(x) for x in self.lines()}
+
+    def get(self, text: str, voice: str, steps: int | None) -> Path | None:
+        if not self.enabled or not self.banked(text):
+            return None
+        p = self._path(text, voice, steps)
+        try:
+            return p if p.stat().st_size >= 200 else None
+        except OSError:
+            return None
+
+    def put(self, text: str, voice: str, steps: int | None, audio: Path) -> None:
+        if not self.enabled or not self.banked(text):
+            return
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            p = self._path(text, voice, steps)
+            tmp = p.with_suffix(".tmp")
+            shutil.copyfile(audio, tmp)
+            os.replace(tmp, p)
+        except OSError:
+            pass
+
+    def warm(self, voices: list[str], steps: int | None, render) -> int:
+        """Render every fixed line that is not on disk for each voice, one at a time at the lowest vox priority, and stop at
+        once if anything with a higher priority is waiting. render(text, voice) -> audio Path. Returns the lines rendered."""
+        n = 0
+        for voice in voices:
+            for text in self.lines():
+                if STOP or TTS_GATE.waiting():
+                    return n
+                if self.get(text, voice, steps) is not None:
+                    continue
+                try:
+                    self.put(text, voice, steps, render(text, voice))
+                    n += 1
+                except Exception as e:  # noqa: BLE001 - vox down or voice unknown: the line renders on demand later
+                    log("phrasebank_warm_failed", "warn", voice=voice, error=f"{type(e).__name__}: {e}"[:160])
+                    return n
+        return n
+
+
 class VoiceNotFound(StageError):
     """vox does not know the voice asked for (a tile's voice that was removed or mistyped): the render falls back to the
     default voice at once, never into the 1800 s TTS retry budget."""
@@ -4216,6 +4450,30 @@ def start_wake_listener(w: "Watcher", port: int = WAKE_PORT) -> "http.server.Thr
     threading.Thread(target=srv.serve_forever, name="wake-listener", daemon=True).start()
     log("wake_listener", port=port)
     return srv
+
+
+# Early push to the car (HOLOC-23 phase 2): a fact reaches the pad through bb-emit -> NATS -> the proxy's SSE (0.12-0.25 s of
+# subprocess for each of voiced / transcribed). push_hint() tells the proxy the same thing over loopback HTTP (~2 ms) just
+# before the fact is emitted; the proxy pushes it at once and drops the NATS copy as a duplicate. Fail-open and bounded: a
+# proxy that is down or slow costs nothing but the time it would have saved. `data` must carry the keys the fact carries
+# (chunk_s3_key / reply_s3_key / progress_s3_key, chunk, chunks, narration, seq) or the duplicate is not recognised.
+PUSH_HINT_URL = os.environ.get("MEMO_PUSH_HINT_URL", "http://127.0.0.1:8698/internal/push")
+PUSH_HINT_TIMEOUT_S = float(os.environ.get("MEMO_PUSH_HINT_TIMEOUT_S", "0.3"))
+PUSH_HINT_ACTIONS = ("received", "transcribed", "dispatched", "narrated", "voiced", "replied")
+
+
+def push_hint(action: str, memo_id: str, data: dict, url: str | None = None) -> bool:
+    url = PUSH_HINT_URL if url is None else url
+    if not url or action not in PUSH_HINT_ACTIONS:
+        return False
+    try:
+        req = urllib.request.Request(url, data=json.dumps({"action": action, "memo_id": memo_id, "data": data},
+                                                          separators=(",", ":"), default=str).encode(),
+                                     method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=PUSH_HINT_TIMEOUT_S) as r:
+            return r.status == 202
+    except Exception:  # noqa: BLE001 - the fact itself still reaches the car through NATS
+        return False
 
 
 def main() -> int:

@@ -706,26 +706,31 @@ converse, sends `heard: null` for a fast turn (no "<agent> heard: ..." echo in f
 turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_key}`: `reply_key` is THIS turn's reply of
 record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
 
-**The ladder (never Anthropic; operator decision 2026-10-22).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order,
-inside `MEMO_CONVERSE_BUDGET_S` (**16 s**, the sum of the rung timeouts: r1 AND r2 timing out still leave r3 its full 7 s;
-at 12 s that case left r3 3 s against its measured 2.5-4.4 s. A healthy turn ends at its first answer, r2 ~1.5 s):
+**The default route (never Anthropic; operator decision 2026-10-22).** Operator, verbatim: "use aai/auto/fast and its
+existing fallback chain, as requested. No pinned model or gateway rebuild." `MEMO_CONVERSE_ROUTES` (JSON, in the unit) is
+**one route**, `automaticai/auto/fast` on `api.automaticai.io`; the gateway's own auto chain (fast tier, then strong tier,
+then the free last resort, each intersected with the token's scope) is the fallback, so the desk pins no model and a gateway
+change needs no watcher change. The budget `MEMO_CONVERSE_BUDGET_S` is **14 s** (the route's 12 s timeout plus slack; keep it
+at least the sum of the route timeouts). It replaced a three-rung ladder (Hyper flash, DeepSeek flash, then this route);
+those two upstreams are now opt-in tile aliases only (below).
 
-| rung | route | key (op:// item-UUID ref) | timeout | measured 2026-10-22 (card-sized prompt, ~9.8k chars) |
+| route | model | key (op:// item-UUID ref) | timeout | measured 2026-10-22 |
 | --- | --- | --- | --- | --- |
-| r1 | Hyper `deepseek-v4.1-flash-1017` | item "Holocene Auto" `qlnfw3xdnaxrelksmhnpqqolwe/credential` | 4 s | **402 billing_error** in 0.06-0.16 s (out of credit; earlier p50 0.94 s) |
-| r2 | DeepSeek API `https://api.deepseek.com`, `deepseek-flash` (= DeepSeek-V4.1-Flash), max_tokens 1500 | item "DeepSeek" field "API Key" `35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja` | 5 s | 1.27-1.55 s; full ladder (r1 402 then r2) 1.36-1.42 s; with tools + recall (12.4k chars) p50 2.3-2.5 s, 10/10; `reasoning_effort=low` came back empty 1-2 of 10 |
-| r3 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 7 s | 3.75-4.35 s, answered by `glm-5.3` (served route `automaticai/personal/glm-5.3`) |
+| r1 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 12 s | the card-sized prompt, 12 calls: p50 5.4 s, p90 6.6 s, max 10.7 s, all served by `automaticai/personal/glm-5.3`; 11 of 12 a valid decision, one `empty` content went to the full agent. The lead's earlier run on a larger prompt: 7.1-8.8 s |
 
-then today's full-agent path. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk,
+then today's full-agent path (`fallback_reason=all_routes_failed`): that, not a second model, is what backs the route up. A
+runtime override of the route set lives in the flag file (`mise run memo:converse on --routes-file f.json`, drop it with
+`--clear-routes`); it wins over the unit until cleared, and a watcher restart picks up the unit's route. The kill switch is
+`mise run memo:converse off`. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk,
 and a route naming it is refused (`key_retired`), so an old routes override from the evidence (`runs/s11*.json`) cannot
 bring it back.
-Hyper is out of credit (both keys `402`): a 402 opens that rung's breaker for 10 min, so it is skipped in ~0.2 s and comes
-back by itself after a top-up (one 0.2 s probe per 10 min). DeepSeek accepts `temperature` and `reasoning_effort`
-`low|high|max` (its `/models`; default high); the rungs send neither effort. A rung is also skipped while its breaker is open
+The Hyper key is out of credit (`402`; a tile that opts into `deepseek-flash` or `deepseek-pro` skips that rung in ~0.2 s
+and it comes back by itself after a top-up: a 402 opens the rung's breaker for 10 min). DeepSeek accepts `temperature` and
+`reasoning_effort` `low|high|max` (its `/models`; default high); the rungs send neither effort. A rung is also skipped while its breaker is open
 (3 failures in 120 s: 60 s) or its key is unreadable (retried every 300 s); a 401 re-reads the key once. A `propose` with
 neither a title nor a brief goal counts as `incomplete_propose` and goes to the next rung; if no rung does better the guard
 builds the brief from the driver's own words. Keys are **op:// item-UUID references only** (`op read` at first use and
-once at start-up, memory only, never logged; a pasted key is refused; `op read` of all three refs works from a
+once at start-up, memory only, never logged; a pasted key is refused; `op read` of every ref works from a
 `systemd-run --user` shell).
 
 The rule: `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`, `openrouter/auto`; NFKC
@@ -761,6 +766,14 @@ glm-5.3-flash, kimi-k3s and `damien/claude-haiku-4.5`; with this scope the haiku
 calls to `automaticai/auto/fast` were answered by `glm-5.3` (`X-AutomaticAI-Auto: role=fast; rung=3`), two to
 `automaticai/free` by agnes-3.0-flash and cf glm-5.3-flash.
 
+**Why auto/fast is safe as the only default.** Three independent checks stand between the driver's words and an Anthropic
+model, none of them a pinned name: (1) the **scope proof**, `GET /models` with the holocene-converse token lists 35-37 names
+and none is Anthropic, so the gateway cannot pick one for this token (re-proved at start-up and every 10 min; a Claude id
+in it is `scope_unsafe`, no proof is `scope_unproven`, and either skips the route without sending anything); (2) the
+**served-route header**, `X-AutomaticAI-Route` of every answer must be a name the proof listed and must not name Anthropic
+(`route_unproven`, `route_out_of_scope`, `forbidden_model`); (3) the **response `model`** field is checked the same way. A
+route that fails any of them is thrown away and the memo takes the full-agent path.
+
 If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never
 failed for an LLM reason.
 
@@ -780,15 +793,16 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
   `MEMO_PROGRESS_VOICE` pins one.
 - **Model** (the desk's ladder only; the agent's own Hermes model, the direct-turn and delegated-turn models are
   untouched): `tiles[agent].model` names an alias in **`car_desk_aliases.json`** (version 1, shared by the watcher, the CLI
-  and the car-set-model skill). The alias's routes go in FRONT of the default ladder; a `(base_url, model)` already in the
-  ladder keeps its id (one breaker per upstream) and appears once; the rest of the ladder still backs it up.
+  and the car-set-model skill). The alias's routes go in FRONT of the default route (auto/fast); a `(base_url, model)` already in the
+  default keeps its id (one breaker per upstream) and appears once; the default route still backs the alias up, so an
+  alias's `budget_s` covers its own timeouts plus the default's 12 s.
 
   | alias | phrases | routes in front | measured 2026-10-22 |
   | --- | --- | --- | --- |
-  | `deepseek-flash` | deepseek flash, flash | r1 Hyper flash-1017 (4 s), r2 DeepSeek `deepseek-flash` (5 s) | = the default ladder |
-  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 20 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
+  | `deepseek-flash` | deepseek flash, flash | `flash-h` Hyper flash-1017 (4 s), `flash-d` DeepSeek `deepseek-flash` (5 s), budget 21 s | flash-d 1.3-2.8 s (opt-in: it was the old default) |
+  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 30 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
   | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s) | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
-  | `auto` | auto, autorouter | r3 gateway `automaticai/auto/fast` (7 s) | 3.9-4.4 s (glm-5.3) |
+  | `auto` | auto, autorouter | r1 gateway `automaticai/auto/fast` (12 s) = the default | 3.5-10.7 s (glm-5.3) |
   | `default` | default model, reset the model | none (clears the tile's model) | |
 
 **Switching from the car.** Two ways, one effect:
@@ -883,6 +897,27 @@ Additive fields the watcher puts on these facts (the schemas allow extra propert
 `earshot_text_key` (next to `late` and `earshot_key`); `failed` for a cancelled memo: `stage=cancelled`,
 `error_code=cancelled`, `after_dispatch`; `received` as a revive marker: `revived`, `revived_to`, `revive_why`. Publishing is not schema-checked, but the `stage` enum in
 `schemas/bloodbank/audio/memo.failed.json` still needs `cancelled` for validators that enforce it.
+
+## Upload proxy -> watcher: the wake hint and the early push (HOLOC-23 phase 2)
+
+Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess off the car's critical path.
+
+- **Wake hint (live).** When the proxy has stored an inbox memo it POSTs `{key, size, etag (md5), uploaded_at, memo_id,
+  device, host}` to the watcher's `http://host.docker.internal:8697/wake` (`WATCHER_WAKE_URL` on the proxy, `MEMO_WAKE_PORT`
+  on the watcher, 0 turns the listener off). The watcher answers 202 first, then `discover()`s that one entry exactly as a
+  listing would and runs the receive stage and the start of transcribe in the request thread, so a main loop stuck in a
+  2 s listing cannot delay it. Keys the watcher already knows are skipped (memo id = uuid5 of the key), so a hint and the
+  poll can never start a memo twice; the poll still runs and still finds anything the hint missed. Logged as `wake_hint`
+  on both sides. Measured on the live host (load 70+), PUT landed to memo discovered: p50 6.1 s -> 0.004 s, p90 9.6 s -> 0.011 s.
+- **Early push (proxy side live, watcher call-site open).** `POST http://127.0.0.1:8698/internal/push {action, memo_id,
+  data}` (compose publishes the proxy's 8080 on loopback only; `/internal/` is not under Traefik's `/upload/` rule) pushes
+  the same compact event the NATS fact would produce to every open `/upload/events` stream at once, and drops the NATS copy
+  of it as a duplicate. `push_hint(action, memo_id, data)` in `inbox_watcher.py` is the fail-open client (300 ms cap, ~2 ms
+  typical): call it with the fact's own `data` just before the `bb-emit` of `voiced` / `transcribed` / `replied`.
+  `data` must carry the same key fields as the fact (`chunk_s3_key` / `reply_s3_key` / `progress_s3_key`, `chunk`,
+  `chunks`, `narration`, `seq`) or the duplicate is not recognised and the pad hears it twice.
+- **Claims file.** `ReplyClaims._save` rewrites only the claims touched within `CLAIM_PERSIST_S` (2 h) of the newest one
+  (memory keeps all): 15-30 ms -> under 1 ms per hold / start / end on the loaded host.
 
 ## Upload proxy
 

@@ -339,6 +339,10 @@ PRESENCE = Presence()
 CLAIM_LEASE_S = float(os.environ.get("CLAIM_LEASE_S", "20"))
 CLAIM_SETTLE_S = float(os.environ.get("CLAIM_SETTLE_S", "10"))
 CLAIM_STATE_FILE = os.environ.get("CLAIM_STATE_FILE", "")  # empty: memory only
+# What a save writes: only the claims touched within this long of the newest one. The whole table (2000 claims, 120 KB)
+# was rewritten under the lock on every hold / start / end - 15-30 ms each on a loaded host, on the car's way to the
+# first audible word - and a claim older than a couple of hours is never asked about again. Memory keeps them all.
+CLAIM_PERSIST_S = float(os.environ.get("CLAIM_PERSIST_S", "7200"))
 CLAIM_KEEP_S = 2 * 86400  # a claim this old is not read back (the car never plays a reply that old)
 CLAIM_MEMOS = 2000  # claims kept (one per reply file; a memo with a follow-up has two)
 CLAIM_ACTIONS = {"car": ("hold", "start", "end", "release"), "watcher": ("offer", "take", "release")}
@@ -409,8 +413,10 @@ class ReplyClaims:
             return
         tmp = f"{self.state_file}.tmp"
         try:
+            newest = max((st.get("touched") or 0 for st in self._m.values()), default=0)
+            keep = {ck: st for ck, st in self._m.items() if not st.get("touched") or st["touched"] >= newest - CLAIM_PERSIST_S}
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"v": 2, "saved_at": time.time(), "memos": self._m}, f, separators=(",", ":"))
+                json.dump({"v": 2, "saved_at": time.time(), "memos": keep}, f, separators=(",", ":"))
             os.replace(tmp, self.state_file)
         except OSError as e:
             log("claims_save_failed", file=self.state_file, error=str(e)[:200])
@@ -1157,12 +1163,59 @@ def sse_frame(event: str, data: dict, ev_id: str | None = None) -> bytes:
     return f"{head}event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()
 
 
+# Early push: the watcher's fact reaches the car through bb-emit -> NATS -> this proxy, which costs a subprocess (0.12-0.25 s
+# for voiced) before the pad hears of the chunk it can already fetch. POST /internal/push {action, memo_id, data} (the same
+# `data` the watcher gives bb-emit) publishes the compact event to the open streams at once, and the fact that follows
+# over NATS is dropped as the duplicate it is. Not under /upload/, so Traefik never routes it: only a local caller (the
+# container's published 127.0.0.1 port) can reach it.
+HINT_ACTIONS = tuple(a for a in PUSH_FACTS if a != "failed")  # an error is never pushed ahead of its fact
+HINT_TTL_S = 120.0
+_HINTED: dict = {}
+_HINTED_LOCK = threading.Lock()
+
+
+def push_ident(ev: dict) -> tuple:
+    """What makes two push events the same fact: the fact, the memo and whichever key / index names the audio."""
+    key = ev.get("chunk_s3_key") or ev.get("reply_s3_key") or ev.get("progress_s3_key")
+    return (ev.get("fact"), ev.get("memo_id"), key, None if key else (ev.get("chunk"), ev.get("narration"), ev.get("seq")))
+
+
+def hint_push(body, hub: PushHub = PUSH, now: float | None = None) -> dict | None:
+    """Publish one fact's push event early (see HINT_ACTIONS). The event, or None for a body that is not one."""
+    if not isinstance(body, dict) or body.get("action") not in HINT_ACTIONS or not isinstance(body.get("data"), dict):
+        return None
+    memo = body.get("memo_id") or body["data"].get("memo_id")
+    if not isinstance(memo, str) or not MEMO_UUID_RE.match(memo):
+        return None
+    now = time.time() if now is None else now
+    ev = push_event({"type": f"bloodbank.audio.memo.{body['action']}", "time": now_iso(), "correlationid": memo,
+                     "data": {**body["data"], "memo_id": memo}})
+    if not ev:
+        return None
+    with _HINTED_LOCK:
+        for k in [k for k, t in _HINTED.items() if now - t > HINT_TTL_S]:
+            del _HINTED[k]
+        _HINTED[push_ident(ev)] = now
+    hub.publish(ev)
+    return ev
+
+
+def _already_pushed(ev: dict, now: float | None = None) -> bool:
+    """True once, for the NATS copy of an event hint_push already sent."""
+    now = time.time() if now is None else now
+    with _HINTED_LOCK:
+        t = _HINTED.pop(push_ident(ev), None)
+    return t is not None and now - t <= HINT_TTL_S
+
+
 def handle_nats_msg(subject: str, payload: bytes, hub: PushHub = PUSH) -> dict | None:
     try:
         env = json.loads(payload)
     except ValueError:
         return None
     ev = push_event(env)
+    if ev and _already_pushed(ev):
+        return None  # the car heard of it from the watcher's early push
     if ev:
         hub.publish(ev)
     return ev
@@ -1329,6 +1382,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             os.unlink(tmp_path)
 
+    def _push_hint(self):
+        """POST /internal/push {action, memo_id, data}: see hint_push. 202 pushed, 400 not a pushable fact."""
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(min(n, 8192)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            body = None
+        ev = hint_push(body)
+        self.send_response(202 if ev else 400)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        if ev:
+            log("push_hint", memo_id=ev["memo_id"], fact=ev["fact"], streams=PUSH.clients())
+
     def _client_event(self):
         """Device-side event: POST /upload/client-event {event, key, error?, code?, bytes?, duration_ms?, attempts?, retryable?, capture?}."""
         try:
@@ -1472,6 +1539,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Playback beacon from the pad: POST /upload/played {reply_key, phase, seconds?, error?}."""
+        if self.path == "/internal/push":
+            return self._push_hint()
         if self.path == "/upload/client-event":
             return self._client_event()
         if self.path == "/upload/heard":

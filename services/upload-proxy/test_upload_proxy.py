@@ -1140,6 +1140,18 @@ class ReplyClaims(unittest.TestCase):
         ans = c.take(other, now=1010)
         self.assertEqual((ans["ok"], ans["owner"], ans["settling_s"]), (True, "phone", 0.0))
 
+    def test_a_save_writes_only_the_recent_claims_but_memory_keeps_all(self):
+        old, new = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+        with tempfile.TemporaryDirectory() as d:
+            f = str(Path(d) / "claims.json")
+            a = up.ReplyClaims(state_file=f, boot_at=0)
+            a.car(old, "hold", self.DEV, now=1000)
+            a.car(new, "hold", self.DEV, now=1000 + up.CLAIM_PERSIST_S + 5)
+            on_disk = json.load(open(f))["memos"]
+            self.assertEqual(list(on_disk), [new])
+            self.assertEqual(sorted(a._m), sorted([old, new]))  # still answered from memory
+            self.assertEqual(a.view(old, now=1001)["car"], "held")
+
     def test_an_unreadable_state_file_starts_empty_and_settles(self):
         import tempfile
         from unittest import mock
@@ -1422,3 +1434,62 @@ class WakeHint(unittest.TestCase):
         finally:
             srv.shutdown()
             up.MC_BIN, up.WAKE_URL, up.agent_route = real_mc, real_url, real_route
+
+
+class EarlyPush(unittest.TestCase):
+    """POST /internal/push publishes the compact event at once; the NATS copy of it is dropped, exactly once."""
+    MEMO = "5b0a61b1-9d2e-4a54-8f5b-6a6d1d7f1c11"
+    CHUNK = f"replies/2026/10/22/101010Z-holocene-pm-{MEMO}-c1of2.ogg"
+
+    def body(self, **over):
+        return {"action": "voiced", "memo_id": self.MEMO, "data": {"chunk_s3_key": self.CHUNK, "chunk": 1, "chunks": 2,
+                                                                  "target_agent_id": "holocene-pm"}, **over}
+
+    def nats(self, hub, **data):
+        env = {"type": "bloodbank.audio.memo.voiced", "time": "2026-10-22T10:10:10Z", "correlationid": self.MEMO,
+               "data": {"memo_id": self.MEMO, "chunk_s3_key": self.CHUNK, "chunk": 1, "chunks": 2,
+                        "target_agent_id": "holocene-pm", "tts_ms": 99, **data}}
+        return up.handle_nats_msg("bloodbank.evt.audio.memo.voiced", json.dumps(env).encode(), hub)
+
+    def setUp(self):
+        up._HINTED.clear()
+        self.hub = up.PushHub()
+        self.c, _ = self.hub.subscribe(None)
+
+    def test_a_hint_reaches_the_open_streams_at_once(self):
+        ev = up.hint_push(self.body(), self.hub)
+        self.assertEqual((ev["fact"], ev["memo_id"], ev["chunk_s3_key"], ev["chunk"]), ("voiced", self.MEMO, self.CHUNK, 1))
+        self.assertEqual(self.c.q.get_nowait()[1], ev)
+
+    def test_the_nats_copy_of_a_hinted_fact_is_dropped_once(self):
+        up.hint_push(self.body(), self.hub)
+        self.c.q.get_nowait()
+        self.assertIsNone(self.nats(self.hub))
+        self.assertTrue(self.c.q.empty())
+        self.assertIsNotNone(self.nats(self.hub))   # a second copy is a real second event, not swallowed forever
+        self.assertFalse(self.c.q.empty())
+
+    def test_an_unhinted_fact_still_flows_through_nats(self):
+        self.assertIsNotNone(self.nats(self.hub))
+        self.assertFalse(self.c.q.empty())
+
+    def test_a_different_chunk_is_not_mistaken_for_the_hinted_one(self):
+        up.hint_push(self.body(), self.hub)
+        self.c.q.get_nowait()
+        other = self.CHUNK.replace("c1of2", "c2of2")
+        self.assertIsNotNone(self.nats(self.hub, chunk_s3_key=other, chunk=2))
+
+    def test_a_stale_hint_no_longer_swallows_the_fact(self):
+        up.hint_push(self.body(), self.hub, now=1000.0)
+        ev = up.push_event({"type": "bloodbank.audio.memo.voiced", "data": {"memo_id": self.MEMO, "chunk_s3_key": self.CHUNK, "chunk": 1}})
+        self.assertFalse(up._already_pushed(ev, now=1000.0 + up.HINT_TTL_S + 1))
+
+    def test_bad_hints_are_refused(self):
+        for bad in (None, [], {}, self.body(action="failed"), self.body(action="played"), self.body(memo_id="nope"),
+                    self.body(data="x"), {"action": "voiced", "data": {}}):
+            self.assertIsNone(up.hint_push(bad, self.hub), bad)
+        self.assertTrue(self.c.q.empty())
+
+    def test_a_key_outside_replies_is_not_pushed(self):
+        ev = up.hint_push(self.body(data={"chunk_s3_key": "inbox/x/2026/10/22/a.ogg", "chunk": 1}), self.hub)
+        self.assertNotIn("chunk_s3_key", ev)
