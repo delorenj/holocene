@@ -1,0 +1,78 @@
+speech decisions: 222   utterances: 62   mic-busy windows: 10   recordings: 10
+  mono   135.744 s    0.32 s  cue      end    -
+  mono   155.746 s    2.58 s  cue      end    -
+  mono   158.331 s    1.03 s  cue      end    -
+  mono   165.046 s    2.79 s  arming   end    -
+  mono   175.434 s    3.31 s  ack      end    12e2c5f2
+  mono   178.741 s    0.51 s  ack      end    12e2c5f2
+  mono   179.250 s    4.40 s  echo     end    12e2c5f2
+  mono   202.115 s    5.78 s  progress end    12e2c5f2
+  mono   223.271 s   24.03 s  reply    end    12e2c5f2
+  mono   253.214 s    2.17 s  arming   end    -
+  mono   263.251 s    2.87 s  ack      end    e81e6315
+  mono   266.144 s    0.29 s  ack      end    e81e6315
+  mono   266.730 s    4.95 s  echo     end    e81e6315
+  mono   292.437 s    7.48 s  progress end    e81e6315
+  mono   311.975 s   14.86 s  reply    end    e81e6315
+  mono   333.618 s    2.24 s  arming   end    -
+  mono   348.625 s    2.79 s  ack      end    f5315743
+  mono   442.436 s    2.19 s  arming   end    -
+  mono   457.720 s    2.71 s  ack      end    5cdde79e
+  mono   460.427 s    0.56 s  ack      end    5cdde79e
+  mono   461.556 s    4.70 s  echo     end    5cdde79e
+  mono   482.607 s    5.04 s  progress end    5cdde79e
+  mono   609.947 s   26.05 s  reply    halt   e81e6315
+  mono   636.353 s    2.04 s  arming   end    -
+  mono   651.120 s    2.69 s  ack      end    cf6c31b1
+  mono   653.810 s    0.51 s  ack      end    cf6c31b1
+  mono   654.325 s   25.89 s  reply    end    e81e6315
+  mono   680.217 s    3.66 s  echo     end    cf6c31b1
+  mono   683.884 s    4.40 s  progress end    cf6c31b1
+  mono   765.695 s    4.88 s  progress end    5cdde79e
+  mono   808.010 s    2.18 s  arming   end    -
+  mono   814.854 s    2.67 s  ack      end    8c68a50a
+  mono   817.525 s    0.53 s  ack      end    8c68a50a
+  mono   818.090 s    4.51 s  echo     end    8c68a50a
+  mono   826.103 s    2.17 s  arming   end    -
+  mono   912.060 s    1.32 s  cue      end    -
+  mono   913.391 s    4.43 s  reply    end    5cdde79e
+  mono   917.950 s    5.51 s  reply    end    8c68a50a
+  mono   949.535 s    2.28 s  arming   end    -
+  mono   964.230 s    3.20 s  ack      end    ce601626
+  mono   967.443 s    0.60 s  ack      end    ce601626
+  mono   968.039 s    3.55 s  echo     end    ce601626
+  mono   971.587 s    4.55 s  progress end    cf6c31b1
+  mono   984.817 s    6.03 s  progress end    ce601626
+  mono  1023.662 s    3.70 s  reply    end    cf6c31b1
+  mono  1151.215 s    2.17 s  arming   end    -
+  mono  1165.816 s    2.69 s  ack      end    4984f914
+  mono  1168.507 s    0.51 s  ack      end    4984f914
+  mono  1169.021 s    5.75 s  progress end    ce601626
+  mono  1174.780 s    3.65 s  echo     end    4984f914
+  mono  1187.290 s    5.47 s  progress end    4984f914
+  mono  1197.082 s    2.16 s  arming   end    -
+  mono  1204.552 s    2.81 s  ack      end    fedd0675
+  mono  1207.359 s    0.53 s  ack      end    fedd0675
+  mono  1207.916 s    3.64 s  echo     end    fedd0675
+  mono  1270.073 s    4.72 s  progress end    ce601626
+  mono  1280.961 s    0.68 s  progress halt   fedd0675
+  mono  1284.472 s    5.44 s  reply    end    fedd0675
+  mono  1333.500 s    3.31 s  reply    end    ce601626
+  mono  1362.030 s    6.95 s  progress end    4984f914
+  mono  1472.070 s    6.34 s  progress end    4984f914
+  mono  1534.796 s    3.41 s  reply    end    4984f914
+  mono   165.043 s   10.39 s  MIC BUSY (arming + recording)
+  mono   253.211 s   10.04 s  MIC BUSY (arming + recording)
+  mono   333.615 s   15.01 s  MIC BUSY (arming + recording)
+  mono   442.431 s   15.29 s  MIC BUSY (arming + recording)
+  mono   636.108 s   15.01 s  MIC BUSY (arming + recording)
+  mono   808.007 s    6.84 s  MIC BUSY (arming + recording)
+  mono   826.101 s   85.96 s  MIC BUSY (arming + recording)
+  mono   949.533 s   14.70 s  MIC BUSY (arming + recording)
+  mono  1151.213 s   14.60 s  MIC BUSY (arming + recording)
+  mono  1197.080 s    7.47 s  MIC BUSY (arming + recording)
+
+check 1 speech x speech: PASS 0 overlaps
+check 2 speech x mic busy: PASS 0 overlaps
+check 3 arming prompt x recording: PASS 0 overlaps
+RESULT ZERO OVERLAPS

@@ -1,0 +1,28 @@
+memo_id  f5315743-f075-5f89-9811-3fb601f65e2f
+key      inbox/holocene-pm/2026/10/22/20261022T063742Z.ogg
+agent    holocene-pm
+command  -
+lane     batch   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 0/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=f5315743-f075-5f89-9811-3fb601f65e2f&limit=100'
+
+  MISSING s3_object                  -                                  delo/holocene-auto/inbox/holocene-pm/2026/10/22/20261022T063742Z.ogg does not exist
+  MISSING upload_proxy_log           -                                  no line mentioning the key in `docker logs agent-pad-upload` (older than the proxy's structured logging, or logs rotated) (optional)
+  MISSING fact:uploaded              -                                  no bloodbank.audio.memo.uploaded with correlationid=f5315743-f075-5f89-9811-3fb601f65e2f (optional)
+  MISSING fact:received              -                                  no bloodbank.audio.memo.received with correlationid=f5315743-f075-5f89-9811-3fb601f65e2f
+  MISSING fact:transcribed           -                                  no bloodbank.audio.memo.transcribed with correlationid=f5315743-f075-5f89-9811-3fb601f65e2f
+  MISSING fact:dispatched            -                                  no bloodbank.audio.memo.dispatched with correlationid=f5315743-f075-5f89-9811-3fb601f65e2f
+  MISSING gateway_journal            -                                  no command id yet (not dispatched)
+  MISSING agent:invocation.started   -                                  no bloodbank.agent.invocation.started for this command in Candystore
+  MISSING agent:invocation.done      -                                  no invocation.completed/failed for this command
+  MISSING fact:replied               -                                  no bloodbank.audio.memo.replied with correlationid=f5315743-f075-5f89-9811-3fb601f65e2f
+  MISSING reply_object               -                                  no reply key recorded
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  UNKNOWN car_status_object          -                                  no status/2026/10/22/f5315743-f075-5f89-9811-3fb601f65e2f.json (written by watchers since 2026-10-20) (optional)
+  FAILED  fact:failed[record]        2026-10-22T06:37:58.041Z           empty_capture: native recorder returned no audio (retryable=False, attempt=1)
+
+car speech (3 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -         ack       start        reason waited_ms=54
+  -         ack       deferred     reason recording  while recording  mic recording
+  -         ack       end          
+
+VERDICT  STOPPED AT record: empty_capture: native recorder returned no audio (retryable=False, attempt=1)

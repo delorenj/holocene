@@ -1,0 +1,3 @@
+offset_ms(device-host)=-38 rtt_ms=47
+offset_ms(device-host)=48 rtt_ms=337
+offset_ms(device-host)=209 rtt_ms=558

@@ -1,0 +1,369 @@
+{
+ "A": {
+  "memo": "12e2c5f2",
+  "stop_pressed": 1792650903.7373185,
+  "upload": 1792650905.357,
+  "transcribed": 1792650906.956,
+  "stt_ms": 505,
+  "dispatched": 1792650907.358,
+  "followup_started": null,
+  "detached_seen": null,
+  "commands": [
+   {
+    "cid": "bf477979",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792650907.267252,
+    "updated": 1792650945.804438,
+    "detached_at": null
+   }
+  ],
+  "agent_done": [
+   1792650946.086
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792650952.51
+  ],
+  "car_reply_audible": [
+   1792650953.2207
+  ],
+  "car_echo_start": 1792650908.488,
+  "car_progress_starts": [
+   1792650931.3539999
+  ],
+  "car_progress_audible": [
+   1792650932.4409
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/063546Z-holocene-pm-12e2c5f2-53c5-5403-b663-aef22da4b9ce.ogg"
+  ],
+  "phone_started": []
+ },
+ "B": {
+  "memo": "e81e6315",
+  "stop_pressed": 1792650992.2793975,
+  "upload": 1792650992.737,
+  "transcribed": 1792650994.395,
+  "stt_ms": 587,
+  "dispatched": 1792650994.742,
+  "followup_started": 1792651047.585,
+  "detached_seen": null,
+  "commands": [
+   {
+    "cid": "6beb5e0f",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792650995.195605,
+    "updated": 1792651037.232156,
+    "detached_at": null
+   },
+   {
+    "cid": "bf65f692",
+    "lane": "batch",
+    "state": "completed",
+    "turn_start": 1792651047.996776,
+    "updated": 1792651333.56431,
+    "detached_at": null
+   },
+   {
+    "cid": "bf65f692",
+    "lane": "batch",
+    "state": "completed",
+    "turn_start": 1792651047.996776,
+    "updated": 1792651333.56431,
+    "detached_at": null
+   }
+  ],
+  "agent_done": [
+   1792651037.26,
+   1792651333.728
+  ],
+  "escalated": [],
+  "background": true,
+  "car_reply_starts": [
+   1792651041.213,
+   1792651339.185,
+   1792651383.564
+  ],
+  "car_reply_audible": [
+   1792651042.4283,
+   1792651339.7283,
+   1792651383.5787
+  ],
+  "car_echo_start": 1792650995.9689999,
+  "car_progress_starts": [
+   1792651021.6759999
+  ],
+  "car_progress_audible": [
+   1792651022.388
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/063717Z-holocene-pm-e81e6315-1488-5a3e-a3bc-4eb4432ae1df.ogg",
+   "replies/2026/10/22/064213Z-holocene-pm-e81e6315-1488-5a3e-a3bc-4eb4432ae1df.ogg",
+   "replies/2026/10/22/064213Z-holocene-pm-e81e6315-1488-5a3e-a3bc-4eb4432ae1df.ogg"
+  ],
+  "phone_started": []
+ },
+ "C1": {
+  "memo": "5cdde79e",
+  "stop_pressed": 1792651186.270344,
+  "upload": 1792651187.8,
+  "transcribed": 1792651189.522,
+  "stt_ms": 581,
+  "dispatched": 1792651189.893,
+  "followup_started": null,
+  "detached_seen": 1792651491.119,
+  "commands": [
+   {
+    "cid": "c471dcbd",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651190.311352,
+    "updated": 1792651553.136177,
+    "detached_at": 1792651490.671744
+   }
+  ],
+  "agent_done": [
+   1792651553.234
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792651642.629
+  ],
+  "car_reply_audible": [
+   1792651643.5651
+  ],
+  "car_echo_start": 1792651190.795,
+  "car_progress_starts": [
+   1792651211.846,
+   1792651494.9329998
+  ],
+  "car_progress_audible": [
+   1792651212.5584,
+   1792651495.686
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/064553Z-holocene-pm-5cdde79e-49bd-51b3-8b24-fb0a0e668283.ogg"
+  ],
+  "phone_started": []
+ },
+ "C2": {
+  "memo": "cf6c31b1",
+  "stop_pressed": 1792651380.1538148,
+  "upload": 1792651380.672,
+  "transcribed": 1792651382.323,
+  "stt_ms": 587,
+  "dispatched": 1792651382.595,
+  "followup_started": null,
+  "detached_seen": 1792651683.225,
+  "commands": [
+   {
+    "cid": "5357e85b",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651382.525025,
+    "updated": 1792651749.949394,
+    "detached_at": 1792651683.210202
+   }
+  ],
+  "agent_done": [
+   1792651750.045
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792651752.8999999
+  ],
+  "car_reply_audible": [
+   1792651754.104
+  ],
+  "car_echo_start": 1792651409.4559999,
+  "car_progress_starts": [
+   1792651413.122,
+   1792651700.825
+  ],
+  "car_progress_audible": [
+   1792651414.105,
+   1792651701.3741
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/064910Z-holocene-pm-cf6c31b1-67b3-5310-ba45-8089699e8533.ogg"
+  ],
+  "phone_started": []
+ },
+ "D1": {
+  "memo": "8c68a50a",
+  "stop_pressed": 1792651543.5455167,
+  "upload": 1792651544.386,
+  "transcribed": 1792651545.961,
+  "stt_ms": 451,
+  "dispatched": 1792651546.257,
+  "followup_started": null,
+  "detached_seen": null,
+  "commands": [
+   {
+    "cid": "c66e5ae5",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651546.161416,
+    "updated": 1792651562.281727,
+    "detached_at": null
+   }
+  ],
+  "agent_done": [
+   1792651562.735
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792651647.189
+  ],
+  "car_reply_audible": [
+   1792651647.646
+  ],
+  "car_echo_start": 1792651547.328,
+  "car_progress_starts": [],
+  "car_progress_audible": [],
+  "car_reply_ids": [
+   "replies/2026/10/22/064602Z-holocene-pm-8c68a50a-731c-58fc-8e20-533908e5bc11.ogg"
+  ],
+  "phone_started": []
+ },
+ "C3": {
+  "memo": "ce601626",
+  "stop_pressed": 1792651693.0480838,
+  "upload": 1792651693.791,
+  "transcribed": 1792651695.504,
+  "stt_ms": 546,
+  "dispatched": 1792651695.979,
+  "followup_started": null,
+  "detached_seen": 1792651996.385,
+  "commands": [
+   {
+    "cid": "876e80be",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651695.875031,
+    "updated": 1792652059.701577,
+    "detached_at": 1792651996.303121
+   }
+  ],
+  "agent_done": [
+   1792652059.917
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792652062.7389998
+  ],
+  "car_reply_audible": [
+   1792652063.5226
+  ],
+  "car_echo_start": 1792651697.2779999,
+  "car_progress_starts": [
+   1792651714.055,
+   1792651898.259,
+   1792651999.312
+  ],
+  "car_progress_audible": [
+   1792651715.3856,
+   1792651898.2629,
+   1792651999.8855
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/065419Z-holocene-pm-ce601626-3b70-57f4-a477-d3dced90bf81.ogg"
+  ],
+  "phone_started": []
+ },
+ "C4": {
+  "memo": "4984f914",
+  "stop_pressed": 1792651894.767688,
+  "upload": 1792651895.482,
+  "transcribed": 1792651897.691,
+  "stt_ms": 503,
+  "dispatched": 1792651897.946,
+  "followup_started": null,
+  "detached_seen": 1792652198.226,
+  "commands": [
+   {
+    "cid": "023fcd3d",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651897.865549,
+    "updated": 1792652260.570529,
+    "detached_at": 1792652198.207159
+   }
+  ],
+  "agent_done": [
+   1792652260.838
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792652264.034
+  ],
+  "car_reply_audible": [
+   1792652264.8829
+  ],
+  "car_echo_start": 1792651904.018,
+  "car_progress_starts": [
+   1792651916.529,
+   1792652091.269,
+   1792652201.3079998
+  ],
+  "car_progress_audible": [
+   1792651917.2279,
+   1792652092.3973,
+   1792652202.7571
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/065740Z-holocene-pm-4984f914-9464-5cf4-93d1-5c3d13ced9ee.ogg"
+  ],
+  "phone_started": []
+ },
+ "D2": {
+  "memo": "fedd0675",
+  "stop_pressed": 1792651933.4697423,
+  "upload": 1792651934.272,
+  "transcribed": 1792651935.502,
+  "stt_ms": 441,
+  "dispatched": 1792651935.765,
+  "followup_started": null,
+  "detached_seen": null,
+  "commands": [
+   {
+    "cid": "b90eb4e0",
+    "lane": "interactive",
+    "state": "completed",
+    "turn_start": 1792651996.354216,
+    "updated": 1792652009.794636,
+    "detached_at": null
+   }
+  ],
+  "agent_done": [
+   1792652009.946
+  ],
+  "escalated": [],
+  "background": false,
+  "car_reply_starts": [
+   1792652013.71
+  ],
+  "car_reply_audible": [
+   1792652014.1735
+  ],
+  "car_echo_start": 1792651937.154,
+  "car_progress_starts": [
+   1792652010.199
+  ],
+  "car_progress_audible": [
+   1792652010.7725
+  ],
+  "car_reply_ids": [
+   "replies/2026/10/22/065329Z-holocene-pm-fedd0675-b22e-5a07-883c-70cdc98175ae.ogg"
+  ],
+  "phone_started": []
+ }
+}
