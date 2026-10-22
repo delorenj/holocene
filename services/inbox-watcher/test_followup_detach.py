@@ -66,8 +66,19 @@ class SplitBackground(unittest.TestCase):
                          ("I'll run the crank circuit and call you back.", "Walk all 8 zellij tabs.\nReport blockers."))
 
     def test_markdown_around_the_marker_is_allowed(self):
-        for line in ("**BACKGROUND:** do it", "- Background: do it", "> BACKGROUND : do it", "`BACKGROUND:` do it"):
+        for line in ("**BACKGROUND:** do it", "- BACKGROUND: do it", "> BACKGROUND : do it", "`BACKGROUND:` do it"):
             self.assertEqual(iw.split_background("Sure.\n" + line), ("Sure.", "do it"), line)
+
+    def test_only_the_upper_case_marker_outside_code_counts(self):
+        # 2026-10-22 review: each of these cut an ordinary reply short and sent its tail back as "do this now, in full"
+        for text in ("Status.\n**Background:** the gateway was reloaded at 04:19 and is fine.",
+                     "Here is the CSS:\n```css\nbody {\n  background: #222;\n}\n```\nThat is all.",
+                     "Config:\n- background: true\n- lane: batch",
+                     "Example:\n```\nBACKGROUND: not a real hand-off\n```\nNothing else to do."):
+            self.assertEqual(iw.split_background(text), (text, None), text)
+        # a real marker after a fenced example still counts
+        text = "Example:\n```\nBACKGROUND: x\n```\nOn it.\nBACKGROUND: do the real work"
+        self.assertEqual(iw.split_background(text), ("Example:\n```\nBACKGROUND: x\n```\nOn it.", "do the real work"))
 
     def test_a_word_inside_a_sentence_is_not_the_marker(self):
         text = "The background job finished. BACKGROUND: is how I would hand it off."
@@ -113,6 +124,17 @@ class VoiceTurnModel(MemoHarness, unittest.TestCase):
         for must in ("A driver is waiting", "within about a minute", "at most 3 tool calls", "vox-speak", "never sleep",
                      "BACKGROUND:", "follow-up"):
             self.assertIn(must, p)
+        self.assertIn("delegate_task", p)
+
+    def test_the_follow_up_prefix_carries_the_deploy_rule_and_no_delegation(self):
+        p = iw.FOLLOWUP_PREFIX
+        for must in ("never delegate to a subagent", "delegate_task", "Run no deploy", "speech-to-text", "read-only part",
+                     "spoken summary", "do not write a BACKGROUND: line"):
+            self.assertIn(must, p)
+
+    def test_a_follow_up_runs_on_the_profile_model_by_default(self):
+        # Sol's weekly pool keeps the VOICE turns fast; nobody waits on a follow-up (2026-10-22 review)
+        self.assertEqual(iw.FOLLOWUP_MODEL, "")
 
 
 class AnswerThenBackground(MemoHarness, unittest.TestCase):
@@ -146,7 +168,8 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         self.assertEqual(c2["data"]["prompt"], iw.FOLLOWUP_PREFIX + "Walk all 8 zellij tabs and report.")
         ctx = c2["data"]["context"]
         self.assertEqual((ctx["reason"], ctx["followup_of"], ctx["followup_depth"]), ("voice-followup", cid1, 1))
-        self.assertEqual(c2["data"]["model"], iw.FOLLOWUP_MODEL)
+        self.assertNotIn("model", c2["data"])  # the profile's own model: Sol stays for the voice turns
+        self.assertEqual(c1["data"]["model"], iw.VOICE_MODEL)
         a = c2["argv"]
         self.assertEqual(a[a.index("--correlation") + 1], m["memo_id"])  # Candystore and memo:trace group it with the memo
         self.assertEqual(a[a.index("--command-id") + 1], m["command_id"])
@@ -230,6 +253,59 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         hermes_session("holocene-pm", m["memo_id"], "BACKGROUND: build the navi UI", ts=time.time())
         self.tick_until(lambda: len(self.cmds(key)) == 2)
         self.assertEqual(VOX_TEXTS, [f"Holocene PM. {iw.FOLLOWUP_ACK}"])
+
+    def test_a_marker_with_nothing_after_it_never_says_done(self):
+        key, m = self.to_await("atb-empty-line")
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], "BACKGROUND:", ts=time.time())
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(VOX_TEXTS, [f"Holocene PM. {iw.NO_HANDOFF_LINE}"])
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_a_follow_up_that_only_hands_off_again_is_spoken_as_not_finished(self):
+        key, m, cid1 = self.quick_answer("atb-handoff-again")
+        journal(m["command_id"], "holocene-pm")
+        say("holocene-pm", m["memo_id"], "user", iw.FOLLOWUP_PREFIX + "Walk all 8 zellij tabs and report.")
+        say("holocene-pm", m["memo_id"], "assistant", "BACKGROUND: walk the tabs later")
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(VOX_TEXTS[-1], "Holocene PM, follow-up. The background work did not finish: it tried to hand "
+                                        "the work off again instead of doing it.")
+        self.assertEqual(m["followups"][0]["state"], "failed")
+        self.assertEqual(len(self.cmds(key)), 2)
+
+    def test_cancel_then_retry_brings_the_follow_up_back_at_reply_too(self):
+        # 2026-10-22 review: only await_agent revived the follow-up; at reply the follow-up's answer was looked up by the
+        # QUICK answer's prompt and spoken as "<agent>, late reply." with the head cut, its entry left "cancelled".
+        key, m, cid1 = self.quick_answer("atb-cancel-retry")
+        cid2 = m["command_id"]
+        time.sleep(1.1)
+        journal(cid2, "holocene-pm")
+        say("holocene-pm", m["memo_id"], "user", iw.FOLLOWUP_PREFIX + "Walk all 8 zellij tabs and report.")
+        say("holocene-pm", m["memo_id"], "assistant", "All eight tabs are green.")
+        self.tick_until(lambda: m["stage"] == "reply")
+        with self.w.mu:
+            self.w.cancel_memo(m)
+        self.assertEqual(m["followups"][0]["state"], "cancelled")
+        self.w._control_retry(m, m["memo_id"])
+        self.assertEqual((m["stage"], m["followups"][0]["state"]), ("reply", "running"))
+        self.tick_until(lambda: m["status"] == "done")
+        self.assertEqual(VOX_TEXTS[-1], "Holocene PM, follow-up. All eight tabs are green.")
+        self.assertEqual(m["followups"][0]["state"], "spoken")
+        self.assertEqual(len(self.cmds(key)), 2)
+
+    def test_cancel_then_retry_at_dispatch_sends_the_follow_ups_prompt(self):
+        key, m, cid1 = self.quick_answer("atb-cancel-dispatch")
+        fu = m["followups"][0]
+        # as if the cancel had landed while the follow-up was being dispatched
+        m.update(stage="dispatch")
+        fu["state"] = "dispatching"
+        with self.w.mu:
+            self.w.cancel_memo(m)
+        self.assertEqual(fu["state"], "cancelled")
+        self.w._control_retry(m, m["memo_id"])
+        self.assertEqual((m["stage"], fu["state"]), ("dispatch", "dispatching"))
+        self.assertIs(iw.live_followup(m), fu)
+        self.assertEqual(self.w._prompt_for_send(m), fu["prompt"])
 
     def test_off_switch_strips_the_line_and_sends_nothing(self):
         with unittest.mock.patch.object(iw, "FOLLOWUP_MAX", 0):
@@ -332,6 +408,21 @@ class Detached(MemoHarness, unittest.TestCase):
         self.assertEqual(len(self.cmds(key)), 1)
         f = self.of_type("failed", key)[-1]
         self.assertEqual((f["timeout_source"], f["detached"]), ("detached_ceiling", True))
+
+    def test_a_rerun_stopped_at_the_lane_limit_escalates_even_if_an_earlier_attempt_detached(self):
+        # 2026-10-22 review: the same command detached, a restart cut it off and re-ran it, and that re-run was stopped at
+        # 300 s with max_detached full (timeout_source lane, no detached flag). It must escalate, not fail.
+        key, m = self.to_await("det-rerun")
+        cid = m["command_id"]
+        journal_detached(cid)
+        self.ticks(3)
+        self.wait_narration()
+        self.assertTrue(iw.detached_now(m))
+        journal_turn_timeout(cid)
+        self.tick_until(lambda: m["command_id"] != cid and m["stage"] == "await_agent")
+        self.assertEqual([t for t, _ in self.cmds(key)], ["bloodbank.cmd.agent.invocation.invoke",
+                                                         "bloodbank.cmd.agent.invocation.start"])
+        self.assertIs(m["escalated"], True)
 
     def test_without_detach_the_wall_clock_still_escalates(self):
         key, m = self.to_await("det-none")

@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1142,6 +1143,68 @@ class ReplyClaims(unittest.TestCase):
                 self.assertTrue(c.car(PUSH_MEMO, "start", now=107)["ok"])
             self.assertEqual(lg.call_args[0][0], "claims_save_failed")
 
+    def test_a_follow_up_reply_of_the_same_memo_has_its_own_claim(self):
+        # Review 2026-10-22: claims were per memo. The car played the quick answer (car=ended), so the follow-up of the
+        # same memo read "car spoke it" at once and the phone's take was refused: with the car switched off by then, the
+        # follow-up was heard nowhere, while trace and /voice said it was spoken.
+        c = up.ReplyClaims(lease_s=20, boot_at=0)
+        quick = self.RKEY
+        follow = f"replies/2026/10/21/102800Z-holocene-pm-{PUSH_MEMO}.ogg"
+        c.offer(PUSH_MEMO, now=100, reply_key=quick)
+        c.car(PUSH_MEMO, "hold", self.DEV, now=101, reply_key=quick)
+        c.car(PUSH_MEMO, "start", self.DEV, now=102, reply_key=quick)
+        c.car(PUSH_MEMO, "end", self.DEV, now=110, reply_key=quick)
+        self.assertFalse(c.take(PUSH_MEMO, now=130, reply_key=quick)["ok"], "the quick answer is the car's")
+        # the car is switched off; 13 minutes later the follow-up's reply is offered
+        ans = c.offer(PUSH_MEMO, now=900, reply_key=follow)
+        self.assertEqual((ans["car"], ans["owner"], ans["held_ever"], ans["reply_key"]), (None, None, False, follow))
+        ans = c.take(PUSH_MEMO, now=921, reply_key=follow)
+        self.assertEqual((ans["ok"], ans["owner"]), (True, "phone"), "nobody holds the follow-up: the phone takes it")
+        # a car that comes back later is refused the follow-up, and keeps its quick answer
+        self.assertFalse(c.car(PUSH_MEMO, "hold", self.DEV, now=950, reply_key=follow)["ok"])
+        self.assertEqual(c.view(PUSH_MEMO, now=950, reply_key=quick)["car"], "ended")
+        # a late beacon for the quick answer touches only the quick answer's claim
+        self.assertTrue(c.played(PUSH_MEMO, "end", now=951, reply_key=quick))
+        self.assertEqual(c.view(PUSH_MEMO, now=951, reply_key=follow)["owner"], "phone")
+
+    def test_a_live_car_still_keeps_its_follow_up_and_a_memo_only_request_gets_the_newest_claim(self):
+        c = up.ReplyClaims(lease_s=20, boot_at=0)
+        quick, follow = self.RKEY, f"replies/2026/10/21/102800Z-holocene-pm-{PUSH_MEMO}.ogg"
+        c.offer(PUSH_MEMO, now=100, reply_key=quick)
+        self.assertTrue(c.take(PUSH_MEMO, now=121, reply_key=quick)["ok"], "car off: the phone took the quick answer")
+        c.offer(PUSH_MEMO, now=900, reply_key=follow)
+        self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=901, reply_key=follow)["ok"], "the car is back: it holds the follow-up")
+        self.assertFalse(c.take(PUSH_MEMO, now=915, reply_key=follow)["ok"])
+        # memo only (a watcher or pad from before per-reply claims): the newest claim answers...
+        self.assertEqual(c.view(PUSH_MEMO, now=916)["reply_key"], follow)
+        self.assertFalse(c.take(PUSH_MEMO, now=916)["ok"])
+        # ...except the old pad's "does the phone still have it" look, which gets the claim the phone owns, so it never
+        # takes back a quick answer the phone already played
+        v = c.view(PUSH_MEMO, now=922, prefer_phone=True)
+        self.assertEqual((v["owner"], v["reply_key"]), ("phone", quick))
+
+    def test_a_v1_state_file_keyed_by_memo_still_loads(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "claims.json"
+            other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+            f.write_text(json.dumps({"v": 1, "memos": {
+                PUSH_MEMO: {"owner": "phone", "touched": 100, "phone_at": 100},
+                other: {"owner": "car", "car": "ended", "touched": 100},
+                "nope": {"owner": "car", "touched": 100}}}))
+            c = up.ReplyClaims(state_file=str(f), boot_at=200, settle_s=0)
+            self.assertEqual(c.loaded, 2)
+            self.assertEqual(c.view(PUSH_MEMO, now=200)["owner"], "phone", "memo-only lookups still see a v1 claim")
+            self.assertFalse(c.car(PUSH_MEMO, "hold", now=201)["ok"])
+            # a reply named by its key is its own claim: a new reply of the other memo is free
+            fresh = f"replies/2026/10/21/103000Z-holocene-pm-{other}.ogg"
+            self.assertTrue(c.take(other, now=202, reply_key=fresh)["ok"])
+            doc = json.loads(f.read_text())
+            self.assertEqual(doc["v"], 2)
+            self.assertEqual((doc["memos"][fresh]["memo_id"], doc["memos"][fresh]["reply_key"]), (other, fresh))
+            b = up.ReplyClaims(state_file=str(f), boot_at=300, settle_s=0)
+            self.assertEqual(b.view(other, now=300, reply_key=fresh)["owner"], "phone")
+
 
 class ReplyClaimsHttp(unittest.TestCase):
     """POST /upload/claim and GET /upload/claim?memo= over HTTP, and the playback beacon counting as the car's start."""
@@ -1182,6 +1245,21 @@ class ReplyClaimsHttp(unittest.TestCase):
         self.assertFalse(self.call("/upload/claim", {"by": "watcher", "action": "take", "memo_id": memo})[1]["ok"])
         self.assertEqual(self.call("/upload/claim", {"by": "nobody", "action": "take", "memo_id": memo})[0], 400)
         self.assertEqual(self.call("/upload/claim?memo=nope")[0], 400)
+
+    def test_claim_requests_name_the_reply(self):
+        memo = "a1b2c3d4-0000-5000-8000-000000000003"
+        quick = f"replies/2026/10/21/101500Z-holocene-pm-{memo}.ogg"
+        follow = f"replies/2026/10/21/102800Z-holocene-pm-{memo}.ogg"
+        self.call("/upload/claim", {"by": "car", "action": "end", "reply_key": quick})
+        self.assertEqual(self.call("/upload/claim", {"by": "watcher", "action": "offer", "reply_key": follow})[1]["car"], None)
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}&reply={urllib.parse.quote(quick)}")[1]["car"], "ended")
+        code, ans = self.call(f"/upload/claim?memo={memo}&reply={urllib.parse.quote(follow)}")
+        self.assertEqual((code, ans["car"], ans["reply_key"]), (200, None, follow))
+        other = "replies/2026/10/21/102800Z-holocene-pm-0c7effbf-a048-5aa3-84f4-0d12650848cc.ogg"
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}&reply={urllib.parse.quote(other)}")[0], 400)
+        # the playback beacon of the follow-up is the car's start of the follow-up, not of the memo's first reply
+        self.assertEqual(self.call("/upload/played", {"reply_key": follow, "phase": "started"})[0], 200)
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}&reply={urllib.parse.quote(follow)}")[1]["car"], "started")
 
     def test_a_playback_beacon_is_the_cars_start(self):
         memo = "a1b2c3d4-0000-5000-8000-000000000002"

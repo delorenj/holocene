@@ -19,11 +19,15 @@ Stop & Send. Every memo went to holocene-pm.
    and one ask in 8 was never answered.
    - Transcription takes 0.44-0.57 s on the GPU server, and the command is dispatched 1.8-2.8 s after upload.
    - The agent turn is now most of the wait: 14-68 s on Sol, with 2-3 model calls.
-2. **Long job (B).** The driver heard a quick answer at +43.7 s. The full result came later as a follow-up on the batch
-   lane, in the same session.
+2. **Long job (B): time to the RESULT got worse.** The driver heard a quick answer at +43.7 s, but it was a plan
+   ("I'll trace the full voice pipeline, check each dependency's live health and recent errors, and report..."), not a
+   result, and progress narration already played at ~25-35 s before this round. The actual result was audible at
+   **+839.1 s**: 3.4x the before long-job median of 247 s, and slower than every before long job except the two
+   kill-and-rerun outliers (1184 s and 1991 s).
    - There was one interactive turn and one background turn, with no kill and no re-run.
-   - The follow-up itself was slow (spoken at +839 s), because its `delegate_task` ran synchronously on
-     `auto/subagent`. That is the next lever (see Findings).
+   - The follow-up was slow for two reasons: its `delegate_task` ran synchronously on `auto/subagent` for 410 s
+     (subagent calls up to 99.9 s), and its own Sol calls had a median of 27.8 s, max 53.6 s, at 55-120k input tokens.
+   - Corrected 2026-10-22 (review): the first version of this doc counted the spoken plan as the answer.
 3. **Past the wall clock (C).** Two inline jobs (sleep 170 twice) detached at exactly 300 s and kept running.
    - Each finished in its own single turn, at +363 s and +365 s, with 3 Sol calls, no `/stop`, no batch re-run and no
      "Continuing…".
@@ -49,7 +53,8 @@ Stop & Send. Every memo went to holocene-pm.
 
 "Before" covers the real car (Android 12, build `ACB1211S1`) on 2026-10-19 to 2026-10-21: 17 asks to 33god-pm,
 green-in-between-pm, pile-of-dumb-things-pm and navi-pm. The source is `/tmp/latency-study/breakdown.json` (Candystore
-facts plus Hermes `state.db`). "After" is this round: 8 sim memos, all times from the upload (server clock).
+facts plus Hermes `state.db`). "After" is this round: 8 sim memos recorded, 7 uploaded (C1 was lost at the car), all
+times from the upload (server clock).
 
 The asks are similar in kind but not identical, and the host load average was 55-60 during this round. That load comes
 from another session's deliberate TOWE-27 load test (`governor.sh` holds load1 at 56-64), which I left running. CPU-bound
@@ -57,11 +62,11 @@ steps are therefore pessimistic here.
 
 | step | before: real car, Oct 19-21 (17 asks) | after: sim, this round |
 |---|---|---|
-| upload to transcribed | 5.4-6.5 s (large-v3 CLI, GPU, uncontended); 9.2-13.1 s on Oct 21 (`small` on CPU, fast lane); 21.4 s and 43.9 s outliers | **1.4-2.4 s**. Whisper itself took 0.44-0.57 s (large-v3-turbo on the warm GPU server, 8 of 8 memos); the rest is noticing the upload and downloading it |
+| upload to transcribed | 5.4-6.5 s (large-v3 CLI, GPU, uncontended); 9.2-13.1 s on Oct 21 (`small` on CPU, fast lane); 21.4 s and 43.9 s outliers | **1.4-2.4 s**. Whisper itself took 0.44-0.57 s (large-v3-turbo on the warm GPU server, 7 of 7 memos that reached the watcher; C1 was lost at the car); the rest is noticing the upload and downloading it |
 | upload to dispatched | median 10.0 s (5.9-45.6 s) | **1.8-2.8 s** |
 | one model call in a voice turn | GLM-5.3 at max: mean 13.4 s, p90 34 s (Oct 21: mean 15.9 s) | **Sol-6.1: median 5.7 s, mean 8.1 s, max 21.7 s** (18 calls, `model_override applied` on every memo, no fallback in agent.log) |
 | short or status ask: first spoken answer | **median 184 s** (120-393 s over 7 answered); 1 of 8 never answered (a 300 s timeout) | **D2 24.3 s, A2 49.2 s, A 77.2 s**. A's transcript said "policy main branch", which cost an extra disambiguation call |
-| long job: first spoken answer | **median 247 s** (93-1991 s over 7 answered); 2 of 9 never answered | **B 43.7 s** (quick answer); the full result came as a follow-up at 839 s |
+| long job: time to the spoken RESULT | **median 247 s** (93-1991 s over 7 answered); 2 of 9 never answered | **B 839.1 s** (worse: 3.4x). A spoken plan, not a result, came at +43.7 s; narration already gave a first word at ~25-35 s before |
 | turn running past 300 s | killed at 300 s and re-run on batch (4 of 17), answered at 393, 538, 1184 and 1991 s; 3 more (Oct 19) never answered | **detached at 300 s**; the same turn finished at +363/+365 s, and the late answer was audible at +369.7 s (C3). **0 kills, 0 re-runs, 0 escalations** |
 | a new memo while both interactive slots are busy | waits until a turn ends, or is killed at 300 s | **starts 57 ms after the first detach** (D1) |
 | narration while the agent works | (narration already worked: ~25-35 s) | first progress audible at +25 to +36 s (A, B, C3). C2's was rendered at +21.5 s but reached the car at +66 s, after a push-link gap. Heard echo at +2.9 to +9.3 s |

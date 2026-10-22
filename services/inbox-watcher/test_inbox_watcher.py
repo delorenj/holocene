@@ -17,6 +17,7 @@ import textwrap
 import threading
 import time
 import unittest
+import urllib.parse
 import unittest.mock
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -2957,6 +2958,24 @@ class EarshotMirror(unittest.TestCase):
         _, seen, _ = self.decide(lambda b: {"car": "ended"}, chunked=False)
         self.assertIs(seen[0]["announce"], True, "a one-file reply is pushed to the car with the offer")
 
+    def test_every_claim_request_names_the_reply(self):
+        # claims are per reply file at the proxy: a memo's follow-up is a second reply with a claim of its own
+        state = {"n": 0}
+
+        def proxy(b):
+            if b and b.get("action") == "take":
+                return {"ok": True, "owner": "phone", "held_ever": True}
+            state["n"] += 1
+            return {"car": "held", "car_holds": state["n"] < 3, "held_ever": True, "sender_host": "car"}
+        out, seen, _ = self.decide(proxy)
+        self.assertEqual(out, (None, "car_let_go"))
+        rkey = "replies/2026/10/20/101500Z-a-f753985b-d3fb-5836-9db4-f9fb8e7dbe6b.ogg"
+        posts = [b for b in seen if "get" not in b]
+        gets = [b["get"] for b in seen if "get" in b]
+        self.assertEqual({b["action"] for b in posts}, {"offer", "take"})
+        self.assertTrue(all(b["reply_key"] == rkey for b in posts), posts)
+        self.assertTrue(gets and all(g.endswith("&reply=" + urllib.parse.quote(rkey, safe="")) for g in gets), gets)
+
     def test_a_car_switched_off_before_the_reply_never_claims_it_and_the_phone_gets_it_after_the_grace(self):
         # The original bug: the car was "connected" (its dead push stream still open at the edge) but nobody played it.
         took = []
@@ -3356,7 +3375,7 @@ class PostV12Fixes(MemoHarness, unittest.TestCase):
 
     @staticmethod
     def proxy(script, seen):
-        def call(mid, body=None):
+        def call(mid, body=None, reply_key=None):
             seen.append((mid, body))
             return script(mid, body or {})
         return call
@@ -3638,9 +3657,10 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         world.setdefault("owner", None)
         real = iw.mirror_to_earshot
 
-        def script(mid, body=None):
+        def script(mid, body=None, reply_key=None):
             body = body or {}
             world["calls"].append(body.get("action") or "get")
+            world.setdefault("rkeys", []).append(reply_key or body.get("reply_key"))
             if body.get("action") == "take":
                 if world["car"] in ("started", "ended") or world["holds"]:
                     return {"ok": False, "owner": "car", "car": world["car"], "car_holds": world["holds"]}
@@ -3760,11 +3780,31 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         finally:
             dst.unlink(missing_ok=True)
 
+    def test_the_quick_answers_retry_outlives_its_follow_up_round(self):
+        # 2026-10-22 review: start_followup ended the quick answer's phone retry ("superseded"), but the follow-up does not
+        # repeat the quick answer and may never come: with the car off, the quick answer was heard nowhere.
+        key, m = self.released("s1-followup", {"drop_ok_from": iw.EARSHOT_DROP_TRIES + 1, "total": 30.0})
+        r = m["phone_retry"]
+        rkey1 = r["rkey"]
+        self.assertTrue(r["stamp"])
+        with self.w.mu:
+            m["background_plan"] = "Walk the tabs."
+            self.w.start_followup(m)  # a new reply round: reply_key, reply_stamp and earshot fields go
+        self.assertEqual(r["state"], "pending")
+        self.assertNotIn("reply_stamp", m)
+        n = len(self.world["rkeys"])
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "phone_dropped")
+        self.assertTrue(r["earshot_key"])
+        self.assertNotIn("earshot_key", m, "the follow-up's own round must not read the quick answer's copy as its own")
+        self.assertEqual(set(self.world["rkeys"][n:]), {rkey1}, "every claim of the retry names the quick answer's reply")
+        self.assertIsNotNone(iw.live_followup(m))
+
     def test_an_unreachable_proxy_is_waited_for_never_raced(self):
         key, m = self.released("s1-proxy-down", {})
         real = iw.claim_call
 
-        def down(mid, body=None):
+        def down(mid, body=None, reply_key=None):
             raise OSError("proxy down")
         with unittest.mock.patch.object(iw, "claim_call", side_effect=down):
             self.tick_until(lambda: any(d["decision"] == "proxy_unreachable" for d in m["phone_retry"]["decisions"]))

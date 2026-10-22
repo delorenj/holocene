@@ -994,7 +994,8 @@ function App() {
     if (!memo || !t) return
     t.checkedAt = Date.now()
     let has: 'phone' | 'free' | 'car' | 'unknown' = 'unknown'
-    try { has = await fetchWithin(`/upload/claim?memo=${encodeURIComponent(memo)}`, CLAIM_WAIT_MS, async (r) => phoneStillHas(r.status, await r.json().catch(() => null))) } catch { /* next look */ }
+    // ?reply=: this reply's own claim (a memo's follow-up is a second reply with a claim of its own, 2026-10-22)
+    try { has = await fetchWithin(`/upload/claim?memo=${encodeURIComponent(memo)}&reply=${encodeURIComponent(key)}`, CLAIM_WAIT_MS, async (r) => phoneStillHas(r.status, await r.json().catch(() => null))) } catch { /* next look */ }
     if (has === 'free') await reclaimFromPhone(key)
     else if (has === 'car') forgetPhoneTake(key) // a car claimed it since (this one, before a reload): not played again from here
   }

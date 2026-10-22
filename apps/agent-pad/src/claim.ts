@@ -108,7 +108,7 @@ export function phoneRecheckDue(since: number, checkedAt: number, now: number): 
 }
 
 /**
- * The proxy's answer to GET /upload/claim?memo=: does the phone still have the reply? 'free': nobody owns it (the watcher gave
+ * The proxy's answer to GET /upload/claim?memo=&reply=: does the phone still have the reply? 'free': nobody owns it (the watcher gave
  * the take back). 'car': a car claimed it since (this one after a reclaim, or its hold): nothing to do here, it is not
  * played again from this list. 'unknown': no usable answer.
  */

@@ -447,8 +447,11 @@ Behaviour worth knowing:
   car ("<agent>, still on it. I will call you back when it is done.", a narrated progress clip with `kind=detached`)
   and stops the 30 s narration. The reply is a late reply, and `replied` carries `detached=true`. A detached turn that
   the gateway stops at its ceiling (`turn_timeout`, `timeout_source=detached_ceiling`, `detached=true`) fails the memo
-  with no batch re-run: it already ran the whole time a re-run would. The escalation above stays for a gateway that
-  stopped the turn at the wall clock (detach off, `max_detached` reached, an envelope deadline).
+  with no batch re-run: it already ran the whole time a re-run would. So does one a gateway reload cut off
+  (`interrupted_by_shutdown`, `detached=true`; the gateway no longer NAKs a detached turn for a re-run from the top).
+  The escalation above stays for a gateway that stopped the turn at the wall clock (detach off, `max_detached`
+  reached, an envelope deadline), including a re-run of a command whose EARLIER attempt detached: the terminal's
+  `timeout_source lane|envelope` with no `detached` flag is this attempt's verdict.
 - **Answer-then-background (2026-10-22).** `MEMO_VOICE_PREFIX` gives a voice turn a budget (about a minute, at most 3
   tool calls, no vox-speak, no sleep-and-recheck, no deploys unless asked; a driver IS waiting, whatever the gateway's
   platform hint says) and one way out for a long ask: answer in a sentence or two, then end the reply with a line
@@ -459,15 +462,27 @@ Behaviour worth knowing:
   `context.reason=voice-followup`, `context.followup_of`, and a `dispatched` fact with `lane_reason=voice_followup`,
   `followup=N`, `followup_of_command_id`, `followup_plan`. The memo stays active (car stage `working`, status object
   `followup {n, state}`), nothing is narrated while it runs, and its reply is spoken as "<agent>, follow-up. ..." into a
-  NEW `replies/<day>/<HHMMSS>Z-<agent>-<memo_id>.ogg` (the pad plays every reply unit of a memo it sent; the claim for
-  the phone is the memo's, so whoever spoke the quick answer speaks the follow-up). Its `replied` fact carries
-  `followup=N`. A follow-up that fails, times out, or completes without new text is spoken as such
-  (`followup_failed=true`) instead of failing a memo whose answer was already given; `memo:cancel` keeps it quiet. One
-  follow-up per memo by default (`MEMO_FOLLOWUP_MAX=1`; 0 turns the hand-off off, the line is still never spoken). This
-  is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the watcher already owns
-  the memo, its cancel and its trace.
-- **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL` (follow-ups:
-  `MEMO_FOLLOWUP_MODEL`), default `automaticai/personal/sol-6.1`, and the gateway runs that one turn on it through an
+  NEW `replies/<day>/<HHMMSS>Z-<agent>-<memo_id>.ogg` (the pad plays every reply unit of a memo it sent). The car or
+  phone decision is made again for it: claims at the upload proxy are per reply FILE, so the follow-up has a claim of
+  its own and a car switched off since the quick answer lets the phone take it after the grace window (before
+  2026-10-22 the quick answer's `car=ended` decided the follow-up too, and a follow-up that landed after the car went off
+  was heard nowhere while trace said "spoken"). Its `replied` fact carries `followup=N`. A follow-up that fails, times
+  out, completes without new text, or only hands off again is spoken as such (`followup_failed=true`) instead of failing
+  a memo whose answer was already given; `memo:cancel` keeps it quiet and `memo:retry` brings it back at the stage it
+  stopped (its own prompt, its own reply). A pending phone retry of the quick answer keeps going during the follow-up
+  (it carries its own reply key and stamp). One follow-up per memo by default (`MEMO_FOLLOWUP_MAX=1`; 0 turns the
+  hand-off off, the line is still never spoken). A reply that is only a `BACKGROUND:` line with nothing handed off says
+  so (`NO_HANDOFF_LINE`), never "Done.". The marker is matched in upper case only and never inside a code fence
+  (`**Background:**`, CSS `background:` and YAML `background: true` are ordinary text). `MEMO_FOLLOWUP_PREFIX` carries
+  the voice prefix's rule over: no deploy, restart or push unless the driver's own words asked (the plan was written
+  from a speech-to-text transcript; an unclear ask does the read-only part and says what it left undone), and no
+  `delegate_task` (a subagent runs on `automaticai/auto/subagent`, not the turn's model: 410 s synchronous on the
+  2026-10-22 sim). This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
+  watcher already owns the memo, its cancel and its trace.
+- **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL`, default
+  `automaticai/personal/sol-6.1`; a follow-up carries `MEMO_FOLLOWUP_MODEL`, default empty (the profile's own model:
+  nobody waits on it, and one follow-up on Sol used 3.5x the tokens of a whole round of voice turns from the pool that
+  keeps them fast). The gateway runs that one turn on it through an
   internal `/model <route> --once` (bloodbank `docs/interactive-command-lane.md` section 10). On the real heavy step of a
   crank circuit (20.7k-token prompt): glm-5.3@max (where `automaticai/auto` lands for the desks' tokens) 51 s, kimi-2.8
   11-27 s, sol-6.1 8.4 s at high and 13-15 s at the providers' xhigh (what goes on the wire: effort is not a per-turn

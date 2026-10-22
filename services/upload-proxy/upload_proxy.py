@@ -68,7 +68,8 @@ with the memo (in memory, and as S3 metadata on the inbox object, so a restart l
 audio.memo.uploaded fact (device_id, device_host). GET /upload/presence?memo=<memo_id>&key=<inbox key> answers whether
 the memo came from a car whose push stream is open right now. See Presence below.
 
-Who speaks a reply in the cabin, the car or the phone's Earshot copy: POST /upload/claim (ReplyClaims below). The car
+Who speaks a reply in the cabin, the car or the phone's Earshot copy: POST /upload/claim (ReplyClaims below, one claim
+per reply file: a memo's follow-up is a second reply with its own). The car
 holds the reply on a renewed lease while it waits and claims its start; the inbox watcher takes it for the phone only
 when no car holds it after a grace window. Exactly one of them speaks it (a paired phone plays through the car's
 speakers: the same reply twice, or a reply into the next recording), and a car switched off right after the agent
@@ -330,25 +331,41 @@ CLAIM_LEASE_S = float(os.environ.get("CLAIM_LEASE_S", "20"))
 CLAIM_SETTLE_S = float(os.environ.get("CLAIM_SETTLE_S", "10"))
 CLAIM_STATE_FILE = os.environ.get("CLAIM_STATE_FILE", "")  # empty: memory only
 CLAIM_KEEP_S = 2 * 86400  # a claim this old is not read back (the car never plays a reply that old)
-CLAIM_MEMOS = 2000
+CLAIM_MEMOS = 2000  # claims kept (one per reply file; a memo with a follow-up has two)
 CLAIM_ACTIONS = {"car": ("hold", "start", "end", "release"), "watcher": ("offer", "take", "release")}
-CLAIM_FIELDS = ("owner", "car", "lease_until", "held_at", "started_at", "device", "offered_at", "phone_at", "released_at", "touched")
+CLAIM_FIELDS = ("owner", "car", "lease_until", "held_at", "started_at", "device", "offered_at", "phone_at", "released_at",
+                "touched", "memo_id", "reply_key")
+# A claim is PER REPLY FILE, not per memo (2026-10-22 review): a memo's answer-then-background follow-up is a second reply
+# file of the same memo. Kept per memo, the quick answer's "car ended" decided the follow-up too: the watcher read
+# car_spoke at once and the phone never got a follow-up that landed after the car was switched off. Every request that
+# names the reply (reply_key: the car always, the watcher's offer/take/release/poll, the pad's ?reply= look) gets that
+# reply's own claim. One that names only the memo (a page or watcher from before this) gets the memo's newest claim.
 
 
 class ReplyClaims:
-    """Per memo: who owns its reply (car | phone | nobody yet), and the car's hold lease. Bounded; written through to
-    state_file (when given) on every change and read back at start; every take refused for settle_s after boot_at."""
+    """Per reply file: who owns it (car | phone | nobody yet), and the car's hold lease. Bounded; written through to
+    state_file (when given) on every change and read back at start; every take refused for settle_s after boot_at.
+    Every method takes the memo id and, optionally, the reply key: with it the claim is that reply's own; without it, the
+    memo's newest claim (see CLAIM_FIELDS)."""
 
     def __init__(self, lease_s: float = CLAIM_LEASE_S, memos_max: int = CLAIM_MEMOS, state_file: str | None = None,
                  settle_s: float = CLAIM_SETTLE_S, boot_at: float | None = None):
         self._lock = threading.Lock()
-        self._m: dict = {}   # memo_id -> state (insertion ordered, bounded)
+        self._m: dict = {}   # reply key (or, for a memo-only claim, memo id) -> state (insertion ordered, bounded)
         self.lease_s = lease_s
         self._max = memos_max
         self.state_file = state_file or None
         self.settle_s = settle_s
         self.boot_at = time.time() if boot_at is None else boot_at
-        self.loaded = self._load()  # memos read back (0: no file yet), None: the file could not be read
+        self.loaded = self._load()  # claims read back (0: no file yet), None: the file could not be read
+
+    @staticmethod
+    def _key_memo(ck: str):
+        """The memo id a claim key belongs to (a memo id, or a reply key), or None for a key that is neither."""
+        if isinstance(ck, str) and MEMO_UUID_RE.match(ck):
+            return ck
+        parsed = parse_reply_key(ck) if isinstance(ck, str) else None
+        return parsed[0] if parsed else None
 
     def _load(self) -> int | None:
         if not self.state_file:
@@ -367,9 +384,12 @@ class ReplyClaims:
             log("claims_load_failed", file=self.state_file, error="no memos object")
             return None
         cutoff = self.boot_at - CLAIM_KEEP_S
-        for mid, st in memos.items():
-            if isinstance(mid, str) and MEMO_UUID_RE.match(mid) and isinstance(st, dict) and (st.get("touched") or 0) >= cutoff:
-                self._m[mid] = {k: st.get(k) for k in CLAIM_FIELDS}
+        for ck, st in memos.items():
+            mid = self._key_memo(ck)
+            if mid and isinstance(st, dict) and (st.get("touched") or 0) >= cutoff:
+                # a v1 file is keyed by memo id: such a claim stays the memo's (memo-only lookups), not any reply's
+                self._m[ck] = {**{k: st.get(k) for k in CLAIM_FIELDS}, "memo_id": mid,
+                               "reply_key": ck if ck != mid else None}
         while len(self._m) > self._max:
             self._m.pop(next(iter(self._m)))
         return len(self._m)
@@ -381,40 +401,57 @@ class ReplyClaims:
         tmp = f"{self.state_file}.tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"v": 1, "saved_at": time.time(), "memos": self._m}, f, separators=(",", ":"))
+                json.dump({"v": 2, "saved_at": time.time(), "memos": self._m}, f, separators=(",", ":"))
             os.replace(tmp, self.state_file)
         except OSError as e:
             log("claims_save_failed", file=self.state_file, error=str(e)[:200])
 
-    def _state(self, memo_id: str) -> dict:
-        st = self._m.get(memo_id)
+    def _claims_of(self, memo_id: str) -> list:
+        return [ck for ck, st in self._m.items() if st.get("memo_id") == memo_id]
+
+    def _find(self, memo_id: str, reply_key: str | None, prefer_phone: bool = False) -> tuple[str, dict | None]:
+        """(claim key, state or None). The reply's own claim; memo-only: the memo's newest one (prefer_phone: the one the
+        phone owns, if any: a pad from before ?reply= asks whether the phone still has the reply it left to it)."""
+        if reply_key:
+            return reply_key, self._m.get(reply_key)
+        cks = self._claims_of(memo_id)
+        if prefer_phone:
+            owned = [ck for ck in cks if self._m[ck].get("owner") == "phone"]
+            cks = owned or cks
+        return (cks[-1], self._m[cks[-1]]) if cks else (memo_id, None)
+
+    def _state(self, memo_id: str, reply_key: str | None = None) -> dict:
+        ck, st = self._find(memo_id, reply_key)
         if st is None:
             st = {k: None for k in CLAIM_FIELDS}
-            self._m[memo_id] = st
+            st["memo_id"], st["reply_key"] = memo_id, reply_key
+            self._m[ck] = st
             while len(self._m) > self._max:
                 self._m.pop(next(iter(self._m)))
         return st
 
-    def _view(self, memo_id: str, st: dict | None, now: float) -> dict:
+    def _view(self, memo_id: str, st: dict | None, now: float, reply_key: str | None = None) -> dict:
         st = st or {}
         left = (st["lease_until"] - now) if st.get("car") == "held" and st.get("lease_until") else 0.0
-        return {"memo_id": memo_id, "owner": st.get("owner"), "car": st.get("car"), "car_holds": left > 0,
+        return {"memo_id": memo_id, "reply_key": st.get("reply_key") or reply_key, "owner": st.get("owner"),
+                "car": st.get("car"), "car_holds": left > 0,
                 "lease_left_s": round(max(0.0, left), 1), "held_ever": st.get("held_at") is not None,
                 "device": st.get("device"), "offered": st.get("offered_at") is not None,
                 "released": st.get("released_at") is not None,
                 "since_offer_s": round(now - st["offered_at"], 1) if st.get("offered_at") else None,
                 "settling_s": round(max(0.0, self.boot_at + self.settle_s - now), 1)}
 
-    def view(self, memo_id: str, now: float | None = None) -> dict:
+    def view(self, memo_id: str, now: float | None = None, reply_key: str | None = None,
+             prefer_phone: bool = False) -> dict:
         now = time.time() if now is None else now
         with self._lock:
-            return self._view(memo_id, self._m.get(memo_id), now)
+            return self._view(memo_id, self._find(memo_id, reply_key, prefer_phone)[1], now, reply_key)
 
-    def car(self, memo_id: str, action: str, device=None, now: float | None = None) -> dict:
+    def car(self, memo_id: str, action: str, device=None, now: float | None = None, reply_key: str | None = None) -> dict:
         """The car holds (renews its lease), starts or ends the reply. ok False: the phone took it, the car leaves it."""
         now = time.time() if now is None else now
         with self._lock:
-            st = self._state(memo_id)
+            st = self._state(memo_id, reply_key)
             if st["owner"] == "phone":
                 return {**self._view(memo_id, st, now), "ok": False}
             st["owner"] = "car"
@@ -440,44 +477,44 @@ class ReplyClaims:
             self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
-    def played(self, memo_id: str, phase: str, device=None, now: float | None = None) -> bool:
+    def played(self, memo_id: str, phase: str, device=None, now: float | None = None, reply_key: str | None = None) -> bool:
         """The car reports it played the reply (beacon / speech start): recorded as its start or end. False: the phone
         had taken it (a page from before claims, or a car that ignored the refusal): the reply was heard twice."""
         if phase not in ("start", "end"):
             return True
         now = time.time() if now is None else now
         with self._lock:
-            st = self._m.get(memo_id)
+            st = self._find(memo_id, reply_key)[1]
             if st is not None and st["owner"] == "phone":
                 return False
-        return self.car(memo_id, phase, device, now)["ok"]
+        return self.car(memo_id, phase, device, now, reply_key)["ok"]
 
-    def offer(self, memo_id: str, now: float | None = None) -> dict:
+    def offer(self, memo_id: str, now: float | None = None, reply_key: str | None = None) -> dict:
         now = time.time() if now is None else now
         with self._lock:
-            st = self._state(memo_id)
+            st = self._state(memo_id, reply_key)
             if not st["offered_at"]:
                 st["offered_at"] = st["touched"] = now
                 self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
-    def release(self, memo_id: str, now: float | None = None) -> dict:
+    def release(self, memo_id: str, now: float | None = None, reply_key: str | None = None) -> dict:
         """The watcher gives the phone's take back (the Earshot drop failed, so the phone has nothing to play): the car may
         hold and start the reply again. Only the phone's take is released; a reply the car owns is left as it is."""
         now = time.time() if now is None else now
         with self._lock:
-            st = self._state(memo_id)
+            st = self._state(memo_id, reply_key)
             if st["owner"] == "phone":
                 st["owner"], st["phone_at"], st["released_at"], st["touched"] = None, None, now, now
                 self._save()
             return {**self._view(memo_id, st, now), "ok": True}
 
-    def take(self, memo_id: str, now: float | None = None) -> dict:
+    def take(self, memo_id: str, now: float | None = None, reply_key: str | None = None) -> dict:
         """The phone takes the reply: granted unless the car holds a live lease on it, or started (or ended) it, and
         never while the arbiter is settling after a start (a car's re-sent start or hold may still be on its way)."""
         now = time.time() if now is None else now
         with self._lock:
-            st = self._state(memo_id)
+            st = self._state(memo_id, reply_key)
             if st["owner"] != "phone":
                 if st["car"] in ("started", "ended") or (st["car"] == "held" and (st["lease_until"] or 0) > now):
                     return {**self._view(memo_id, st, now), "ok": False}
@@ -505,19 +542,20 @@ def claim_request(body, claims: "ReplyClaims" = None, presence: "Presence" = Non
     memo_id = body.get("memo_id") if isinstance(body.get("memo_id"), str) else (parsed[0] if parsed else None)
     if not memo_id or not MEMO_UUID_RE.match(memo_id) or (parsed and parsed[0] != memo_id):
         return 400, {"error": "bad memo id or reply key"}
+    rk = reply_key if parsed else None  # the reply's own claim; a memo-only request gets the memo's newest
     if by == "car":
         device, _ = clean_device(body.get("device"), None)
-        return 200, claims.car(memo_id, action, device)
+        return 200, claims.car(memo_id, action, device, reply_key=rk)
     if action == "take":
-        return 200, claims.take(memo_id)
+        return 200, claims.take(memo_id, reply_key=rk)
     if action == "release":
-        ans = claims.release(memo_id)
+        ans = claims.release(memo_id, reply_key=rk)
         if parsed and ans.get("owner") is None:
             # the car that left the reply to the phone listens for this: it plays the reply after all
             (hub or PUSH).publish({"fact": "released", "memo_id": memo_id, "at": now_iso(), "reply_s3_key": reply_key,
                                    **({"agent": parsed[1][:80]} if parsed[1] else {})})
         return 200, ans
-    ans = claims.offer(memo_id)
+    ans = claims.offer(memo_id, reply_key=rk)
     key = body.get("key") if isinstance(body.get("key"), str) and KEY_RE.match(body.get("key")) else None
     device, host = memo_sender(memo_id, key, presence, lookup)
     ans.update({"sender_host": host, "sender_device": device})
@@ -1348,9 +1386,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.command == "GET":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             memo = (q.get("memo") or [""])[0]
-            if not MEMO_UUID_RE.match(memo):
-                return self.send_error(400, "bad memo id")
-            return self._json_reply(200, CLAIMS.view(memo))
+            reply = (q.get("reply") or [""])[0] or None
+            parsed = parse_reply_key(reply) if reply else None
+            if not MEMO_UUID_RE.match(memo) or (reply and (not parsed or parsed[0] != memo)):
+                return self.send_error(400, "bad memo id or reply key")
+            # ?reply=: that reply's own claim. Memo only (a pad from before per-reply claims asking whether the phone
+            # still has the reply it left to it): the claim the phone owns, else the memo's newest.
+            return self._json_reply(200, CLAIMS.view(memo, reply_key=reply, prefer_phone=reply is None))
         try:
             n = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
@@ -1393,7 +1435,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         log("playback", key=beacon["reply_key"], memo_id=env["correlationid"], phase=beacon["phase"], status=200,
             error=beacon.get("error"), remote=self.client_address[0], ua=ua)
         phase = {"started": "start", "ended": "end"}.get(beacon["phase"])
-        if phase and not CLAIMS.played(env["correlationid"], phase):
+        if phase and not CLAIMS.played(env["correlationid"], phase, reply_key=beacon["reply_key"]):
             log("claim_conflict", memo_id=env["correlationid"], by="car", action=phase, source="playback",
                 key=beacon["reply_key"], note="the car played a reply the phone had taken: it was heard twice")
         self.send_response(200)

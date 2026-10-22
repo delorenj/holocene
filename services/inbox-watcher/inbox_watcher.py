@@ -117,17 +117,25 @@ VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - spe
                               "within about a minute and at most 3 tool calls. The driver hears your progress aloud while you "
                               "work: before each tool call, write one short sentence saying what you are about to do. Never "
                               "run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or "
-                              "wait and re-check, and run no deploy or long command unless asked. If the ask needs longer "
+                              "wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long "
+                              "command unless asked. If the ask needs longer "
                               "work, do not start it now: tell the driver in one or two sentences what you will do, then end "
                               "your reply with a line that starts with BACKGROUND: followed by complete instructions for "
                               "yourself. That work starts right after, on this same conversation, and its result is spoken "
                               "to the driver as a follow-up.] ")
 # Prepended to a reply's BACKGROUND: instructions when they go back to the same agent as a background turn.
+# The plan below it was written by the agent from a speech-to-text transcript and runs unattended (2026-10-22 review):
+# the voice prefix's "no deploy unless asked" rule is carried over, and a misheard ask does the safe part and says so.
+# No delegate_task: a subagent runs on automaticai/auto/subagent, not the turn's model (B, 2026-10-22: 410 s synchronous).
 FOLLOWUP_PREFIX = os.environ.get("MEMO_FOLLOWUP_PREFIX", "[Background continuation of the voice memo above: the driver already "
                                  "heard your short answer. Do the work below now, in full, without asking questions; the "
-                                 "one-minute budget does not apply here. Never run vox-speak or any text-to-speech yourself. "
-                                 "Your final message is spoken to the driver as a follow-up: end it with a spoken summary of "
-                                 "the result in two to four sentences, and do not write a BACKGROUND: line.] ")
+                                 "one-minute budget does not apply here. Do it yourself: never delegate to a subagent "
+                                 "(delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, "
+                                 "restart, push or other change to a live system unless the driver's own words asked for "
+                                 "it; the ask came through speech-to-text, so if it is unclear, do only the read-only part "
+                                 "and say what you left undone. Your final message is spoken to the driver as a follow-up: "
+                                 "end it with a spoken summary of the result in two to four sentences, and do not write a "
+                                 "BACKGROUND: line.] ")
 # How many background follow-ups one memo may chain (a follow-up's own BACKGROUND: line counts). The batch lane has no
 # wall clock, so a follow-up has no reason to hand off again: 1 by default. 0 turns answer-then-background off (the line
 # is still never spoken).
@@ -138,6 +146,9 @@ if FOLLOWUP_LANE not in mc_.GATEWAY_CONSUMERS:
     FOLLOWUP_LANE = "batch"
 # What the driver hears when the agent wrote only a BACKGROUND: line and no answer of its own.
 FOLLOWUP_ACK = "On it. I will call you back with the result."
+# What the driver hears when the agent wrote only a BACKGROUND: line and nothing could be handed off (no instructions after
+# it, or MEMO_FOLLOWUP_MAX=0). Never "Done.": nothing was done.
+NO_HANDOFF_LINE = "Nothing was started in the background, so no follow-up is coming. Please ask again."
 # Voice turns run on a fast model, per turn: the command carries data.model and the gateway runs that one turn on it
 # through Hermes' internal `/model <route> --once` (the memo's own session only, never Telegram, never config.yaml; its
 # terminal fact reports model_override {requested, applied, reason}; bloodbank docs/interactive-command-lane.md section 10).
@@ -149,7 +160,10 @@ FOLLOWUP_ACK = "On it. I will call you back with the result."
 # over on a route-limit 403/429, so an exhausted Sol pool costs a fast failure per call, never the memo. The route must be
 # in the profile's providers.automaticai.models (every profile lists it). Empty = the profile's own model.
 VOICE_MODEL = os.environ.get("MEMO_VOICE_MODEL", "automaticai/personal/sol-6.1").strip()
-FOLLOWUP_MODEL = os.environ.get("MEMO_FOLLOWUP_MODEL", VOICE_MODEL).strip()
+# A background follow-up has nobody waiting on it, and Sol's weekly pool is what keeps the VOICE turns fast (2026-10-22
+# review: one follow-up made 12 Sol calls, 933k input tokens, 3.5x all 18 voice-turn calls of that round). So it runs on
+# the profile's own model unless MEMO_FOLLOWUP_MODEL names one.
+FOLLOWUP_MODEL = os.environ.get("MEMO_FOLLOWUP_MODEL", "").strip()
 # A detached interactive turn (the gateway kept it running past its 300 s wall clock and released the slot) is waited for
 # this long from its dispatch: the gateway's own ceiling for a detached turn is 2700 s (detached_ceiling_seconds), and it
 # publishes failed(turn_timeout, timeout_source=detached_ceiling) when it cuts one off there.
@@ -417,14 +431,23 @@ def compact(m: dict) -> None:
         m.pop(k, None)
 
 
-_BACKGROUND_LINE = re.compile(r"^[ \t>*_#`~-]*BACKGROUND[*_`]*[ \t]*:[*_`]*[ \t]*", re.IGNORECASE | re.MULTILINE)
+# Upper case only, and never inside a code fence (2026-10-22 review: "**Background:** the gateway was reloaded", a CSS
+# "background: #222;" and a YAML "- background: true" all cut a reply short and the rest was sent back as a plan).
+_BACKGROUND_LINE = re.compile(r"^[ \t>*_#`-]*BACKGROUND[*_`]*[ \t]*:[*_`]*[ \t]*", re.MULTILINE)
+_FENCE_LINE = re.compile(r"^[ \t]*(```|~~~)", re.MULTILINE)
+
+
+def _in_fence(text: str, pos: int) -> bool:
+    """Whether pos lies inside a fenced code block (an odd number of fence lines before it)."""
+    return len(_FENCE_LINE.findall(text, 0, pos)) % 2 == 1
 
 
 def split_background(text: str) -> tuple[str, str | None]:
-    """(what is spoken, the BACKGROUND: instructions or None). The first line that starts with BACKGROUND: (markdown
-    bullets, quotes and bold around it allowed) ends the spoken answer; everything after it is the plan for the background
-    turn. The line itself is never spoken, even when no follow-up is sent (none allowed, or nothing after it)."""
-    hit = _BACKGROUND_LINE.search(text or "")
+    """(what is spoken, the BACKGROUND: instructions or None). The first line outside a code fence that starts with
+    BACKGROUND: in upper case (markdown bullets, quotes and bold around it allowed) ends the spoken answer; everything
+    after it is the plan for the background turn. The line itself is never spoken, even when no follow-up is sent (none
+    allowed, or nothing after it)."""
+    hit = next((h for h in _BACKGROUND_LINE.finditer(text or "") if not _in_fence(text, h.start())), None)
     if not hit:
         return text, None
     answer = text[:hit.start()].rstrip()
@@ -888,11 +911,15 @@ class Watcher:
                 # Sticky lane: a memo that already escalated is a long ask. Its retry rides the batch lane (reason
                 # unchanged) instead of timing out on the interactive one with no escalation left.
                 m["lane"], m["lane_reason"] = "batch", ESCALATED_REASON
+        fus = m.get("followups") or []
+        if (stage not in ("receive", "transcribe") and fus and fus[-1].get("state") == CANCELLED and m.get("command_id")
+                and fus[-1].get("command_id") == m.get("command_id")):
+            # A follow-up cancelled while in flight is the memo's command again, whatever stage it stopped at: live once
+            # more, so dispatch sends ITS prompt (not the memo's), reply finds ITS answer and it is spoken as a
+            # follow-up, not as a late reply of the quick answer (2026-10-22 review: only await_agent did this).
+            fus[-1]["state"] = "dispatching" if stage == "dispatch" else "running"
+            fus[-1].pop("ended_at", None)
         if stage == "await_agent":
-            # A follow-up cancelled while it ran is the command being waited for again: it is live once more.
-            for fu in m.get("followups") or []:
-                if fu.get("command_id") == m.get("command_id") and fu.get("state") == CANCELLED:
-                    fu["state"] = "running"
             # an escalated command (or a follow-up) is a batch turn: it is waited for as long as it was the first time
             m["deadline_ts"] = time.time() + (BATCH_TURN_TIMEOUT_S if long_turn(m) else AGENT_TIMEOUT_S)
         if m.get("failed_code") == "object_changed" and m.get("observed_object"):
@@ -1620,8 +1647,12 @@ class Watcher:
         clock: that is the case the escalation is kept for.)"""
         if (timeout or {}).get("timeout_source") == "detached_ceiling" or (timeout or {}).get("detached") is True:
             return False
+        # A stop that says where its budget came from (lane | envelope) and carries no detached flag is THIS attempt's
+        # verdict: an earlier attempt of the same command may have detached and been cut off by a restart, and the re-run
+        # then stopped at 300 s with max_detached full. That one is escalated like any lane stop (2026-10-22 review).
+        stopped_undetached = (timeout or {}).get("timeout_source") in ("lane", "envelope")
         return (BATCH_TURN_TIMEOUT_S > 0 and not m.get("escalated") and memo_lane(m) == "interactive"
-                and not detached_now(m))
+                and (stopped_undetached or not detached_now(m)))
 
     def note_detached(self, m: dict, source: str, at=None, elapsed=None) -> None:
         """The gateway kept this memo's interactive turn running past its wall clock and released the lane slot (instead
@@ -1822,7 +1853,12 @@ class Watcher:
             if allowed:
                 m["background_plan"] = plan
             if not answer.strip():
-                answer = FOLLOWUP_ACK if allowed else "Done."
+                if not allowed and fu is not None:
+                    # A follow-up that only tried to hand off again: it did not do the work it owes the driver.
+                    return self.followup_failed(m, fu, "handoff_refused", "the background turn wrote only a BACKGROUND: "
+                                                f"line (MEMO_FOLLOWUP_MAX={FOLLOWUP_MAX} reached) and no answer",
+                                                time.time() - m.get("dispatched_ts", time.time()))
+                answer = FOLLOWUP_ACK if allowed else NO_HANDOFF_LINE
         m["reply_text"] = answer  # kept whole: compact() trims it to a preview once the memo is done
         m["session_id"] = found["session_id"]
         # Prove the agent was given exactly what we sent.
@@ -2072,9 +2108,9 @@ class Watcher:
         fus.append({"n": n, "command_id": cid, "of_command_id": m.get("command_id"), "state": "dispatching",
                     "plan": plan, "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
                     "started_at": iso(now_utc()), "started_ts": time.time(), "lane": FOLLOWUP_LANE})
-        if self.phone_retry_pending(m):
-            # The quick answer's phone retry (car off, Earshot drop failed) is overtaken: the follow-up carries the news.
-            self._retry_finish(m, "superseded", "the memo moved on to its background follow-up")
+        # A pending phone retry of the quick answer (car off, its Earshot drop failed) keeps going: the follow-up does
+        # not repeat the quick answer and may come hours later or fail (2026-10-22 review). It carries its own reply key
+        # and stamp (start_phone_retry), so this new reply round does not disturb it.
         for k in self.REPLY_ROUND_KEYS:
             m.pop(k, None)
         self.drop_command(m)
@@ -2099,7 +2135,9 @@ class Watcher:
         m["followup_failed"] = True
         m["reply_text"] = "The background work did not finish" + {
             "timeout": ": it ran out of time.", mc_.TURN_TIMEOUT: ": it ran out of time.",
-            "no_reply_text": ": it ended without an answer."}.get(code, ". Ask me again when you are parked.")
+            "no_reply_text": ": it ended without an answer.",
+            "handoff_refused": ": it tried to hand the work off again instead of doing it."}.get(
+                code, ". Ask me again when you are parked.")
         self.done_stage(m, "agent", "speak", ms=waited * 1000, command_id=m.get("command_id"), outcome=f"followup_{code}")
 
     # -- the phone copy (worker thread, inside step_mirror) --
@@ -2208,7 +2246,7 @@ class Watcher:
         t0, err = time.time(), ""
         while True:
             try:
-                ans = claim_call(mid, {"by": "watcher", "action": "release", "reply_key": rkey})
+                ans = claim_call(mid, {"by": "watcher", "action": "release", "reply_key": rkey}, reply_key=rkey)
                 if ans.get("ok"):
                     return True, ""
                 err = f"the proxy answered {json.dumps(ans)[:160]}"
@@ -2243,15 +2281,21 @@ class Watcher:
         mirror stage ran again) is kept: its clock and decisions are the truth. A finished one (gave_up, say, and a manual
         memo:retry ran the mirror stage again and its drop failed again) is armed afresh: the reply is heard nowhere
         otherwise. Its decisions are kept in front of the new ones, so the trace tells the whole story."""
-        if EARSHOT_RETRY_TOTAL_S <= 0 or self.phone_retry_pending(m):
+        if EARSHOT_RETRY_TOTAL_S <= 0:
             return
+        if self.phone_retry_pending(m):
+            if m["phone_retry"].get("rkey") == rkey:
+                return
+            # One retry per memo: the follow-up's own reply was released while the quick answer's retry still runs. The
+            # newer reply takes the slot (the older one had its rounds; both failing to drop is an S3 outage).
+            self._retry_finish(m, "superseded", f"the memo's newer reply {rkey} was released and needs the phone retry")
         old = m.get("phone_retry") if isinstance(m.get("phone_retry"), dict) else {}
         now = time.time()
         text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
         again = f" (armed again: the earlier retry ended {old.get('outcome', 'unfinished')})" if old else ""
         m["phone_retry"] = {
             "state": "pending", "since_ts": now, "deadline_ts": now + EARSHOT_RETRY_TOTAL_S, "next_at": now + EARSHOT_RETRY_FIRST_S,
-            "rounds": 0, "rkey": rkey, "reply_text": text or None,
+            "rounds": 0, "rkey": rkey, "reply_text": text or None, "stamp": m.get("reply_stamp"),
             "decisions": (old.get("decisions") or [])[-30:] + [
                 {"at": iso(now_utc()), "decision": "released", "why": f"the Earshot drop failed {tries} times; the take was "
                  f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
@@ -2284,12 +2328,22 @@ class Watcher:
         log("phone_retry_done", "warn" if outcome == "gave_up" else "info", memo_id=m["memo_id"], key=m["key"], outcome=outcome,
             rounds=r.get("rounds"), after_s=round(time.time() - r["since_ts"], 1), note=why)
 
+    @staticmethod
+    def _retry_got(m: dict, r: dict, ekey: str, same: bool) -> None:
+        """Lock held. The phone has the retry's reply: recorded on the retry, and on the memo only while the memo's reply
+        round is still that reply's (a follow-up's round must not read the quick answer's Earshot copy as its own)."""
+        r["earshot_key"] = ekey
+        if same:
+            m["earshot_key"] = ekey
+            m["earshot_skipped"] = None
+
     def _phone_mirrored(self, m: dict, r: dict, ekey: str) -> None:
         """Lock held. The phone has the reply after all: the replied fact already went out saying it was left to the car
         (earshot_skipped=car_released), so say what happened to it afterwards (audio.memo.mirrored) for /voice and the other
         readers of the bus. Failure queues it in the outbox like any fact."""
         self.fact("mirrored", m, {
-            "reply_s3_key": r.get("rkey"), "earshot_key": ekey, "earshot_text_key": m.get("earshot_text_key"),
+            "reply_s3_key": r.get("rkey"), "earshot_key": ekey,
+            "earshot_text_key": r.get("earshot_text_key") or (m.get("earshot_text_key") if m.get("reply_key") == r.get("rkey") else None),
             "rounds": r.get("rounds"), "after_release_seconds": round(time.time() - r["since_ts"], 1),
             "earshot_skipped_before": "car_released"})
 
@@ -2342,12 +2396,19 @@ class Watcher:
                 return
             r = m["phone_retry"]
             mid, key, agent, rkey = m["memo_id"], m["key"], m["agent"], r["rkey"]
-            stamp = mc_.parse_iso(m["reply_stamp"])
+            # The retry's own reply: a follow-up may have started a new reply round on the memo since (new reply_key,
+            # reply_stamp and earshot fields), and those are not this reply's.
+            same = m.get("reply_key") == rkey
+            if not r.get("stamp") and not same:
+                return self._retry_finish(m, "superseded", "armed by an older watcher without its reply's stamp, and the "
+                                          "memo moved on to a new reply")
+            stamp = mc_.parse_iso(r.get("stamp") or m["reply_stamp"])
             now = time.time()
             if self._cancelled(m):
                 return self._retry_finish(m, "cancelled", "the memo was cancelled")
-            if m.get("earshot_key"):
-                return self._retry_finish(m, "phone_has_it", f"the Earshot copy is already recorded ({m['earshot_key']})")
+            have = r.get("earshot_key") or (m.get("earshot_key") if same else None)
+            if have:
+                return self._retry_finish(m, "phone_has_it", f"the Earshot copy is already recorded ({have})")
             if now >= r["deadline_ts"]:
                 last = r["decisions"][-1] if r["decisions"] else {}
                 fail = r.get("last_failure") or last.get("why", "")
@@ -2359,11 +2420,11 @@ class Watcher:
         if earshot_exists(want):
             # An earlier drop landed (despite its error): the phone has it, and a second drop would play it twice.
             with self.mu:
-                m["earshot_key"] = want
+                self._retry_got(m, r, want, same)
                 self._phone_mirrored(m, r, want)
                 return self._retry_finish(m, "phone_has_it", f"{want} is in the Earshot channel", earshot_key=want)
         try:
-            st = claim_call(mid)
+            st = claim_call(mid, reply_key=rkey)
         except Exception as e:  # noqa: BLE001
             with self.mu:
                 self._retry_note(m, "proxy_unreachable", f"the upload proxy could not be asked who has the reply: {str(e)[:100]}")
@@ -2383,7 +2444,7 @@ class Watcher:
                 r["next_at"] = time.time() + float(st["settling_s"]) + 1
                 return
         try:
-            got = claim_call(mid, {"by": "watcher", "action": "take"})
+            got = claim_call(mid, {"by": "watcher", "action": "take"}, reply_key=rkey)
         except Exception as e:  # noqa: BLE001
             with self.mu:
                 self._retry_note(m, "proxy_unreachable", f"the take could not be asked for: {str(e)[:100]}")
@@ -2409,8 +2470,10 @@ class Watcher:
             else:
                 def record_text(tkey, m=m):
                     with self.mu:
-                        m["earshot_text_key"] = tkey
-                        m["phone_retry"]["reply_text"] = None
+                        r["earshot_text_key"] = tkey
+                        if m.get("reply_key") == rkey:
+                            m["earshot_text_key"] = tkey
+                        r["reply_text"] = None
                         self.s.save()
                 ekey = mirror_to_earshot(out, stamp, agent, mid, key, text, record_text)
                 if not ekey and earshot_exists(want):
@@ -2421,8 +2484,7 @@ class Watcher:
             shutil.rmtree(tmp, ignore_errors=True)
         if ekey:
             with self.mu:
-                m["earshot_key"] = ekey
-                m["earshot_skipped"] = None
+                self._retry_got(m, r, ekey, m.get("reply_key") == rkey)
                 self._phone_mirrored(m, r, ekey)
                 return self._retry_finish(m, "phone_dropped", f"the phone has the reply after all (round {n}, "
                                           f"{round(time.time() - r['since_ts'])} s after the release)", earshot_key=ekey)
@@ -2770,13 +2832,17 @@ def upload_earshot_text(text: str, stamp: datetime, agent: str, mid: str, key: s
     return tkey
 
 
-def claim_call(memo_id: str, body: dict | None = None) -> dict:
-    """The upload proxy's reply claim for a memo: POST a request (body), or GET where it stands. Raises on failure."""
+def claim_call(memo_id: str, body: dict | None = None, reply_key: str | None = None) -> dict:
+    """The upload proxy's claim on one reply of a memo: POST a request (body), or GET where it stands. Raises on failure.
+    reply_key names the reply: claims are per reply file, and a memo's follow-up is a second reply with a claim of its own
+    (without it the proxy answers for the memo's newest claim)."""
     if body is None:
-        req = urllib.request.Request(f"{CLAIM_URL}?memo={urllib.parse.quote(memo_id, safe='')}", headers={"Accept": "application/json"})
+        q = f"?memo={urllib.parse.quote(memo_id, safe='')}" + (f"&reply={urllib.parse.quote(reply_key, safe='')}" if reply_key else "")
+        req = urllib.request.Request(f"{CLAIM_URL}{q}", headers={"Accept": "application/json"})
     else:
-        req = urllib.request.Request(CLAIM_URL, data=json.dumps({"memo_id": memo_id, **body}).encode(), method="POST",
-                                     headers={"Content-Type": "application/json", "Accept": "application/json"})
+        req = urllib.request.Request(CLAIM_URL, method="POST", headers={"Content-Type": "application/json", "Accept": "application/json"},
+                                     data=json.dumps({"memo_id": memo_id, **({"reply_key": reply_key} if reply_key else {}),
+                                                      **body}).encode())
     with urllib.request.urlopen(req, timeout=CLAIM_TIMEOUT_S) as r:
         ans = json.loads(r.read().decode("utf-8", "replace"))
     if not isinstance(ans, dict):
@@ -2821,7 +2887,7 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
 
     def ask(body=None):
         try:
-            ans = claim_call(mid, body)
+            ans = claim_call(mid, body, reply_key=rkey)
         except Exception as e:  # noqa: BLE001 - the proxy is waited for, below
             link["fails"] += 1
             if link["down_at"] is None:
