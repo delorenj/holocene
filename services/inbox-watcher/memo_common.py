@@ -191,7 +191,7 @@ def resume_for(m: dict) -> str:
     """Where `memo:retry` restarts a failed memo. A memo with no transcript cannot dispatch (it failed at receive,
     for an unroutable agent, before any audio was heard): it starts over at receive."""
     stage = m.get("resume_stage") or "receive"
-    if stage == "dispatch" and not m.get("transcript"):
+    if stage in ("dispatch", "converse") and not m.get("transcript"):
         return "receive"
     return stage
 
@@ -223,6 +223,9 @@ def memo_escalated(m: dict) -> bool:
 # lane_reason on the command the watcher dispatched for a voice reply's BACKGROUND: line: the agent answered in a minute
 # and handed the long part to a background turn on the same thread, whose reply is spoken later as a follow-up.
 FOLLOWUP_REASON = "voice_followup"
+# lane_reason on the command of a brief the driver confirmed aloud in a fast car conversation (converse.py): a follow-up
+# of the confirming memo (followups[n].kind = "delegation"), sent to the confirmed target, spoken back as its result.
+DELEGATION_REASON = "voice_delegation"
 # A follow-up still owed to the driver: published (or about to be) and not yet spoken, failed or cancelled.
 FOLLOWUP_LIVE = ("dispatching", "running")
 
@@ -385,6 +388,26 @@ def s3_read_json(key: str) -> dict | None:
     except ValueError:
         return None
     return out if isinstance(out, dict) else None
+
+
+SENDER_DEVICE_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")  # the upload proxy's own check (upload_proxy.DEVICE_RE)
+
+
+def s3_sender(key: str) -> dict:
+    """Who uploaded an inbox object, from the metadata the upload proxy stores with it (X-Amz-Meta-Holocene-Device and
+    -Host): {"device": id | None, "host": "car" | "browser" | None, "ok": bool}. ok=False when the object could not be
+    read; anything malformed is dropped, never guessed."""
+    try:
+        r = mc("stat", "--json", s3_url(key), timeout=10)
+        meta = (json.loads(r.stdout.strip().splitlines()[-1]).get("metadata") or {}) if r.returncode == 0 else None
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        meta = None
+    if meta is None:
+        return {"device": None, "host": None, "ok": False}
+    low = {str(k).lower(): v for k, v in meta.items()}
+    dev, host = low.get("x-amz-meta-holocene-device"), low.get("x-amz-meta-holocene-host")
+    return {"device": dev if isinstance(dev, str) and SENDER_DEVICE_RE.match(dev) else None,
+            "host": host if host in ("car", "browser") else None, "ok": True}
 
 
 def s3_stat(key: str) -> dict | None:

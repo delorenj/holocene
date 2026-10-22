@@ -28,8 +28,10 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import fcntl
 import hashlib
+import heapq
 import json
 import os
 import re
@@ -46,11 +48,12 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import converse as cv  # noqa: E402
 import memo_common as mc_  # noqa: E402
 from memo_common import (  # noqa: E402
-    BB_EMIT, BUCKET, CANCELLED, ESCALATED_REASON, FOLLOWUP_REASON, REPLIES_PREFIX, STATE_DIR, agent_from_key,
-    cancel_after_dispatch, iso, live_followup, long_turn, memo_escalated, memo_id_for, now_utc, rescue_open, resume_for,
-    truncated_by_old_watcher,
+    BB_EMIT, BUCKET, CANCELLED, DELEGATION_REASON, ESCALATED_REASON, FOLLOWUP_REASON, REPLIES_PREFIX, STATE_DIR,
+    agent_from_key, cancel_after_dispatch, iso, live_followup, long_turn, memo_escalated, memo_id_for, now_utc,
+    rescue_open, resume_for, truncated_by_old_watcher,
 )
 
 SERVICE = "inbox-watcher"
@@ -285,6 +288,28 @@ CHUNK_MAX = 20
 # How often a dispatched memo re-reads the gateway journal for its turn (a local read-only sqlite row): the gap
 # between "agent done" and the watcher noticing used to be up to this plus a 1 s tick.
 AWAIT_POLL_S = float(os.environ.get("MEMO_AWAIT_POLL_S", "0.5"))
+# ---- the fast in-car conversation desk (HOLOC-23; converse.py, README "Fast conversation layer")
+# MEMO_CONVERSE=off|shadow|on is only the default: the flag file <state>/converse.json (`mise run memo:converse ...`) wins,
+# read per memo, no restart. off = today's path for every memo, unchanged.
+# A fast turn's reply is voiced with a short first chunk (the car starts speaking sooner) at fewer vox steps.
+CONVERSE_CHUNK_CHARS = tuple(int(x) for x in os.environ.get("MEMO_CONVERSE_CHUNK_CHARS", "70,170,300").split(",") if x.strip()) or (70, 170, 300)
+CONVERSE_CHUNK_MIN_CHARS = int(os.environ.get("MEMO_CONVERSE_CHUNK_MIN_CHARS", "80"))
+CONVERSE_TTS_STEPS = int(os.environ.get("MEMO_CONVERSE_TTS_STEPS", "6"))
+# A confirmed brief rides this lane (batch: no wall clock, no detach narration) on this model ("" = the profile's own:
+# the desk never adds a model route, and never an Anthropic one).
+CONVERSE_DELEGATE_LANE = os.environ.get("MEMO_CONVERSE_DELEGATE_LANE", "batch").strip().lower()
+if CONVERSE_DELEGATE_LANE not in mc_.GATEWAY_CONSUMERS:
+    CONVERSE_DELEGATE_LANE = "batch"
+CONVERSE_DELEGATE_MODEL = os.environ.get("MEMO_CONVERSE_DELEGATE_MODEL", "").strip()
+if cv.forbidden(CONVERSE_DELEGATE_MODEL):
+    CONVERSE_DELEGATE_MODEL = ""  # the never-Anthropic rule holds for the delegated turn's model override too
+# The earlier conversation a direct turn's prompt carries, at most this many characters.
+CONVERSE_DIRECT_CONTEXT_CHARS = int(os.environ.get("MEMO_CONVERSE_DIRECT_CONTEXT_CHARS", "1200"))
+# How long step_converse waits for the card the receive-time prefetch is building (download + Whisper usually cover it).
+CONVERSE_CARD_WAIT_S = float(os.environ.get("MEMO_CONVERSE_CARD_WAIT_S", "0.6"))
+CONVERSE_SWEEP_S = 60.0
+CONVERSE_RESULT_CHARS = 600
+CONVERSE_CLOSED_KEEP = 20
 # The main loop's longest sleep. It also wakes for the earliest due memo, the next S3 listing, and at once when a
 # stage finishes (WAKE), so a stage never waits for a tick boundary to start the next one.
 TICK_S = float(os.environ.get("MEMO_TICK_S", "1"))
@@ -307,13 +332,14 @@ if _budget is not None:
 
 # Where a failed memo resumes when `memo:retry` (or the late rescue) revives it.
 RESUME_STAGE = {"receive": "receive", "download": "transcribe", "transcribe": "transcribe", "dispatch": "dispatch",
-                "agent": "dispatch", "agent_reply": "reply", "tts": "speak", "reply_upload": "speak"}
+                "agent": "dispatch", "agent_reply": "reply", "tts": "speak", "reply_upload": "speak", "converse": "converse"}
 FAIL_STAGE = {"receive": "receive", "transcribe": "transcribe", "dispatch": "dispatch", "await_agent": "agent",
-              "reply": "agent_reply", "speak": "tts", "mirror": "reply_upload"}
+              "reply": "agent_reply", "speak": "tts", "mirror": "reply_upload", "converse": "converse"}
 # run off the tick thread. speak renders and uploads the car's copy (three workers); mirror is the phone decision that
 # follows: it can wait minutes on a car that holds its reply, and it must not sit on a speak worker (three held replies
 # would then queue the next memo's voice behind them), so it has a pool of its own, wide enough that holds never queue.
-SLOW_STAGES = {"transcribe": "transcribe", "dispatch": "io", "speak": "speak", "mirror": "decide"}
+# converse (the fast desk) has ONE worker: turns of a conversation are decided in key order, each seeing the one before.
+SLOW_STAGES = {"transcribe": "transcribe", "dispatch": "io", "speak": "speak", "mirror": "decide", "converse": "converse"}
 
 STOP = False
 
@@ -393,6 +419,9 @@ class State:
                 self.fresh = True
             self.data.setdefault("memos", {})
             self.data.setdefault("outbox", [])
+        # the fast desk's conversations (converse.py): open ones by "<device>|<agent>", and a ring of closed ones
+        self.data.setdefault("conversations", {})
+        self.data.setdefault("conversations_closed", [])
 
     def save(self) -> None:
         """Write state.json only when it changed (it used to be rewritten, indented, every second)."""
@@ -637,6 +666,9 @@ def car_stage(m: dict) -> str:
         return "received"
     if stage == "transcribe":
         return "transcribing"
+    if stage == "converse":
+        # the fast desk is deciding: the pad knows no other stage name, and the answer is seconds away
+        return "working"
     if stage == "dispatch":
         # an escalated memo goes back through dispatch on its way to the batch lane, and a memo whose quick answer was
         # spoken goes back through it for its background follow-up: the agent is still on it
@@ -654,12 +686,21 @@ def memo_started_ts(m: dict) -> float:
     return up.timestamp() if up else float(m.get("detected_ts") or time.time())
 
 
+def fast_turn(m: dict) -> bool:
+    """The memo is (or was) a fast desk turn, not an agent turn: it is at the converse stage, or the desk decided anything
+    but `direct` for it. Its transcript is not echoed back ("<agent> heard: ..."): the answer itself is seconds away."""
+    conv = m.get("conv")
+    return m.get("stage") == "converse" or (isinstance(conv, dict) and conv.get("action") not in (None, "direct"))
+
+
 def status_doc(m: dict) -> dict:
     """The car's status document for one memo (schema: services/inbox-watcher/README.md, "Status object")."""
     now = time.time()
     started = memo_started_ts(m)
     stage = car_stage(m)
-    heard = re.sub(r"\s+", " ", m.get("transcript") or "").strip()[:HEARD_CHARS] or None
+    # heard is null for a fast desk turn: the pad echoes the transcript only when heard is set, and the echo would put
+    # seconds of speech in front of an answer that is itself seconds away. A direct turn gets it back (today's path).
+    heard = None if fast_turn(m) else (re.sub(r"\s+", " ", m.get("transcript") or "").strip()[:HEARD_CHARS] or None)
     doc = {
         "v": 1, "memo_id": m["memo_id"], "agent": m.get("agent"),
         "agent_name": m.get("display_name") or (m.get("agent") or "").replace("-", " ") or None,
@@ -689,6 +730,13 @@ def status_doc(m: dict) -> dict:
     if m.get("reply_chunks"):
         # the reply is being spoken chunk by chunk: how many it has and how many are up (replies/...-cNNofMM.opus)
         doc["reply_chunks"] = {"n": m["reply_chunks"], "voiced": m.get("voiced_n", 0)}
+    conv = m.get("conv")
+    if isinstance(conv, dict):
+        # the fast desk's turn: sid (the conversation's short id), turn (1-based), action (reply | propose | confirm |
+        # cancel | end | direct), draft_title (the pending draft, if any) and reply_key (THIS turn's reply of record, so
+        # the pad can tell a barged fast-turn reply from a follow-up result, which has a reply key of its own)
+        doc["conv"] = {"sid": conv.get("sid"), "turn": conv.get("turn"), "action": conv.get("action"),
+                       "draft_title": conv.get("draft_title"), "reply_key": conv.get("reply_key")}
     if stage == "failed":
         code = m.get("failed_code") or m.get("status")
         doc["error_code"] = code
@@ -732,12 +780,22 @@ class Watcher:
                       "speak": concurrent.futures.ThreadPoolExecutor(3, thread_name_prefix="speak"),
                       "decide": concurrent.futures.ThreadPoolExecutor(32, thread_name_prefix="decide"),
                       # spoken progress renders on its own worker: a 2 s vox call never holds up a stage
-                      "narrate": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="narrate")}
+                      "narrate": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="narrate"),
+                      # the fast desk: one worker, so the turns of a conversation are decided in order
+                      "converse": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="converse")}
         self.last_rescue = 0.0
         self.lane_probe: LaneProbe | None = None  # started by main(); tests leave it off
         self.status_writer = StatusWriter()       # its thread is started by main(); tests drain() it
         self.narrating: set[str] = set()          # memo keys with a progress render in flight
         self.progress_err: str | None = None
+        # The fast in-car conversation desk (converse.py). Its settings are read per memo (env default + flag file).
+        self.desk = cv.Desk(state.dir, log=log)
+        # receive-time prefetch per memo key: {"done": Event, "card": card | None}
+        self.prefetch: dict[str, dict] = {}
+        # Whether bb-emit accepts the desk's two facts (main() runs the --check gate): a fact it would refuse must never
+        # sit at the head of the outbox and block every later fact, so until then they are logged only.
+        self.contract_ok = {"routed": True, "delegated": True}
+        self.last_conv_sweep = 0.0
 
     def choose_lane(self) -> tuple[str, str | None]:
         """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
@@ -804,6 +862,33 @@ class Watcher:
             self.s.data["outbox"].append(rec)
             log("fact_queued", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
                 stage=action, error=str(e)[:300], outbox=len(self.s.data["outbox"]))
+
+    def fact_gated(self, action: str, m: dict, payload: dict) -> None:
+        """A fast-desk fact (routed | delegated): published like any fact once bb-emit's --check accepted its type at
+        start-up, else logged only (fact_unavailable) and never queued: a type bb-emit refuses would block the outbox."""
+        if self.contract_ok.get(action):
+            return self.fact(action, m, payload)
+        log("fact_unavailable", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], fact=f"audio.memo.{action}",
+            note="bb-emit --check refused this type at start-up: logged only, never queued", data=payload)
+
+    def check_contracts(self) -> dict:
+        """Start-up gate: does bb-emit accept audio.memo.routed and audio.memo.delegated? A dry run (--check), no NATS."""
+        sample = {"memo_id": str(uuid.uuid4()), "s3_key": "inbox/holocene-pm/2026/01/01/check.ogg",
+                  "target_agent_id": "holocene-pm", "conv_id": "check", "action": "reply",
+                  "tile_agent_id": "holocene-pm", "brief_id": str(uuid.uuid4()), "brief_sha256": "0" * 64,
+                  "command_id": str(uuid.uuid4()), "lane": "batch", "perm": "read_only"}
+        for action in ("routed", "delegated"):
+            try:
+                r = run([BB_EMIT, "--check", "--strict", "--type", f"bloodbank.audio.memo.{action}",
+                         "--source", f"urn:33god:service:{SERVICE}", "--producer", SERVICE, "--service", SERVICE],
+                        20, stdin=json.dumps(sample))
+                ok, err = r.returncode == 0, r.stderr.strip()[-300:]
+            except Exception as e:  # noqa: BLE001
+                ok, err = False, f"{type(e).__name__}: {e}"[:300]
+            self.contract_ok[action] = ok
+            log("converse_contract", "info" if ok else "warn", fact=f"audio.memo.{action}", ok=ok,
+                error=None if ok else err)
+        return dict(self.contract_ok)
 
     def status(self, m: dict) -> None:
         """Queue the memo's status object for the car (never blocks; the writer thread uploads it)."""
@@ -911,7 +996,7 @@ class Watcher:
             # A new prompt is a new ask: nothing of the old command, or of the escalation it went through, carries over.
             self.drop_command(m)
             for k in ("escalated", "escalated_from_command_id", "escalated_ts", "late", "rescue_closed", "followups",
-                      "background_plan", "detached", "detached_ts"):
+                      "background_plan", "detached", "detached_ts", "conv", "conv_raw", "delegate"):
                 m.pop(k, None)
         elif stage == "dispatch" and (failed == "agent" or (failed == "agent_reply" and m.get("failed_code") == mc_.TURN_TIMEOUT)):
             was_escalated = bool(m.get("escalated"))  # the old command was rejected or failed: send a fresh one
@@ -1021,6 +1106,9 @@ class Watcher:
         if fu is not None:
             # The quick answer was spoken; the background follow-up still runs on the agent but is never spoken.
             fu["state"], fu["ended_at"] = CANCELLED, iso(now_utc())
+        if m.get("delegate") or (fu is not None and fu.get("kind") == "delegation" and not m.get("publish_attempted")):
+            # a confirmed brief that never left: its draft goes back to the conversation, so "send it" works again
+            self.restore_draft(m, "cancelled before the delegation was sent")
         if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak", "mirror"):
             # after_dispatch stays true (the interactive command went out and ran); only the message is about the batch one
             msg = (f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the interactive command was "
@@ -1096,14 +1184,21 @@ class Watcher:
                     continue
                 self.advance(m)
             self.schedule_phone_retries()
+            self.converse_sweep()
             self.s.save()
             counts: dict[str, int] = {}
             for m in self.s.memos.values():
                 counts[m["status"]] = counts.get(m["status"], 0) + 1
+            try:
+                converse_hb = self.desk.heartbeat(open_conversations=len(self.s.data.get("conversations") or {}),
+                                                  contract=dict(self.contract_ok))
+            except Exception as e:  # noqa: BLE001 - the heartbeat never stops the loop
+                converse_hb = {"error": f"{type(e).__name__}: {e}"[:200]}
             self.s.heartbeat({
                 "lane": LANE, "lanes": self.lane_probe.snapshot() if self.lane_probe else {},
                 "memos": counts, "outbox": len(self.s.data["outbox"]),
                 "phone_retries": sum(1 for m in self.s.memos.values() if self.phone_retry_pending(m)),
+                "converse": converse_hb,
                 "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
                             "running": m["key"] in self.running,
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
@@ -1129,7 +1224,7 @@ class Watcher:
         self._exec(m, stage)
 
     def _exec(self, m: dict, stage: str) -> None:
-        step = {"receive": self.step_receive, "transcribe": self.step_transcribe,
+        step = {"receive": self.step_receive, "transcribe": self.step_transcribe, "converse": self.step_converse,
                 "dispatch": self.step_dispatch, "await_agent": self.step_await_agent,
                 "reply": self.step_reply, "speak": self.step_speak, "mirror": self.step_mirror}[stage]
         t0 = time.time()
@@ -1188,6 +1283,10 @@ class Watcher:
             m["failed_stage"] = e.stage
             m["failed_code"] = e.code
             m["failed_message"] = e.message[:300]
+            if m.get("delegate"):
+                # the read-back of a confirmed brief never made it out (vox down past its budget, say): nothing was
+                # sent, so the draft goes back to proposed and "send it" works again
+                self.restore_draft(m, f"the read-back failed at {e.stage}: {e.code}")
             m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
                                  else "dispatch" if e.stage == "agent_reply" and e.code == mc_.TURN_TIMEOUT  # fresh command
                                  else RESUME_STAGE.get(e.stage, "receive"))
@@ -1225,6 +1324,10 @@ class Watcher:
         if route["ok"] is False:
             raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
         m["display_name"] = mc_.spoken_name(m["agent"], route)
+        if self.desk.wants(m["agent"]):
+            # the fast desk may take this memo: who sent it (car or browser, which device) and the agent's card are
+            # fetched now, in parallel with the download and Whisper, so the desk has them the moment the transcript lands
+            self.start_prefetch(m)
         self.done_stage(m, "received", "transcribe", size=m.get("size"), detect_lag_ms=lag)
 
     # -- transcribe (worker thread) --
@@ -1411,9 +1514,442 @@ class Watcher:
             # which path ran: device "cuda"/"cpu"; fallback_reason set when the warm server was skipped for the CLI
             "device": meta.get("device"), "fallback_reason": meta.get("fallback_reason"), **w.get("levels", {})})
         m.update({k: v for k, v in w.get("levels", {}).items() if v is not None})
-        self.done_stage(m, "transcribed", "dispatch", ms=took * 1000, chars=len(text),
+        audio_s = meta.get("duration_seconds") or w["audio_s"]
+        if isinstance(audio_s, (int, float)):
+            m["audio_s"] = round(float(audio_s), 2)
+        # The fast desk takes the memo when it is on for this agent and the memo is a car memo it can answer (step_converse
+        # checks the rest); shadow decides on the side and changes nothing; anything else is today's path, unchanged.
+        route = self.converse_route(m)
+        self.done_stage(m, "transcribed", "converse" if route == "on" else "dispatch", ms=took * 1000, chars=len(text),
                         audio_s=meta.get("duration_seconds") or w["audio_s"], model=meta.get("model"),
                         backend=meta.get("backend"), device=meta.get("device"), text=text[:120])
+        if route == "shadow":
+            self.start_shadow(m)
+
+    # -- the fast in-car conversation desk (worker thread; converse.py) --
+    #
+    # transcribe -> converse -> speak -> mirror -> done           (reply | propose | cancel | end: no agent command)
+    #                        -> speak -> mirror -> dispatch ...   (confirm: the read-back, then the brief as a follow-up)
+    #                        -> dispatch -> ... today's path      (direct, a failed ladder, or a memo the desk cannot take)
+    # The desk never fails a memo for an LLM reason: every failure falls through to today's path.
+
+    @staticmethod
+    def _dispatched_before(m: dict) -> bool:
+        return bool(m.get("publish_attempted") or m.get("dispatched_ts") or m.get("command_id") or m.get("followups"))
+
+    def converse_route(self, m: dict) -> str | None:
+        """Under the lock, as the transcript lands: "on" (the converse stage), "shadow" (today's path plus a logged side
+        decision) or None (today's path). Cheap: the sender, audio length and keys are checked again in step_converse."""
+        try:
+            s = self.desk.settings()
+        except Exception as e:  # noqa: BLE001 - a broken desk config is today's path, never a stopped watcher
+            log("converse_config_error", "warn", memo_id=m["memo_id"], key=m["key"], error=f"{type(e).__name__}: {e}"[:200])
+            return None
+        if s["mode"] == "off" or not self.desk.agent_allowed(s, m.get("agent")) or self._dispatched_before(m):
+            return None
+        sender = m.get("sender") or {}
+        if sender.get("ok") and sender.get("host") != "car":
+            return None  # known not to be a car (a browser): today's path without a converse hop
+        if isinstance(m.get("audio_s"), (int, float)) and m["audio_s"] > self.desk.max_audio_s:
+            return None
+        if len(m.get("transcript") or "") > self.desk.max_input_chars:
+            return None
+        return s["mode"]
+
+    def start_prefetch(self, m: dict) -> None:
+        """Under the lock (step_receive): read who sent the memo (S3 metadata) and build the agent's card on a thread of
+        its own, while the download and Whisper run."""
+        key, agent = m["key"], m["agent"]
+        slot = {"done": threading.Event(), "card": None, "sender": None, "at": time.time()}
+        self.prefetch[key] = slot
+
+        def work():
+            try:
+                sender = mc_.s3_sender(key)
+                slot["sender"] = sender
+                with self.mu:
+                    mm = self.s.memos.get(key)
+                    if mm is not None and not (mm.get("sender") or {}).get("ok"):
+                        mm["sender"] = sender
+                slot["card"] = self.desk.cards.build(agent)
+            except Exception as e:  # noqa: BLE001 - the desk builds what it needs itself
+                log("converse_prefetch_failed", "warn", key=key, agent=agent, error=f"{type(e).__name__}: {e}"[:200])
+            finally:
+                slot["done"].set()
+        threading.Thread(target=work, name="converse-prefetch", daemon=True).start()
+
+    def _sender(self, key: str) -> dict:
+        slot = self.prefetch.get(key)
+        if slot is not None:
+            slot["done"].wait(2.0)
+            if (slot.get("sender") or {}).get("ok"):
+                return slot["sender"]
+        return mc_.s3_sender(key)
+
+    def _card_for(self, key: str, agent: str) -> dict:
+        slot = self.prefetch.get(key)
+        if slot is not None:
+            slot["done"].wait(CONVERSE_CARD_WAIT_S)
+            if slot.get("card"):
+                return slot["card"]
+        return self.desk.cards.build(agent, allow_recall=False)  # the recall only from cache on the critical path
+
+    def _session(self, sender: dict, agent: str, now: float, create: bool = True) -> tuple[str, dict | None, bool]:
+        """Lock held. (key, the open conversation of this device and agent, whether it was opened now). An idle one is
+        closed first (MEMO_CONVERSE_IDLE_S)."""
+        convs = self.s.data.setdefault("conversations", {})
+        sk = cv.session_key(sender.get("device"), agent)
+        sess = convs.get(sk)
+        if sess is not None and now - float(sess.get("last_at") or 0) > self.desk.idle_s:
+            self.close_session(sk, "idle")
+            sess = None
+        opened = False
+        if sess is None and create:
+            sess = convs[sk] = cv.new_session(agent, sender.get("device"), now)
+            opened = True
+            log("conversation_opened", conv_id=sess["conv_id"], sid=sess["sid"], agent=agent, device=sender.get("device"))
+        return sk, sess, opened
+
+    def _find_session(self, conv_id: str | None) -> dict | None:
+        if not conv_id:
+            return None
+        for sess in (self.s.data.get("conversations") or {}).values():
+            if sess.get("conv_id") == conv_id:
+                return sess
+        return next((x for x in reversed(self.s.data.get("conversations_closed") or []) if x.get("conv_id") == conv_id), None)
+
+    def close_session(self, sk: str, reason: str) -> None:
+        """Lock held. The conversation ends (idle, the driver said so): a draft still waiting is never sent and expires."""
+        sess = (self.s.data.get("conversations") or {}).pop(sk, None)
+        if sess is None:
+            return
+        now = time.time()
+        p = sess.get("pending")
+        if isinstance(p, dict) and p.get("state") == "proposed":
+            p["state"] = "expired"
+            sess["pending"] = None
+            log("converse_draft_expired", conv_id=sess["conv_id"], agent=sess.get("agent"), brief_id=p.get("brief_id"),
+                title=p.get("title"), reason=f"conversation closed ({reason})", note="never sent")
+        sess.update(closed_at=now, closed_reason=reason)
+        closed = self.s.data.setdefault("conversations_closed", [])
+        closed.append(sess)
+        del closed[:-CONVERSE_CLOSED_KEEP]
+        log("conversation_closed", conv_id=sess["conv_id"], sid=sess.get("sid"), agent=sess.get("agent"), reason=reason,
+            turns=len(cv.driver_turns(sess)), delegations=len(sess.get("delegations") or []))
+
+    def converse_sweep(self) -> None:
+        """Tick, lock held, every CONVERSE_SWEEP_S: drafts past their TTL expire (never sent), idle conversations close."""
+        now = time.time()
+        if now - self.last_conv_sweep < CONVERSE_SWEEP_S:
+            return
+        self.last_conv_sweep = now
+        for sk, sess in list((self.s.data.get("conversations") or {}).items()):
+            p = sess.get("pending")
+            if (isinstance(p, dict) and p.get("state") == "proposed"
+                    and now - max(float(p.get("at") or 0), float(p.get("restored_at") or 0)) > self.desk.draft_ttl_s):
+                p["state"] = "expired"
+                sess["pending"] = None
+                log("converse_draft_expired", conv_id=sess["conv_id"], agent=sess.get("agent"), brief_id=p.get("brief_id"),
+                    title=p.get("title"), reason=f"no confirmation within {self.desk.draft_ttl_s:g} s", note="never sent")
+            if now - float(sess.get("last_at") or 0) > self.desk.idle_s:
+                self.close_session(sk, "idle")
+        for k, slot in list(self.prefetch.items()):
+            if now - slot.get("at", now) > 600:
+                self.prefetch.pop(k, None)
+
+    def _delegation_board(self, agent: str, now: float) -> str:
+        """Lock held. What was sent from the car for this agent in the last 24 h, with its live state, newest progress
+        line and result: "how's that going?" is answered from here, with no agent turn."""
+        rows = []
+        sessions = [*(self.s.data.get("conversations") or {}).values(), *(self.s.data.get("conversations_closed") or [])]
+        for sess in sessions:
+            if sess.get("agent") != agent:
+                continue
+            for d in sess.get("delegations") or []:
+                if now - float(d.get("at") or 0) > 86400:
+                    continue
+                state = d.get("state")
+                memo = self.s.memos.get(d.get("key") or "")
+                fu = next((x for x in (memo or {}).get("followups") or [] if x.get("command_id") == d.get("command_id")), None)
+                if fu is not None and state in ("sending", "running"):
+                    state = {"dispatching": "sending", "running": "running", "spoken": "done", "failed": "failed",
+                             CANCELLED: "cancelled"}.get(fu.get("state"), state)
+                text = {"sending": "being sent", "running": "running", "done": "finished", "failed": "did not finish",
+                        "not_sent": "NOT sent", "cancelled": "cancelled"}.get(state, state or "?")
+                mins = int((now - float(d.get("at") or now)) // 60)
+                line = (f"- {d.get('title')} -> {d.get('target_name') or d.get('target')} "
+                        f"[{cv.PERM_TEXT.get(d.get('perm'), 'Read-only')}]: {text}, sent "
+                        f"{time.strftime('%H:%M', time.localtime(float(d.get('at') or now)))} ({mins} min ago)")
+                if memo and state == "running" and memo.get("command_id") == d.get("command_id") and memo.get("progress_text"):
+                    line += f"; latest progress: {memo['progress_text'][:200]}"
+                if d.get("result"):
+                    line += f"; result: {d['result'][:CONVERSE_RESULT_CHARS]}"
+                rows.append((float(d.get("at") or 0), line))
+        return "\n".join(line for _, line in sorted(rows)[-8:])
+
+    def _recent_memos(self, agent: str, sess: dict | None, exclude: str, now: float) -> str:
+        """Lock held. Up to 3 answered memos to this agent from the last 24 h that are not part of this conversation."""
+        mine = {t.get("memo_id") for t in (sess or {}).get("turns") or []}
+        picks = sorted((x for x in self.s.memos.values()
+                        if x.get("agent") == agent and x.get("status") == "done" and x.get("memo_id") not in mine
+                        and x.get("key") != exclude and now - float(x.get("detected_ts") or 0) < 86400
+                        and x.get("transcript") and x.get("reply_text")),
+                       key=lambda x: float(x.get("detected_ts") or 0))[-3:]
+        return "\n".join(f"- {time.strftime('%H:%M', time.localtime(float(x.get('detected_ts') or now)))} asked: "
+                         f"{x['transcript'][:160]} | answer: {x['reply_text'][:240]}" for x in picks)
+
+    def _conv_snapshot(self, m: dict, sender: dict, now: float) -> dict:
+        """Lock held. Copies of what the desk reads for this turn (it runs outside the lock)."""
+        _, sess, _ = self._session(sender, m["agent"], now, create=False)
+        return {"sess": cv.snapshot(sess) if sess else None, "board": self._delegation_board(m["agent"], now),
+                "recent": self._recent_memos(m["agent"], sess, m["key"], now)}
+
+    def step_converse(self, m: dict) -> None:
+        """Decide one car turn with the fast desk. The decision is stored on the memo (conv_raw) before it is applied, so a
+        restart re-applies it without a second LLM call. Never fails the memo for an LLM reason."""
+        t0 = time.time()
+        with self.mu:
+            if self._cancelled(m):
+                return
+            key, mid, agent = m["key"], m["memo_id"], m["agent"]
+            transcript = m.get("transcript") or ""
+            raw = m.get("conv_raw")
+            sender = m.get("sender")
+            audio_s, dispatched = m.get("audio_s"), self._dispatched_before(m)
+            name = m.get("display_name") or mc_.spoken_name(agent)
+        s = self.desk.settings()  # the kill switch is read again here: off since the transcript landed = today's path
+        if raw is None:
+            if not (sender or {}).get("ok"):
+                sender = self._sender(key)
+                with self.mu:
+                    m["sender"] = sender
+            why = self.desk.ineligible(s, agent, sender, audio_s, transcript, dispatched)
+            if why:
+                with self.mu:
+                    if self._cancelled(m):
+                        return
+                    self.prefetch.pop(key, None)
+                    log("converse_skipped", memo_id=mid, key=key, agent=agent, reason=why, host=(sender or {}).get("host"),
+                        note="today's path: dispatched to the agent as usual")
+                    self.done_stage(m, "converse", "dispatch", ms=(time.time() - t0) * 1000, skipped=why)
+                return
+            try:
+                now = time.time()
+                with self.mu:
+                    snap = self._conv_snapshot(m, sender, now)
+                card = self._card_for(key, agent)
+                raw = self.desk.decide(s, agent=agent, name=name, transcript=transcript, sess=snap["sess"], card=card,
+                                       board=snap["board"], recent=snap["recent"], now=now)
+                raw["card"] = {k: card.get(k) for k in ("sha256", "built_at", "recall", "chars", "cached")}
+            except WatcherStopping:
+                raise
+            except Exception as e:  # noqa: BLE001 - never a failed memo for a desk bug: today's path
+                log("converse_error", "warn", memo_id=mid, key=key, agent=agent, error=f"{type(e).__name__}: {e}"[:300])
+                raw = {"decision": cv.normalize_decision({"action": "direct"}), "path": "fallback", "lexicon": False,
+                       "llm": None, "fallback_reason": f"error: {type(e).__name__}: {e}"[:200]}
+            raw["decided_at"] = time.time()
+            raw["sender"] = sender
+            with self.mu:
+                if not self._cancelled(m):
+                    m["conv_raw"] = raw
+                    self.s.save()
+        with self.mu:
+            if self._cancelled(m):
+                log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="converse",
+                    note="the desk's answer is dropped: nothing is spoken and no turn is recorded")
+                return
+            self.prefetch.pop(key, None)
+            self._converse_apply(m, raw, time.time() - t0)
+
+    def _converse_apply(self, m: dict, raw: dict, took: float) -> None:
+        """Lock held. The guard turns the decision into what is said and done; the conversation, the memo and the routed
+        fact are written; the memo moves to speak (a fast turn) or dispatch (direct)."""
+        now = time.time()
+        mid, key, agent, transcript = m["memo_id"], m["key"], m["agent"], m.get("transcript") or ""
+        sender = raw.get("sender") or m.get("sender") or {}
+        sk, sess, opened = self._session(sender, agent, now)
+        s = self.desk.settings()
+        dec = raw["decision"]
+        final, reasons = cv.guard(dec, sess, transcript, tile=agent, tile_name=m.get("display_name") or mc_.spoken_name(agent),
+                                  handoff=s["handoff"], route_fn=mc_.registry_route, names_fn=self.desk.cards, now=now,
+                                  draft_ttl_s=self.desk.draft_ttl_s, dedupe_s=self.desk.dedupe_s, memo_id=mid)
+        action = final["action"]
+        llm = raw.get("llm") or {}
+        if reasons:
+            log("converse_guard", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"], decided=dec.get("action"),
+                action=action, reasons=reasons)
+        for r in reasons:
+            if r in ("handoff_off", "handoff_not_named", "unroutable_target"):
+                log("converse_retarget_refused", "warn", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"],
+                    asked=dec.get("target"), reason=r, note="the work stays with the tile's agent")
+        pend = sess.get("pending")
+        if final["drop"] and isinstance(pend, dict) and pend.get("state") == "proposed":
+            pend["state"] = "dropped"
+            sess["pending"] = None
+            log("converse_draft_dropped", memo_id=mid, conv_id=sess["conv_id"], brief_id=pend.get("brief_id"),
+                title=pend.get("title"), note="never sent")
+        if final["draft"] is not None:
+            sess["pending"] = final["draft"]
+        sent = final["send"]
+        if sent is not None:
+            sent["state"] = "sending"
+            sent["sent_by_memo"] = mid
+            cid = cv.command_id_for(sent["brief_id"])
+            words = [(time.strftime("%H:%M:%S", time.localtime(float(t.get("at") or now))), t.get("user") or "")
+                     for t in cv.driver_turns(sess) if t.get("memo_id") != mid]
+            words.append((time.strftime("%H:%M:%S", time.localtime(now)), transcript))
+            prompt = cv.render_prompt(sent, words[-12:], sess["conv_id"], mid, agent)
+            m["delegate"] = {"prompt": prompt, "command_id": cid, "brief_id": sent["brief_id"],
+                             "brief_sha256": sent["brief_sha256"], "target": sent["target"],
+                             "target_name": sent["target_name"], "title": sent["title"], "perm": sent["perm"],
+                             "conv_id": sess["conv_id"]}
+            dl = sess.setdefault("delegations", [])
+            if not any(x.get("brief_id") == sent["brief_id"] and x.get("state") == "sending" for x in dl):
+                dl.append({"brief_id": sent["brief_id"], "brief_sha256": sent["brief_sha256"], "title": sent["title"],
+                           "target": sent["target"], "target_name": sent["target_name"], "perm": sent["perm"],
+                           "memo_id": mid, "key": key, "command_id": cid, "state": "sending", "at": now})
+        turn = {"memo_id": mid, "key": key, "at": now, "user": transcript[:2000],
+                "say": final["say"] if action != "direct" else "", "action": action, "path": raw.get("path"),
+                "model": llm.get("model"), "route": llm.get("route"), "ms": llm.get("latency_ms"),
+                "device": sender.get("device"), "guard": reasons or None}
+        n = cv.upsert_turn(sess, turn)
+        sess["last_at"] = now
+        if action == "direct":
+            # today's interactive turn, with the conversation so far in front of the transcript (re-pinned by sha256)
+            ctx = cv.context_for_direct(sess, CONVERSE_DIRECT_CONTEXT_CHARS)
+            m["prompt"] = (f"{VOICE_PREFIX}[Earlier in this car conversation (speech-to-text): {ctx}] {transcript}"
+                           if ctx else build_prompt(transcript))
+            m["prompt_sha256"] = hashlib.sha256(m["prompt"].encode()).hexdigest()
+        pend = sess.get("pending") if isinstance(sess.get("pending"), dict) else None
+        m["conv"] = {"conv_id": sess["conv_id"], "sid": sess["sid"], "turn": n, "action": action, "path": raw.get("path"),
+                     "draft_title": (pend or {}).get("title"), "session_key": sk, "opened": opened, "reply_key": None}
+        if action != "direct":
+            m["reply_text"] = final["say"]
+            stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
+            m["conv"]["reply_key"] = reply_key_for(stamp, agent, mid)
+            m["agent_done_ts"] = now
+        if final["close"]:
+            self.close_session(sk, "end")
+        card = raw.get("card") or {}
+        draft = final["draft"] or sent or final.get("already") or {}
+        self.fact_gated("routed", m, {
+            "conv_id": sess["conv_id"], "sid": sess["sid"], "conv_turn": n, "conv_opened": opened, "action": action,
+            "decided_action": dec.get("action"), "say": final["say"][:600] if action != "direct" else None,
+            "say_chars": len(final["say"]) if action != "direct" else None,
+            "title": draft.get("title"), "brief_id": draft.get("brief_id"), "target": draft.get("target"),
+            "perm": draft.get("perm"), "delegate_to": (sent or {}).get("target"), "guard": reasons or None,
+            "model_answered": llm.get("model"), "requested_model": llm.get("requested_model"), "route": llm.get("route"),
+            "attempts": len(llm.get("attempts") or []), "attempt_log": llm.get("attempts") or None,
+            "latency_ms": llm.get("latency_ms"), "usage": llm.get("usage"), "cached_tokens": llm.get("cached_tokens"),
+            "path": raw.get("path"), "lexicon": bool(raw.get("lexicon")), "fallback_reason": raw.get("fallback_reason"),
+            "card_sha256": card.get("sha256"), "recall": card.get("recall"),
+            "card_age_s": round(now - float(card["built_at"]), 1) if card.get("built_at") else None,
+            "device": sender.get("device"), "decide_ms": int(took * 1000),
+            "reply_s3_key": m["conv"]["reply_key"]})
+        log("converse_decided", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"], turn=n, action=action,
+            path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), llm_ms=llm.get("latency_ms"),
+            cached_tokens=llm.get("cached_tokens"), fallback_reason=raw.get("fallback_reason"),
+            say=(final["say"] or "")[:120] or None, delegate_to=(sent or {}).get("target"))
+        self.done_stage(m, "converse", "dispatch" if action == "direct" else "speak", ms=took * 1000, action=action,
+                        path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), conv=sess["sid"], turn=n)
+
+    def start_shadow(self, m: dict) -> None:
+        """Lock held. MEMO_CONVERSE=shadow: the memo goes down today's path untouched; the desk decides on the side and
+        only logs what it would have done (converse_shadow). No fact, no state, no speech."""
+        key, mid, agent = m["key"], m["memo_id"], m["agent"]
+        transcript, name = m.get("transcript") or "", m.get("display_name") or mc_.spoken_name(agent)
+        sender0, audio_s = m.get("sender"), m.get("audio_s")
+
+        def work():
+            try:
+                sender = sender0 if (sender0 or {}).get("ok") else self._sender(key)
+                s = self.desk.settings()
+                why = self.desk.ineligible({**s, "mode": "on"}, agent, sender, audio_s, transcript, False)
+                if why:
+                    log("converse_shadow", memo_id=mid, key=key, agent=agent, skipped=why)
+                    return
+                now = time.time()
+                with self.mu:
+                    snap = self._conv_snapshot({"agent": agent, "key": key}, sender, now)
+                sess = snap["sess"] or cv.new_session(agent, sender.get("device"), now)
+                raw = self.desk.decide(s, agent=agent, name=name, transcript=transcript, sess=sess,
+                                       card=self._card_for(key, agent), board=snap["board"], recent=snap["recent"], now=now)
+                final, reasons = cv.guard(raw["decision"], sess, transcript, tile=agent, tile_name=name,
+                                          handoff=s["handoff"], route_fn=mc_.registry_route, names_fn=self.desk.cards,
+                                          now=now, draft_ttl_s=self.desk.draft_ttl_s, dedupe_s=self.desk.dedupe_s, memo_id=mid)
+                llm = raw.get("llm") or {}
+                log("converse_shadow", memo_id=mid, key=key, agent=agent, action=final["action"], path=raw.get("path"),
+                    model=llm.get("model"), route=llm.get("route"), llm_ms=llm.get("latency_ms"),
+                    fallback_reason=raw.get("fallback_reason"), reasons=reasons or None, say=(final["say"] or "")[:200])
+            except Exception as e:  # noqa: BLE001 - shadow never touches the memo
+                log("converse_shadow_failed", "warn", memo_id=mid, key=key, error=f"{type(e).__name__}: {e}"[:200])
+            finally:
+                with self.mu:
+                    self.prefetch.pop(key, None)
+        threading.Thread(target=work, name="converse-shadow", daemon=True).start()
+
+    def delegation_sent(self, m: dict, fu: dict) -> None:
+        """Lock held (_mark_dispatched). The confirmed brief's command is out: the conversation's draft is spent."""
+        sess = self._find_session(fu.get("conv_id"))
+        if sess is None:
+            return
+        for d in sess.get("delegations") or []:
+            if d.get("brief_id") == fu.get("brief_id") and d.get("state") in ("sending", "not_sent"):
+                d.update(state="running", command_id=fu.get("command_id"), dispatched_at=time.time())
+        p = sess.get("pending")
+        if isinstance(p, dict) and p.get("brief_id") == fu.get("brief_id"):
+            p["state"] = "sent"
+            sess["pending"] = None
+        log("delegation_sent", memo_id=m["memo_id"], key=m["key"], conv_id=fu.get("conv_id"), brief_id=fu.get("brief_id"),
+            command_id=fu.get("command_id"), target=fu.get("target"), title=fu.get("title"))
+
+    def delegation_result(self, m: dict, fu: dict) -> None:
+        """Lock held (step_mirror). The delegated result was spoken (or its failure was): written back into the
+        conversation, so "what did it find?" is a fast turn, not an agent turn."""
+        sess = self._find_session(fu.get("conv_id"))
+        if sess is None:
+            log("delegation_result_unrecorded", "warn", memo_id=m["memo_id"], conv_id=fu.get("conv_id"),
+                note="the conversation is gone from state.json (closed ring rotated)")
+            return
+        result = clean_for_speech(m.get("reply_text") or "", CONVERSE_RESULT_CHARS)
+        state = "failed" if fu.get("state") == "failed" else "done"
+        for d in sess.get("delegations") or []:
+            if d.get("brief_id") == fu.get("brief_id"):
+                d.update(state=state, result=result, ended_at=time.time())
+        cv.upsert_turn(sess, {"memo_id": f"{m['memo_id']}:result:{fu.get('brief_id')}", "kind": "result", "at": time.time(),
+                              "action": "result", "say": result, "title": fu.get("title"), "target": fu.get("target"),
+                              "state": state})
+        log("delegation_result", memo_id=m["memo_id"], key=m["key"], conv_id=fu.get("conv_id"), brief_id=fu.get("brief_id"),
+            state=state, chars=len(result))
+
+    def direct_reply_writeback(self, m: dict) -> None:
+        """Lock held (step_mirror). A direct turn's agent reply joins the conversation it was asked in."""
+        conv = m.get("conv") or {}
+        sess = self._find_session(conv.get("conv_id"))
+        for t in (sess or {}).get("turns") or []:
+            if t.get("memo_id") == m["memo_id"] and t.get("kind", "driver") == "driver":
+                t["agent_reply"] = clean_for_speech(m.get("reply_text") or "", CONVERSE_RESULT_CHARS)
+
+    def restore_draft(self, m: dict, why: str) -> None:
+        """Lock held. A confirmed brief that never left (its read-back failed, or the memo was cancelled before the
+        publish): the draft goes back to proposed so "send it" works again, and the delegation is marked not_sent."""
+        info = m.pop("delegate", None)
+        if info is None:
+            fu = next((x for x in reversed(m.get("followups") or []) if x.get("kind") == "delegation"), None)
+            info = fu
+        if not info:
+            return
+        sess = self._find_session(info.get("conv_id"))
+        if sess is None:
+            return
+        for d in sess.get("delegations") or []:
+            if d.get("brief_id") == info.get("brief_id") and d.get("state") == "sending":
+                d["state"] = "not_sent"
+        p = sess.get("pending")
+        if isinstance(p, dict) and p.get("brief_id") == info.get("brief_id") and p.get("state") == "sending":
+            p["state"], p["restored_at"] = "proposed", time.time()
+        log("delegation_restored", "warn", memo_id=m["memo_id"], key=m["key"], conv_id=info.get("conv_id"),
+            brief_id=info.get("brief_id"), why=why, note="nothing was sent; the draft is pending again")
 
     # -- dispatch (worker thread) --
 
@@ -1486,27 +2022,37 @@ class Watcher:
                         return self._mark_dispatched(m, cid, None, 0)
                 except Exception:  # noqa: BLE001
                     pass
-            route = mc_.registry_route(m["agent"])
+            fu = live_followup(m)
+            delegation = fu is not None and fu.get("kind") == "delegation"
+            # A confirmed brief goes to the agent the driver confirmed (the tile, or one they named aloud); everything
+            # else to the memo's own agent, which comes only from the key path.
+            target = (fu.get("target") if delegation else None) or m["agent"]
+            route = mc_.registry_route(target)
             if route["ok"] is False:
                 raise StageError("dispatch", "unknown_agent", route["reason"], retryable=False)
             m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
             prompt = self._prompt_for_send(m)
             escalated = memo_escalated(m)
-            fu = live_followup(m)
             context = {"memo_id": m["memo_id"], "memo_key": m["key"],
                        "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"}
             if escalated:
                 context["escalated_from_command_id"] = m.get("escalated_from_command_id")
-            if fu is not None:
+            if delegation:
+                # a brief the driver confirmed aloud in the car conversation (the fast desk), sent verbatim
+                context.update(reason="voice-delegation", followup_depth=fu.get("n"), conv_id=fu.get("conv_id"),
+                               brief_id=fu.get("brief_id"), brief_sha256=fu.get("brief_sha256"),
+                               tile_agent_id=m["agent"], perm=fu.get("perm"))
+            elif fu is not None:
                 # the background half of an answer-then-background reply: same thread, so the agent has the whole talk
                 context.update(reason="voice-followup", followup_of=fu.get("of_command_id"), followup_depth=fu.get("n"))
             data = {
-                "target_agent_id": m["agent"], "prompt": prompt, "thread_id": m["thread_id"],
+                "target_agent_id": target, "prompt": prompt, "thread_id": m["thread_id"],
                 "turn_id": None,
                 "context": context,
             }
-            # The voice turn's model, for this one turn only (see VOICE_MODEL).
-            model = FOLLOWUP_MODEL if fu is not None else VOICE_MODEL
+            # The voice turn's model, for this one turn only (see VOICE_MODEL). A delegation runs on the profile's own
+            # model unless MEMO_CONVERSE_DELEGATE_MODEL names one (never an Anthropic route).
+            model = (fu.get("model") or "") if delegation else FOLLOWUP_MODEL if fu is not None else VOICE_MODEL
             if model:
                 data["model"] = model
             m["turn_model"] = model or None
@@ -1559,6 +2105,7 @@ class Watcher:
         m.pop("dropped_since", None)
         if fu is not None:
             fu.update(state="running", dispatched_at=iso(now_utc()), dispatched_ts=m["dispatched_ts"])
+        delegation = fu is not None and fu.get("kind") == "delegation"
         self.fact("dispatched", m, {
             "command_id": cid, "idempotency_key": ids.get("idempotency_key"),
             "command_subject": ids.get("subject") or mc_.LANE_COMMAND_TYPES[memo_lane(m)],
@@ -1570,7 +2117,21 @@ class Watcher:
             "model": m.get("turn_model"),
             **({"escalated_from_command_id": m.get("escalated_from_command_id")} if escalated else {}),
             **({"followup": fu.get("n"), "followup_of_command_id": fu.get("of_command_id"),
-                "followup_plan": (fu.get("plan") or "")[:1000]} if fu is not None else {})})
+                "followup_plan": (fu.get("plan") or "")[:1000]} if fu is not None else {}),
+            # a confirmed car-conversation brief: the command went to target_agent_id, asked via the tile's memo
+            **({"target_agent_id": fu.get("target") or m["agent"], "tile_agent_id": m["agent"],
+                "delegated_to": fu.get("target") or m["agent"], "conv_id": fu.get("conv_id"),
+                "brief_id": fu.get("brief_id"), "brief_title": fu.get("title"), "perm": fu.get("perm")}
+               if delegation else {})})
+        if delegation and not fu.get("delegated_fact"):
+            # once per confirmed brief (a recovered dispatch lands here again)
+            fu["delegated_fact"] = True
+            self.fact_gated("delegated", m, {
+                "target_agent_id": fu.get("target") or m["agent"], "tile_agent_id": m["agent"],
+                "conv_id": fu.get("conv_id"), "brief_id": fu.get("brief_id"), "brief_sha256": fu.get("brief_sha256"),
+                "command_id": cid, "lane": memo_lane(m), "perm": fu.get("perm"), "title": fu.get("title"),
+                "prompt_sha256": fu.get("prompt_sha256"), "followup": fu.get("n"), "thread_id": m.get("thread_id")})
+            self.delegation_sent(m, fu)
         if self._cancelled(m):
             # The operator cancelled while the publish was in flight: the command is out (the fact above says so), the
             # memo stays cancelled and its reply will not be spoken.
@@ -1852,7 +2413,9 @@ class Watcher:
         answer, plan = split_background(found["text"])
         if plan is not None or answer != found["text"]:
             depth = len(m.get("followups") or [])
-            allowed = plan is not None and depth < FOLLOWUP_MAX
+            # a delegated brief never hands off again (its target is not the tile; FOLLOWUP_MAX does not apply to it)
+            delegated = any(isinstance(x, dict) and x.get("kind") == "delegation" for x in m.get("followups") or [])
+            allowed = plan is not None and depth < FOLLOWUP_MAX and not delegated
             log("background_requested" if allowed else "background_refused", "info" if allowed else "warn",
                 memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent", command_id=m.get("command_id"),
                 followups=depth, max=FOLLOWUP_MAX, plan_chars=len(plan or ""), plan=(plan or "")[:160],
@@ -1925,7 +2488,11 @@ class Watcher:
             reply_text, agent, mid, key = m["reply_text"], m["agent"], m["memo_id"], m["key"]
             late = bool(m.get("late"))
             escalated = memo_escalated(m)
-            followup = live_followup(m) is not None
+            fu_live = live_followup(m)
+            followup = fu_live is not None
+            delegation = (fu_live or {}).get("kind") == "delegation"
+            conv = m.get("conv") if isinstance(m.get("conv"), dict) else {}
+            fast = fast_turn(m) and not followup
             name = m.get("display_name") or mc_.spoken_name(agent)
             # One reply key per memo: a retry after a half-finished upload overwrites instead of
             # leaving a second object that the pad would play as a second reply.
@@ -1934,14 +2501,27 @@ class Watcher:
         body = spoken_summary(reply_text, SPEAK_CHARS) if followup else clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
             raise StageError("tts", "nothing_to_speak", "reply has no speakable text after cleaning", retryable=False)
-        spoken = (f"{name}, follow-up. {body}" if followup else f"{name}, late reply. {body}" if late else f"{name}. {body}")
-        parts = split_for_speech(spoken)
+        if delegation:
+            # a confirmed brief's result, possibly from another agent than the tile: named, with what it was about
+            spoken = f"{fu_live.get('display_name') or name}, follow-up on {fu_live.get('title') or 'your request'}. {body}"
+        elif followup:
+            spoken = f"{name}, follow-up. {body}"
+        elif fast:
+            # the desk names the agent on the conversation's first turn only; a read-back names its target itself
+            first = conv.get("turn") == 1 and conv.get("action") not in ("propose", "confirm")
+            spoken = f"{name}. {body}" if first else body
+        else:
+            spoken = f"{name}, late reply. {body}" if late else f"{name}. {body}"
+        # a fast turn starts speaking sooner: a short first chunk, rendered at fewer vox steps, ahead of other renders
+        parts = split_for_speech(spoken, CONVERSE_CHUNK_CHARS, CONVERSE_CHUNK_MIN_CHARS) if fast else split_for_speech(spoken)
+        steps = CONVERSE_TTS_STEPS if fast else None
+        prio = TtsGate.FAST if fast else TtsGate.REPLY
         tmp = Path(tempfile.mkdtemp(prefix="memo-tts-"))
         try:
             t0 = time.time()
             if len(parts) > 1:
                 # The car hears the first sentence while the rest renders; the full file below is joined from the chunks.
-                voiced = self._voice_chunks(m, parts, stamp, tmp, t_speak)
+                voiced = self._voice_chunks(m, parts, stamp, tmp, t_speak, steps=steps, prio=prio)
                 if voiced is None:
                     with self.mu:
                         log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
@@ -1950,7 +2530,7 @@ class Watcher:
                     return
                 audio, engine = voiced
             else:
-                audio, engine = synthesize(spoken, tmp)
+                audio, engine = synthesize(spoken, tmp, **synth_kw(steps, prio))
             tts_s = time.time() - t0
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken),
@@ -2078,11 +2658,25 @@ class Watcher:
                 "followup": up.get("followup"), "followup_failed": bool(m.get("followup_failed")) or None,
                 "followup_of_command_id": (live_followup(m) or {}).get("of_command_id"),
                 "detached": bool(up.get("detached")), "model": m.get("turn_model"),
-                "model_override": m.get("model_override")})
+                "model_override": m.get("model_override"),
+                # the fast desk's turn this reply belongs to (only on a memo the desk decided)
+                **({"conv": {k: m["conv"].get(k) for k in ("conv_id", "sid", "turn", "action", "path")}}
+                   if isinstance(m.get("conv"), dict) else {})})
             fu = live_followup(m)
             if fu is not None:
                 fu.update(state="failed" if m.get("followup_failed") else "spoken", reply_key=rkey, ended_at=iso(now_utc()))
                 m.pop("followup_failed", None)
+                if fu.get("kind") == "delegation":
+                    self.delegation_result(m, fu)
+            elif isinstance(m.get("conv"), dict) and m["conv"].get("action") == "direct":
+                self.direct_reply_writeback(m)
+            if m.get("delegate"):
+                # The read-back ("Sending to <agent>: <title>.") is out: the confirmed brief goes now, once, as a batch
+                # follow-up of this memo (FOLLOWUP_MAX does not apply: the driver asked for it aloud).
+                self.done_stage(m, "replied", "dispatch", ms=(time.time() - up["uploaded_ts"]) * 1000, reply_key=rkey,
+                                journey_s=round(up["journey_seconds"], 1), delegation=True)
+                self.start_followup(m, kind="delegation")
+                return
             if m.get("background_plan") and FOLLOWUP_MAX > 0:
                 # The quick answer is out: the background half starts now, on the same thread, as its own command.
                 self.done_stage(m, "replied", "dispatch", ms=(time.time() - up["uploaded_ts"]) * 1000, reply_key=rkey,
@@ -2103,20 +2697,35 @@ class Watcher:
                         "agent_done_ts", "progress_cmd", "progress_seq", "progress_text", "progress_ts", "progress_full",
                         "model_override")
 
-    def start_followup(self, m: dict) -> None:
+    def start_followup(self, m: dict, kind: str = "background") -> None:
         """Under the lock, right after the quick answer's replied fact: mint follow-up N for the memo's BACKGROUND: plan and
         send it through dispatch like any command. Same thread id (the Hermes session holds the whole conversation), a
         fresh command id persisted before the publish, its own prompt pinned by sha256, the FOLLOWUP_LANE (batch: no wall
         clock), and a long deadline. Its reply is spoken as "<agent>, follow-up." into a new replies/ object for the same
-        memo, which the car plays after the quick answer (the pad plays every reply unit of a memo it sent)."""
-        plan = m.pop("background_plan")
+        memo, which the car plays after the quick answer (the pad plays every reply unit of a memo it sent).
+
+        kind="delegation": the brief the driver confirmed in the car conversation (m["delegate"], set by the fast desk).
+        Its prompt is the stored brief verbatim (pinned by sha256), its command id is uuid5(brief id), it goes to the
+        confirmed target on MEMO_CONVERSE_DELEGATE_LANE, and its result is spoken as "<target>, follow-up on <title>."."""
         fus = m.setdefault("followups", [])
         n = len(fus) + 1
-        prompt = FOLLOWUP_PREFIX + plan
-        cid = str(uuid.uuid4())
-        fus.append({"n": n, "command_id": cid, "of_command_id": m.get("command_id"), "state": "dispatching",
-                    "plan": plan, "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-                    "started_at": iso(now_utc()), "started_ts": time.time(), "lane": FOLLOWUP_LANE})
+        if kind == "delegation":
+            d = m.pop("delegate")
+            prompt, cid, lane, reason = d["prompt"], d["command_id"], CONVERSE_DELEGATE_LANE, DELEGATION_REASON
+            plan = d.get("title") or ""
+            fus.append({"n": n, "kind": "delegation", "command_id": cid, "of_command_id": m.get("command_id"),
+                        "state": "dispatching", "plan": plan, "prompt": prompt,
+                        "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "started_at": iso(now_utc()),
+                        "started_ts": time.time(), "lane": lane, "target": d["target"], "display_name": d.get("target_name"),
+                        "title": d.get("title"), "brief_id": d["brief_id"], "brief_sha256": d["brief_sha256"],
+                        "conv_id": d.get("conv_id"), "perm": d.get("perm"), "model": CONVERSE_DELEGATE_MODEL or None})
+        else:
+            plan = m.pop("background_plan")
+            prompt = FOLLOWUP_PREFIX + plan
+            cid, lane, reason = str(uuid.uuid4()), FOLLOWUP_LANE, FOLLOWUP_REASON
+            fus.append({"n": n, "command_id": cid, "of_command_id": m.get("command_id"), "state": "dispatching",
+                        "plan": plan, "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                        "started_at": iso(now_utc()), "started_ts": time.time(), "lane": FOLLOWUP_LANE})
         # A pending phone retry of the quick answer (car off, its Earshot drop failed) keeps going: the follow-up does
         # not repeat the quick answer and may come hours later or fail (2026-10-22 review). It carries its own reply key
         # and stamp (start_phone_retry), so this new reply round does not disturb it.
@@ -2124,12 +2733,15 @@ class Watcher:
             m.pop(k, None)
         self.drop_command(m)
         m["command_id"] = cid
-        m["lane"], m["lane_reason"] = FOLLOWUP_LANE, FOLLOWUP_REASON
+        m["lane"], m["lane_reason"] = lane, reason
         m["late"] = True
         m.update(status="active", stage="dispatch", next_at=0.0)
-        log("followup_started", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch", n=n,
-            command_id=cid, of_command_id=fus[-1]["of_command_id"], lane=FOLLOWUP_LANE, plan_chars=len(plan),
-            plan=plan[:160], note="quick answer spoken; the background half runs now on the same thread and is spoken as a follow-up")
+        log("followup_started", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch", n=n, kind=kind,
+            command_id=cid, of_command_id=fus[-1]["of_command_id"], lane=lane, plan_chars=len(plan),
+            plan=plan[:160], target=fus[-1].get("target"),
+            note=("the confirmed brief goes now as a batch follow-up; its result is spoken as a follow-up"
+                  if kind == "delegation" else
+                  "quick answer spoken; the background half runs now on the same thread and is spoken as a follow-up"))
         self.status(m)
         self.s.save()
         WAKE.set()
@@ -2512,11 +3124,14 @@ class Watcher:
 
     # -- chunked reply speech (worker thread, inside step_speak) --
 
-    def _voice_chunks(self, m: dict, parts: list[str], stamp: datetime, tmp: Path, t_speak: float) -> tuple[Path, str] | None:
+    def _voice_chunks(self, m: dict, parts: list[str], stamp: datetime, tmp: Path, t_speak: float,
+                      steps: int | None = None, prio: int | None = None) -> tuple[Path, str] | None:
         """Render the reply chunk by chunk, upload each one as soon as it is rendered (on a publisher thread, so the next
         chunk's render starts at once) and announce it (audio.memo.voiced). Then join them into the full reply file.
         (full audio, engine), or None when the memo was cancelled meanwhile (the caller takes the chunks back).
-        A failed render or upload raises StageError: the speak stage is retried, re-rendering the same chunk keys."""
+        A failed render or upload raises StageError: the speak stage is retried, re-rendering the same chunk keys.
+        steps / prio: a fast desk turn renders at fewer vox steps and ahead of other renders (TtsGate), chunk by chunk."""
+        prio = TtsGate.REPLY if prio is None else prio
         with self.mu:
             agent, mid, key = m["agent"], m["memo_id"], m["key"]
             m["reply_chunks"] = len(parts)
@@ -2535,7 +3150,7 @@ class Watcher:
                 d = tmp / f"c{i:02d}"
                 d.mkdir()
                 t0 = time.time()
-                audio, engine = synthesize(text, d)
+                audio, engine = synthesize(text, d, **synth_kw(steps, prio))
                 files.append(audio)
                 job = {"i": i, "n": n, "text": text, "audio": audio, "ckey": chunk_key_for(stamp, agent, mid, i, n),
                        "rkey": rkey, "tts_s": time.time() - t0, "engine": engine, "t_speak": t_speak}
@@ -2556,7 +3171,7 @@ class Watcher:
         # ffmpeg could not join them: the full file is rendered whole, as before chunking (slower, never lost)
         log("reply_join_failed", "warn", memo_id=mid, key=key, agent=agent, chunks=n,
             note="rendering the full reply in one piece instead")
-        return synthesize(" ".join(parts), tmp)
+        return synthesize(" ".join(parts), tmp, **synth_kw(steps, prio))
 
     def _publish_chunk(self, m: dict, job: dict) -> None:
         """Upload one rendered chunk and publish audio.memo.voiced for it (once per chunk, also across stage retries)."""
@@ -2745,7 +3360,8 @@ class Watcher:
         tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
         try:
             t0 = time.time()
-            audio, engine = synthesize(job["spoken"], tmp, voice=PROGRESS_VOICE, steps=PROGRESS_TTS_STEPS)
+            audio, engine = synthesize(job["spoken"], tmp, voice=PROGRESS_VOICE, steps=PROGRESS_TTS_STEPS,
+                                       **synth_kw(None, TtsGate.NARRATION))
             tts_s = time.time() - t0
             with self.mu:
                 why = self._still_working(self.s.memos.get(key), job)
@@ -3148,9 +3764,60 @@ def concat_ogg(files: list[Path], out: Path) -> bool:
     return out.exists() and out.stat().st_size >= 200
 
 
-def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None) -> tuple[Path, str]:
+class TtsGate:
+    """One vox render at a time from this watcher, highest priority first: a fast desk turn, then replies and follow-up
+    results, then spoken progress. vox renders on one GPU, one request at a time (two concurrent renders each take twice
+    as long, 2026-10-20), so this costs no throughput; what it buys is order. The gate is held for ONE synthesize call and
+    released between chunks, so a fast turn queued behind a 3-chunk follow-up starts after the current chunk, not all 3.
+    Waiters of equal priority go in arrival order."""
+
+    FAST, REPLY, NARRATION = 0, 1, 2
+
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._busy = False
+        self._queue: list[tuple[int, int]] = []
+        self._seq = 0
+
+    @contextlib.contextmanager
+    def hold(self, prio: int):
+        with self._cv:
+            self._seq += 1
+            me = (prio, self._seq)
+            heapq.heappush(self._queue, me)
+            while self._busy or self._queue[0] != me:
+                self._cv.wait(1.0)
+            heapq.heappop(self._queue)
+            self._busy = True
+        try:
+            yield
+        finally:
+            with self._cv:
+                self._busy = False
+                self._cv.notify_all()
+
+    def waiting(self) -> int:
+        with self._cv:
+            return len(self._queue)
+
+
+TTS_GATE = TtsGate()
+
+
+def synth_kw(steps: int | None, prio: int | None) -> dict:
+    """synthesize()'s optional arguments, only those that differ from a plain reply render."""
+    kw = {}
+    if steps:
+        kw["steps"] = steps
+    if prio is not None and prio != TtsGate.REPLY:
+        kw["prio"] = prio
+    return kw
+
+
+def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None,
+               prio: int = TtsGate.REPLY) -> tuple[Path, str]:
     """vox /synthesize-url -> OGG/Opus file. Returns (path, engine that served it). `steps` trades quality for speed
-    (diffusion steps; vox defaults to 10): progress updates use fewer."""
+    (diffusion steps; vox defaults to 10): progress updates and fast desk turns use fewer. `prio` orders it in TTS_GATE."""
     body = {"text": text, "voice": voice or VOICE}
     if steps:
         body["steps"] = steps
@@ -3158,10 +3825,11 @@ def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None
                                  data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            meta = json.loads(resp.read())
-        with urllib.request.urlopen(meta["audio_url"], timeout=60) as resp:
-            blob = resp.read()
+        with TTS_GATE.hold(prio):
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                meta = json.loads(resp.read())
+            with urllib.request.urlopen(meta["audio_url"], timeout=60) as resp:
+                blob = resp.read()
     except Exception as e:  # noqa: BLE001
         raise StageError("tts", "vox_failed", f"vox synth failed: {type(e).__name__}: {e}") from e
     if len(blob) < 200:
@@ -3209,8 +3877,14 @@ def main() -> int:
     w.lane_probe.start()
     w.status_writer.start()
     w.start_progress_watch()
+    # The fast desk: bb-emit must accept its two facts before they are ever queued, and its keys are read once now (off
+    # the critical path, memory only) so the heartbeat can say whether they work before the switch is flipped on.
+    w.check_contracts()
+    threading.Thread(target=w.desk.warm_keys, name="converse-keys", daemon=True).start()
+    cs = w.desk.settings()
     log("starting", lane=LANE, poll_s=args.poll, state=str(state.path), bucket=BUCKET, agent_timeout_s=AGENT_TIMEOUT_S,
-        first_start=state.fresh)
+        first_start=state.fresh, converse=cs["mode"], converse_source=cs["source"],
+        converse_routes=[r["id"] for r in cs["routes"]], converse_refused=[r.get("id") for r in cs["refused"]] or None)
     while True:
         try:
             w.baseline_if_first_start()

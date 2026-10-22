@@ -21,6 +21,24 @@ Environment=MEMO_TRANSCRIBE_TIMEOUT_S=420
 Environment=MEMO_LANE=interactive
 # Per-turn model routes are the code defaults (voice sol-6.1, follow-up the profile's own model). Sonnet 5.5 was tried and rolled
 # back 2026-10-22 (Anthropic 400s Hermes gateway turns); override with MEMO_VOICE_MODEL / MEMO_FOLLOWUP_MODEL only here.
+# ---- the fast in-car conversation desk (HOLOC-23, converse.py; README "Fast conversation layer")
+# Shipped OFF. `mise run memo:converse on|shadow|off [--agents a,b|'*'] [--devices id]` flips it at runtime through the
+# flag file ~/.local/state/holocene-auto/inbox-watcher/converse.json (wins over these defaults, no restart).
+Environment=MEMO_CONVERSE=off
+Environment=MEMO_CONVERSE_AGENTS=holocene-pm
+# empty = any car device; the sim pilot puts the emulator's device id here (or in the flag file)
+Environment=MEMO_CONVERSE_DEVICES=
+# another agent than the tile only when the driver said its name aloud and confirmed the read-back naming it (off: tile only)
+Environment=MEMO_CONVERSE_HANDOFF=named
+Environment=MEMO_CONVERSE_IDLE_S=900
+Environment=MEMO_CONVERSE_DRAFT_TTL_S=600
+Environment=MEMO_CONVERSE_BUDGET_S=8
+Environment=MEMO_CONVERSE_TTS_STEPS=6
+# The ladder, in order. Keys are op:// item-UUID references ONLY, read with `op read` at first use, kept in memory.
+# r1/r2: Hyper direct (shared with Hindsight until a dedicated key exists, AAI-53). r3a/r3b: the AutomaticAI gateway token
+# holocene-converse (scope exactly kimi-k3s + glm-5.3-flash). Never Anthropic, never automaticai/auto: such a route is refused.
+# Bench (cbdfee5): r1 p50 0.94 s / p90 1.41 s; r2 2.5 s; r3a kimi-k3s at medium 4.05 s (temperature must be 1); r3b 7.7 s.
+Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://hyper.charm.land/v1","key_ref":"op://DeLoSecrets/tflaecgcrdgxrh2ovgi5ysjkzq/credential","model":"deepseek-v4.1-flash-1017","timeout_s":3,"temperature":0.3},{"id":"r2","base_url":"https://hyper.charm.land/v1","key_ref":"op://DeLoSecrets/tflaecgcrdgxrh2ovgi5ysjkzq/credential","model":"deepseek-v4.1-flash","timeout_s":4,"temperature":0.3},{"id":"r3a","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/personal/kimi-k3s","timeout_s":5,"temperature":1,"reasoning_effort":"medium"},{"id":"r3b","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/personal/glm-5.3-flash","timeout_s":5,"temperature":0.3,"reasoning_effort":"medium"}]'
 # All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)
 TimeoutStopSec=30
 
