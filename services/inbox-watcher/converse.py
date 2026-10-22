@@ -17,13 +17,18 @@ and deterministic code (guard) decides what is spoken and what, if anything, is 
 
 This module is pure logic plus the HTTP ladder; the watcher (inbox_watcher.py) owns state, stages and facts.
 
-THE NEVER-ANTHROPIC RULE: no rung may name Claude, Anthropic, Sonnet, Opus, Haiku, Fable or automaticai/auto. A configured
-route that matches FORBIDDEN_MODEL_RE is refused when the routes are parsed, and an answer whose `model` field matches is
-thrown away and counted as a failure of that rung. The one exception (2026-10-22, operator): exactly `automaticai/auto/fast`
-and `automaticai/free`, and only on a route that carries the scoped holocene-converse gateway token
-(MEMO_CONVERSE_SCOPED_KEY_REFS), whose scope holds no Anthropic route: the gateway intersects auto's candidates with the
-token's scope. Such a rung is also used only while a scope proof (GET /models with that token lists no Anthropic id) is
-fresh, and its answer must name the route that served it (X-AutomaticAI-Route) and that route must not be forbidden.
+THE NEVER-ANTHROPIC RULE: no rung may name Claude, Anthropic, Sonnet, Opus, Haiku, Fable or automaticai/auto (in either
+gateway spelling: the gateway rewrites aai/<x> to automaticai/<x>, so aai/auto/orchestrator is the same pool). A configured
+route that matches FORBIDDEN_MODEL_RE is refused when the routes are parsed, and an answer whose `model` field matches (or
+is not a string at all) is thrown away and counted as a failure of that rung. The one exception (2026-10-22, operator):
+exactly `automaticai/auto/fast` and `automaticai/free` (or aai/auto/fast, aai/free), and only on a route that carries the
+scoped holocene-converse gateway token (MEMO_CONVERSE_SCOPED_KEY_REFS), whose scope holds no Anthropic route. Such a rung
+is used only while a scope proof (GET /models with that token lists no Anthropic id) is fresh, and its answer must name
+the route that served it (X-AutomaticAI-Route), that route must not be forbidden, and it must be one of the names the
+proof listed. What bounds the PICK differs: the gateway intersects auto/fast's candidates with the token's scope before it
+sends anything, but automaticai/free only checks that the free family is in scope and then picks from its whole free
+policy (ops/routes.json free.members; none Anthropic today). For free, the desk's bound is after the fact: an answer from a
+route outside the proven scope is never used (route_out_of_scope). The free alias is opt-in per tile.
 
 Per tile (agent) the flag file carries `tiles: {<agent>: {voice, model}}`: the car reply voice and the desk model alias
 (car_desk_aliases.json), written under an fcntl lock by `memo_trace.py voice|model`, the car-desk skills and the desk's own
@@ -44,6 +49,7 @@ import http.client
 import json
 import os
 import re
+import signal
 import socket
 import ssl
 import subprocess
@@ -64,15 +70,25 @@ _ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), No
 
 
 def _clean_name(name: str) -> str:
-    return unicodedata.normalize("NFKC", name).translate(_ZERO_WIDTH).strip()
+    """The name every check reads: NFKC, no zero-width characters, trimmed, and the gateway's own alias spelling made
+    canonical. The gateway's CanonicalModel rewrites `aai/<x>` to `automaticai/<x>`, so `aai/auto/orchestrator` IS the
+    orchestrator pool and `aai/auto/fast` IS the router: a check that only knew `automaticai/` would let them through."""
+    t = unicodedata.normalize("NFKC", name).translate(_ZERO_WIDTH).strip()
+    if t[:4].lower() == "aai/":
+        t = "automaticai/" + t[4:]
+    return t
 
 
 def forbidden(name) -> bool:
     """True for any model, route id or host that names an Anthropic model, the automaticai/auto pool or an OpenRouter auto
-    router. The name is NFKC-normalised and stripped of zero-width characters first, and a name with any non-ASCII
-    character is refused outright (no real model id has one; a look-alike letter must not slip past the pattern)."""
-    if not isinstance(name, str):
+    router, in either gateway spelling (automaticai/ or aai/). The name is NFKC-normalised and stripped of zero-width
+    characters first, and a name with any non-ASCII character is refused outright (no real model id has one; a look-alike
+    letter must not slip past the pattern). None (no name at all: a direct provider that omits `model`) is not forbidden;
+    any other value that is not a string is (an answer whose `model` is a list or an object cannot be checked)."""
+    if name is None:
         return False
+    if not isinstance(name, str):
+        return True
     t = _clean_name(name)
     return (not t.isascii()) or bool(FORBIDDEN_MODEL_RE.search(t))
 
@@ -88,8 +104,19 @@ DEFAULT_SCOPED_KEY_REFS = ("op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene
 
 
 def scoped_auto(name) -> bool:
-    """Exactly automaticai/auto/fast or automaticai/free (the router names a scoped token may use)."""
+    """Exactly automaticai/auto/fast or automaticai/free, in either gateway spelling (aai/auto/fast, aai/free): the router
+    names a scoped token may use."""
     return isinstance(name, str) and _clean_name(name) in SCOPED_AUTO_MODELS
+
+
+# Key items the car desk must never use again (operator decision 2026-10-22): the Hindsight-shared Hyper key. An old
+# routes override (a runs/*.json evidence file passed to memo:converse --routes-file) that names it is refused.
+RETIRED_KEY_ITEMS = ("tflaecgcrdgxrh2ovgi5ysjkzq",)
+
+
+def retired_ref(ref: str) -> bool:
+    parts = (ref or "").split("/")
+    return len(parts) > 3 and parts[3] in RETIRED_KEY_ITEMS
 
 
 def scoped_key_refs(env=None) -> tuple[str, ...]:
@@ -186,7 +213,8 @@ def parse_routes(raw, scoped_refs: tuple | list | None = None) -> tuple[list[dic
             refused.append({"id": None, "model": None, "reason": f"route #{i + 1} is not an object"})
             continue
         rid = str(r.get("id") or f"r{i + 1}").strip()
-        model = str(r.get("model") or "").strip()
+        # the canonical spelling (aai/ -> automaticai/, no zero-width characters): what is checked is what is sent
+        model = _clean_name(str(r.get("model") or ""))
         base = str(r.get("base_url") or "").strip().rstrip("/")
         ref = str(r.get("key_ref") or "").strip()
         host = urllib.parse.urlsplit(base).hostname or ""
@@ -204,6 +232,8 @@ def parse_routes(raw, scoped_refs: tuple | list | None = None) -> tuple[list[dic
             why = f"base_url {base!r} is not http(s)"
         elif ref and not ref.startswith("op://"):
             why = "key_ref must be an op:// reference (never a key)"
+        elif retired_ref(ref):
+            why = "key_retired: the Hindsight Hyper item is no longer used by the car desk (operator decision 2026-10-22)"
         elif rid in seen:
             why = f"duplicate route id {rid!r}"
         if why:
@@ -571,12 +601,14 @@ class Ladder:
     `model` in the answer throws it away (never-Anthropic). Never raises for an LLM reason."""
 
     def __init__(self, routes: list[dict], keys: KeyCache, breaker: Breaker, http_: Http | None = None,
-                 budget_s: float = 8.0, clock=time.monotonic, log=None, gate=None):
+                 budget_s: float = 8.0, clock=time.monotonic, log=None, gate=None, served_ok=None):
         self.routes, self.keys, self.breaker = routes, keys, breaker
         self.http = http_ or Http()
         self.budget_s, self.clock, self.log = budget_s, clock, log or _log_default
         # gate(route) -> None (use it) or the outcome it is skipped with (a scoped auto rung without a fresh scope proof)
         self.gate = gate
+        # served_ok(route, served) -> bool: the route a router rung's answer names is inside its token's proven scope
+        self.served_ok = served_ok
 
     def call(self, messages: list[dict]) -> dict:
         t0 = self.clock()
@@ -671,7 +703,10 @@ class Ladder:
             data = json.loads(raw.decode("utf-8", "replace"))
         except ValueError:
             return {"attempt": {**att, "outcome": "bad_json", "http_status": status}}
-        model = (data.get("model") if isinstance(data, dict) else None) or None
+        model = data.get("model") if isinstance(data, dict) else None
+        model = None if model == "" else model
+        # what the facts carry: a `model` that is not a string is shown as JSON (and is forbidden below)
+        shown = model if model is None or isinstance(model, str) else json.dumps(model, default=str)[:120]
         # the gateway names the route that served an auto / free request (and may for an explicit one)
         served = (hdr_box.get("x-automaticai-route") or "").strip() or None
         if served:
@@ -679,10 +714,14 @@ class Ladder:
         if ((forbidden(model) and not scoped_auto(model)) or (served and ANTHROPIC_RE.search(served))
                 or (served and forbidden(served) and not scoped_auto(served))):
             # the never-Anthropic rule: an answer from a forbidden model is never used, whatever it says
-            return {"attempt": {**att, "outcome": "forbidden_model", "answered_model": model, "http_status": status}}
+            return {"attempt": {**att, "outcome": "forbidden_model", "answered_model": shown, "http_status": status}}
         if r.get("scoped_auto") and not served:
             # a router rung must say which route answered: an answer it cannot attribute is never used
-            return {"attempt": {**att, "outcome": "route_unproven", "answered_model": model, "http_status": status}}
+            return {"attempt": {**att, "outcome": "route_unproven", "answered_model": shown, "http_status": status}}
+        if r.get("scoped_auto") and self.served_ok is not None and not self.served_ok(r, served):
+            # ... and that route must be one the token's proven scope lists. auto/fast only picks inside the scope, but
+            # automaticai/free picks from the gateway's whole free policy: this bounds what the desk ever USES to the scope
+            return {"attempt": {**att, "outcome": "route_out_of_scope", "answered_model": shown, "http_status": status}}
         try:
             content = data["choices"][0]["message"].get("content") or ""
         except (KeyError, IndexError, TypeError, AttributeError):
@@ -892,41 +931,52 @@ def voice_index(catalog: list[dict]) -> dict[str, str]:
     return idx
 
 
+def _edits(a: str, b: str, cap: int = 2) -> int:
+    """The edit distance (insertions, deletions, substitutions) between a and b, or cap + 1 once it is past cap."""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        if min(cur) > cap:
+            return cap + 1
+        prev = cur
+    return min(prev[-1], cap + 1)
+
+
 def _within_one_edit(a: str, b: str) -> bool:
     """True when a and b differ by at most one insertion, deletion or substitution."""
-    if abs(len(a) - len(b)) > 1:
-        return False
-    if len(a) > len(b):
-        a, b = b, a
-    i = j = edits = 0
-    while i < len(a) and j < len(b):
-        if a[i] == b[j]:
-            i += 1
-            j += 1
-            continue
-        edits += 1
-        if edits > 1:
-            return False
-        if len(a) == len(b):
-            i += 1
-        j += 1
-    return edits + (len(b) - j) <= 1
+    return _edits(a, b, 1) <= 1
 
 
 def resolve_voice(said: str, catalog: list[dict], fuzzy: bool = False) -> str | None:
     """The voice name a spoken or typed value means, or None. 'default' resolves to the literal 'default'. `fuzzy` (the
-    speech path only): a speech-to-text spelling one letter off a name of five letters or more ("walkin" for walken) counts
-    when exactly one voice is that close."""
+    speech path only, always next to the word voice): a speech-to-text spelling close to one voice counts. Close is one
+    edit off a name of five letters ("walkin", "morgen"), or two off a name of six or more when at least four letters were
+    heard ("walk" for walken: live 2026-10-22, "USE WALK VOICE"). The nearest voice wins only when no other is as near;
+    walken2 is one edit further from "walk" than walken, so "walk" is walken."""
     k = _key(said)
     if not k:
         return None
     if k in {_key(w) for w in DEFAULT_WORDS}:
         return "default"
     idx = voice_index(catalog)
-    if k in idx or not fuzzy or len(k) < 5:
+    if k in idx or not fuzzy or len(k) < 4:
         return idx.get(k)
-    near = {v for p, v in idx.items() if len(p) >= 5 and _within_one_edit(k, p)}
-    return near.pop() if len(near) == 1 else None
+    best: dict[int, set[str]] = {}
+    for p, v in idx.items():
+        if len(p) < 5 or (len(k) == 4 and len(p) < 6):
+            continue  # a four-letter spelling is only ever near a name of six or more ("nick" is never brule or rick)
+        cap = 1 if len(p) == 5 else 2
+        d = _edits(k, p, cap)
+        if d <= cap:
+            best.setdefault(d, set()).add(v)
+    if not best:
+        return None
+    near = best[min(best)]
+    return next(iter(near)) if len(near) == 1 else None
 
 
 def _alias_key(text: str) -> str:
@@ -961,8 +1011,10 @@ _SET_LEAD = (r"(?:(?:hey|ok|okay|alright|all right|so|and|now|please|can you|cou
              r"i'd like to|id like to|go ahead and)\s+)*")
 _SET_TAIL = r"(?:\s+(?:please|now|instead|then|thanks|thank you|for me|from now on|for this tile|for this agent))*"
 _VOICE_RES = [
+    # whisper hears "rick voice" as "Rickface" (live 2026-10-22): "face", glued or not, is the word voice here, and only
+    # ever when the words before it resolve to a voice vox has
     re.compile(_SET_LEAD + r"(?:use|switch to|switch over to|switch back to|change to|go with|go back to|try|give me|talk with|"
-               r"talk in|speak with|speak in)\s+(?:the\s+|a\s+)?(?P<v>.+?)(?:'s)?\s+voice" + _SET_TAIL),
+               r"talk in|speak with|speak in)\s+(?:the\s+|a\s+)?(?P<v>.+?)(?:'s)?(?:\s+voice|\s*face)" + _SET_TAIL),
     re.compile(_SET_LEAD + r"(?:switch|change|set|make)\s+(?:the\s+|your\s+|my\s+|its\s+)?voice\s+(?:to|over to|back to)\s+"
                r"(?:the\s+|a\s+)?(?P<v>.+?)(?:'s)?(?:\s+voice)?" + _SET_TAIL),
     re.compile(_SET_LEAD + r"(?P<reset>reset|clear)\s+(?:the\s+|your\s+|my\s+)?voice" + _SET_TAIL),
@@ -1510,7 +1562,7 @@ SYSTEM_RULES = """You are the fast conversation desk in the driver's car, answer
 
 RULES
 - Answer in one to three short spoken sentences (at most about 45 words). No markdown, lists, URLs or code.
-- Only state facts that are in the AGENT CARD, the DESK STATE or this conversation. You have no tools and no live data. When the driver asks about live state (the board, a ticket's status, a build, logs, files, anything that needs a tool or fresh data), set action "direct" so the full agent answers.
+- Only state facts that are in the AGENT CARD, the DESK STATE or this conversation. You have no live data, and no tools except the desk's own settings listed under TOOLS (when there is such a section). When the driver asks about live state the card does not cover (the board, a ticket's status, a build, logs, files, anything that needs fresh data), set action "direct" so the full agent answers.
 - You never do work yourself. When the driver asks for work (investigate, check, fix, write, run, report back), set action "propose" with a self-contained brief: a title of at most eight words, the goal, the context the agent needs (it never sees this conversation) and when it is done. The desk reads the draft back; it is sent only when the driver confirms aloud.
 - Never say you sent, started or did anything.
 - With a pending draft: the driver confirms it ("send it") -> action "confirm"; drops it -> "cancel"; changes it -> "propose" with the whole updated draft.
@@ -1520,7 +1572,7 @@ RULES
 - perm: "read_only" unless the driver asked for code changes ("changes_ok") or a deploy, restart or push ("deploy_ok").
 
 OUTPUT FORMAT
-Return one JSON object and nothing else, with the keys say, action, target, title, brief, perm. Two examples:
+Return one JSON object and nothing else, with the keys say, action, target, title, brief, perm (a TOOLS call instead carries say, action "tool", tool_name and args). Two examples:
 {{"say":"Holocene is finishing the fast conversation desk; the watcher stage is next.","action":"reply","target":"{agent}","title":"","brief":null,"perm":"read_only"}}
 {{"say":"I can have the PM look into that.","action":"propose","target":"{agent}","title":"Why the audio spool is disabled","brief":{{"goal":"Find out why the audio spool is disabled and report back.","context":["The driver noticed it while driving."],"done_when":["The cause is named and a fix is proposed."]}},"perm":"read_only"}}"""
 
@@ -1872,7 +1924,11 @@ class ToolBox:
     def run(self, name: str, args: dict, agent: str, by: str = "car", timeout: float = TOOL_TIMEOUT_S,
             env: dict | None = None) -> dict:
         """Run the tool's entrypoint (no shell): `<entrypoint> --json --agent <tile> --by <by> --<arg> <value> ...`, stdin
-        closed, at most `timeout` seconds. {ok, exit, out (its JSON), error, ms}. Never raises."""
+        closed, at most `timeout` seconds. {ok, exit, out (its JSON), error, ms}. Never raises.
+
+        The entrypoint runs in a session (process group) of its own, and a timeout kills the whole group: the skill's own
+        child (memo_trace.py voice|model, which does the write) dies with it, so a change the driver is told failed can
+        never land a moment later."""
         t0 = time.time()
         t, why = self.validate(name, args)
         if t is None:
@@ -1886,24 +1942,32 @@ class ToolBox:
             else:
                 argv += [f"--{k}", str(v)]
         try:
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=t["dir"],
-                               stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})})
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "exit": None, "out": None, "error": f"timed out after {timeout:g} s",
-                    "ms": int((time.time() - t0) * 1000)}
+            p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
+                                 cwd=t["dir"], env={**os.environ, **(env or {})}, start_new_session=True)
         except OSError as e:
             return {"ok": False, "exit": None, "out": None, "error": f"{type(e).__name__}: {e}"[:200],
                     "ms": int((time.time() - t0) * 1000)}
+        try:
+            stdout, stderr = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                os.killpg(p.pid, signal.SIGKILL)
+            with contextlib.suppress(OSError):
+                p.kill()
+            with contextlib.suppress(Exception):
+                p.communicate(timeout=2.0)
+            return {"ok": False, "exit": None, "out": None, "error": f"timed out after {timeout:g} s",
+                    "ms": int((time.time() - t0) * 1000)}
         out = None
-        for line in reversed((r.stdout or "").strip().splitlines()):
+        for line in reversed((stdout or "").strip().splitlines()):
             try:
                 out = json.loads(line)
                 break
             except ValueError:
                 continue
-        ok = r.returncode == 0 and isinstance(out, dict) and out.get("ok") is not False
-        err = None if ok else (str((out or {}).get("error") or (r.stderr or "").strip()[-200:] or f"exit {r.returncode}"))[:200]
-        return {"ok": ok, "exit": r.returncode, "out": out if isinstance(out, dict) else None, "error": err,
+        ok = p.returncode == 0 and isinstance(out, dict) and out.get("ok") is not False
+        err = None if ok else (str((out or {}).get("error") or (stderr or "").strip()[-200:] or f"exit {p.returncode}"))[:200]
+        return {"ok": ok, "exit": p.returncode, "out": out if isinstance(out, dict) else None, "error": err,
                 "ms": int((time.time() - t0) * 1000)}
 
 
@@ -2127,13 +2191,15 @@ class Desk:
             bad = [i for i in ids if not isinstance(i, str) or ANTHROPIC_RE.search(i) or not i.isascii()]
             res.update(ids=len(ids), anthropic=bad[:5] or None, http_status=status, error=err)
             if status == 200 and ids and not bad:
-                res.update(ok=True, at=now)
+                # the listed names, canonical: a router answer is used only when the route it names is one of them
+                res.update(ok=True, at=now, scope_ids=frozenset(_clean_name(i) for i in ids))
             elif not res.get("error"):
                 res["error"] = "an Anthropic route is in the token's scope" if bad else f"/models answered {status}"
         with self._proof_lock:
             prev = self._proofs.get(k) or {}
             if not res["ok"] and not res.get("anthropic") and prev.get("ok"):
-                res.update(ok=True, at=prev["at"], stale_error=res.get("error"))  # a failed re-check keeps the proof until it expires
+                # a failed re-check keeps the proof (and its listing) until it expires
+                res.update(ok=True, at=prev["at"], stale_error=res.get("error"), scope_ids=prev.get("scope_ids"))
             self._proofs[k] = res
             self._proving.discard(k)
         if not res["ok"] or res.get("anthropic"):
@@ -2177,6 +2243,17 @@ class Desk:
         if not p or now - float(p.get("checked_at") or 0) > self.PROOF_RETRY_S:
             self._prove_later(r)
         return "scope_unproven"
+
+    def served_in_scope(self, r: dict, served: str | None) -> bool:
+        """The ladder's served-route check for a router rung: the route the gateway says answered (X-AutomaticAI-Route) is
+        one the token's proven scope listing names. auto/fast is intersected with the scope by the gateway itself;
+        automaticai/free is not (the gateway checks only that the free family is in scope, then picks from its whole free
+        policy), so for free this is what keeps every answer the desk uses inside the Claude-free scope."""
+        if not served:
+            return False
+        with self._proof_lock:
+            ids = (self._proofs.get((r["key_ref"], r["base_url"])) or {}).get("scope_ids")
+        return bool(ids) and _clean_name(served) in ids
 
     def all_routes(self, s: dict | None = None) -> list[dict]:
         """Every route the desk may call: the default ladder and every alias's routes."""
@@ -2231,7 +2308,7 @@ class Desk:
     def ladder(self, s: dict, agent: str | None = None) -> Ladder:
         routes, info = self.routes_for(s, agent) if agent else (s["routes"], {})
         return Ladder(routes, self.keys, self.breaker, self.http, info.get("budget_s") or self.budget_s, log=self.log,
-                      gate=self.scope_gate)
+                      gate=self.scope_gate, served_ok=self.served_in_scope)
 
     def decide(self, s: dict, *, agent: str, name: str, transcript: str, sess: dict | None, card: dict, board: str = "",
                recent: str = "", now: float | None = None) -> dict:

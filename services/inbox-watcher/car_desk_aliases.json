@@ -16,10 +16,10 @@
    "label": "DeepSeek Pro",
    "spoken": "Deep Seek Pro",
    "phrases": ["deepseek pro", "deep seek pro", "pro", "the pro model", "the smart one"],
-   "budget_s": 16,
+   "budget_s": 20,
    "routes": [
     {"id": "pro-h", "base_url": "https://hyper.charm.land/v1", "key_ref": "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential", "model": "deepseek-v4-pro-0813", "timeout_s": 6, "temperature": 0.3, "max_tokens": 2000},
-    {"id": "pro-d", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-v4-pro", "timeout_s": 9, "temperature": 0.3, "max_tokens": 2000}
+    {"id": "pro-d", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-v4-pro", "timeout_s": 12, "temperature": 0.3, "max_tokens": 2000}
    ]
   },
   "free": {

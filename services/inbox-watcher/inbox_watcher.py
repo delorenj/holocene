@@ -2652,19 +2652,50 @@ class Watcher:
         m.pop("reply_up", None)
         self.s.save()
 
+    def _tile_voice(self, agent: str | None, key: str | None, default: str, m: dict | None = None) -> str:
+        """The tile's own car voice for this memo's reply, else `default`. Car only: the tile voice is a car setting, so a
+        memo the car did not send (a browser memo, or one whose sender cannot be read) keeps the default. The sender is
+        read (S3 metadata, once, kept on the memo) only when the tile has a voice of its own."""
+        try:
+            v = self.desk.voice_for(agent, default)
+        except Exception:  # noqa: BLE001 - a broken flag file never stops a reply: the default voice
+            return default
+        if v == default:
+            return v
+        with self.mu:
+            mm = m if m is not None else self.s.memos.get(key or "")
+            sender = (mm or {}).get("sender")
+        if not (isinstance(sender, dict) and sender.get("ok")) and key:
+            try:
+                sender = mc_.s3_sender(key)
+            except Exception:  # noqa: BLE001
+                sender = {"ok": False}
+            if sender.get("ok") and mm is not None:
+                with self.mu:
+                    if not (mm.get("sender") or {}).get("ok"):
+                        mm["sender"] = sender
+        if not isinstance(sender, dict) or sender.get("host") != "car":
+            log("tile_voice_not_car", key=key, agent=agent, tile_voice=v, used=default,
+                host=(sender or {}).get("host") if isinstance(sender, dict) else None,
+                note="the tile's voice is a car setting: this memo did not come from the car")
+            return default
+        return v
+
     def _reply_voice(self, m: dict) -> str:
         """The voice of this reply, locked at its first render: the tile's own car voice (converse.json `tiles`: memo:voice,
-        the car-set-voice skill, "use walken voice") else MEMO_VOX_VOICE. The chunks, the full file and every retry of one
-        reply keep it; the memo's next reply round (a follow-up: a new reply_stamp) locks again."""
+        the car-set-voice skill, "use walken voice") for a memo the car sent, else MEMO_VOX_VOICE. The chunks, the full
+        file and every retry of one reply keep it; the memo's next reply round (a follow-up: a new reply_stamp) locks
+        again."""
         with self.mu:
             stamp = m.get("reply_stamp")
             vl = m.get("voice_lock")
             if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
                 return vl["voice"]
-            try:
-                v = self.desk.voice_for(m.get("agent"), VOICE)
-            except Exception:  # noqa: BLE001 - a broken flag file never stops a reply: the default voice
-                v = VOICE
+        v = self._tile_voice(m.get("agent"), m.get("key"), VOICE, m)
+        with self.mu:
+            vl = m.get("voice_lock")
+            if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
+                return vl["voice"]  # another render of this reply locked it first
             m["voice_lock"] = {"stamp": stamp, "voice": v, "requested": v, "fallback": None}
             return v
 
@@ -3590,13 +3621,11 @@ class Watcher:
         tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
         try:
             t0 = time.time()
-            # the tile's own car voice (unless MEMO_PROGRESS_VOICE pins narration to one voice); an unknown one falls back
+            # the tile's own car voice for a car memo (unless MEMO_PROGRESS_VOICE pins narration to one voice); an unknown
+            # one falls back
             voice = PROGRESS_VOICE
             if not os.environ.get("MEMO_PROGRESS_VOICE"):
-                try:
-                    voice = self.desk.voice_for(job["agent"], PROGRESS_VOICE)
-                except Exception:  # noqa: BLE001
-                    voice = PROGRESS_VOICE
+                voice = self._tile_voice(job["agent"], key, PROGRESS_VOICE)
             try:
                 audio, engine = synthesize(job["spoken"], tmp, voice=voice, steps=PROGRESS_TTS_STEPS,
                                            **synth_kw(None, TtsGate.NARRATION))

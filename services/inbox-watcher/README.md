@@ -707,7 +707,8 @@ turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_
 record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
 
 **The ladder (never Anthropic; operator decision 2026-10-22).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order,
-inside `MEMO_CONVERSE_BUDGET_S` (**12 s**: a 402 on r1 plus r2 at its timeout still leaves r3 its full 7 s):
+inside `MEMO_CONVERSE_BUDGET_S` (**16 s**, the sum of the rung timeouts: r1 AND r2 timing out still leave r3 its full 7 s;
+at 12 s that case left r3 3 s against its measured 2.5-4.4 s. A healthy turn ends at its first answer, r2 ~1.5 s):
 
 | rung | route | key (op:// item-UUID ref) | timeout | measured 2026-10-22 (card-sized prompt, ~9.8k chars) |
 | --- | --- | --- | --- | --- |
@@ -715,7 +716,9 @@ inside `MEMO_CONVERSE_BUDGET_S` (**12 s**: a 402 on r1 plus r2 at its timeout st
 | r2 | DeepSeek API `https://api.deepseek.com`, `deepseek-flash` (= DeepSeek-V4.1-Flash), max_tokens 1500 | item "DeepSeek" field "API Key" `35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja` | 5 s | 1.27-1.55 s; full ladder (r1 402 then r2) 1.36-1.42 s; with tools + recall (12.4k chars) p50 2.3-2.5 s, 10/10; `reasoning_effort=low` came back empty 1-2 of 10 |
 | r3 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 7 s | 3.75-4.35 s, answered by `glm-5.3` (served route `automaticai/personal/glm-5.3`) |
 
-then today's full-agent path. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk.
+then today's full-agent path. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk,
+and a route naming it is refused (`key_retired`), so an old routes override from the evidence (`runs/s11*.json`) cannot
+bring it back.
 Hyper is out of credit (both keys `402`): a 402 opens that rung's breaker for 10 min, so it is skipped in ~0.2 s and comes
 back by itself after a top-up (one 0.2 s probe per 10 min). DeepSeek accepts `temperature` and `reasoning_effort`
 `low|high|max` (its `/models`; default high); the rungs send neither effort. A rung is also skipped while its breaker is open
@@ -726,20 +729,28 @@ once at start-up, memory only, never logged; a pasted key is refused; `op read` 
 `systemd-run --user` shell).
 
 The rule: `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`, `openrouter/auto`; NFKC
-normalised, zero-width characters stripped, a non-ASCII name refused) refuses a configured route
+normalised, zero-width characters stripped, a non-ASCII name refused, and the gateway's `aai/` alias spelling read as
+`automaticai/`, because the gateway's `CanonicalModel` rewrites it: `aai/auto/orchestrator` IS the orchestrator pool) refuses
+a configured route (stored and sent in the canonical spelling)
 (`converse_route_refused`; no route left = off), with ONE exception: exactly `automaticai/auto/fast` and `automaticai/free`,
 and only on a route whose key is in `MEMO_CONVERSE_SCOPED_KEY_REFS` (the holocene-converse token; anything else is
 `auto_unscoped`). Bare `automaticai/auto` (an orchestrator-class request, frontier tier), `/orchestrator`, `/subagent` and
 `openrouter/auto` stay refused everywhere, and the delegated turn's model override still refuses every auto name. Such a
 router rung is used only while its **scope proof** is fresh: `GET <base>/models` with the token lists models and none is
 Anthropic (at start-up, re-checked every 10 min in the background; a Claude id in the scope = `scope_unsafe`, no proof yet =
-`scope_unproven`, both skip the rung without sending anything). Every answer is checked: a `model` field that is forbidden,
-or an `X-AutomaticAI-Route` header (the route that served an auto/free request) that names Anthropic, is thrown away
-(`forbidden_model`, a failure of the rung); a router answer with no route header is not used (`route_unproven`).
+`scope_unproven`, both skip the rung without sending anything). Every answer is checked: a `model` field that is forbidden or
+not a string at all (a list or an object cannot be checked), or an `X-AutomaticAI-Route` header (the route that served an
+auto/free request) that names Anthropic, is thrown away (`forbidden_model`, a failure of the rung); a router answer with no
+route header is not used (`route_unproven`), nor one whose served route is not a name the scope proof listed
+(`route_out_of_scope`).
 
 The gateway side (verified in `middleware/automaticai.go` `resolveAutomaticAIAuto` and `auto.go` `evaluate`): auto needs the
 `aai-personal` group and the auto name in the token's scope, then every candidate is intersected with the token's scope
-(`TokenModelLimitAllows`). The holocene-converse token was re-scoped on 2026-10-22 (`gateway-tokens.py scope
+(`TokenModelLimitAllows`). **`automaticai/free` is not bounded the same way**: `serveAutomaticAIFree`
+(`middleware/automaticai_free.go`) checks only that the free family is in scope, then `ResolveFreeServable` picks from the
+whole free policy (46 members in `ops/routes.json`, none Anthropic today), not the token's names. For free the desk's bound
+is after the fact: an answer from a route outside the proven scope listing is never used (`route_out_of_scope`); the
+prompt has already gone to that free route by then. The free alias is opt-in per tile. The holocene-converse token was re-scoped on 2026-10-22 (`gateway-tokens.py scope
 holocene-converse --models <12 routes> --auto --free`, key and expiry kept) to 37 names, **none Anthropic**:
 `automaticai/personal/{glm-5.3-flash, kimi-k3s, glm-5.3, kimi-k3, kimi-2.8}`, `automaticai/hypercharm/{glm-5.3, kimi-k3,
 minimax-m3}`, `automaticai/deepseek/{deepseek-flash, deepseek-v4-pro}`, `automaticai/mistral-allowance/ministral-14b`,
@@ -758,7 +769,9 @@ voice_set_at/by, model_set_at/by}}`, written under an fcntl lock (`.converse.jso
 all write the same file; `memo:converse on|off` keeps the map). A file that only holds tiles keeps the unit's mode.
 
 - **Voice** (car only; the agent's Telegram/Hermes `tts.voice` is untouched): `tiles[agent].voice`, else `MEMO_VOX_VOICE`
-  (rick). Valid = vox's list (`voxxy -q voice list --json`, `GET <vox>/voices`; 12 today: brule carlin damian david dumply
+  (rick), for a memo **the car sent**: a browser memo, or one whose sender cannot be read (S3 metadata, read once and only
+  when the tile has a voice of its own), keeps the default (`tile_voice_not_car` log). Per agent, not per device: a voice
+  set from the sim also speaks on the Honda (clear it after a sim run). Valid = vox's list (`voxxy -q voice list --json`, `GET <vox>/voices`; 12 today: brule carlin damian david dumply
   marge morgan morty peter rick walken walken2); a display name, a unique first/last word (`freeman`) or spoken digits
   (`walken two` = walken2) resolve. The voice is **locked per reply at its first render** (`voice_lock` on the memo: chunks,
   the full file and retries keep it; a follow-up round locks again). If vox answers `voice 'x' not found`, the render falls
@@ -773,7 +786,7 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
   | alias | phrases | routes in front | measured 2026-10-22 |
   | --- | --- | --- | --- |
   | `deepseek-flash` | deepseek flash, flash | r1 Hyper flash-1017 (4 s), r2 DeepSeek `deepseek-flash` (5 s) | = the default ladder |
-  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (9 s, max_tokens 2000), budget 16 s | pro-h 402; pro-d 1.96-3.6 s |
+  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 20 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
   | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s) | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
   | `auto` | auto, autorouter | r3 gateway `automaticai/auto/fast` (7 s) | 3.9-4.4 s (glm-5.3) |
   | `default` | default model, reset the model | none (clears the tile's model) | |
@@ -782,7 +795,10 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
 1. **Setting phrases** (no LLM call; `path=setting_phrase`): a whole utterance like "use walken voice", "switch to the Walken
    two voice", "switch the voice to Morgan Freeman", "reset the voice", "switch to deepseek pro", "use the free model",
    "switch the model to auto", "reset the model". A bare name is a voice only next to the word voice ("switch to marge" is
-   an agent, not a voice); "use the default" alone names nothing.
+   an agent, not a voice); "use the default" alone names nothing. Whisper's spellings are matched next to the word voice:
+   one edit off a five-letter name, two off a longer one when four letters or more were heard, the nearest voice only when
+   no other is as near ("walkin", "USE WALK VOICE" = walken; walken2 is one edit further), and "face", glued or not, is
+   the word voice ("Use Rickface!" = rick).
 2. **The `tool` action**: the decision may be `{"action": "tool", "tool_name": "...", "args": {...}}`. The tools are the
    Skillex skills of the desk's own scope, `MEMO_CONVERSE_TOOLS_DIR` = `~/.local/state/holocene-auto/car-desk-scope`
    (`skillex init`, `inherit off`, `enable pack car-desk@0.1.0`): every `.agents/skills/*/SKILL.md` whose
@@ -790,7 +806,8 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
    on any mtime change. Today: `car_set_voice(voice)` (skill car-set-voice) and `car_set_model(model: deepseek-flash |
    deepseek-pro | free | auto | default)` (skill car-set-model). They are listed in the system prompt's TOOLS block; the
    model's args are validated against the schema (type, enum, required, additionalProperties false, maxLength) and the
-   skill's entrypoint runs with no shell, stdin closed, at most 3 s: `<entrypoint> --json --agent <tile> --by car --<arg>
+   skill's entrypoint runs with no shell, stdin closed, in a process group of its own, at most 3 s (a timeout kills the
+   whole group, so the skill's own writer child never lands a change the driver was told failed): `<entrypoint> --json --agent <tile> --by car --<arg>
    <value>`; it writes through the watcher's own verb (below). Without the scope, a phrase still switches in process through
    the same locked writer (`via=builtin`).
 

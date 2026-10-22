@@ -15,6 +15,7 @@ import textwrap
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from test_converse import SECRET, decision, fake_server
@@ -62,6 +63,48 @@ class RouterRule(unittest.TestCase):
         # the delegated turn's model override still refuses the router names (never a Hermes turn on auto)
         self.assertTrue(cv.forbidden("automaticai/auto/fast"))
 
+    def test_the_gateways_aai_spelling_is_the_same_name(self):
+        # review 2026-10-22: the gateway's CanonicalModel rewrites aai/<x> to automaticai/<x>, so aai/auto/orchestrator IS
+        # the orchestrator pool (Claude in its strong and frontier tiers) and aai/auto/fast IS the router
+        for name in ("aai/auto", "aai/auto/orchestrator", "aai/auto/subagent", "AAI/auto/orchestrator", " aai/auto ",
+                     "aai/personal/claude-sonnet-5.5", "aai/openrouter/openrouter/auto", "aai/auto/fast"):
+            self.assertTrue(cv.forbidden(name), name)  # forbidden as a name; only a scoped rung may use auto/fast
+        self.assertTrue(cv.scoped_auto("aai/auto/fast"))
+        self.assertTrue(cv.scoped_auto("aai/free"))
+        self.assertFalse(cv.scoped_auto("aai/auto/orchestrator"))
+        self.assertFalse(cv.forbidden("aai/personal/glm-5.3"))
+        hermes = "op://DeLoSecrets/someitem/hermes"
+        routes, refused = cv.parse_routes([
+            route("ok", "aai/auto/fast"), route("okf", "aai/free"), route("glm", "aai/personal/glm-5.3", ref=hermes),
+            route("x1", "aai/auto/orchestrator", ref=hermes), route("x2", "aai/auto/fast", ref=hermes),
+            route("x3", "aai/free", ref=hermes), route("x4", "aai/auto/orchestrator"), route("x5", "aai/auto"),
+            route("x6", "aai/auto/subagent"), route("x7", "Aai/Auto/Fast"),
+        ], scoped_refs=(SCOPED,))
+        # what is checked is what is sent: the canonical spelling
+        self.assertEqual([(r["id"], r["model"], r["scoped_auto"]) for r in routes],
+                         [("ok", "automaticai/auto/fast", True), ("okf", "automaticai/free", True),
+                          ("glm", "automaticai/personal/glm-5.3", False)])
+        self.assertEqual({r["id"]: r["reason"].split(":")[0] for r in refused},
+                         {"x1": "forbidden_model", "x2": "auto_unscoped", "x3": "auto_unscoped", "x4": "forbidden_model",
+                          "x5": "forbidden_model", "x6": "forbidden_model", "x7": "forbidden_model"})
+
+    def test_a_name_that_is_not_a_string_is_forbidden_none_is_not(self):
+        self.assertFalse(cv.forbidden(None))  # a direct provider that omits `model`
+        for v in (["claude-opus"], {"id": "claude"}, [], {}, 3, b"glm"):
+            self.assertTrue(cv.forbidden(v), v)
+
+    def test_the_retired_hindsight_item_is_refused(self):
+        retired = "op://DeLoSecrets/" + "tflaecgcrdgxrh2ovgi5ysjkzq" + "/credential"
+        routes, refused = cv.parse_routes([route("r1", "deepseek-v4.1-flash-1017", ref=retired, base="https://hyper.charm.land/v1")])
+        self.assertEqual(routes, [])
+        self.assertTrue(refused[0]["reason"].startswith("key_retired"), refused)
+        # an old routes override from the evidence (memo:converse --routes-file) can no longer bring it back
+        old = HERE.parent.parent / "_bmad-output/implementation-artifacts/agent-pad-auto/converse-e2e/runs/s11a-routes-hyper-unroutable.json"
+        if old.exists():
+            routes, refused = cv.parse_routes(old.read_text())
+            self.assertNotIn(retired, json.dumps(routes))
+            self.assertEqual([r["id"] for r in refused], ["x1", "x2"])
+
     def test_the_alias_table_parses_clean_and_matches_the_unit(self):
         table = cv.load_aliases(cv.ALIASES_PATH)
         self.assertEqual(table["version"], 1)
@@ -89,6 +132,12 @@ class RouterRule(unittest.TestCase):
         self.assertEqual([r["model"] for r in pro], ["deepseek-v4-pro-0813", "deepseek-v4-pro"])
         self.assertGreater(pro[1]["timeout_s"], ladder[1]["timeout_s"])
         self.assertGreaterEqual(table["models"]["deepseek-pro"]["budget_s"], 12)
+        # every rung gets its full timeout even when all the ones before it time out (review 2026-10-22: at 12 s, r1 and
+        # r2 timing out left r3 3 s against its measured 2.5-4.4 s)
+        budget = float(next(ln for ln in unit.splitlines() if ln.startswith("Environment=MEMO_CONVERSE_BUDGET_S=")).split("=")[-1])
+        self.assertGreaterEqual(budget, sum(r["timeout_s"] for r in ladder))
+        self.assertGreaterEqual(table["models"]["deepseek-pro"]["budget_s"], sum(r["timeout_s"] for r in pro))
+        self.assertGreaterEqual(pro[1]["timeout_s"], 11)  # pro-d answered in 8982 ms once on a loaded host
         free, _ = cv.parse_routes(table["models"]["free"]["routes"])
         self.assertEqual((free[0]["model"], free[0]["key_ref"]), ("automaticai/free", SCOPED))
 
@@ -130,7 +179,38 @@ class ScopedLadder(unittest.TestCase):
 
     def ladder(self):
         return cv.Ladder(self.routes, self.desk.keys, cv.Breaker(), self.desk.http, 6, log=lambda *a, **k: None,
-                         gate=self.desk.scope_gate)
+                         gate=self.desk.scope_gate, served_ok=self.desk.served_in_scope)
+
+    def test_the_desks_own_ladder_checks_the_served_route(self):
+        lad = self.desk.ladder({"routes": self.routes, "tiles": {}})
+        self.assertEqual((lad.gate, lad.served_ok), (self.desk.scope_gate, self.desk.served_in_scope))
+
+    def test_a_router_answer_from_a_route_outside_the_proven_scope_is_not_used(self):
+        # automaticai/free picks from the gateway's whole free policy, not the token's scope: an answer from a route the
+        # proof did not list is never used, whatever it says
+        self.assertTrue(self.desk.prove_scope(self.routes[0])["ok"])
+        self.gw.route_header, self.gw.model = "automaticai/kilo-anon/not-in-the-scope", "nemotron"
+        res = self.ladder().call([{"role": "user", "content": "hi"}])
+        self.assertEqual(res["attempts"][0]["outcome"], "route_out_of_scope")
+        self.assertEqual(res["route"], "r9")
+        # the gateway's alias spelling of a listed route is that route
+        self.gw.route_header, self.gw.model = "aai/personal/glm-5.3", "glm-5.3"
+        res = self.ladder().call([{"role": "user", "content": "hi"}])
+        self.assertEqual((res["route"], res["served_route"]), ("r3", "aai/personal/glm-5.3"))
+        # no proof listing at all (never proven): nothing it serves is in scope
+        self.assertFalse(cv.Desk(Path(tempfile.mkdtemp()), env={}).served_in_scope(self.routes[0], "automaticai/personal/glm-5.3"))
+
+    def test_an_answer_whose_model_is_not_a_string_is_thrown_away(self):
+        def lad():
+            return cv.Ladder(self.routes[1:], self.desk.keys, cv.Breaker(), self.desk.http, 6, log=lambda *a, **k: None)
+        for model in (["claude-opus"], {"id": "claude"}, {"id": "glm-5.3"}):
+            self.other.model = model
+            res = lad().call([{"role": "user", "content": "hi"}])
+            self.assertFalse(res["ok"], model)
+            self.assertEqual(res["attempts"][0]["outcome"], "forbidden_model", model)
+            self.assertEqual(res["attempts"][0]["answered_model"], json.dumps(model))  # shown as JSON, never used
+        self.other.model = None  # no model field value of its own: the fake echoes the request's, a string
+        self.assertTrue(lad().call([{"role": "user", "content": "hi"}])["ok"])
 
     def test_an_unproven_scope_skips_the_router_rung_and_proves_it_in_the_background(self):
         res = self.ladder().call([{"role": "user", "content": "hi"}])
@@ -227,6 +307,23 @@ class Phrases(unittest.TestCase):
         self.assertEqual(cv.setting_phrase("use the morgen voice", CATALOG, self.table), v("morgan"))
         self.assertIsNone(cv.setting_phrase("use the nick voice", CATALOG, self.table))
         self.assertIsNone(cv.resolve_voice("walkin", CATALOG))  # typed values (CLI, skills) are exact
+        # live 2026-10-22, both missed the short-circuit and went to the LLM: "USE WALK VOICE" (two letters short of
+        # walken; walken2 is one further) and "Use Rickface!" (whisper's "rick voice")
+        self.assertEqual(cv.setting_phrase("USE WALK VOICE", CATALOG, self.table), v("walken"))
+        self.assertEqual(cv.setting_phrase("Use Rickface!", CATALOG, self.table), v("rick"))
+        self.assertEqual(cv.setting_phrase("use rick's face", CATALOG, self.table), v("rick"))
+        self.assertEqual(cv.setting_phrase("use the carla voice", CATALOG, self.table), v("carlin"))
+        self.assertEqual(cv.resolve_voice("walk", CATALOG, fuzzy=True), "walken")
+        self.assertIsNone(cv.resolve_voice("walk", CATALOG))
+        self.assertIsNone(cv.resolve_voice("mort", CATALOG, fuzzy=True))  # four letters are never near a five-letter name
+        self.assertIsNone(cv.resolve_voice("dave", CATALOG, fuzzy=True))
+        for said in ("use the interface", "use a straight face", "switch to the surface", "use your poker face",
+                     "try a different face", "use the walk", "use the nick voice", "use the bob voice"):
+            self.assertIsNone(cv.setting_phrase(said, CATALOG, self.table), said)
+        self.assertEqual(cv._edits("walk", "walken"), 2)
+        self.assertEqual(cv._edits("walk", "walken2", 2), 3)
+        self.assertTrue(cv._within_one_edit("walkin", "walken"))
+        self.assertFalse(cv._within_one_edit("walk", "walken"))
         for said in ("switch to marge", "switch to flume", "use the default", "what voice is that", "switch to rick",
                      "use the walken voice and then tell me what's on the board", "Send it.", "switch to banana voice",
                      "Have the PM switch to the new database"):
@@ -389,6 +486,22 @@ class Tools(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("timed out", r["error"])
 
+    def test_a_timeout_kills_the_skills_own_child_so_the_change_never_lands_late(self):
+        # review 2026-10-22: the skill's child (memo_trace.py voice|model, the writer) outlived the 3 s kill and wrote
+        # converse.json after the driver heard "I couldn't change the voice"
+        marker = Path(tempfile.mkdtemp()) / "landed"
+        make_skill(self.scope, "car-set-voice", VOICE_TOOL, textwrap.dedent(f"""\
+            import subprocess, sys, time
+            subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.0); open({str(marker)!r}, 'w').write('x')"])
+            time.sleep(5)
+            """))
+        t0 = time.time()
+        r = self.box.run("car_set_voice", {"voice": "walken"}, "holocene-pm", timeout=0.5)
+        self.assertLess(time.time() - t0, 2.5)
+        self.assertEqual((r["ok"], r["error"]), (False, "timed out after 0.5 s"))
+        time.sleep(1.5)
+        self.assertFalse(marker.exists(), "the skill's child wrote after the timeout")
+
     def test_an_entrypoint_outside_the_skill_is_refused(self):
         sk = make_skill(self.scope, "car-set-voice", VOICE_TOOL, "print('{}')")
         (sk / "SKILL.md").write_text((sk / "SKILL.md").read_text().replace("scripts/run.py", "../../../../etc/passwd"))
@@ -528,6 +641,26 @@ class TileTurns(ConverseHarness, unittest.TestCase):
         self.assertEqual(self.w._reply_voice(m), "walken")  # the same reply keeps its voice
         m["reply_stamp"] = "2026-10-22T10:05:00Z"
         self.assertEqual(self.w._reply_voice(m), "carlin")  # the next reply round locks again
+
+    def test_the_tile_voice_is_a_car_setting_a_browser_memo_keeps_the_default(self):
+        # review 2026-10-22: the tile's voice applied to every reply for the agent, browser memos included
+        cv.update_tile(self.flagpath, "holocene-pm", voice="walken")
+        browser = {"agent": "holocene-pm", "reply_stamp": "s1", "memo_id": "b", "key": "kb",
+                   "sender": {"ok": True, "host": "browser", "device": None}}
+        self.assertEqual(self.w._reply_voice(browser), iw.VOICE)
+        # a memo whose sender is not known yet: read once (S3 metadata), kept on the memo
+        self.sender = {"ok": True, "host": "browser", "device": None}
+        m = {"agent": "holocene-pm", "reply_stamp": "s1", "memo_id": "u", "key": "ku"}
+        self.assertEqual(self.w._reply_voice(m), iw.VOICE)
+        self.assertEqual(m["sender"]["host"], "browser")
+        self.sender = {"ok": False, "host": None, "device": None}  # unreadable: not known to be the car
+        self.assertEqual(self.w._reply_voice({"agent": "holocene-pm", "reply_stamp": "s1", "key": "kx"}), iw.VOICE)
+        self.sender = {"ok": True, "host": "car", "device": DEVICE}
+        self.assertEqual(self.w._reply_voice({"agent": "holocene-pm", "reply_stamp": "s1", "key": "kc"}), "walken")
+        self.assertEqual(self.w._tile_voice("holocene-pm", "kc", "rick"), "walken")
+        # no voice of its own: no S3 read at all
+        with unittest.mock.patch.object(mc_, "s3_sender", side_effect=AssertionError("read")):
+            self.assertEqual(self.w._tile_voice("flume-pm", "kz", iw.VOICE), iw.VOICE)
 
 
 class CliVerbs(unittest.TestCase):

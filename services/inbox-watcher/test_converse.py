@@ -96,7 +96,7 @@ def fake_server():
     srv.modes, srv.default, srv.calls, srv.sleep, srv.model, srv.decision = [], "ok", [], 2.0, None, decision()
     srv.route_header, srv.gets = None, []
     srv.listing = ["automaticai/auto", "automaticai/auto/fast", "automaticai/free", "automaticai/personal/glm-5.3-flash",
-                   "automaticai/personal/kimi-k3s", "automaticai/deepseek/deepseek-flash"]
+                   "automaticai/personal/kimi-k3s", "automaticai/personal/glm-5.3", "automaticai/deepseek/deepseek-flash"]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -147,7 +147,7 @@ class Routes(unittest.TestCase):
         self.assertEqual((r3["temperature"], r3["reasoning_effort"]), (1.0, None))  # kimi 400s any other temperature
         self.assertFalse(any(cv.forbidden(r["model"]) for r in routes if not r["scoped_auto"]))
         self.assertNotIn("tflaecgcrdgxrh2ovgi5ysjkzq", unit)  # the Hindsight item is no longer the car desk's key
-        self.assertIn("Environment=MEMO_CONVERSE_BUDGET_S=12", unit)
+        self.assertIn("Environment=MEMO_CONVERSE_BUDGET_S=16", unit)  # r1 4 + r2 5 + r3 7: every rung its full timeout
         self.assertNotRegex(unit, r"\bsk-[A-Za-z0-9_-]{12,}")  # no pasted key ("car-desk-scope" is a path)
 
 

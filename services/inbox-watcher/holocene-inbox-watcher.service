@@ -32,8 +32,9 @@ Environment=MEMO_CONVERSE_DEVICES=
 Environment=MEMO_CONVERSE_HANDOFF=named
 Environment=MEMO_CONVERSE_IDLE_S=900
 Environment=MEMO_CONVERSE_DRAFT_TTL_S=600
-# r1 402 (skipped at once, 10 min breaker) + r2 at its 5 s timeout still leaves r3 its full 7 s
-Environment=MEMO_CONVERSE_BUDGET_S=12
+# the sum of the rung timeouts (r1 4 + r2 5 + r3 7): r1 AND r2 timing out still leave r3 its full 7 s (it answers in
+# 2.5-4.4 s). The budget only caps the all-slow case; a healthy turn ends at its first answer (r2 ~1.5 s).
+Environment=MEMO_CONVERSE_BUDGET_S=16
 Environment=MEMO_CONVERSE_TTS_STEPS=6
 # The ladder, in order (operator decision 2026-10-22). Keys are op:// item-UUID references ONLY, read with `op read` at
 # first use, kept in memory.
