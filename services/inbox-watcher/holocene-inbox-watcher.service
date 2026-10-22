@@ -19,10 +19,8 @@ Environment=MEMO_AGENT_TIMEOUT_S=600
 Environment=MEMO_TRANSCRIBE_TIMEOUT_S=420
 # interactive = invoke lane (reserved gateway slots); batch = start lane (rollback lever, no gateway restart)
 Environment=MEMO_LANE=interactive
-# Per-turn model route (operator-approved 2026-10-22): the voice turn and the BACKGROUND follow-up both run on Sonnet 5.5.
-# Same as the code defaults; rollback = MEMO_VOICE_MODEL=automaticai/personal/sol-6.1 and MEMO_FOLLOWUP_MODEL= (empty).
-Environment=MEMO_VOICE_MODEL=automaticai/personal/claude-sonnet-5.5
-Environment=MEMO_FOLLOWUP_MODEL=automaticai/personal/claude-sonnet-5.5
+# Per-turn model routes are the code defaults (voice sol-6.1, follow-up the profile's own model). Sonnet 5.5 was tried and rolled
+# back 2026-10-22 (Anthropic 400s Hermes gateway turns); override with MEMO_VOICE_MODEL / MEMO_FOLLOWUP_MODEL only here.
 # All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)
 TimeoutStopSec=30
 

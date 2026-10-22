@@ -552,3 +552,16 @@ One sim memo, `0a24d782` (B.wav: the service-check ask), through the Honda sim:
   classifying the gateway-turn request, as the owner found on 2026-10-01.
 Net effect today: voice turns cost one failed 0.2 s call and run on glm-5.3, which is what an exhausted Sol pool does too.
 Real fixes: enable extra usage on the personal Claude account, or point the voice turn at kimi-2.8 (11-27 s on the heavy step).
+
+### Rolled back (2026-10-22, 08:50 UTC)
+
+Independent review found the Sonnet switch both useless and harmful, so it was reverted the same morning:
+- it never ran on Sonnet (above), and quick answers got slower (+105.8 s vs +43.7 s on sol-6.1);
+- scoping a Claude route onto the shared `hermes` token put it in `automaticai/auto`'s candidate set (candidates are intersected
+  with the token scope), so non-voice desks on `model=automaticai/auto` (navi-pm 04:23, pile-of-dumb-things-pm 04:31 EDT) got the
+  same Anthropic 400 and fell back to glm-5.3. That undid the owner's 2026-10-16 rule: hermes consumer tokens carry no Claude routes.
+
+Done: `claude-sonnet-5.5` removed from the `hermes` and `hermes-delonet-director` token scopes (curl: sonnet 403, auto 200, glm-5.3 200
+on both); watcher defaults back to `MEMO_VOICE_MODEL=automaticai/personal/sol-6.1` and `MEMO_FOLLOWUP_MODEL=` (empty), unit env lines removed.
+`astra` and `gpt-5.5` stay out of the scopes (not in the route catalog). To retry Sonnet: enable extra usage on the Claude account and
+scope the route onto a token `automaticai/auto` cannot reach, not the shared `hermes` one.
