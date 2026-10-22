@@ -886,6 +886,17 @@ test("the routed fact's attempt list shows the rungs that failed before one answ
   assert.match(d.hops.find(h => h.id === "routed")!.detail, /k3-256k@r3a · 3 attempts/);
 });
 
+test("converse.py's ladder log (outcome words, answered_model) beside an integer attempt count", () => {
+  const routed = routedFact(4, { action: "reply", model_answered: "deepseek-v4.1-flash", route: "r2", attempts: 2,
+    attempt_log: [{ route: "r1", model: "deepseek-v4.1-flash-1017", outcome: "http_502", http_status: 502, ms: 310 },
+      { route: "r2", model: "deepseek-v4.1-flash", outcome: "ok", answered_model: "deepseek-v4.1-flash", http_status: 200, ms: 2400 }] });
+  const d = buildMemoDetail(MEMO, [uploaded(), received(0.3), transcribed(1.2), routed, fastReplied(9)], now(20))!;
+  assert.equal(d.routed?.attempts, 2);
+  assert.deepEqual(d.routed?.attemptLog, [
+    { route: "r1", model: "deepseek-v4.1-flash-1017", ok: false, error: "http_502", ms: 310 },
+    { route: "r2", model: "deepseek-v4.1-flash", ok: true, error: undefined, ms: 2400 }]);
+});
+
 test("a confirmed delegation is the memo's follow-up: 'Sent to <agent>', its own agent facts, never the memo's hops", () => {
   const confirm = routedFact(1.4, { action: "confirm", path: "confirm_only", turn: 4, attempts: 0 });
   const readBack = fact("audio.memo.replied", 5, { occurred_at: iso(5), reply_text: "Sending to Flume PM: Why the audio spool is disabled. I'll call you back.", reply_s3_key: "replies/x.ogg" });

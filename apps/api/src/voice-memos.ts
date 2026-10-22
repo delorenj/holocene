@@ -211,12 +211,20 @@ export function routedOf(e: JourneyEvent, ownDispatch = false): Routed | undefin
   const action = str(d.action);
   if (!convId || !action) return undefined; // both are required by memo.routed.json
   const usage = rec(d.usage);
-  const rawLog = Array.isArray(d.attempts) ? d.attempts : Array.isArray(d.attempt_log) ? d.attempt_log : Array.isArray(d.route_attempts) ? d.route_attempts : undefined;
-  const attemptLog = rawLog?.map(rec).map((a): RouteAttempt => ({
-    route: str(a.route) ?? str(a.id), model: str(a.model), ok: typeof a.ok === "boolean" ? a.ok : undefined,
-    error: str(a.error) ?? str(a.reason) ?? str(a.code) ?? (num(a.status) !== undefined ? `HTTP ${num(a.status)}` : undefined),
-    ms: num(a.ms) ?? num(a.latency_ms)
-  }));
+  const rawLog = [d.attempts, d.attempt_log, d.route_attempts, d.ladder].find(Array.isArray) as unknown[] | undefined;
+  // converse.py's ladder: {route, model, outcome: ok | timeout | http_502 | bad_json | forbidden_model | breaker_open |
+  // budget_exhausted | host_down | key_unreadable | ..., ms, http_status, answered_model}
+  const attemptLog = rawLog?.map(rec).map((a): RouteAttempt => {
+    const outcome = str(a.outcome);
+    const status = num(a.http_status) ?? num(a.status);
+    return {
+      route: str(a.route) ?? str(a.id), model: str(a.answered_model) ?? str(a.model),
+      ok: typeof a.ok === "boolean" ? a.ok : outcome !== undefined ? outcome === "ok" : undefined,
+      error: outcome !== undefined && outcome !== "ok" ? outcome
+        : str(a.error) ?? str(a.reason) ?? str(a.code) ?? (outcome === undefined && status !== undefined && status >= 400 ? `HTTP ${status}` : undefined),
+      ms: num(a.ms) ?? num(a.latency_ms)
+    };
+  });
   const path = str(d.path);
   const cached = num(d.cached_tokens) ?? num(rec(usage.prompt_tokens_details).cached_tokens);
   return {
