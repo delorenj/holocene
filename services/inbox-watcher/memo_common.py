@@ -21,6 +21,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import s3direct
+
 BUCKET = os.environ.get("MEMO_BUCKET", "holocene-auto")
 S3_ALIAS = os.environ.get("MEMO_S3_ALIAS", "delo")
 INBOX_PREFIX = "inbox"
@@ -333,7 +335,21 @@ def level_text(max_dbfs, mean_dbfs=None, duration=None) -> str:
 # ---------------------------------------------------------------- S3 (mc)
 
 def mc(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    # The hot-path calls (cp up/down, ls, stat, cat) are answered in-process on a kept-alive connection when
+    # MEMO_S3_DIRECT=1 (s3direct.py); anything it does not serve, or any error of it, runs the real mc below.
+    direct = s3direct.mc_cli(S3_ALIAS, args, timeout)
+    if direct is not None:
+        return direct
     return subprocess.run([MC_BIN, *args], capture_output=True, text=True, timeout=timeout)
+
+
+def mc_pipe(url: str, body: bytes, attr: str | None, timeout: int = 20) -> subprocess.CompletedProcess:
+    """`mc pipe --quiet [--attr ...] <url>` with `body` on stdin; in-process when the direct path is on."""
+    loc = s3direct._remote(url, S3_ALIAS)
+    if loc is not None and s3direct.pipe_cli(S3_ALIAS, loc[0], loc[1], body, attr):
+        return subprocess.CompletedProcess(["s3direct", "pipe", url], 0, b"", b"")
+    cmd = [MC_BIN, "pipe", "--quiet"] + (["--attr", attr] if attr else []) + [url]
+    return subprocess.run(cmd, input=body, capture_output=True, timeout=timeout)
 
 
 def s3_url(key: str) -> str:

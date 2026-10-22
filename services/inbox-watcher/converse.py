@@ -1096,6 +1096,8 @@ DROPPED_LINE = "Dropped. Nothing was sent."
 NOTHING_TO_CANCEL_LINE = "Okay. Nothing was waiting to send."
 END_LINE = "Okay. Talk soon."
 EXPIRED_LINE = "That draft timed out, so nothing was sent. Tell me again what you want done."
+DRAFT_CHANGED_LINE = "That draft changed since I read it back, so nothing was sent. Tell me again what you want done."
+DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 
 
 # ---------------------------------------------------------------- briefs + ids
@@ -1328,7 +1330,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             return out, reasons
         if sha256(pend.get("body") or "") != pend.get("brief_sha256"):
             reasons.append("draft_changed")
-            out.update(action="reply", say="That draft changed since I read it back, so nothing was sent. Tell me again what you want done.",
+            out.update(action="reply", say=DRAFT_CHANGED_LINE,
                        drop=True)
             return out, reasons
         dup = recent_delegation(sess, now, dedupe_s, sha=pend["brief_sha256"], target=pend.get("target"))
@@ -1377,7 +1379,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     if hit:
         reasons.append("sent_claim_filtered")
     if not say.strip():
-        say = "Sorry, I didn't catch that. Say it again?"
+        say = DIDNT_CATCH_LINE
         reasons.append("empty_say")
     out.update(action="reply", say=say)
     return out, reasons
