@@ -48,8 +48,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memo_common as mc_  # noqa: E402
 from memo_common import (  # noqa: E402
-    BB_EMIT, BUCKET, CANCELLED, ESCALATED_REASON, REPLIES_PREFIX, STATE_DIR, agent_from_key, cancel_after_dispatch,
-    iso, memo_escalated, memo_id_for, now_utc, rescue_open, resume_for, truncated_by_old_watcher,
+    BB_EMIT, BUCKET, CANCELLED, ESCALATED_REASON, FOLLOWUP_REASON, REPLIES_PREFIX, STATE_DIR, agent_from_key,
+    cancel_after_dispatch, iso, live_followup, long_turn, memo_escalated, memo_id_for, now_utc, rescue_open, resume_for,
+    truncated_by_old_watcher,
 )
 
 SERVICE = "inbox-watcher"
@@ -106,9 +107,58 @@ SILENT_MAX_DBFS = mc_.SILENT_MAX_DBFS  # loudest-sample line below which a recor
 # says while it works: the gateway publishes every sentence the model writes next to a tool call
 # (agent.invocation.progressed) and the watcher speaks the newest one every 30 s. Without the ask most memo turns write
 # none (measured 2026-10-20: 0-4 of 8-18 tool rounds carried text), and a 2-minute turn is 2 minutes of silence.
+# The budget half (2026-10-21 latency study, 17 real car asks, median reply 188 s, p75 393 s): 8 of them were status or
+# "did you hear me" questions that ran 9-28 model calls (median 165 s), and 406 s of the tool time was `sleep N` waits,
+# 346 s was the agent speaking through vox-speak itself, 288 s a deploy nobody asked for. The gateway's own platform hint
+# says no human is present, the opposite of the truth here, so the prefix says otherwise first. A long ask is answered
+# in a sentence or two and handed to a background turn with a BACKGROUND: line (split_background, start_followup).
 VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - speech-to-text, may contain recognition errors. "
-                              "The driver hears your progress aloud while you work: before each tool call, write one short "
-                              "sentence saying what you are about to do.] ")
+                              "A driver is waiting to hear your answer aloud, whatever else says no human is present: answer "
+                              "within about a minute and at most 3 tool calls. The driver hears your progress aloud while you "
+                              "work: before each tool call, write one short sentence saying what you are about to do. Never "
+                              "run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or "
+                              "wait and re-check, and run no deploy or long command unless asked. If the ask needs longer "
+                              "work, do not start it now: tell the driver in one or two sentences what you will do, then end "
+                              "your reply with a line that starts with BACKGROUND: followed by complete instructions for "
+                              "yourself. That work starts right after, on this same conversation, and its result is spoken "
+                              "to the driver as a follow-up.] ")
+# Prepended to a reply's BACKGROUND: instructions when they go back to the same agent as a background turn.
+FOLLOWUP_PREFIX = os.environ.get("MEMO_FOLLOWUP_PREFIX", "[Background continuation of the voice memo above: the driver already "
+                                 "heard your short answer. Do the work below now, in full, without asking questions; the "
+                                 "one-minute budget does not apply here. Never run vox-speak or any text-to-speech yourself. "
+                                 "Your final message is spoken to the driver as a follow-up: end it with a spoken summary of "
+                                 "the result in two to four sentences, and do not write a BACKGROUND: line.] ")
+# How many background follow-ups one memo may chain (a follow-up's own BACKGROUND: line counts). The batch lane has no
+# wall clock, so a follow-up has no reason to hand off again: 1 by default. 0 turns answer-then-background off (the line
+# is still never spoken).
+FOLLOWUP_MAX = int(os.environ.get("MEMO_FOLLOWUP_MAX", "1"))
+# The lane a follow-up rides: batch (invocation.start, no wall clock) by default.
+FOLLOWUP_LANE = os.environ.get("MEMO_FOLLOWUP_LANE", "batch").strip().lower()
+if FOLLOWUP_LANE not in mc_.GATEWAY_CONSUMERS:
+    FOLLOWUP_LANE = "batch"
+# What the driver hears when the agent wrote only a BACKGROUND: line and no answer of its own.
+FOLLOWUP_ACK = "On it. I will call you back with the result."
+# Voice turns run on a fast model, per turn: the command carries data.model and the gateway runs that one turn on it
+# through Hermes' internal `/model <route> --once` (the memo's own session only, never Telegram, never config.yaml; its
+# terminal fact reports model_override {requested, applied, reason}; bloodbank docs/interactive-command-lane.md section 10).
+# Measured 2026-10-21 on the real heavy step of a crank circuit (20.7k-token prompt, the call that took 62 s live):
+# glm-5.3@max, where automaticai/auto lands for the desks' tokens, 51 s (113 s at high); kimi-2.8@high 11-27 s;
+# sol-6.1 8.4 s at high and 13-15 s at xhigh (the providers' extra_body effort, which is what goes on the wire: per-turn
+# effort is not a knob on this provider, the route is); production per-call mean 13.4-15.9 s on GLM vs 8.4-9.3 s on Sol.
+# Sonnet 5.5 was 5.1 s but no hermes desk token may use a Claude route. Hermes' fallback chain (glm-5.3, kimi-2.8) takes
+# over on a route-limit 403/429, so an exhausted Sol pool costs a fast failure per call, never the memo. The route must be
+# in the profile's providers.automaticai.models (every profile lists it). Empty = the profile's own model.
+VOICE_MODEL = os.environ.get("MEMO_VOICE_MODEL", "automaticai/personal/sol-6.1").strip()
+FOLLOWUP_MODEL = os.environ.get("MEMO_FOLLOWUP_MODEL", VOICE_MODEL).strip()
+# A detached interactive turn (the gateway kept it running past its 300 s wall clock and released the slot) is waited for
+# this long from its dispatch: the gateway's own ceiling for a detached turn is 2700 s (detached_ceiling_seconds), and it
+# publishes failed(turn_timeout, timeout_source=detached_ceiling) when it cuts one off there.
+DETACHED_WAIT_S = int(os.environ.get("MEMO_DETACHED_WAIT_S", "3000"))
+# Said once, in the car, when the interactive turn is detached; after it the 30 s progress narration stops (the reply is
+# spoken late). Empty: nothing is said.
+DETACHED_LINE = os.environ.get("MEMO_DETACHED_LINE", "still on it. I will call you back when it is done.")
+# An interactive turn older than this is also asked about a detach fact in Candystore (the journal is read every poll).
+DETACH_PROBE_AFTER_S = float(os.environ.get("MEMO_DETACH_PROBE_AFTER_S", "240"))
 # Whisper's usual output on noise or an accidental tap: never a real prompt.
 HALLUCINATIONS = {"thank you", "thanks", "thank you very much", "thanks for watching", "thank you for watching", "you", "bye",
                   "bye bye", "okay", "ok", "uh", "um", "hmm", "mm", "mhm", "oh", "ah", "so"}
@@ -359,8 +409,27 @@ def compact(m: dict) -> None:
         # voiced_one (the reply key announced as voiced 1 of 1) stays: it is what keeps a memo:retry of a finished memo
         # from announcing the same one-file reply a second time.
         m.pop("reply_up", None)
+        for fu in m.get("followups") or []:  # a finished follow-up keeps a preview of what it was asked
+            for k in ("prompt", "plan"):
+                if isinstance(fu.get(k), str) and len(fu[k]) > 300:
+                    fu[k] = fu[k][:300]
     for k in ("live", "live_ts", "cs_checked_ts"):  # await-stage probe caches
         m.pop(k, None)
+
+
+_BACKGROUND_LINE = re.compile(r"^[ \t>*_#`~-]*BACKGROUND[*_`]*[ \t]*:[*_`]*[ \t]*", re.IGNORECASE | re.MULTILINE)
+
+
+def split_background(text: str) -> tuple[str, str | None]:
+    """(what is spoken, the BACKGROUND: instructions or None). The first line that starts with BACKGROUND: (markdown
+    bullets, quotes and bold around it allowed) ends the spoken answer; everything after it is the plan for the background
+    turn. The line itself is never spoken, even when no follow-up is sent (none allowed, or nothing after it)."""
+    hit = _BACKGROUND_LINE.search(text or "")
+    if not hit:
+        return text, None
+    answer = text[:hit.start()].rstrip()
+    plan = text[hit.end():].strip().strip("*_`").strip()
+    return answer, (plan or None)
 
 
 # resume_for / truncated_by_old_watcher live in memo_common (shared with memo_trace) and are imported above.
@@ -537,8 +606,9 @@ def car_stage(m: dict) -> str:
     if stage == "transcribe":
         return "transcribing"
     if stage == "dispatch":
-        # an escalated memo goes back through dispatch on its way to the batch lane: the agent is still on it
-        return "working" if m.get("escalated") else "heard"
+        # an escalated memo goes back through dispatch on its way to the batch lane, and a memo whose quick answer was
+        # spoken goes back through it for its background follow-up: the agent is still on it
+        return "working" if m.get("escalated") or live_followup(m) else "heard"
     if stage == "await_agent":
         return "working"
     if stage in ("reply", "speak", "mirror"):
@@ -574,7 +644,16 @@ def status_doc(m: dict) -> dict:
         "command_id": m.get("command_id"), "lane": m.get("lane"),
         "late": bool(m.get("late")), "escalated": bool(m.get("escalated")),
         "reply_key": m.get("reply_key"),
+        # the interactive turn passed the gateway's wall clock and kept running (the reply comes late, no re-run)
+        "detached": detached_now(m),
     }
+    fus = m.get("followups") or []
+    if fus:
+        # answer-then-background: the quick answer was spoken (or is being), the newest background follow-up is in `state`
+        # dispatching | running | spoken | failed | cancelled; its reply is a later replies/ object for the same memo
+        fu = fus[-1]
+        doc["followup"] = {"n": fu.get("n"), "state": fu.get("state"), "command_id": fu.get("command_id"),
+                           "started_at": fu.get("started_at"), "reply_key": fu.get("reply_key")}
     if m.get("reply_chunks"):
         # the reply is being spoken chunk by chunk: how many it has and how many are up (replies/...-cNNofMM.opus)
         doc["reply_chunks"] = {"n": m["reply_chunks"], "voiced": m.get("voiced_n", 0)}
@@ -585,11 +664,17 @@ def status_doc(m: dict) -> dict:
     return doc
 
 
+def detached_now(m: dict) -> bool:
+    """The memo's current command is an interactive turn the gateway detached at its wall clock (m["detached"] holds the
+    id of the command that was detached, so a later command of the memo, its follow-up say, is not)."""
+    return bool(m.get("detached")) and m.get("detached") == m.get("command_id")
+
+
 def rescue_closes_at(m: dict) -> float:
     """When a failed memo stops being watched for a late reply. The window runs from the command's own deadline for an
     escalated batch turn (a turn that ends at its 2 h deadline would otherwise find the 2 h window already shut and
     its reply dropped), and from the dispatch for everything else."""
-    start = m.get("deadline_ts") if memo_escalated(m) and m.get("deadline_ts") else m.get("dispatched_ts", 0)
+    start = m.get("deadline_ts") if long_turn(m) and m.get("deadline_ts") else m.get("dispatched_ts", 0)
     return float(start) + RESCUE_WINDOW_S
 
 
@@ -793,7 +878,8 @@ class Watcher:
         if stage in ("receive", "transcribe"):
             # A new prompt is a new ask: nothing of the old command, or of the escalation it went through, carries over.
             self.drop_command(m)
-            for k in ("escalated", "escalated_from_command_id", "escalated_ts", "late", "rescue_closed"):
+            for k in ("escalated", "escalated_from_command_id", "escalated_ts", "late", "rescue_closed", "followups",
+                      "background_plan", "detached", "detached_ts"):
                 m.pop(k, None)
         elif stage == "dispatch" and (failed == "agent" or (failed == "agent_reply" and m.get("failed_code") == mc_.TURN_TIMEOUT)):
             was_escalated = bool(m.get("escalated"))  # the old command was rejected or failed: send a fresh one
@@ -803,8 +889,12 @@ class Watcher:
                 # unchanged) instead of timing out on the interactive one with no escalation left.
                 m["lane"], m["lane_reason"] = "batch", ESCALATED_REASON
         if stage == "await_agent":
-            # an escalated command is a batch turn: it is waited for as long as it was the first time
-            m["deadline_ts"] = time.time() + (BATCH_TURN_TIMEOUT_S if memo_escalated(m) else AGENT_TIMEOUT_S)
+            # A follow-up cancelled while it ran is the command being waited for again: it is live once more.
+            for fu in m.get("followups") or []:
+                if fu.get("command_id") == m.get("command_id") and fu.get("state") == CANCELLED:
+                    fu["state"] = "running"
+            # an escalated command (or a follow-up) is a batch turn: it is waited for as long as it was the first time
+            m["deadline_ts"] = time.time() + (BATCH_TURN_TIMEOUT_S if long_turn(m) else AGENT_TIMEOUT_S)
         if m.get("failed_code") == "object_changed" and m.get("observed_object"):
             # The operator asked for this memo again: take the object as it is now as the one to transcribe.
             obs = m.pop("observed_object")
@@ -891,6 +981,10 @@ class Watcher:
         m["resume_stage"] = resume_for({**m, "resume_stage": stage})  # `memo:retry` restarts where it stopped
         m.update(status=CANCELLED, failed_stage=CANCELLED, failed_code=CANCELLED, next_at=0.0)
         m["failed_message"] = "cancelled by memo:cancel"
+        fu = live_followup(m)
+        if fu is not None:
+            # The quick answer was spoken; the background follow-up still runs on the agent but is never spoken.
+            fu["state"], fu["ended_at"] = CANCELLED, iso(now_utc())
         if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak", "mirror"):
             # after_dispatch stays true (the interactive command went out and ran); only the message is about the batch one
             msg = (f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the interactive command was "
@@ -935,7 +1029,7 @@ class Watcher:
                     waited_s=int(time.time() - m["dispatched_ts"]), note="agent finished after the deadline; replying late")
                 self.revive(m, "reply", "late completion")
             elif st["state"] == "failed":
-                if st.get("code") == mc_.TURN_TIMEOUT and self.can_escalate(m):
+                if st.get("code") == mc_.TURN_TIMEOUT and self.can_escalate(m, st.get("timeout")):
                     # The watcher gave up first (the command sat queued past its deadline), then the gateway ran it and
                     # stopped it at its wall clock: still an interactive turn that timed out, so it escalates the same way.
                     log("late_turn_timeout", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"],
@@ -1289,7 +1383,15 @@ class Watcher:
 
     def _prompt_for_send(self, m: dict) -> str:
         """The exact prompt to dispatch, proven to be the one that was transcribed: its sha256 was recorded with the
-        transcript and must still match. A memo with nothing to send is held, never sent empty."""
+        transcript and must still match. A memo with nothing to send is held, never sent empty. A memo whose background
+        follow-up is live sends the follow-up's prompt instead, pinned the same way when it was minted."""
+        fu = live_followup(m)
+        if fu is not None:
+            prompt = fu.get("prompt") or ""
+            if not prompt or hashlib.sha256(prompt.encode()).hexdigest() != fu.get("prompt_sha256"):
+                raise StageError("dispatch", "prompt_changed", f"follow-up {fu.get('n')}'s prompt ({len(prompt)} chars) no "
+                                 "longer matches the sha256 recorded when it was minted: held, not sent", retryable=False)
+            return prompt
         prompt = m.get("prompt")
         if not prompt:
             if not m.get("transcript"):
@@ -1354,15 +1456,24 @@ class Watcher:
             m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
             prompt = self._prompt_for_send(m)
             escalated = memo_escalated(m)
+            fu = live_followup(m)
             context = {"memo_id": m["memo_id"], "memo_key": m["key"],
                        "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"}
             if escalated:
                 context["escalated_from_command_id"] = m.get("escalated_from_command_id")
+            if fu is not None:
+                # the background half of an answer-then-background reply: same thread, so the agent has the whole talk
+                context.update(reason="voice-followup", followup_of=fu.get("of_command_id"), followup_depth=fu.get("n"))
             data = {
                 "target_agent_id": m["agent"], "prompt": prompt, "thread_id": m["thread_id"],
                 "turn_id": None,
                 "context": context,
             }
+            # The voice turn's model, for this one turn only (see VOICE_MODEL).
+            model = FOLLOWUP_MODEL if fu is not None else VOICE_MODEL
+            if model:
+                data["model"] = model
+            m["turn_model"] = model or None
             cmd = [BB_EMIT, "--strict", "--print-ids", "--kind", "command",
                    "--type", mc_.LANE_COMMAND_TYPES[lane],
                    "--source", f"urn:33god:service:{SERVICE}", "--producer", SERVICE, "--service", SERVICE,
@@ -1401,21 +1512,29 @@ class Watcher:
 
     def _mark_dispatched(self, m: dict, cid: str, ids: dict | None, ms: float, prompt_chars: int | None = None) -> None:
         ids = ids or {}
-        prompt = m.get("prompt") or m.get("transcript", "")
+        fu = live_followup(m)
+        prompt = (fu or {}).get("prompt") or m.get("prompt") or m.get("transcript", "")
         escalated = memo_escalated(m)
         m["command_envelope_id"] = ids.get("id")
         m["dispatched_ts"] = time.time()
-        # An escalated command is a batch turn with no gateway wall clock: the watcher waits for it much longer.
-        m["deadline_ts"] = m["dispatched_ts"] + (BATCH_TURN_TIMEOUT_S if escalated else AGENT_TIMEOUT_S)
+        # An escalated command (or a background follow-up) is a batch turn with no gateway wall clock: the watcher waits
+        # for it much longer.
+        m["deadline_ts"] = m["dispatched_ts"] + (BATCH_TURN_TIMEOUT_S if long_turn(m) else AGENT_TIMEOUT_S)
         m.pop("dropped_since", None)
+        if fu is not None:
+            fu.update(state="running", dispatched_at=iso(now_utc()), dispatched_ts=m["dispatched_ts"])
         self.fact("dispatched", m, {
             "command_id": cid, "idempotency_key": ids.get("idempotency_key"),
             "command_subject": ids.get("subject") or mc_.LANE_COMMAND_TYPES[memo_lane(m)],
             "lane": memo_lane(m), "lane_reason": m.get("lane_reason"),
             "thread_id": m.get("thread_id"), "prompt_chars": prompt_chars if prompt_chars is not None else len(prompt),
-            "prompt_sha256": m.get("prompt_sha256") or hashlib.sha256(prompt.encode()).hexdigest(),
+            "prompt_sha256": (fu or {}).get("prompt_sha256") or m.get("prompt_sha256") or hashlib.sha256(prompt.encode()).hexdigest(),
             "voice_prefix": bool(VOICE_PREFIX), "dispatch_ms": int(ms),
-            **({"escalated_from_command_id": m.get("escalated_from_command_id")} if escalated else {})})
+            # the model route the command asked the gateway to run this turn on (null: the profile's own)
+            "model": m.get("turn_model"),
+            **({"escalated_from_command_id": m.get("escalated_from_command_id")} if escalated else {}),
+            **({"followup": fu.get("n"), "followup_of_command_id": fu.get("of_command_id"),
+                "followup_plan": (fu.get("plan") or "")[:1000]} if fu is not None else {})})
         if self._cancelled(m):
             # The operator cancelled while the publish was in flight: the command is out (the fact above says so), the
             # memo stays cancelled and its reply will not be spoken.
@@ -1439,7 +1558,10 @@ class Watcher:
             out["profile"] = row.get("profile")
             st, oc = row["state"], row.get("outcome")
             if st == "completed" and oc == "success":
-                return {**out, "state": "done", "source": "journal", "detail": f"journal completed/success ({row['updated_at']})"}
+                mo = next((((e or {}).get("data") or {}).get("model_override") for e in row.get("terminal", [])
+                           if isinstance(((e or {}).get("data") or {}).get("model_override"), dict)), None)
+                return {**out, "state": "done", "source": "journal", "detail": f"journal completed/success ({row['updated_at']})",
+                        **({"model_override": mo} if mo else {})}
             timeout = mc_.turn_timeout_data(row) if st == "completed" else None
             if timeout is not None:
                 # The gateway stopped the Hermes turn at its wall clock: a distinct, final outcome.
@@ -1452,6 +1574,10 @@ class Watcher:
                 return {**out, "state": "failed", "source": "journal", "code": st,
                         "detail": row.get("rejection_reason") or st}
             out.update(state="running", source="journal", detail=f"journal state={st}")
+            if row.get("detached_at"):
+                # The gateway let the interactive turn run past its wall clock with the slot released: still running.
+                out.update(detached=True, detached_at=row["detached_at"],
+                           detail=f"journal state={st}, detached at {row['detached_at']} (kept running past the wall clock)")
             # A running row reaches its terminal state in the journal before Candystore hears of it: asking
             # Candystore here only adds a ~0.75 s HTTP call that can land right on top of the completion.
             return out
@@ -1485,11 +1611,37 @@ class Watcher:
             m["live"], m["live_ts"] = mc_.gateway_liveness(lane), time.time()
         return m["live"]
 
-    def can_escalate(self, m: dict) -> bool:
+    def can_escalate(self, m: dict, timeout: dict | None = None) -> bool:
         """An interactive turn the gateway stopped may be re-dispatched on the batch lane, once per memo. A batch turn
         that times out (an envelope deadline), a memo that already escalated, and MEMO_BATCH_TURN_TIMEOUT_S=0 (the
-        off switch) all fail the memo as a turn timeout, as before."""
-        return BATCH_TURN_TIMEOUT_S > 0 and not m.get("escalated") and memo_lane(m) == "interactive"
+        off switch) all fail the memo as a turn timeout, as before. So does a turn the gateway DETACHED at the wall clock
+        and later cut off at its detached ceiling: it already ran the whole time a batch turn would, re-running it from
+        scratch would only double the wait. (A gateway that cannot detach, or has it off, still stops the turn at the wall
+        clock: that is the case the escalation is kept for.)"""
+        if (timeout or {}).get("timeout_source") == "detached_ceiling" or (timeout or {}).get("detached") is True:
+            return False
+        return (BATCH_TURN_TIMEOUT_S > 0 and not m.get("escalated") and memo_lane(m) == "interactive"
+                and not detached_now(m))
+
+    def note_detached(self, m: dict, source: str, at=None, elapsed=None) -> None:
+        """The gateway kept this memo's interactive turn running past its wall clock and released the lane slot (instead
+        of stopping it, which the watcher would answer with a batch re-run of the same prompt). Once per command: the
+        memo is waited for as a long turn (DETACHED_WAIT_S from its dispatch), its reply will be a late one, the car hears
+        DETACHED_LINE once and the 30 s progress narration stops."""
+        cid = m.get("command_id")
+        if not cid or m.get("detached") == cid:
+            return
+        m["detached"], m["detached_ts"], m["late"] = cid, time.time(), True
+        m["deadline_ts"] = max(float(m.get("deadline_ts") or 0), float(m.get("dispatched_ts") or time.time()) + DETACHED_WAIT_S)
+        log("memo_detached", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent", command_id=cid,
+            source=source, detached_at=str(at) if at else None, elapsed_s=elapsed,
+            waited_s=int(time.time() - float(m.get("dispatched_ts") or time.time())), wait_until_s=DETACHED_WAIT_S,
+            note="the interactive turn passed the gateway wall clock and keeps running (slot released): no kill, no "
+                 "batch re-run; the reply is spoken late")
+        self.status(m)
+        if DETACHED_LINE and not self._cancelled(m):
+            self.narrate_line(m, DETACHED_LINE, "detached")
+        self.s.save()
 
     def unwound(self, m: dict, timeout: dict) -> bool:
         """The gateway reported turn_stopped=false: Hermes did not confirm the timed-out turn stopped, so it may still be
@@ -1534,17 +1686,27 @@ class Watcher:
     def step_await_agent(self, m: dict) -> None:
         st = self.agent_status(m)
         waited = time.time() - m["dispatched_ts"]
+        fu = live_followup(m)
         if st["state"] == "done":
             m["profile"] = st.get("profile") or m["agent"]
             m["agent_seconds"] = round(waited, 2)
             m["agent_done_ts"] = time.time()
-            if memo_escalated(m):
-                m["late"] = True  # the answer to a long ask comes back on the batch lane: it is spoken as a late reply
+            # what the gateway did with data.model: {requested, applied, reason} (absent from a gateway without it)
+            m["model_override"] = st.get("model_override")
+            if memo_escalated(m) or detached_now(m) or fu is not None:
+                # the answer to a long ask comes back on the batch lane, from a detached turn or as the follow-up of a
+                # quick answer: it is spoken as a late reply
+                m["late"] = True
+            if fu is not None:
+                fu["agent_done_at"] = iso(now_utc())
             return self.done_stage(m, "agent", "reply", ms=waited * 1000, command_id=m["command_id"],
                                    source=st["source"], profile=m["profile"])
         if st["state"] == "failed":
+            if fu is not None:
+                # The quick answer was already spoken and promised more: say the background half did not make it.
+                return self.followup_failed(m, fu, st.get("code") or "agent_failed", st["detail"], waited)
             if st.get("code") == mc_.TURN_TIMEOUT:
-                if self.can_escalate(m):
+                if self.can_escalate(m, st.get("timeout")):
                     t = st.get("timeout") or {}
                     if t.get("turn_stopped") is False and not self.unwound(m, t):
                         return  # waiting a moment for the stopped-unconfirmed turn to unwind before the batch turn starts
@@ -1554,8 +1716,12 @@ class Watcher:
                 t = st.get("timeout") or {}
                 extra = {k: t[k] for k in ("lane", "elapsed_seconds", "timeout_seconds", "timeout_source", "turn_stopped")
                          if t.get(k) is not None}
+                if detached_now(m):
+                    extra["detached"] = True
                 raise StageError("agent_reply", mc_.TURN_TIMEOUT, st["detail"], retryable=False, extra=extra)
             raise StageError("agent", st.get("code", "agent_failed"), f"{st['detail']} (via {st['source']})", retryable=False)
+        if st.get("detached"):
+            self.note_detached(m, "journal", at=st.get("detached_at"))
 
         lane = memo_lane(m)
         live = None
@@ -1571,6 +1737,9 @@ class Watcher:
                 since = m.setdefault("dropped_since", time.time())
                 if time.time() - since >= 15:
                     why = mc_.gateway_log_lines([m["command_id"], m["agent"]])
+                    if fu is not None:
+                        return self.followup_failed(m, fu, "gateway_terminated", "the gateway dropped the follow-up command "
+                                                    f"without running it; gateway log: {why[-1] if why else 'nothing'}", waited)
                     raise StageError("agent", "gateway_terminated",
                                      f"gateway consumed command {m['command_id']} without a journal row and the consumer is empty "
                                      f"({lane} consumer pending=0 ack_pending=0): it was rejected before starting, or abandoned after exhausting its redeliveries (max_deliver). "
@@ -1580,8 +1749,8 @@ class Watcher:
                 m.pop("dropped_since", None)
 
         if time.time() >= m["deadline_ts"]:
-            # An escalated batch turn already has its long deadline: it is not stretched further.
-            if waited < QUEUE_MAX_WAIT_S and not memo_escalated(m):
+            # An escalated batch turn (or a follow-up) already has its long deadline: it is not stretched further.
+            if waited < QUEUE_MAX_WAIT_S and not long_turn(m):
                 live = live or mc_.gateway_liveness(lane)
                 ahead = (live.get("num_pending") or 0) + (live.get("num_ack_pending") or 0)
                 # A draining gateway pulls nothing for up to 30 min (restart_after_turn_timeout) and then runs the
@@ -1596,6 +1765,9 @@ class Watcher:
                     m["next_at"] = time.time() + AWAIT_POLL_S
                     return
             live_text = mc_.gateway_liveness_text(live, lane) if live else mc_.gateway_liveness_text(lane=lane)
+            if fu is not None:
+                return self.followup_failed(m, fu, "timeout", f"no completed turn after {int(waited)}s ({st['detail']}); "
+                                            f"gateway: {live_text}", waited)
             raise StageError("agent_reply", "timeout",
                              f"no completed turn after {int(waited)}s for command {m['command_id']} "
                              f"({st['detail']}); gateway: {live_text}", retryable=False)
@@ -1612,30 +1784,57 @@ class Watcher:
 
     def step_reply(self, m: dict) -> None:
         t0 = time.time()
+        fu = live_followup(m)
         found = mc_.find_reply(m.get("profile") or m["agent"], m["thread_id"],
-                               prompt_sha256=m.get("prompt_sha256"), since=m.get("dispatched_ts"))
+                               prompt_sha256=(fu or {}).get("prompt_sha256") or m.get("prompt_sha256"),
+                               since=m.get("dispatched_ts"))
         if not found or not found.get("text"):
             raise StageError("agent_reply", "no_reply_text",
                              f"turn completed but no assistant text in {m.get('profile')} session chat_id={m['thread_id']}"
                              f" ({'no session' if not found else 'session ' + found['session_id'] + ' has no assistant text'})")
         ts = found.get("timestamp")
-        if memo_escalated(m) and isinstance(ts, (int, float)) and ts < m.get("dispatched_ts", 0) - REPLY_FRESH_SLACK_S:
+        pts = found.get("prompt_ts")
+        stale = isinstance(ts, (int, float)) and (
+            (long_turn(m) and ts < m.get("dispatched_ts", 0) - REPLY_FRESH_SLACK_S)
+            # a follow-up's prompt row is proven by its sha256: an answer older than it is the quick answer
+            or (fu is not None and isinstance(pts, (int, float)) and ts < pts))
+        if stale:
             # The escalated turn shares the stopped turn's thread id, so a batch turn that wrote no text leaves the
             # stopped turn's partial output as the newest assistant message. That is not an answer: never speak it.
+            # (A follow-up that wrote nothing would likewise find the quick answer, already spoken.)
+            if fu is not None:
+                return self.followup_failed(m, fu, "no_reply_text", "the background turn completed but wrote no answer",
+                                            time.time() - m.get("dispatched_ts", time.time()))
             raise StageError("agent_reply", "no_reply_text",
                              f"the batch turn completed but wrote no assistant text: the newest one in {m.get('profile')} session "
                              f"chat_id={m['thread_id']} predates the escalated command (the stopped turn's partial output)")
-        m["reply_text"] = found["text"]  # kept whole: compact() trims it to a preview once the memo is done
+        # Answer-then-background: a BACKGROUND: line ends what is spoken now; what follows it is the follow-up's plan.
+        answer, plan = split_background(found["text"])
+        if plan is not None or answer != found["text"]:
+            depth = len(m.get("followups") or [])
+            allowed = plan is not None and depth < FOLLOWUP_MAX
+            log("background_requested" if allowed else "background_refused", "info" if allowed else "warn",
+                memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent", command_id=m.get("command_id"),
+                followups=depth, max=FOLLOWUP_MAX, plan_chars=len(plan or ""), plan=(plan or "")[:160],
+                note=("the quick answer is spoken first, then the plan runs as a background turn on the same thread"
+                      if allowed else "the BACKGROUND: line is not spoken and no follow-up is sent"
+                      + (" (no instructions after it)" if plan is None else f" (MEMO_FOLLOWUP_MAX={FOLLOWUP_MAX} reached)")))
+            if allowed:
+                m["background_plan"] = plan
+            if not answer.strip():
+                answer = FOLLOWUP_ACK if allowed else "Done."
+        m["reply_text"] = answer  # kept whole: compact() trims it to a preview once the memo is done
         m["session_id"] = found["session_id"]
         # Prove the agent was given exactly what we sent.
-        sent = (m.get("prompt") or m.get("transcript") or "").strip()
+        sent = ((fu or {}).get("prompt") or m.get("prompt") or m.get("transcript") or "").strip()
         got = (found.get("prompt") or "").strip()
         m["prompt_match"] = (got == sent) if got else None
         if m["prompt_match"] is False:
             log("prompt_mismatch", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent",
                 sent_chars=len(sent), agent_saw_chars=len(got), sent=sent[:80], agent_saw=got[:80])
         self.done_stage(m, "reply_text", "speak", ms=(time.time() - t0) * 1000, chars=len(found["text"]),
-                        session=found["session_id"], preview=found["text"][:120], prompt_match=m["prompt_match"])
+                        session=found["session_id"], preview=found["text"][:120], prompt_match=m["prompt_match"],
+                        background=bool(m.get("background_plan")))
 
     # -- speak (worker thread) --
 
@@ -1681,6 +1880,7 @@ class Watcher:
             reply_text, agent, mid, key = m["reply_text"], m["agent"], m["memo_id"], m["key"]
             late = bool(m.get("late"))
             escalated = memo_escalated(m)
+            followup = live_followup(m) is not None
             name = m.get("display_name") or mc_.spoken_name(agent)
             # One reply key per memo: a retry after a half-finished upload overwrites instead of
             # leaving a second object that the pad would play as a second reply.
@@ -1689,7 +1889,7 @@ class Watcher:
         body = clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
             raise StageError("tts", "nothing_to_speak", "reply has no speakable text after cleaning", retryable=False)
-        spoken = f"{name}, late reply. {body}" if late else f"{name}. {body}"
+        spoken = (f"{name}, follow-up. {body}" if followup else f"{name}, late reply. {body}" if late else f"{name}. {body}")
         parts = split_for_speech(spoken)
         tmp = Path(tempfile.mkdtemp(prefix="memo-tts-"))
         try:
@@ -1745,7 +1945,9 @@ class Watcher:
                 "rkey": rkey, "up_at": iso(now_utc()), "up_ts": (m.get("voiced_first_ts") if len(parts) > 1 else None) or t_up,
                 "uploaded_ts": t_up, "audio_bytes": stat["size"], "tts_seconds": round(tts_s, 2), "tts_engine": engine,
                 "spoken_chars": len(spoken), "chunks": len(parts), "journey_seconds": round(journey, 2), "t_speak": t_speak,
-                "late": late, "escalated": escalated}
+                "late": late, "escalated": escalated,
+                "followup": (live_followup(m) or {}).get("n"), "background": bool(m.get("background_plan")),
+                "detached": detached_now(m)}
             if len(parts) == 1 and m.get("voiced_one") != rkey:
                 # A reply spoken as one file is "voiced" too, chunk 1 of 1 (its own file): the replied fact waits for the
                 # phone-or-car decision, so this is how /voice and memo:trace know from when the car could speak it.
@@ -1758,7 +1960,8 @@ class Watcher:
                     "spoken_chars": len(spoken), "command_id": m.get("command_id"), "tts_seconds": round(tts_s, 2),
                     "tts_engine": engine, "voice": VOICE, "audio_bytes": stat["size"],
                     "since_reply_seconds": round(t_up - t_speak, 2),
-                    "since_agent_done_seconds": round(t_up - done_ts, 2) if done_ts else None, "late": late})
+                    "since_agent_done_seconds": round(t_up - done_ts, 2) if done_ts else None, "late": late,
+                    "followup": (live_followup(m) or {}).get("n")})
             self.done_stage(m, "tts", "mirror", ms=(t_up - t1) * 1000, reply_key=rkey, journey_s=round(journey, 1))
 
     def step_mirror(self, m: dict) -> None:
@@ -1821,11 +2024,83 @@ class Watcher:
                 "reply_chunks": parts_n if parts_n > 1 else None,
                 "first_chunk_seconds": m.get("voiced_first_s") if parts_n > 1 else None,
                 "last_chunk_seconds": m.get("voiced_last_s") if parts_n > 1 else None,
-                "full_seconds": round(time.time() - up["t_speak"], 2)})
+                "full_seconds": round(time.time() - up["t_speak"], 2),
+                # answer-then-background: background=true on a quick answer whose BACKGROUND: plan runs next as a
+                # follow-up turn (its plan below); followup=N on the reply of follow-up N (followup_failed: it did not
+                # finish, and this says so); detached: the interactive turn ran past the gateway's wall clock
+                "background": bool(m.get("background_plan")),
+                "background_plan": (m.get("background_plan") or "")[:1000] or None,
+                "followup": up.get("followup"), "followup_failed": bool(m.get("followup_failed")) or None,
+                "followup_of_command_id": (live_followup(m) or {}).get("of_command_id"),
+                "detached": bool(up.get("detached")), "model": m.get("turn_model"),
+                "model_override": m.get("model_override")})
+            fu = live_followup(m)
+            if fu is not None:
+                fu.update(state="failed" if m.get("followup_failed") else "spoken", reply_key=rkey, ended_at=iso(now_utc()))
+                m.pop("followup_failed", None)
+            if m.get("background_plan") and FOLLOWUP_MAX > 0:
+                # The quick answer is out: the background half starts now, on the same thread, as its own command.
+                self.done_stage(m, "replied", "dispatch", ms=(time.time() - up["uploaded_ts"]) * 1000, reply_key=rkey,
+                                journey_s=round(up["journey_seconds"], 1), background=True)
+                self.start_followup(m)
+                return
             m["status"] = "done"
             compact(m)
             self.done_stage(m, "replied", "done", ms=(time.time() - up["uploaded_ts"]) * 1000, reply_key=rkey,
                             journey_s=round(up["journey_seconds"], 1))
+
+    # -- answer-then-background: the follow-up turn --
+
+    # What a reply round leaves on the memo; a follow-up's round starts without it (its reply is a new replies/ object).
+    REPLY_ROUND_KEYS = ("reply_text", "reply_key", "reply_up", "reply_stamp", "reply_chunks", "voiced_keys", "voiced_n",
+                        "voiced_first_ts", "voiced_first_s", "voiced_last_s", "earshot_key", "earshot_text_key",
+                        "earshot_attempted", "earshot_skipped", "earshot_reason", "prompt_match", "agent_seconds",
+                        "agent_done_ts", "progress_cmd", "progress_seq", "progress_text", "progress_ts", "progress_full",
+                        "model_override")
+
+    def start_followup(self, m: dict) -> None:
+        """Under the lock, right after the quick answer's replied fact: mint follow-up N for the memo's BACKGROUND: plan and
+        send it through dispatch like any command. Same thread id (the Hermes session holds the whole conversation), a
+        fresh command id persisted before the publish, its own prompt pinned by sha256, the FOLLOWUP_LANE (batch: no wall
+        clock), and a long deadline. Its reply is spoken as "<agent>, follow-up." into a new replies/ object for the same
+        memo, which the car plays after the quick answer (the pad plays every reply unit of a memo it sent)."""
+        plan = m.pop("background_plan")
+        fus = m.setdefault("followups", [])
+        n = len(fus) + 1
+        prompt = FOLLOWUP_PREFIX + plan
+        cid = str(uuid.uuid4())
+        fus.append({"n": n, "command_id": cid, "of_command_id": m.get("command_id"), "state": "dispatching",
+                    "plan": plan, "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                    "started_at": iso(now_utc()), "started_ts": time.time(), "lane": FOLLOWUP_LANE})
+        if self.phone_retry_pending(m):
+            # The quick answer's phone retry (car off, Earshot drop failed) is overtaken: the follow-up carries the news.
+            self._retry_finish(m, "superseded", "the memo moved on to its background follow-up")
+        for k in self.REPLY_ROUND_KEYS:
+            m.pop(k, None)
+        self.drop_command(m)
+        m["command_id"] = cid
+        m["lane"], m["lane_reason"] = FOLLOWUP_LANE, FOLLOWUP_REASON
+        m["late"] = True
+        m.update(status="active", stage="dispatch", next_at=0.0)
+        log("followup_started", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="dispatch", n=n,
+            command_id=cid, of_command_id=fus[-1]["of_command_id"], lane=FOLLOWUP_LANE, plan_chars=len(plan),
+            plan=plan[:160], note="quick answer spoken; the background half runs now on the same thread and is spoken as a follow-up")
+        self.status(m)
+        self.s.save()
+        WAKE.set()
+
+    def followup_failed(self, m: dict, fu: dict, code: str, detail: str, waited: float) -> None:
+        """The follow-up's turn failed, timed out or wrote nothing. The driver was promised a result, so the failure is
+        spoken (a short line through the same reply path, flagged followup_failed on the replied fact) instead of the memo
+        quietly failing after its answer was already given."""
+        fu.update(error_code=code, error=detail[:300])
+        log("followup_failed", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage="agent", n=fu.get("n"),
+            command_id=m.get("command_id"), code=code, error=detail[:300], waited_s=int(waited))
+        m["followup_failed"] = True
+        m["reply_text"] = "The background work did not finish" + {
+            "timeout": ": it ran out of time.", mc_.TURN_TIMEOUT: ": it ran out of time.",
+            "no_reply_text": ": it ended without an answer."}.get(code, ". Ask me again when you are parked.")
+        self.done_stage(m, "agent", "speak", ms=waited * 1000, command_id=m.get("command_id"), outcome=f"followup_{code}")
 
     # -- the phone copy (worker thread, inside step_mirror) --
 
@@ -2273,11 +2548,16 @@ class Watcher:
     def poll_progress(self) -> None:
         """One pass over every memo whose agent is working: newest progress line in, maybe one narration out."""
         with self.mu:
-            work = [(m["key"], m["memo_id"], m["command_id"]) for m in self.active()
-                    if m.get("stage") == "await_agent" and m.get("command_id")]
-        for key, mid, cid in work:
+            work = [(m["key"], m["memo_id"], m["command_id"],
+                     memo_lane(m) == "interactive" and not detached_now(m)
+                     and time.time() - float(m.get("dispatched_ts") or time.time()) >= DETACH_PROBE_AFTER_S)
+                    for m in self.active() if m.get("stage") == "await_agent" and m.get("command_id")]
+        for key, mid, cid, probe_detach in work:
             try:
                 events = mc_.progress_events(mid)  # outside the lock: an HTTP call
+                if probe_detach:
+                    # a gateway that announces a detach with its own fact type (the journal column is read anyway)
+                    events = events + mc_.typed_events(mid, mc_.DETACHED_TYPE)
             except Exception as e:  # noqa: BLE001
                 err = f"{type(e).__name__}: {e}"[:200]
                 if err != self.progress_err:
@@ -2287,11 +2567,15 @@ class Watcher:
                 continue
             self.progress_err = None
             mine = [e for e in events if (e.get("data") or {}).get("command_id") == cid
-                    and isinstance((e.get("data") or {}).get("seq"), int)]
+                    and isinstance((e.get("data") or {}).get("seq"), int) and not mc_.detached_fact(e)]
+            detach = next((e for e in events if mc_.detached_fact(e, cid)), None)
             with self.mu:
                 m = self.s.memos.get(key)
                 if not m or m.get("stage") != "await_agent" or m.get("command_id") != cid or self._cancelled(m):
                     continue
+                if detach is not None:
+                    self.note_detached(m, "candystore", at=detach.get("time"),
+                                       elapsed=(detach.get("data") or {}).get("elapsed_seconds"))
                 if mine:
                     self.apply_progress(m, max(mine, key=lambda e: e["data"]["seq"]))
                 self.maybe_narrate(m)
@@ -2319,6 +2603,12 @@ class Watcher:
             return "turn_not_running"
         if m["key"] in self.narrating:
             return "render_in_flight"
+        if (m.get("narr_pending") or {}).get("cid") == m.get("command_id") and m.get("command_id"):
+            return None  # a one-off line (the detach notice) goes out as soon as nothing else is rendering
+        if live_followup(m) is not None:
+            return "followup"   # background work after the quick answer: nobody is waiting on it, and the car drops it
+        if detached_now(m):
+            return "detached"   # the driver was told it will be a late reply: no more 30 s updates
         if not m.get("progress_text"):
             return "no_progress"
         if (m.get("narr_cmd"), m.get("narr_src_seq")) == (m.get("progress_cmd"), m.get("progress_seq")):
@@ -2331,15 +2621,27 @@ class Watcher:
             return "too_soon"
         return None
 
+    def narrate_line(self, m: dict, text: str, tag: str) -> None:
+        """Under the lock: say one fixed line in the car for the memo's current command (as a progress clip, the next in
+        its sequence), as soon as no other render for it is in flight."""
+        m["narr_pending"] = {"text": text, "tag": tag, "cid": m.get("command_id")}
+        self.maybe_narrate(m)
+
     def maybe_narrate(self, m: dict) -> bool:
         """Under the lock: start one narration render for this memo if one is due. True when it started."""
         if self.narration_due(m) is not None:
             return False
         n = m.get("narr_count", 0) + 1
         name = m.get("display_name") or mc_.spoken_name(m["agent"])
-        line = clean_for_speech(m.get("progress_full") or m["progress_text"], NARRATE_CHARS)
-        job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["progress_cmd"],
-               "seq": m["progress_seq"], "n": n, "spoken": f"{name}: {line}", "line": line}
+        pend = m.pop("narr_pending", None)
+        if pend:
+            line = clean_for_speech(pend["text"], NARRATE_CHARS)
+            job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["command_id"],
+                   "seq": m.get("progress_seq", 0), "n": n, "spoken": f"{name}, {line}", "line": line, "tag": pend["tag"]}
+        else:
+            line = clean_for_speech(m.get("progress_full") or m["progress_text"], NARRATE_CHARS)
+            job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["progress_cmd"],
+                   "seq": m["progress_seq"], "n": n, "spoken": f"{name}: {line}", "line": line}
         self.narrating.add(m["key"])
         # Claimed now, not when the upload lands: the gap runs from the decision, so a slow vox cannot cause two
         # renders of the same memo back to back.
@@ -2406,7 +2708,9 @@ class Watcher:
             self.fact("narrated", m, {
                 "command_id": job["cid"], "seq": job["seq"], "narration": job["n"], "progress_s3_key": pkey,
                 "spoken_text": job["spoken"], "elapsed_seconds": round(max(0.0, elapsed), 1),
-                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": PROGRESS_VOICE, "audio_bytes": size})
+                "tts_seconds": round(tts_s, 2), "tts_engine": engine, "voice": PROGRESS_VOICE, "audio_bytes": size,
+                # null for a progress line the agent wrote; "detached" for the one-off "still on it" notice
+                "kind": job.get("tag")})
             self.status(m)
             self.s.save()
 

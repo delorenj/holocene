@@ -218,6 +218,44 @@ def memo_escalated(m: dict) -> bool:
     return m.get("lane_reason") == ESCALATED_REASON
 
 
+# ---------------------------------------------------------------- answer-then-background (shared by the watcher and memo_trace)
+
+# lane_reason on the command the watcher dispatched for a voice reply's BACKGROUND: line: the agent answered in a minute
+# and handed the long part to a background turn on the same thread, whose reply is spoken later as a follow-up.
+FOLLOWUP_REASON = "voice_followup"
+# A follow-up still owed to the driver: published (or about to be) and not yet spoken, failed or cancelled.
+FOLLOWUP_LIVE = ("dispatching", "running")
+
+
+def live_followup(m: dict) -> dict | None:
+    """The memo's follow-up in flight (the newest entry of m["followups"] while it is dispatching or running), else None.
+    While one is live the memo's command_id IS the follow-up's command (after the quick answer was spoken)."""
+    fus = m.get("followups") or []
+    fu = fus[-1] if fus else None
+    return fu if isinstance(fu, dict) and fu.get("state") in FOLLOWUP_LIVE else None
+
+
+def long_turn(m: dict) -> bool:
+    """The memo's command in flight is a long batch turn with no gateway wall clock: the escalated re-dispatch, or a
+    background follow-up. The watcher gives it BATCH_TURN_TIMEOUT_S and never stretches that further."""
+    return memo_escalated(m) or live_followup(m) is not None
+
+
+# ---------------------------------------------------------------- detach (the gateway keeps an interactive turn past its wall clock)
+
+DETACHED_TYPE = "bloodbank.agent.invocation.detached"
+
+
+def detached_fact(ev: dict, command_id: str | None = None) -> bool:
+    """A gateway fact saying this command's interactive turn passed the lane's wall clock and was DETACHED (kept running
+    with its slot released, no kill, no re-run): agent.invocation.detached, or agent.invocation.progressed with
+    data.detached=true. Either shape is accepted, so the watcher does not care which one the gateway settles on."""
+    d = ev.get("data") or {}
+    if command_id is not None and d.get("command_id") != command_id:
+        return False
+    return ev.get("type") == DETACHED_TYPE or d.get("detached") is True
+
+
 def cancel_after_dispatch(m: dict) -> bool:
     """Has ANY command of this memo been (or may it have been) published? Then a cancel cannot undo it: the agent may
     still run and only its reply is held back. That is also true between an escalation (which un-marks the publish
@@ -427,6 +465,8 @@ def journal_row(command_id: str) -> dict | None:
             "created_at, updated_at, terminal_events"
             + (", lane" if _has_column(db, "executions", "lane") else "")
             + (", failure_code" if _has_column(db, "executions", "failure_code") else "")
+            # set by a gateway that detached the interactive turn at its wall clock instead of stopping it
+            + (", detached_at" if _has_column(db, "executions", "detached_at") else "")
             + " FROM executions WHERE command_id=?",
             (command_id,),
         ).fetchone()
@@ -491,18 +531,24 @@ def _user_prompt(rows: list, prompt_sha256: str | None, since: float | None) -> 
     """The user message that is THIS command's prompt in a session that may hold several (an escalated or retried
     command shares the memo's thread id, so the session): the newest one whose sha256 is the sent prompt's, else the
     newest at or after the command's dispatch (a little slack for clock skew), else the newest there is."""
+    row, _ = _user_prompt_row(rows, prompt_sha256, since)
+    return row["content"] if row is not None else None
+
+
+def _user_prompt_row(rows: list, prompt_sha256: str | None, since: float | None) -> tuple:
+    """(row, how) for _user_prompt: how is "sha256" when the row is proven to be the sent prompt, else "since" / "newest"."""
     if not rows:
-        return None
+        return None, None
     if prompt_sha256:
         for r in reversed(rows):
             c = r["content"] or ""
             if prompt_sha256 in (hashlib.sha256(c.strip().encode()).hexdigest(), hashlib.sha256(c.encode()).hexdigest()):
-                return c
+                return r, "sha256"
     if since is not None:
         late = [r for r in rows if isinstance(r["timestamp"], (int, float)) and r["timestamp"] >= since - 2.0]
         if late:
-            return late[-1]["content"]
-    return rows[-1]["content"]
+            return late[-1], "since"
+    return rows[-1], "newest"
 
 
 def find_reply(profile: str, thread_id: str, prompt_sha256: str | None = None, since: float | None = None) -> dict | None:
@@ -535,7 +581,10 @@ def find_reply(profile: str, thread_id: str, prompt_sha256: str | None = None, s
             "SELECT content, timestamp FROM messages WHERE session_id=? AND role='user' ORDER BY timestamp ASC, id ASC",
             (sess["id"],),
         ).fetchall()
-        prompt = _user_prompt(users, prompt_sha256, since)
+        prow, how = _user_prompt_row(users, prompt_sha256, since)
+        prompt = prow["content"] if prow is not None else None
+        # when the prompt row is proven (sha256), its time: an assistant message older than it answers an earlier prompt
+        prompt_ts = prow["timestamp"] if prow is not None and how == "sha256" else None
         msg = db.execute(
             "SELECT content, timestamp FROM messages WHERE session_id=? AND role='assistant' "
             "AND content IS NOT NULL AND TRIM(content) <> '' AND COALESCE(active,1)=1 "
@@ -545,8 +594,9 @@ def find_reply(profile: str, thread_id: str, prompt_sha256: str | None = None, s
     finally:
         db.close()
     if msg is None:
-        return {"session_id": sess["id"], "text": None, "timestamp": None, "prompt": prompt}
-    return {"session_id": sess["id"], "text": msg["content"].strip(), "timestamp": msg["timestamp"], "prompt": prompt}
+        return {"session_id": sess["id"], "text": None, "timestamp": None, "prompt": prompt, "prompt_ts": prompt_ts}
+    return {"session_id": sess["id"], "text": msg["content"].strip(), "timestamp": msg["timestamp"], "prompt": prompt,
+            "prompt_ts": prompt_ts}
 
 
 # ---------------------------------------------------------------- gateway log (why a command vanished)
