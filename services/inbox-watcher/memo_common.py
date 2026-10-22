@@ -112,10 +112,12 @@ def status_key_for(key: str, memo_id: str | None = None) -> str:
     return f"{STATUS_PREFIX}/{memo_day(key)}/{memo_id or memo_id_for(key)}.json"
 
 
-def progress_key_for(key: str, n: int, memo_id: str | None = None) -> str:
+def progress_key_for(key: str, n: int, memo_id: str | None = None, hold: bool = False) -> str:
     """progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>.ogg: the memo's n-th spoken progress update (1..n per memo, so an
-    escalated memo's second command never overwrites the first one's)."""
-    return f"{PROGRESS_PREFIX}/{memo_day(key)}/{memo_id or memo_id_for(key)}-{n}.ogg"
+    escalated memo's second command never overwrites the first one's). hold=True: -<n>h.ogg, a hold cue (a short "One sec."
+    while the desk or the agent is slow): a pad that knows the suffix plays it only when the driver is not recording; an
+    older pad does not match the name and never plays it."""
+    return f"{PROGRESS_PREFIX}/{memo_day(key)}/{memo_id or memo_id_for(key)}-{n}{'h' if hold else ''}.ogg"
 
 
 def now_utc() -> datetime:

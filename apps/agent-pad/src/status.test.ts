@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { clockText, elapsedSeconds, isFinal, keyDay, newestProgress, normConv, normStatus, shorten, statusKey, statusLine } from './status.ts'
+import { clockText, elapsedSeconds, isFinal, keyDay, mayPlayProgress, newestProgress, normConv, normStatus, shorten, statusKey, statusLine } from './status.ts'
 
 const M = '11111111-1111-5111-8111-111111111111'
 
@@ -36,6 +36,25 @@ test('the newest unplayed progress clip wins', () => {
   assert.deepEqual(newestProgress(keys, '2026/10/20', M, 0), { key: `${p}4.ogg`, seq: 4 })
   assert.equal(newestProgress(keys, '2026/10/20', M, 4), null)
   assert.equal(newestProgress([`progress/2026/10/20/${M}-10.ogg`], '2026/10/20', M, 9)?.seq, 10)
+})
+
+test('a hold cue clip shares the numbering with the narration and is flagged', () => {
+  const p = `progress/2026/10/20/${M}-`
+  assert.deepEqual(newestProgress([`${p}1h.ogg`], '2026/10/20', M, 0), { key: `${p}1h.ogg`, seq: 1, hold: true })
+  // the agent's own narration after two cues is clip 3, and wins over the cues
+  const keys = [`${p}1h.ogg`, `${p}2h.ogg`, `${p}3.ogg`]
+  assert.deepEqual(newestProgress(keys, '2026/10/20', M, 0), { key: `${p}3.ogg`, seq: 3 })
+  assert.deepEqual(newestProgress(keys, '2026/10/20', M, 1), { key: `${p}3.ogg`, seq: 3 })
+  assert.equal(newestProgress(keys, '2026/10/20', M, 3), null)
+  assert.equal(newestProgress([`${p}1hh.ogg`, `${p}h.ogg`, `${p}1h.txt`, `${p}1x.ogg`], '2026/10/20', M, 0), null)
+})
+
+test('a hold cue is dropped while the driver arms or records; real progress is not touched', () => {
+  const idle = { recording: false, arming: false }
+  assert.equal(mayPlayProgress({ hold: true }, idle), true)
+  assert.equal(mayPlayProgress({ hold: true }, { recording: true, arming: false }), false)
+  assert.equal(mayPlayProgress({ hold: true }, { recording: false, arming: true }), false)
+  assert.equal(mayPlayProgress({}, { recording: true, arming: true }), true, 'the speech queue defers real progress itself')
 })
 
 test('tile line is short and static', () => {

@@ -4,7 +4,7 @@ import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
 import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
-import { type Conv, type MemoStatus, elapsedSeconds, isFinal, keyDay, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
+import { type Conv, type MemoStatus, elapsedSeconds, isFinal, keyDay, mayPlayProgress, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
 import { convReplyUnit, noteConv, onDeferred } from './convo'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLeaveToPhone, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, takeBackFromPhone, validDeviceId } from './ledger'
@@ -708,9 +708,12 @@ function App() {
     flightSoon.current.set(memoId, window.setTimeout(() => void run(true), 700))
   }
   // One progress clip for a memo in flight (from the listing above, or straight from the push channel's narrated event).
-  const sayProgress = async (f: Flight, pick: { key: string; seq: number }) => {
+  const sayProgress = async (f: Flight, pick: { key: string; seq: number; hold?: true }) => {
     if (pick.seq <= f.progressSeq) return
     f.progressSeq = pick.seq
+    // A hold cue ("One sec.") is never said over the driver's own note, and not after it either: dropped here (the number is
+    // spent, the next clip is newer). Real progress narration is deferred by the speech queue as before.
+    if (!mayPlayProgress(pick, { recording: recordingRef.current, arming: arming.current })) return
     const blob = await getBlob(`${BUCKET_BASE}/${pick.key}`)
     if (f.finalAt) return // the reply landed while the clip downloaded
     const n = nativeSpeech()

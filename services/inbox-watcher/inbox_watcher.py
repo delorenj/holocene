@@ -330,6 +330,16 @@ CONVERSE_DIRECT_CONTEXT_CHARS = int(os.environ.get("MEMO_CONVERSE_DIRECT_CONTEXT
 CONVERSE_CARD_WAIT_S = float(os.environ.get("MEMO_CONVERSE_CARD_WAIT_S", "0.6"))
 CONVERSE_SWEEP_S = 60.0
 CONVERSE_SLOW_S = float(os.environ.get("MEMO_CONVERSE_SLOW_S", "15"))
+# Hold cue (HOLOC-23): the car hears a very short line when the desk's decision has not arrived this many seconds after the desk
+# call started (0 turns every hold cue off), a second one at HOLD_CUE2_S (0 = no second), and a memo that fell through to the
+# full agent gets a keep-alive line when it has been quiet HOLD_FALL_FIRST_S after dispatch and every HOLD_FALL_GAP_S after
+# that, at most HOLD_FALL_MAX, until the agent's own first narration (NARRATE_FIRST_S) takes over. Lines are PhraseBank clips
+# in the tile's voice, uploaded as progress/<day>/<memo>-<n>h.ogg: the pad plays them, and drops them while the driver records.
+HOLD_CUE_S = float(os.environ.get("MEMO_CONVERSE_HOLD_CUE_S", "3"))
+HOLD_CUE2_S = float(os.environ.get("MEMO_CONVERSE_HOLD_CUE2_S", "9"))
+HOLD_FALL_FIRST_S = float(os.environ.get("MEMO_CONVERSE_HOLD_FALL_FIRST_S", "7"))
+HOLD_FALL_GAP_S = float(os.environ.get("MEMO_CONVERSE_HOLD_FALL_GAP_S", "8"))
+HOLD_FALL_MAX = int(os.environ.get("MEMO_CONVERSE_HOLD_FALL_MAX", "3"))
 CONVERSE_SENDING_STUCK_S = 1800.0  # past the dispatch retry budget (900 s) with room to spare
 CONVERSE_RESULT_CHARS = 600
 CONVERSE_CLOSED_KEEP = 20
@@ -853,6 +863,7 @@ class Watcher:
         self.lane_probe: LaneProbe | None = None  # started by main(); tests leave it off
         self.status_writer = StatusWriter()       # its thread is started by main(); tests drain() it
         self.narrating: set[str] = set()          # memo keys with a progress render in flight
+        self.hold_last: dict[str, str] = {}       # per tile: the hold-cue line its car heard last (never twice in a row)
         self.progress_err: str | None = None
         # The fast in-car conversation desk (converse.py). Its settings are read per memo (env default + flag file).
         self.desk = cv.Desk(state.dir, log=log)
@@ -1919,6 +1930,7 @@ class Watcher:
                         note="today's path: dispatched to the agent as usual")
                     self.done_stage(m, "converse", "dispatch", ms=(time.time() - t0) * 1000, skipped=why)
                 return
+            hold = self.start_hold_cues(m)   # "One sec." at HOLD_CUE_S if the decision is not in by then
             try:
                 now = time.time()
                 with self.mu:
@@ -1940,6 +1952,9 @@ class Watcher:
                 log("converse_error", "warn", memo_id=mid, key=key, agent=agent, error=f"{type(e).__name__}: {e}"[:300])
                 raw = {"decision": cv.normalize_decision({"action": "direct"}), "path": "fallback", "lexicon": False,
                        "llm": None, "fallback_reason": f"error: {type(e).__name__}: {e}"[:200]}
+            finally:
+                if hold is not None:
+                    hold.set()   # the decision is in: a hold cue that has not been uploaded yet is dropped
             raw["decided_at"] = time.time()
             raw["sender"] = sender
             with self.mu:
@@ -3691,7 +3706,8 @@ class Watcher:
                                        elapsed=(detach.get("data") or {}).get("elapsed_seconds"))
                 if mine:
                     self.apply_progress(m, max(mine, key=lambda e: e["data"]["seq"]))
-                self.maybe_narrate(m)
+                if not self.maybe_narrate(m):
+                    self.maybe_keepalive(m)
 
     def apply_progress(self, m: dict, ev: dict) -> None:
         """Adopt a progress fact if it is newer than what the memo has (a new command starts its seq at 1 again)."""
@@ -3839,6 +3855,174 @@ class Watcher:
                 "kind": job.get("tag")})
             self.status(m)
             self.s.save()
+
+
+    # ---- hold cue: a very short spoken line while the driver waits and nothing else is being said (HOLOC-23) ----------
+    #
+    # Two gaps used to be silent. (1) The desk's decision: ack:stopped, then nothing until the answer (3-7 s typical, 12 s at
+    # the timeout). (2) A turn the desk handed to the full agent: the "heard" echo, then nothing until the first narration,
+    # NARRATE_FIRST_S after dispatch. The hold cue fills both with a <1 s line ("One sec.", "Still on it.") in the tile's voice,
+    # rendered once per voice (PhraseBank) and played by the pad as a progress clip named <memo>-<n>h.ogg.
+    #   - desk wait: a thread per desk call says line 1 at HOLD_CUE_S and line 2 at HOLD_CUE2_S unless the decision is in. A
+    #     cue is checked three times (before the render, after it, after the upload) and dropped if the decision arrived: the
+    #     answer never waits behind a stale cue.
+    #   - fall-through: poll_progress asks maybe_keepalive for every converse "direct" turn that is waiting on its agent.
+    # The pad's speech queue ranks a progress clip below the echo and the reply, drops it once the memo has its reply, and the
+    # pad itself drops a hold cue while the driver is recording or arming.
+
+    def hold_line(self, agent: str, lines: tuple[str, ...]) -> str:
+        """A line from `lines`, never the one this tile's car heard last."""
+        with self.mu:
+            line = cv.pick_hold_line(lines, self.hold_last.get(agent))
+            self.hold_last[agent] = line
+        return line
+
+    def start_hold_cues(self, m: dict) -> threading.Event | None:
+        """Called as the desk call starts. The Event to set the moment the decision is in (None: hold cues are off)."""
+        if HOLD_CUE_S <= 0:
+            return None
+        done = threading.Event()
+        t0 = time.time()
+        mid, key = m["memo_id"], m["key"]
+
+        def still(mm: dict) -> str | None:
+            if done.is_set():
+                return "answer_ready"
+            if self._cancelled(mm):
+                return "cancelled"
+            return None if mm.get("stage") == "converse" else "stage_moved"
+
+        def work():
+            try:
+                for tag, at, lines in (("hold_cue", HOLD_CUE_S, cv.HOLD_CUE_LINES), ("hold_cue2", HOLD_CUE2_S, cv.HOLD_CUE2_LINES)):
+                    if at <= 0:
+                        continue
+                    if done.wait(max(0.0, at - (time.time() - t0))) or STOP:
+                        return
+                    n = self._hold_claim(m, still)
+                    if n is not None:
+                        self._hold_run(m, n, self.hold_line(m["agent"], lines), tag, still, since=t0, cid=None)
+            except Exception as e:  # noqa: BLE001 - a cue is a courtesy: never a stopped memo
+                log("hold_cue_failed", "warn", memo_id=mid, key=key, error=f"{type(e).__name__}: {e}"[:300])
+        threading.Thread(target=work, name="hold-cue", daemon=True).start()
+        return done
+
+    def _hold_claim(self, m: dict, still) -> int | None:
+        """Under no lock: claim the memo's render slot for one hold cue (None: dropped, nothing claimed). n is the clip number."""
+        with self.mu:
+            why = still(m)
+            if why is None and m["key"] in self.narrating:
+                why = "render_in_flight"
+            if why:
+                log("hold_cue_dropped", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], reason=why, stage="claim")
+                return None
+            self.narrating.add(m["key"])
+            return m.get("narr_count", 0) + 1
+
+    def _hold_run(self, m: dict, n: int, text: str, tag: str, still, since: float, cid: str | None) -> None:
+        """Render (PhraseBank first), re-check, upload, re-check, announce. The claim from _hold_claim is released here."""
+        key, mid, agent = m["key"], m["memo_id"], m["agent"]
+        tmp = Path(tempfile.mkdtemp(prefix="memo-hold-"))
+        try:
+            t0 = time.time()
+            voice = self._tile_voice(agent, key, VOICE, m)
+            audio = banked = None
+            for v in ((voice, VOICE) if voice != VOICE else (voice,)):
+                hit = self.phrases.get(text, v, CONVERSE_TTS_STEPS)
+                if hit is not None:
+                    audio = tmp / "hold.ogg"
+                    try:
+                        shutil.copyfile(hit, audio)
+                        voice, banked, engine = v, True, "phrasebank"
+                        self.phrases.hits += 1
+                        break
+                    except OSError:
+                        audio = None
+                try:
+                    audio, engine = synthesize(text, tmp, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, v))
+                    self.phrases.put(text, v, CONVERSE_TTS_STEPS, audio)
+                    voice = v
+                    break
+                except VoiceNotFound:
+                    if v == VOICE:
+                        raise
+                    voice = VOICE  # the tile's voice is gone: the default one
+            tts_s = time.time() - t0
+            with self.mu:
+                why = still(m)
+            if why:
+                log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="rendered", tts_ms=int(tts_s * 1000),
+                    note="the answer is ready: a stale cue is never uploaded")
+                return
+            pkey = mc_.progress_key_for(key, n, mid, hold=True)
+            r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(audio), mc_.s3_url(pkey), timeout=30)
+            if r.returncode != 0:
+                raise RuntimeError(f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
+            size = audio.stat().st_size
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+            with self.mu:
+                self.narrating.discard(key)
+        with self.mu:
+            why = still(m)
+            if why:
+                log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="uploaded", progress_key=pkey,
+                    note="uploaded before the answer: the pad drops a cue for a memo that has its reply")
+                return
+            m.update(narr_count=n, narr_key=pkey)   # the pad's cursor moves; narr_cmd / narr_last_ts stay the agent narration's
+            elapsed = time.time() - since
+            log("hold_cue", memo_id=mid, key=key, agent=agent, stage="converse" if cid is None else "agent", n=n, tag=tag,
+                progress_key=pkey, tts_ms=int(tts_s * 1000), engine=engine, elapsed_s=round(elapsed, 1), voice=voice, text=text)
+            self.fact_fast("narrated", m, {
+                "command_id": cid, "seq": n, "narration": n, "progress_s3_key": pkey, "spoken_text": text,
+                "elapsed_seconds": round(max(0.0, elapsed), 1), "tts_seconds": round(tts_s, 2), "tts_engine": engine,
+                "voice": voice, "audio_bytes": size, "kind": tag})
+            self.status(m)
+            self.s.save()
+
+    def maybe_keepalive(self, m: dict) -> bool:
+        """Under the lock, from poll_progress: a turn the desk handed to the full agent says "Still on it." when it has been
+        quiet HOLD_FALL_FIRST_S after dispatch and every HOLD_FALL_GAP_S after that (at most HOLD_FALL_MAX), until the agent's
+        own narration starts. True when one was started."""
+        conv = m.get("conv")
+        if HOLD_CUE_S <= 0 or HOLD_FALL_MAX <= 0 or not (isinstance(conv, dict) and conv.get("action") == "direct"):
+            return False
+        cid = m.get("command_id")
+        if (not cid or m.get("stage") != "await_agent" or m.get("status") != "active" or m["key"] in self.narrating
+                or live_followup(m) is not None or detached_now(m) or m.get("narr_cmd") == cid):
+            return False
+        ka = m.get("hold_ka")
+        if not isinstance(ka, dict) or ka.get("cid") != cid:
+            ka = m["hold_ka"] = {"cid": cid, "n": 0, "last": None}
+        if ka["n"] >= HOLD_FALL_MAX:
+            return False
+        now = time.time()
+        due = (float(ka["last"]) + HOLD_FALL_GAP_S) if ka["last"] else (float(m.get("dispatched_ts") or now) + HOLD_FALL_FIRST_S)
+        if now < due:
+            return False
+        ka["n"] += 1
+        ka["last"] = now
+        dispatched = float(m.get("dispatched_ts") or now)
+
+        def still(mm: dict) -> str | None:
+            if mm.get("narr_cmd") == cid:
+                return "agent_narrating"   # the agent's own first narration took over while the cue rendered
+            return self._still_working(mm, {"cid": cid})
+
+        self.narrating.add(m["key"])   # the render slot, claimed here under the caller's lock (poll_progress)
+        n = m.get("narr_count", 0) + 1
+        line = cv.pick_hold_line(cv.HOLD_CUE2_LINES, self.hold_last.get(m["agent"]))
+        self.hold_last[m["agent"]] = line
+        self.pools["narrate"].submit(self._hold_job, m, n, line, still, dispatched, cid)
+        return True
+
+    def _hold_job(self, m: dict, n: int, line: str, still, since: float, cid: str) -> None:
+        try:
+            self._hold_run(m, n, line, "hold_keepalive", still, since=since, cid=cid)
+        except Exception as e:  # noqa: BLE001
+            log("hold_cue_failed", "warn", memo_id=m["memo_id"], key=m["key"], error=f"{type(e).__name__}: {e}"[:300])
+            with self.mu:
+                self.narrating.discard(m["key"])
 
 
 # ------------------------------------------------------------------ earshot mirror
@@ -4261,6 +4445,7 @@ def fixed_lines() -> list[str]:
     names = ("NOTHING_PENDING_LINE", "DROPPED_LINE", "NOTHING_TO_CANCEL_LINE", "END_LINE", "EXPIRED_LINE",
              "SENDING_CANCELLED_LINE", "DRAFT_CHANGED_LINE", "DIDNT_CATCH_LINE")
     lines = [v for v in (getattr(cv, n, None) for n in names) if isinstance(v, str) and v and "{" not in v]
+    lines += [*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES]  # the hold cues (also pre-rendered per voice)
     out: list[str] = []
     for line in lines:  # a long line is voiced in chunks: each chunk is what the bank is asked for
         for part in split_for_speech(clean_for_speech(line, SPEAK_CHARS), CONVERSE_CHUNK_CHARS, CONVERSE_CHUNK_MIN_CHARS):

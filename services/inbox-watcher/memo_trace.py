@@ -298,7 +298,9 @@ def progress_hops(by_type: dict[str, list[dict]], command_id: str | None) -> lis
     lines = [(evt_ts(e), "p", e) for e in by_type.get(c.PROGRESS_TYPE, [])
              if (e.get("data") or {}).get("command_id") == command_id]
     spoken = [(evt_ts(e), "n", e) for e in by_type.get("bloodbank.audio.memo.narrated", [])
-              if (e.get("data") or {}).get("command_id") == command_id]
+              if (e.get("data") or {}).get("command_id") == command_id
+              # a hold cue said while the desk was still deciding belongs to no command yet (HOLOC-23)
+              or (command_id and str((e.get("data") or {}).get("kind") or "").startswith("hold_cue") and not (e.get("data") or {}).get("command_id"))]
     lines.sort(key=lambda x: ((x[2].get("data") or {}).get("seq") or 0))
     if len(lines) > PROGRESS_SHOWN:
         head, tail = lines[:3], lines[-3:]
@@ -314,7 +316,10 @@ def progress_hops(by_type: dict[str, list[dict]], command_id: str | None) -> lis
             hops.append(Hop(f"agent:progress#{d.get('seq')}", OK, ts,
                             f"{d.get('elapsed_seconds')}s into the turn: {str(d.get('text') or '')[:110]!r}", optional=True))
         else:
-            hops.append(Hop(f"car:narrated#{d.get('narration')}", OK, ts,
+            hold = str(d.get("kind") or "").startswith("hold_")
+            hops.append(Hop(f"car:{'hold-cue' if hold else 'narrated'}#{d.get('narration')}", OK, ts,
+                            (f"said {d.get('spoken_text')!r} ({d.get('kind')}, {d.get('elapsed_seconds')}s in, tts {d.get('tts_seconds')}s "
+                             f"{d.get('tts_engine')}) -> {d.get('progress_s3_key')}") if hold else
                             f"spoke progress #{d.get('seq')} -> {d.get('progress_s3_key')} (tts {d.get('tts_seconds')}s "
                             f"{d.get('tts_engine')}, {d.get('elapsed_seconds')}s after dispatch)", optional=True))
     return hops
@@ -389,6 +394,7 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     rel("heard-echo", first_at(sp, "heard"))
     # any turn: an escalated memo's first turn spoke to the driver too
     rel("first progress", min((h.ts for h in hops if "agent:progress#" in h.name and h.ts), default=None))
+    rel("first hold cue", min((h.ts for h in hops if "car:hold-cue#" in h.name and h.ts), default=None))
     rel("first narration", min((h.ts for h in hops if "car:narrated#" in h.name and h.ts), default=None))
     rel("progress played", first_at(sp, "progress"))
     first_chunk = ctx.get("first_chunk_ts")

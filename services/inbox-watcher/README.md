@@ -924,6 +924,36 @@ Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess of
 - **Claims file.** `ReplyClaims._save` rewrites only the claims touched within `CLAIM_PERSIST_S` (2 h) of the newest one
   (memory keeps all): 15-30 ms -> under 1 ms per hold / start / end on the loaded host.
 
+## Hold cue: no silent wait (HOLOC-23)
+
+The car desk calls ONE route (`automaticai/auto/fast`, 3-7 s typical, 12 s at its timeout) and, when that fails, hands the turn
+to the full agent, whose spoken progress starts `MEMO_NARRATE_FIRST_S` (15 s) after dispatch. Before the hold cue the driver
+heard the stop tone and then nothing for up to ~27 s. Now:
+
+| when | what the car hears | knob (default) |
+|---|---|---|
+| the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." / "Let me see." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
+| still waiting at 9 s | "Still on it." / "Still working on it." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
+| the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | "Still on it." / "Still working on it." (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
+
+- **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES`, warmed per tile voice at
+  start-up), spoken in the tile's own voice (`tiles[agent].voice`; a voice vox lacks falls back to the default), so a cue is a
+  file copy (~1 ms, engine `phrasebank`), never a vox render on the critical path. The same line is never heard twice in a row
+  per tile. Every line is under a second of speech.
+- **Wire.** A cue is a progress clip: `progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>h.ogg` (the `h` suffix marks a hold cue; it shares
+  the `<n>` numbering with the agent's narration, so a later narration never overwrites a cue) announced as
+  `audio.memo.narrated` with `kind` `hold_cue` | `hold_cue2` | `hold_keepalive` (`command_id` null while the desk is still
+  deciding; `seq` = `narration` = the clip number; no new Bloodbank type, valid under `bb-emit --check`), pushed to the pad
+  with the early-push hint. A pad from before this does not match the `-<n>h.ogg` name and never plays it.
+- **Invariants.** A cue is checked before the render, after it and after the upload: if the desk's decision (or the agent turn)
+  is over by then it is dropped and never uploaded (`hold_cue_dropped`, reason `answer_ready` | `turn_finished` | ...), so the
+  answer never waits behind a stale cue. The pad's speech queue ranks a progress clip below the reply and the heard echo, drops
+  it once the memo has its reply, and never overlaps utterances; the pad itself drops a hold cue (`mayPlayProgress`) while the
+  driver is arming or recording instead of deferring it. A cue already playing is under a second, so the answer simply follows.
+  Kill switch `mise run memo:converse off` skips the desk and so the cue; non-converse memos have none.
+- **Trace.** `memo:trace` shows `car:hold-cue#<n>` hops and a "first hold cue" timing for an agent turn.
+
+
 ## Latency levers in the watcher (HOLOC-23 phase 2)
 
 Record stop to first audible answer is the operator's priority. These are the watcher-side levers, each env-gated with the

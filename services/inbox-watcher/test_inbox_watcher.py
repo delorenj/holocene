@@ -229,6 +229,8 @@ os.environ.update({
     # Never the live upload proxy's early-push door (:8698): a test memo id must not reach a real pad
     "MEMO_PUSH_HINT_URL": "", "MEMO_WAKE_PORT": "0",
     # The fast desk never reaches a real alias table, skill scope or vox voice list from a test (HOLOC-23 tiles)
+    # The hold cue (HOLOC-23) is off for every other test; its own tests turn it on locally
+    "MEMO_CONVERSE_HOLD_CUE_S": "0",
     "MEMO_CONVERSE_ALIASES": str(ROOT / "no-aliases.json"), "MEMO_CONVERSE_TOOLS_DIR": str(ROOT / "no-car-desk-scope"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))

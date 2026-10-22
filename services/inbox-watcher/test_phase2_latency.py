@@ -17,6 +17,7 @@ from pathlib import Path
 
 os.environ["MEMO_PUSH_HINT_URL"] = ""   # never the live upload proxy from a test
 os.environ["MEMO_WAKE_PORT"] = "0"
+os.environ.setdefault("MEMO_CONVERSE_HOLD_CUE_S", "0")   # the hold cue has its own tests (test_hold_cue.py)
 
 import inbox_watcher as iw  # noqa: E402
 import memo_common as mc_  # noqa: E402

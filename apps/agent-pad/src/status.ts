@@ -85,18 +85,31 @@ export function keyDay(key: string): string | null {
 export const statusKey = (day: string, memoId: string) => `status/${day}/${memoId}.json`
 export const progressPrefix = (day: string, memoId: string) => `progress/${day}/${memoId}-`
 
-/** The newest progress clip after `playedSeq` among listed keys, or null. Only <memo>-<seq>.<audio ext> counts. */
-export function newestProgress(keys: string[], day: string, memoId: string, playedSeq: number): { key: string; seq: number } | null {
+/**
+ * The newest progress clip after `playedSeq` among listed keys, or null. Only <memo>-<seq>.<audio ext> counts, and the
+ * watcher's hold cue ("One sec." while the desk or the agent is slow) <memo>-<seq>h.<ext>, which comes back with
+ * `hold: true` (the key shapes share one numbering, so a hold cue never hides the agent's own narration).
+ */
+export function newestProgress(keys: string[], day: string, memoId: string, playedSeq: number): { key: string; seq: number; hold?: true } | null {
   const prefix = progressPrefix(day, memoId)
-  let best: { key: string; seq: number } | null = null
+  let best: { key: string; seq: number; hold?: true } | null = null
   for (const k of keys) {
     if (!k.startsWith(prefix)) continue
-    const m = /^(\d{1,6})\.(ogg|opus|mp3|m4a|webm|wav)$/.exec(k.slice(prefix.length))
+    const m = /^(\d{1,6})(h?)\.(ogg|opus|mp3|m4a|webm|wav)$/.exec(k.slice(prefix.length))
     if (!m) continue
     const seq = Number(m[1])
-    if (seq > playedSeq && (!best || seq > best.seq)) best = { key: k, seq }
+    if (seq > playedSeq && (!best || seq > best.seq)) best = m[2] ? { key: k, seq, hold: true } : { key: k, seq }
   }
   return best
+}
+
+/**
+ * Whether a progress clip may be handed to the speech queue now. A hold cue answers the wait and nothing else: while the
+ * driver is arming or recording it is dropped, not deferred (the speech queue would replay it after the note, stale). Every
+ * other progress clip is unchanged: the queue defers it behind the note and plays it afterwards.
+ */
+export function mayPlayProgress(pick: { hold?: true }, state: { recording: boolean; arming: boolean }): boolean {
+  return !pick.hold || !(state.recording || state.arming)
 }
 
 export function clockText(seconds: number): string {
