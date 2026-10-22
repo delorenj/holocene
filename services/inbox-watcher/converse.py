@@ -1107,8 +1107,8 @@ class FlagFile:
         return doc
 
 
-def write_flag(path: Path, **updates) -> dict:
-    """Merge updates into the flag file and write it atomically (tmp + rename). Returns the new document."""
+def write_flag(path: Path, drop: tuple = (), **updates) -> dict:
+    """Merge updates into the flag file (and remove the `drop` keys), atomically (tmp + rename). Returns the new document."""
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(doc, dict):
@@ -1116,6 +1116,8 @@ def write_flag(path: Path, **updates) -> dict:
     except (OSError, ValueError):
         doc = {}
     doc.update({k: v for k, v in updates.items() if v is not None})
+    for k in drop:
+        doc.pop(k, None)
     doc["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")

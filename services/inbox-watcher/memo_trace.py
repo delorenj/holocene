@@ -6,6 +6,9 @@
   memo_trace.py retry <memo_id|key>   revive a failed, skipped or cancelled memo at the stage it stopped in
   memo_trace.py cancel <memo_id|key|latest>   stop a memo: before dispatch nothing is sent; after it the agent may still
                                               run, but its reply is not spoken
+  memo_trace.py conv [latest|<agent>|<conv id>]   the fast desk's conversation: turns, the pending draft, delegations
+  memo_trace.py converse on|off|shadow|status [--agents a,b|'*'] [--devices id,..] [--handoff named|off]
+                                              flip the fast desk at runtime (flag file, no restart), or show it
 
 Every hop reports OK / MISSING / FAILED / UNKNOWN with a timestamp and the
 latency since the previous hop, and the run ends with ONE verdict line:
@@ -375,6 +378,11 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
     def rel(label, ts):
         if ts is not None:
             bits.append(f"{label} {(ts - t0).total_seconds():+.1f}s")
+    routed = next((h.ts for h in hops if h.name == "fast:routed" and h.status == OK and h.ts), None)
+    if routed is not None:
+        # a fast desk turn: transcribed | routed | first audio up | car speaking
+        rel("transcribed", next((h.ts for h in hops if h.name == "fact:transcribed" and h.status == OK and h.ts), None))
+        rel("routed", routed)
     rel("ack", first_at(sp, "ack"))
     rel("heard-echo", first_at(sp, "heard"))
     # any turn: an escalated memo's first turn spoke to the driver too
@@ -410,6 +418,34 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
         if after:
             line += "\n         after the agent finished: " + " | ".join(after)
     return line
+
+
+def routed_of(d: dict) -> str:
+    """One line for the fast desk's decision: 'reply deepseek-v4.1-flash-1017@r1 (1 attempt, 812 ms, 900 in / 40 out,
+    640 cached) conv 7f3a1b2c turn 3', with failed rungs, guard notes and the fallback reason when there are any."""
+    u = d.get("usage") or {}
+    att = d.get("attempt_log") or []
+    failed = [f"{a.get('route')} {a.get('outcome')}" for a in att if a.get("outcome") != "ok"]
+    parts = [str(d.get("action"))]
+    if d.get("lexicon"):
+        parts.append(f"by the lexicon ({d.get('path')}, no LLM call)")
+    elif d.get("model_answered"):
+        bits = [f"{d.get('attempts')} attempt{'s' if d.get('attempts') != 1 else ''}", f"{d.get('latency_ms')} ms"]
+        if u.get("prompt_tokens") is not None:
+            bits.append(f"{u.get('prompt_tokens')} in / {u.get('completion_tokens')} out")
+        if d.get("cached_tokens") is not None:
+            bits.append(f"{d.get('cached_tokens')} cached")
+        parts.append(f"{d.get('model_answered')}@{d.get('route')} ({', '.join(bits)})")
+    if failed:
+        parts.append("failed: " + ", ".join(failed))
+    if d.get("fallback_reason"):
+        parts.append(f"-> today's agent path ({d['fallback_reason']})")
+    parts.append(f"conv {str(d.get('conv_id') or '')[:8]} turn {d.get('conv_turn')}")
+    if d.get("title"):
+        parts.append(f"{'delegate to ' + str(d['delegate_to']) + ': ' if d.get('delegate_to') else 'draft: '}{d['title']!r}")
+    if d.get("guard"):
+        parts.append(f"guard {','.join(map(str, d['guard']))}")
+    return " ".join(parts)
 
 
 def status_hop(key: str, memo_id: str) -> Hop:
@@ -509,6 +545,12 @@ def build(key: str) -> tuple[list[Hop], dict]:
     add_fact_hop("fact:transcribed", "transcribed",
                  lambda d: f"{d.get('transcript_chars')} chars in {d.get('processing_seconds')}s ({stt_path_of(d)})"
                            + (f", audio {level_of(d)}" if level_of(d) else "") + f": {str(d.get('transcript_text'))[:80]!r}")
+    # the fast in-car conversation desk (converse): its decision for this turn, when it took the memo
+    routed = fact("routed")
+    ctx["routed"] = (routed or {}).get("data")
+    if routed:
+        hops.append(Hop("fast:routed", OK, evt_ts(routed), routed_of(routed.get("data") or {})))
+    fast = bool(ctx["routed"]) and ctx["routed"].get("action") not in (None, "direct")
     # The recording's level, from whichever transcribe-stage fact carries it (a silent or unrecognised memo never
     # gets a transcribed fact, only the failed one). It is the evidence behind a "silent microphone" verdict.
     lvl_src = next((x for x in [fact("transcribed")] + list(reversed(by_type.get("bloodbank.audio.memo.failed", [])))
@@ -530,6 +572,10 @@ def build(key: str) -> tuple[list[Hop], dict]:
         if d.get("lane_reason") == c.FOLLOWUP_REASON:
             return (base + f" FOLLOW-UP {d.get('followup')} of command {d.get('followup_of_command_id')}: "
                     f"{str(d.get('followup_plan') or '')[:90]!r}")
+        if d.get("lane_reason") == c.DELEGATION_REASON:
+            return (base + f" DELEGATED to {d.get('delegated_to') or d.get('target_agent_id')}: "
+                    f"{str(d.get('brief_title') or '')[:80]!r} (brief {str(d.get('brief_id') or '')[:8]}, {d.get('perm')}, "
+                    f"conversation {str(d.get('conv_id') or '')[:8]})")
         return base + (f" (fallback: {d.get('lane_reason')})" if d.get("lane_reason") else "")
 
     # 4/5/5b. one command's journal row, agent turn and (for the current one) what the agent was given
@@ -668,22 +714,27 @@ def build(key: str) -> tuple[list[Hop], dict]:
     rec_cmd = (rec or {}).get("command_id")
     # the escalation is minted (new command id saved) but its dispatched fact has not landed yet
     pending_esc = bool(rec and c.memo_escalated(rec) and rec_cmd and rec_cmd != last_cmd)
-    for i, ev in enumerate(disps if pending_esc else disps[:-1], 1):
-        d = ev.get("data") or {}
-        hops.append(Hop(f"fact:dispatched({i})", OK, evt_ts(ev), describe_dispatch(d), optional=True))
-        turn_hops(d.get("command_id"), ev, prior=i)
-    if pending_esc:
-        disp, command_id = None, rec_cmd
-        hops.append(Hop("fact:dispatched", MISSING,
-                        detail=f"escalating: the interactive turn timed out; batch command {rec_cmd} is not published yet"))
+    if fast and not disps:
+        # A fast desk turn: the desk answered, no agent command was sent for the turn itself (a confirmed brief is
+        # follow-up 1, below). The routed hop stands where dispatch and the agent turn would be.
+        ctx["command_id"], ctx["escalated_from"] = None, None
     else:
-        add_fact_hop("fact:dispatched", "dispatched", describe_dispatch)
-        disp = fact("dispatched")
-        command_id = (disp or {}).get("data", {}).get("command_id") or rec_cmd
-    ctx["command_id"] = command_id
-    ctx["escalated_from"] = ((disp or {}).get("data") or {}).get("escalated_from_command_id") or (
-        (rec or {}).get("escalated_from_command_id") if c.memo_escalated(rec or {}) else None)
-    turn_hops(command_id, disp)
+        for i, ev in enumerate(disps if pending_esc else disps[:-1], 1):
+            d = ev.get("data") or {}
+            hops.append(Hop(f"fact:dispatched({i})", OK, evt_ts(ev), describe_dispatch(d), optional=True))
+            turn_hops(d.get("command_id"), ev, prior=i)
+        if pending_esc:
+            disp, command_id = None, rec_cmd
+            hops.append(Hop("fact:dispatched", MISSING,
+                            detail=f"escalating: the interactive turn timed out; batch command {rec_cmd} is not published yet"))
+        else:
+            add_fact_hop("fact:dispatched", "dispatched", describe_dispatch)
+            disp = fact("dispatched")
+            command_id = (disp or {}).get("data", {}).get("command_id") or rec_cmd
+        ctx["command_id"] = command_id
+        ctx["escalated_from"] = ((disp or {}).get("data") or {}).get("escalated_from_command_id") or (
+            (rec or {}).get("escalated_from_command_id") if c.memo_escalated(rec or {}) else None)
+        turn_hops(command_id, disp)
 
     # 6. reply: chunk by chunk (audio.memo.voiced: the car can start on chunk 1), then the full file (replied)
     fcids = {(e.get("data") or {}).get("command_id") for e in fdisps}
@@ -795,7 +846,9 @@ def build(key: str) -> tuple[list[Hop], dict]:
             hops.append(Hop(f"followup#{n}:replied", UNKNOWN, detail=f"not spoken yet (watcher: {state or 'no record'})",
                             optional=True, followup=n))
         fus_ctx.append({"n": n, "command_id": fcid, "state": state or "running", "dispatched": evt_ts(ev),
-                        "replied": evt_ts(rep) if rep else None})
+                        "replied": evt_ts(rep) if rep else None,
+                        "delegated_to": (d.get("delegated_to") or d.get("target_agent_id"))
+                        if d.get("lane_reason") == c.DELEGATION_REASON else None, "title": d.get("brief_title")})
     for fcid, fu in recfus.items():  # minted, not yet published (or its fact not in Candystore yet)
         if fcid not in seen:
             hops.append(Hop(f"followup#{fu.get('n')}:dispatched", MISSING,
@@ -943,16 +996,18 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
         if any(h.name == "agent:detached" for h in hops):
             tail = "; the turn was detached at the wall clock and ran on (spoken as a late reply, no re-run)" + tail
         for fu in ctx.get("followups") or []:
+            what = f"delegated to {fu['delegated_to']}: follow-up {fu['n']}" if fu.get("delegated_to") else f"follow-up {fu['n']}"
             if fu.get("replied"):
-                tail += (f"; follow-up {fu['n']} {'spoken as a failure' if fu['state'] == 'failed' else 'spoken'} "
+                tail += (f"; {what} {'spoken as a failure' if fu['state'] == 'failed' else 'spoken'} "
                          f"{(fu['replied'] - end.ts).total_seconds():.1f}s after the quick answer")
             elif fu.get("state") in c.FOLLOWUP_LIVE:
                 since = f" for {(c.now_utc() - fu['dispatched']).total_seconds():.0f}s" if fu.get("dispatched") else ""
-                tail += f"; follow-up {fu['n']} RUNNING in the background{since}"
+                tail += f"; {what} RUNNING in the background{since}"
             else:
-                tail += f"; follow-up {fu['n']} {fu.get('state')}"
+                tail += f"; {what} {fu.get('state')}"
         if ctx.get("followups"):
-            return f"COMPLETE (quick answer) in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
+            label = "read-back" if any(fu.get("delegated_to") for fu in ctx["followups"]) else "quick answer"
+            return f"COMPLETE ({label}) in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
         phone = next((h for h in hops if h.name == "phone_started" and h.status == OK and h.ts), None)
         if phone:
             tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the full reply was up "
@@ -1173,6 +1228,137 @@ def cmd_list(args) -> int:
     return 0
 
 
+def _hhmm(ts) -> str:
+    return time.strftime("%H:%M:%S", time.localtime(float(ts))) if isinstance(ts, (int, float)) else "-"
+
+
+def watcher_state() -> dict:
+    try:
+        return json.loads((c.STATE_DIR / "state.json").read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def cmd_conv(args) -> int:
+    """The fast desk's conversations from the watcher's state.json: turns, the pending draft and the delegations."""
+    st = watcher_state()
+    open_ = list((st.get("conversations") or {}).values())
+    closed = list(st.get("conversations_closed") or [])
+    every = open_ + closed
+    if not every:
+        print("no conversations yet (the fast desk is off, or no car memo went through it)")
+        return 0
+    t = (args.target or "latest").strip()
+    if t == "latest":
+        pick = max(every, key=lambda s: float(s.get("last_at") or 0))
+    else:
+        mine = [s for s in every if s.get("agent") == t]
+        pick = (max(mine, key=lambda s: float(s.get("last_at") or 0)) if mine
+                else next((s for s in every if str(s.get("conv_id", "")).startswith(t)), None))
+    if pick is None:
+        print(f"no conversation matches {t!r} (latest | <agent id> | <conv id or its first 8 characters>)")
+        return 1
+    state = (f"closed ({pick.get('closed_reason')}) at {_hhmm(pick.get('closed_at'))}" if pick in closed else "open")
+    print(f"conversation {pick['conv_id']}  ({pick.get('sid')})  agent {pick.get('agent')}  device {pick.get('device')}  {state}")
+    print(f"opened {_hhmm(pick.get('opened_at'))}  last turn {_hhmm(pick.get('last_at'))}")
+    print("\nturns:")
+    for tu in pick.get("turns") or []:
+        if tu.get("kind") == "result":
+            print(f"  {_hhmm(tu.get('at'))}  RESULT ({tu.get('state')}) of {tu.get('title')!r} from {tu.get('target')}: "
+                  f"{str(tu.get('say') or '')[:160]!r}")
+            continue
+        how = (f"{tu.get('model')}@{tu.get('route')} {tu.get('ms')} ms" if tu.get("model") else str(tu.get("path")))
+        print(f"  {_hhmm(tu.get('at'))}  {str(tu.get('action')):<8} {how:<44} memo {str(tu.get('memo_id'))[:8]}"
+              + (f"  guard {','.join(tu['guard'])}" if tu.get("guard") else ""))
+        print(f"      driver: {str(tu.get('user') or '')[:160]!r}")
+        said = tu.get("agent_reply") if tu.get("action") == "direct" else tu.get("say")
+        print(f"      {'agent' if tu.get('action') == 'direct' else 'desk'}:   {str(said or '')[:160]!r}")
+    p = pick.get("pending")
+    print("\npending draft: " + ("none" if not isinstance(p, dict) else
+                                 f"{p.get('title')!r} for {p.get('target_name') or p.get('target')} ({p.get('perm')}), "
+                                 f"{p.get('state')}, proposed {_hhmm(p.get('at'))}, brief {str(p.get('brief_id'))[:8]}"))
+    if isinstance(p, dict):
+        for ln in str(p.get("body") or "").splitlines()[:12]:
+            print(f"      | {ln}")
+    print("\ndelegations:")
+    for d in pick.get("delegations") or []:
+        print(f"  {_hhmm(d.get('at'))}  {str(d.get('state')):<9} {d.get('title')!r} -> {d.get('target')} ({d.get('perm')})  "
+              f"memo {str(d.get('memo_id'))[:8]} command {d.get('command_id')}")
+        if d.get("result"):
+            print(f"      result: {str(d['result'])[:200]!r}")
+    if not pick.get("delegations"):
+        print("  none")
+    return 0
+
+
+def unit_env() -> dict:
+    """The watcher unit's Environment= defaults (the repo's unit file is the installed one, a symlink)."""
+    env: dict = {}
+    try:
+        text = (Path(__file__).resolve().parent / "holocene-inbox-watcher.service").read_text()
+    except OSError:
+        return env
+    import shlex
+    for line in text.splitlines():
+        if not line.startswith("Environment="):
+            continue
+        try:
+            for part in shlex.split(line[len("Environment="):]):
+                k, _, v = part.partition("=")
+                env[k] = v
+        except ValueError:
+            continue
+    return env
+
+
+def cmd_converse(args) -> int:
+    """Flip the fast desk at runtime (the watcher reads the flag file per memo, no restart), or show where it stands."""
+    import converse as cv
+    path = c.STATE_DIR / "converse.json"
+    if args.action != "status":
+        upd = {"mode": args.action}
+        if args.agents is not None:
+            upd["agents"] = cv._list(args.agents)
+        if args.devices is not None:
+            upd["devices"] = cv._list(args.devices)
+        if args.handoff is not None:
+            upd["handoff"] = args.handoff
+        drop = ()
+        if args.routes_file:
+            upd["routes"] = json.loads(Path(args.routes_file).read_text())
+            routes, refused = cv.parse_routes(upd["routes"])
+            if refused or not routes:
+                print(f"refused: {json.dumps(refused)}" if refused else "refused: no usable route in the file")
+                return 1
+        elif args.clear_routes:
+            drop = ("routes",)
+        doc = cv.write_flag(path, drop=drop, **upd)
+        print(f"wrote {path}: {json.dumps({k: v for k, v in doc.items() if k != 'routes'})}"
+              + (f" (+ {len(doc['routes'])} route override)" if doc.get("routes") else ""))
+    desk = cv.Desk(c.STATE_DIR, env=unit_env(), log=lambda *a, **k: None)
+    s = desk.settings()
+    print(f"mode     {s['mode']}  (source: {s['source']}{'; ' + s['error'] if s.get('error') else ''})")
+    print(f"agents   {s['agents'] if s['agents'] == '*' else ', '.join(s['agents']) or '(none)'}")
+    print(f"devices  {s['devices'] if s['devices'] == '*' else ', '.join(s['devices']) or '(any car)'}")
+    print(f"handoff  {s['handoff']}")
+    print("routes   " + (", ".join(f"{r['id']}={r['model']}" for r in s["routes"]) or "(none)")
+          + (f"  refused: {', '.join(str(r.get('id')) for r in s['refused'])}" if s["refused"] else ""))
+    hb = watcher_heartbeat() or {}
+    cb = hb.get("converse") or {}
+    if cb:
+        age = f"{int(hb['age_s'])}s old" if hb.get("age_s") is not None else "age unknown"
+        print(f"watcher  mode {cb.get('mode')} (source {cb.get('source')}), keys {cb.get('key_status')} {cb.get('keys')}, "
+              f"open conversations {cb.get('open_conversations')}, contract {cb.get('contract')}  [heartbeat {age}]")
+        for r in cb.get("routes") or []:
+            if r.get("breaker_open_until") or r.get("fails_2m"):
+                print(f"         {r['id']}: {r.get('fails_2m')} failures in 2 min, breaker open until {r.get('breaker_open_until')}")
+    else:
+        print("watcher  no converse block in heartbeat.json (a watcher from before the desk, or not running)")
+    if args.action != "status":
+        print("the watcher applies it from the next memo, no restart")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
@@ -1185,6 +1371,15 @@ def main() -> int:
     x.add_argument("target")
     l = sub.add_parser("list")
     l.add_argument("-n", type=int, default=15)
+    cv_ = sub.add_parser("conv", help="the fast desk's conversation: latest | <agent id> | <conv id>")
+    cv_.add_argument("target", nargs="?", default="latest")
+    cs = sub.add_parser("converse", help="the fast desk's runtime switch: on | off | shadow | status")
+    cs.add_argument("action", choices=("on", "off", "shadow", "status"), nargs="?", default="status")
+    cs.add_argument("--agents", help="comma-separated agent ids, or '*'")
+    cs.add_argument("--devices", help="comma-separated car device ids ('' = any car)")
+    cs.add_argument("--handoff", choices=("named", "off"))
+    cs.add_argument("--routes-file", help="a JSON routes list that overrides the unit's ladder (tests, S11)")
+    cs.add_argument("--clear-routes", action="store_true", help="drop a routes override from the flag file")
     args = ap.parse_args()
     if args.cmd == "list":
         return cmd_list(args)
@@ -1192,6 +1387,10 @@ def main() -> int:
         return cmd_retry(args)
     if args.cmd == "cancel":
         return cmd_cancel(args)
+    if args.cmd == "conv":
+        return cmd_conv(args)
+    if args.cmd == "converse":
+        return cmd_converse(args)
     if args.cmd is None:
         args = ap.parse_args(["trace"])
     return cmd_trace(args)

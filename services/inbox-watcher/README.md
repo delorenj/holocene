@@ -628,6 +628,133 @@ The heartbeat (`heartbeat.json`) carries `lane` and `lanes.{interactive,batch}`
 off the tick thread); `/voice` reads it.
 S3 access is the `delo` alias in `~/.mc/config.json`; the unit holds no secrets.
 
+## Fast conversation layer (the in-car desk, HOLOC-23)
+
+A car memo for an allowlisted agent tile can be answered in seconds by a fast model instead of minutes by the agent.
+The desk talks, drafts briefs and reads them back; work starts only when the driver confirms aloud, and then exactly
+once, on the agent the driver confirmed. It ships **off**.
+
+```
+transcribe -> converse -> speak -> mirror -> done                  reply | propose | cancel | end   (no agent command)
+                       -> speak -> mirror -> dispatch -> ... -> speak   confirm: the read-back, then the brief as follow-up 1
+                       -> dispatch -> ... today's path                  direct, a failed ladder, or a memo the desk can't take
+```
+
+**Code.** `converse.py` (pure logic + the HTTP ladder; `test_converse.py`) and the `converse` stage in
+`inbox_watcher.py` (`step_converse`, `_converse_apply`; `test_converse_pipeline.py`). One worker (`pools["converse"]`),
+so the turns of a conversation are decided in order. `memo:retry`, `memo:cancel` and a restart all know the stage:
+the decision is stored on the memo (`conv_raw`) before it is applied, so a restart re-applies it with no second LLM call.
+
+**Who takes the desk.** The memo leaves `transcribe` for `converse` only when the mode is `on` (the flag file, else
+`MEMO_CONVERSE`), the agent is in the list (`MEMO_CONVERSE_AGENTS`, `*` = all), and the memo was never dispatched before.
+`step_converse` then also requires `host=car` (the upload proxy's `X-Amz-Meta-Holocene-Host` on the inbox object, read
+at receive in parallel with the download, together with the agent card), the device in `MEMO_CONVERSE_DEVICES` when set,
+audio at most 90 s, a transcript at most 4000 characters and a key that is not unreadable. Anything else goes to
+`dispatch` with a `converse_skipped` log line and no LLM call.
+
+**The decision.** One JSON object from the model (`response_format: json_object`, temperature 0.3, max 700 tokens, a
+system prompt with two literal examples: deepseek-v4.1-flash-1017 ignores json_object 40 % of the time without them):
+
+```json
+{"say": "...", "action": "reply|propose|confirm|cancel|direct|end", "target": "<agent id>", "title": "<= 8 words",
+ "brief": {"goal": "...", "context": ["..."], "done_when": ["..."]}, "perm": "read_only|changes_ok|deploy_ok"}
+```
+
+Prose with no object is a `reply` whose `say` is that prose; JSON that does not parse is a failure of that rung. The
+prompt is stable first (rules, the agent card, the roster: byte-identical across turns, so Hyper caches it), then the last
+12 turns as user/assistant pairs, then the volatile desk state (pending draft, the 24 h delegation board with live state,
+newest progress line and results, recent memos) and the new transcript.
+
+**Lexicon short-circuits (no LLM call).** With a pending draft (or a delegation in the last 30 min), a transcript that is
+only a confirmation ("send it", "yes send it", "go ahead.") is `confirm`; only a cancellation ("cancel that", "don't send
+it", "no") is `cancel`; "that's all" / "thanks, bye" is `end`; "ask <agent> directly" or "full agent" is `direct`.
+
+**The guard (deterministic; the model only proposes).**
+- `confirm` needs a pending draft (proposed, at most `MEMO_CONVERSE_DRAFT_TTL_S`=600 s old), an affirmative transcript
+  and no negation (`don't`, `not`, `but`, `instead`, `change`, `wait`, ...). The stored draft is sent **verbatim**: its
+  body's sha256 must still match. A brief whose sha was sent in this conversation in the last 30 min is refused
+  ("Already sent to ..."), and so is a second "send it" while the first is being sent.
+- `propose` builds the draft and the read-back from a template, never from model prose:
+  `Draft for <Target>: <title>. <Read-only | Code changes OK, no deploy | Changes and deploy OK>. Say send it, or tell me
+  what to change.` A confirm is spoken `Sending to <Target>: <title>. I'll call you back.`
+- The permission is clamped by the driver's own last two transcripts: `read_only` unless they said fix/change/edit/write/
+  commit (`changes_ok`) or deploy/restart/release/push it (`deploy_ok`). The clamp is a ceiling, never a raise.
+- The target is the tile's agent. Another agent only with `MEMO_CONVERSE_HANDOFF=named`, when the driver said its name
+  or id (`flume`, `flume pm`) in the last two transcripts and `registry_route(target).ok`; otherwise the draft stays on
+  the tile (`converse_retarget_refused`). A confirm that names a different target is read back again, never sent.
+- A reply that claims something was sent or started has that sentence removed ("Nothing was sent.").
+
+**The brief that is sent.** `MEMO_CONVERSE_DELEGATE_PREFIX` (do it now, yourself, no `delegate_task`, no vox, **no
+deploy, restart, push or other change to a live system unless the Permission section allows it**, end with a spoken
+summary, no `BACKGROUND:` line) + the stored brief (`# title`, goal, `## Context`, `## Done when`, `## Permission`) + the
+driver's own words, oldest first, with times (the confirmation included) + a trace line (conversation, memo, brief id,
+tile). It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
+`uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the profile's own model
+(`MEMO_CONVERSE_DELEGATE_MODEL` empty; a forbidden one is ignored), `thread_id` = the memo id, `context.reason =
+voice-delegation` with `conv_id`, `brief_id`, `brief_sha256`, `tile_agent_id`, `perm`. `MEMO_FOLLOWUP_MAX=0` does not
+stop it, and a delegated agent's own `BACKGROUND:` line is refused (spoken as not finished). Its result is spoken as
+`<Target>, follow-up on <title>. <summary>` (the car, or the phone after the 20 s grace, as any follow-up) and written
+back into the conversation (the delegation's `result`, a `result` turn). A read-back that never went out (vox down past
+its budget, `memo:cancel`) puts the draft back to proposed and marks the delegation `not_sent`.
+
+**Speech.** A fast turn's reply: the agent's name on the conversation's first turn only (a read-back names its target
+itself), chunks of 70/170/300 characters from 80 (`MEMO_CONVERSE_CHUNK_CHARS`, `_MIN_CHARS`), vox at 6 steps
+(`MEMO_CONVERSE_TTS_STEPS`). Every vox render of the watcher goes through `TtsGate`: one at a time, fast turns first, then
+replies and results, then narration, released between chunks. The car's status object says `stage: working` during
+converse, sends `heard: null` for a fast turn (no "<agent> heard: ..." echo in front of an answer seconds away; a direct
+turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_key}`: `reply_key` is THIS turn's reply of
+record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
+
+**The ladder (never Anthropic).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order, inside `MEMO_CONVERSE_BUDGET_S`
+(8 s): r1 Hyper `deepseek-v4.1-flash-1017` (3 s), r2 Hyper `deepseek-v4.1-flash` (4 s; skipped in a call where r1 timed out
+or could not connect, same host), r3a gateway `automaticai/personal/kimi-k3s` (temperature 1, effort medium), r3b gateway
+`automaticai/personal/glm-5.3-flash` (effort medium; the gateway refuses `low`). A rung is skipped while its breaker is
+open (3 failures in 120 s: 60 s) or its key is unreadable (retried every 300 s); a 401 re-reads the key once. Keys are
+**op:// item-UUID references only** (`op read` at first use and once at start-up, memory only, never logged; a pasted key
+is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`) refuses a configured
+route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field matches. If every
+rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never failed
+for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; the gateway
+rungs are an availability fallback, not a latency path.
+
+**State.** `state.json` `conversations` keyed `<device>|<agent>` (`conv_id`, `sid`, `turns[]` upserted by memo id,
+`pending` draft, `delegations[]`) and `conversations_closed` (the last 20). Idle `MEMO_CONVERSE_IDLE_S` (900 s) closes one
+(tick sweeper every 60 s, or the next memo); a closing conversation's draft expires unsent (`converse_draft_expired`).
+
+**Kill switch.** Three layers, none needs a restart or a deploy:
+1. `mise run memo:converse off|shadow|on [--agents a,b|'*'] [--devices <id>] [--handoff named|off]` writes
+   `~/.local/state/holocene-auto/inbox-watcher/converse.json` atomically; it wins over the unit's env and is read per memo.
+   `mise run memo:converse status` prints the effective mode, source, agents and routes and the watcher's own view
+   (heartbeat `converse`: mode, source, `key_status`, breaker state, the fact contract). `--routes-file f.json` overrides
+   the ladder (S11 tests), `--clear-routes` drops the override.
+2. The unit: `MEMO_CONVERSE=off|shadow|on` (shipped `off`), `MEMO_CONVERSE_AGENTS`, `MEMO_CONVERSE_DEVICES`,
+   `MEMO_CONVERSE_HANDOFF`. An invalid value turns the desk off (logged), never the watcher.
+3. Per memo: "ask <agent> directly" / "full agent" forces today's path. `shadow` runs today's path untouched and logs
+   what the desk would have done (`converse_shadow`).
+
+**Facts.** `audio.memo.routed` once per decision: `conv_id`, `sid`, `conv_turn`, `conv_opened`, `action`,
+`decided_action` (the model's own), `say`, `title`, `brief_id`, `target`, `perm`, `delegate_to`, `guard` (reasons),
+`model_answered` (response.model), `requested_model`, `route`, `attempts` (rungs tried), `attempt_log` (route, model,
+outcome, ms, http_status, answered_model), `latency_ms`, `usage`, `cached_tokens`, `path` (`fast` | `confirm_only` |
+`cancel_only` | `end_only` | `force_direct` | `fallback`), `lexicon`, `fallback_reason`, `card_sha256`, `card_age_s`,
+`recall`, `device`, `decide_ms`, `reply_s3_key`. `audio.memo.delegated` once per confirmed brief: `target_agent_id`,
+`tile_agent_id`, `conv_id`, `brief_id`, `brief_sha256`, `command_id`, `lane`, `perm`, `title`, `prompt_sha256`,
+`followup`, `thread_id`. The delegation's `dispatched` fact carries `followup=1`, `lane_reason=voice_delegation`,
+`target_agent_id` (the confirmed target), `tile_agent_id`, `delegated_to`, `conv_id`, `brief_id`, `brief_title`, `perm`;
+the read-back's `replied` fact carries `conv {conv_id, sid, turn, action, path}`. Both types are muted in ntfy-router.
+At start-up the watcher runs `bb-emit --check` for both; a refused type is logged only (`fact_unavailable`) and never
+queued, so it can never block the outbox.
+
+**See it.** `mise run memo:trace <memo>` shows a `fast:routed` hop (`reply deepseek-v4.1-flash-1017@r1 (1 attempt,
+812 ms, 900 in / 40 out, 640 cached) conv 7f3a1b2c turn 3`, failed rungs, guard notes) where dispatch and the agent turn
+would be, a delegation as `followup#1` (`DELEGATED to flume-pm: 'title'`), and a timing line that starts `transcribed |
+routed`. `mise run memo:conv [latest|<agent>|<conv id>]` prints the conversation: turns (model@route, ms, driver words,
+what was said), the pending draft (with its body) and the delegations with memo and command ids and results.
+Log events: `converse_decided`, `converse_skipped`, `converse_guard`, `converse_retarget_refused`,
+`converse_attempt_failed`, `converse_route_refused`, `converse_config`, `converse_contract`, `conversation_opened`,
+`conversation_closed`, `converse_draft_expired`, `converse_draft_dropped`, `delegation_sent`, `delegation_result`,
+`delegation_restored`, `converse_shadow`.
+
 ## Bloodbank facts
 
 Defined in the bloodbank repo (`schemas/bloodbank/audio/memo.*.json`, entity

@@ -445,5 +445,85 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertEqual(self.cmds(key), [])
 
 
+class TraceFastTurns(unittest.TestCase):
+    """memo:trace for a desk turn: the routed hop stands where dispatch and the agent turn would be; a delegation is
+    follow-up 1, named with its target; the timing line starts with transcribed | routed."""
+    KEY = "inbox/holocene-pm/2026/10/22/fast.ogg"
+    CMD = "22222222-2222-5222-8222-222222222222"
+
+    def events(self, delegated=False):
+        mid = mc_.memo_id_for(self.KEY)
+
+        def ev(typ, at, **data):
+            return {"type": f"bloodbank.{typ}", "time": at, "data": {"memo_id": mid, "occurred_at": at, **data}}
+        routed = dict(conv_id="c0ffee00-1111-4222-8333-444455556666", conv_turn=2, action="confirm" if delegated else "reply",
+                      model_answered=None if delegated else "deepseek-v4.1-flash-1017", route=None if delegated else "r1",
+                      attempts=0 if delegated else 2, latency_ms=None if delegated else 812,
+                      usage=None if delegated else {"prompt_tokens": 900, "completion_tokens": 40},
+                      cached_tokens=None if delegated else 640, path="confirm_only" if delegated else "fast",
+                      lexicon=delegated, title="Spool check" if delegated else None,
+                      delegate_to="flume-pm" if delegated else None,
+                      attempt_log=None if delegated else [{"route": "r1", "outcome": "timeout"}, {"route": "r3a", "outcome": "ok"}])
+        out = [ev("audio.memo.received", "2026-10-22T02:00:00.500Z", detect_lag_ms=5),
+               ev("audio.memo.transcribed", "2026-10-22T02:00:01.500Z", transcript_chars=20, processing_seconds=0.5, model="m",
+                  transcript_text="hi"),
+               ev("audio.memo.routed", "2026-10-22T02:00:02.400Z", **routed),
+               ev("audio.memo.voiced", "2026-10-22T02:00:04.400Z", chunk=1, chunks=1, reply_s3_key="replies/x.ogg",
+                  chunk_s3_key="replies/x.ogg", command_id=None),
+               ev("audio.memo.replied", "2026-10-22T02:00:05.000Z", reply_chars=40, tts_seconds=1.9, tts_engine="fakevox",
+                  reply_s3_key="replies/x.ogg", command_id=None)]
+        if delegated:
+            out += [ev("audio.memo.dispatched", "2026-10-22T02:00:06.000Z", command_id=self.CMD, command_subject="x",
+                       lane="batch", lane_reason="voice_delegation", followup=1, delegated_to="flume-pm",
+                       target_agent_id="flume-pm", brief_title="Spool check", brief_id="b" * 8, perm="read_only",
+                       conv_id="c0ffee00")]
+        return out
+
+    def build(self, events, rec):
+        import contextlib
+        import memo_trace as mt
+        lm = lambda k: {"size": 9, "last_modified": mc_.parse_iso("2026-10-22T02:00:00Z" if k == self.KEY else "2026-10-22T02:00:04Z")}  # noqa: E731
+        with contextlib.ExitStack() as st:
+            for target, name, kw in ((mt.c, "candystore_events", {"return_value": events}), (mt.c, "s3_stat", {"side_effect": lm}),
+                                     (mt.c, "journal_row", {"return_value": None}),
+                                     (mt.c, "gateway_liveness", {"return_value": {"ok": True, "lane": "batch"}}),
+                                     (mt.c, "gateway_log_lines", {"return_value": []}),
+                                     (mt, "upload_log_line", {"return_value": (None, None)}),
+                                     (mt, "watcher_record", {"return_value": rec}),
+                                     (mt, "watcher_heartbeat", {"return_value": {"age_s": 1.0}}),
+                                     (mt, "watcher_unit_active", {"return_value": "active"}),
+                                     (mt, "earshot_stat", {"return_value": None}),
+                                     (mt, "earshot_beacons", {"return_value": []})):
+                st.enter_context(unittest.mock.patch.object(target, name, **kw))
+            hops, ctx = mt.build(self.KEY)
+            return hops, ctx, mt.verdict(hops, ctx), mt.timing_line(ctx, hops)
+
+    def test_a_fast_reply_turn_completes_on_the_routed_hop(self):
+        hops, ctx, (v, ok), timing = self.build(self.events(), {"status": "done"})
+        names = [h.name for h in hops]
+        self.assertIn("fast:routed", names)
+        self.assertNotIn("fact:dispatched", names)
+        self.assertNotIn("gateway_journal", names)
+        routed = next(h for h in hops if h.name == "fast:routed")
+        self.assertIn("reply deepseek-v4.1-flash-1017@r1 (2 attempts, 812 ms, 900 in / 40 out, 640 cached)", routed.detail)
+        self.assertIn("failed: r1 timeout", routed.detail)
+        self.assertTrue(ok, v)
+        self.assertTrue(v.startswith("COMPLETE in"), v)
+        self.assertTrue(timing.startswith("since upload (server clock): transcribed +1.5s | routed +2.4s"), timing)
+
+    def test_a_delegation_shows_as_follow_up_one_with_its_target(self):
+        rec = {"status": "active", "stage": "await_agent", "command_id": self.CMD, "lane": "batch",
+               "lane_reason": "voice_delegation", "followups": [{"n": 1, "kind": "delegation", "command_id": self.CMD,
+                                                                 "state": "running", "target": "flume-pm"}]}
+        hops, ctx, (v, ok), timing = self.build(self.events(delegated=True), rec)
+        disp = next(h for h in hops if h.name == "followup#1:dispatched")
+        self.assertIn("DELEGATED to flume-pm: 'Spool check'", disp.detail)
+        routed = next(h for h in hops if h.name == "fast:routed")
+        self.assertIn("by the lexicon (confirm_only, no LLM call)", routed.detail)
+        self.assertTrue(ok, v)
+        self.assertTrue(v.startswith("COMPLETE (read-back)"), v)
+        self.assertIn("delegated to flume-pm: follow-up 1 RUNNING in the background", v)
+
+
 if __name__ == "__main__":
     unittest.main()

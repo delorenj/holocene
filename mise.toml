@@ -138,6 +138,14 @@ run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py
 description = "Last N voice memos with the furthest stage each reached: memo:list [-n 15]"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' list"
 
+[tasks."memo:conv"]
+description = "The fast in-car desk's conversation: turns (model@route, ms), the pending draft and delegations: memo:conv [latest|<agent>|<conv id>]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' conv"
+
+[tasks."memo:converse"]
+description = "Flip the fast in-car conversation desk at runtime (flag file, no restart) or show it: memo:converse on|off|shadow|status [--agents a,b|'*'] [--devices id] [--handoff named|off]"
+run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' converse"
+
 [tasks."memo:watcher:install"]
 description = "Install, enable and start holocene-inbox-watcher.service (systemd user unit)"
 run = "'{{config_root}}/services/inbox-watcher/install.sh' --restart"
