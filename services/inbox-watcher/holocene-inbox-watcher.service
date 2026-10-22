@@ -32,23 +32,25 @@ Environment=MEMO_CONVERSE_DEVICES=
 Environment=MEMO_CONVERSE_HANDOFF=named
 Environment=MEMO_CONVERSE_IDLE_S=900
 Environment=MEMO_CONVERSE_DRAFT_TTL_S=600
-# the sum of the rung timeouts (r1 4 + r2 5 + r3 7): r1 AND r2 timing out still leave r3 its full 7 s (it answers in
-# 2.5-4.4 s). The budget only caps the all-slow case; a healthy turn ends at its first answer (r2 ~1.5 s).
-Environment=MEMO_CONVERSE_BUDGET_S=16
+# One route, so the budget is that route's timeout plus slack (never below it). A healthy turn ends at the first answer
+# (aai/auto/fast measured 7-9 s on 2026-10-22; the 12 s timeout is its tail). When it fails the watcher falls through to
+# the full-agent path; that is the only fallback the default has. A tile alias (car_desk_aliases.json) puts its own routes
+# in front and carries its own budget_s.
+Environment=MEMO_CONVERSE_BUDGET_S=14
 Environment=MEMO_CONVERSE_TTS_STEPS=6
-# The ladder, in order (operator decision 2026-10-22). Keys are op:// item-UUID references ONLY, read with `op read` at
-# first use, kept in memory.
-# r1: Hyper deepseek-v4.1-flash-1017 on the "Holocene Auto" key (OUT OF CREDIT until topped up: a 402 opens the rung for
-#     10 min, so it is skipped in ~0.2 s and comes back by itself when credit returns).
-# r2: DeepSeek's own API, deepseek-flash (= DeepSeek-V4.1-Flash), item "DeepSeek" field "API Key".
-# r3: the subscriptions autorouter automaticai/auto/fast on the holocene-converse gateway token (id 88), whose scope holds no
-#     Anthropic route, so auto's candidates (intersected with the scope) are glm-5.3-flash, kimi-k3s, glm-5.3, kimi-k3,
-#     kimi-2.8, hypercharm/deepseek routes. temperature 1 (kimi 400s any other); no reasoning_effort (auto sets the rung's).
-# Never Anthropic: bare automaticai/auto, /orchestrator, /subagent, openrouter/auto and any claude route are refused;
+# The default is ONE route (operator decision 2026-10-22: "use aai/auto/fast and its existing fallback chain, no pinned model
+# or gateway rebuild"): automaticai/auto/fast on api.automaticai.io with the Claude-free holocene-converse token (id 88).
+# The gateway does the fallback: its auto chain (fast tier -> strong tier -> free last resort, intersected with the token's
+# scope) picks the model, e.g. automaticai/personal/glm-5.3. Keys are op:// item-UUID references ONLY, read with `op read`
+# at first use, kept in memory. temperature 1 (kimi 400s any other); no reasoning_effort (auto sets the rung's).
+# Never Anthropic, three checks: (1) the token's scope proof (GET /models lists no Anthropic id; re-checked every 10 min),
+# (2) the served route's X-AutomaticAI-Route header must not be Anthropic, (3) the response `model` must not be Anthropic.
+# Bare automaticai/auto, /orchestrator, /subagent, openrouter/auto and any claude route are refused;
 # automaticai/auto/fast and automaticai/free only on the token listed in MEMO_CONVERSE_SCOPED_KEY_REFS.
-# Per tile, a model alias (car_desk_aliases.json; mise run memo:model <agent> <alias>) puts its routes in front of these.
+# A pinned model is an opt-in per tile, never the default: the Hyper and DeepSeek routes live in car_desk_aliases.json
+# (deepseek-flash, deepseek-pro; mise run memo:model <agent> <alias>) and go in front of this route for that tile only.
 Environment=MEMO_CONVERSE_SCOPED_KEY_REFS=op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse
-Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://hyper.charm.land/v1","key_ref":"op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential","model":"deepseek-v4.1-flash-1017","timeout_s":4,"temperature":0.3},{"id":"r2","base_url":"https://api.deepseek.com","key_ref":"op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja","model":"deepseek-flash","timeout_s":5,"temperature":0.3,"max_tokens":1500},{"id":"r3","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/auto/fast","timeout_s":7,"temperature":1}]'
+Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/auto/fast","timeout_s":12,"temperature":1}]'
 # The car desk's tools: the Skillex scope with the car-desk pack (car-set-voice, car-set-model), read at start-up and on change
 Environment=MEMO_CONVERSE_TOOLS_DIR=%h/.local/state/holocene-auto/car-desk-scope
 # All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)

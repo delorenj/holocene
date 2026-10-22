@@ -134,20 +134,21 @@ class Routes(unittest.TestCase):
         raw = line.split("=", 2)[2].rstrip("'")
         routes, refused = cv.parse_routes(raw)
         self.assertEqual(refused, [])
-        # operator decision 2026-10-22: r1 Hyper flash on the Holocene Auto key, r2 DeepSeek's own API, r3 the autorouter
-        self.assertEqual([(r["id"], r["model"]) for r in routes],
-                         [("r1", "deepseek-v4.1-flash-1017"), ("r2", "deepseek-flash"), ("r3", "automaticai/auto/fast")])
-        self.assertEqual(routes[0]["key_ref"], "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential")
-        self.assertEqual((routes[1]["base_url"], routes[1]["key_ref"]),
-                         ("https://api.deepseek.com", "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja"))
+        # operator decision 2026-10-22: the default is ONE route, automaticai/auto/fast on the holocene-converse token; the
+        # gateway's auto chain is the fallback. No pinned model (Hyper / DeepSeek) in the default; those are tile aliases.
+        self.assertEqual([(r["id"], r["model"]) for r in routes], [("r1", "automaticai/auto/fast")])
         self.assertTrue(all(r["key_ref"].startswith("op://DeLoSecrets/") for r in routes))
-        r3 = routes[2]
-        self.assertTrue(r3["scoped_auto"])
-        self.assertEqual(r3["key_ref"], "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse")
-        self.assertEqual((r3["temperature"], r3["reasoning_effort"]), (1.0, None))  # kimi 400s any other temperature
+        r1 = routes[0]
+        self.assertTrue(r1["scoped_auto"])
+        self.assertEqual(r1["base_url"], "https://api.automaticai.io/v1")
+        self.assertEqual(r1["key_ref"], "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse")
+        self.assertEqual(r1["timeout_s"], 12.0)
+        self.assertEqual((r1["temperature"], r1["reasoning_effort"]), (1.0, None))  # kimi 400s any other temperature
         self.assertFalse(any(cv.forbidden(r["model"]) for r in routes if not r["scoped_auto"]))
         self.assertNotIn("tflaecgcrdgxrh2ovgi5ysjkzq", unit)  # the Hindsight item is no longer the car desk's key
-        self.assertIn("Environment=MEMO_CONVERSE_BUDGET_S=16", unit)  # r1 4 + r2 5 + r3 7: every rung its full timeout
+        budget = float(next(ln for ln in unit.splitlines() if ln.startswith("Environment=MEMO_CONVERSE_BUDGET_S=")).split("=")[-1])
+        self.assertGreaterEqual(budget, sum(r["timeout_s"] for r in routes))  # the budget covers the route's whole timeout
+        self.assertNotRegex(line, r"hyper\.charm\.land|api\.deepseek\.com")  # no pinned model in the default
         self.assertNotRegex(unit, r"\bsk-[A-Za-z0-9_-]{12,}")  # no pasted key ("car-desk-scope" is a path)
 
 

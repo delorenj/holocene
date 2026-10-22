@@ -124,19 +124,28 @@ class RouterRule(unittest.TestCase):
         unit = (HERE / "holocene-inbox-watcher.service").read_text()
         raw = next(ln for ln in unit.splitlines() if ln.startswith("Environment='MEMO_CONVERSE_ROUTES=")).split("=", 2)[2].rstrip("'")
         ladder, _ = cv.parse_routes(raw)
+        # the default ladder is the single auto/fast route (operator decision 2026-10-22); the 'auto' alias IS it
+        self.assertEqual([(r["id"], r["model"]) for r in ladder], [("r1", "automaticai/auto/fast")])
         flash, _ = cv.parse_routes(table["models"]["deepseek-flash"]["routes"])
-        self.assertEqual([(r["base_url"], r["model"]) for r in flash], [(r["base_url"], r["model"]) for r in ladder[:2]])
+        self.assertEqual([r["model"] for r in flash], ["deepseek-v4.1-flash-1017", "deepseek-flash"])
+        self.assertEqual([r["base_url"] for r in flash], ["https://hyper.charm.land/v1", "https://api.deepseek.com"])
         auto, _ = cv.parse_routes(table["models"]["auto"]["routes"])
-        self.assertEqual((auto[0]["model"], auto[0]["id"]), (ladder[2]["model"], ladder[2]["id"]))
+        self.assertEqual([(r["base_url"], r["model"], r["id"], r["timeout_s"]) for r in auto],
+                         [(r["base_url"], r["model"], r["id"], r["timeout_s"]) for r in ladder])
+        # an alias never reuses the default rung's id for another upstream
+        for alias in ("deepseek-flash", "deepseek-pro", "free"):
+            ids = {r["id"] for r in cv.parse_routes(table["models"][alias]["routes"])[0]}
+            self.assertFalse(ids & {r["id"] for r in ladder}, alias)
         pro, _ = cv.parse_routes(table["models"]["deepseek-pro"]["routes"])
         self.assertEqual([r["model"] for r in pro], ["deepseek-v4-pro-0813", "deepseek-v4-pro"])
-        self.assertGreater(pro[1]["timeout_s"], ladder[1]["timeout_s"])
+        self.assertGreater(pro[1]["timeout_s"], flash[1]["timeout_s"])
         self.assertGreaterEqual(table["models"]["deepseek-pro"]["budget_s"], 12)
-        # every rung gets its full timeout even when all the ones before it time out (review 2026-10-22: at 12 s, r1 and
-        # r2 timing out left r3 3 s against its measured 2.5-4.4 s)
+        # every rung gets its full timeout even when all the ones before it time out (review 2026-10-22), the default
+        # route behind an alias included
         budget = float(next(ln for ln in unit.splitlines() if ln.startswith("Environment=MEMO_CONVERSE_BUDGET_S=")).split("=")[-1])
         self.assertGreaterEqual(budget, sum(r["timeout_s"] for r in ladder))
-        self.assertGreaterEqual(table["models"]["deepseek-pro"]["budget_s"], sum(r["timeout_s"] for r in pro))
+        for alias, rs in (("deepseek-pro", pro), ("deepseek-flash", flash)):
+            self.assertGreaterEqual(table["models"][alias]["budget_s"], sum(r["timeout_s"] for r in rs + ladder), alias)
         self.assertGreaterEqual(pro[1]["timeout_s"], 11)  # pro-d answered in 8982 ms once on a loaded host
         free, _ = cv.parse_routes(table["models"]["free"]["routes"])
         self.assertEqual((free[0]["model"], free[0]["key_ref"]), ("automaticai/free", SCOPED))

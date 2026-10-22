@@ -1,22 +1,23 @@
 {
  "version": 1,
  "updated": "2026-10-22",
- "about": "The car desk's model aliases (HOLOC-23). One table for the watcher (converse.py: routes in front of the default ladder, the phrase short-circuit), memo_trace.py model / mise memo:model and the car-set-model skill. A tile's alias puts its routes in FRONT of the unit's MEMO_CONVERSE_ROUTES ladder (same base_url+model only once, keeping the default rung's id); the rest of the ladder still backs it up. Keys are op:// item-UUID references only. Never Anthropic: automaticai/auto/fast and automaticai/free only on the holocene-converse token (MEMO_CONVERSE_SCOPED_KEY_REFS). Changing it changes no Hermes agent's own model.",
+ "about": "The car desk's model aliases (HOLOC-23). One table for the watcher (converse.py: routes in front of the default ladder, the phrase short-circuit), memo_trace.py model / mise memo:model and the car-set-model skill. The unit's default (MEMO_CONVERSE_ROUTES) is the single route automaticai/auto/fast (operator decision 2026-10-22; the 'auto' alias is that default). A tile's alias puts its routes in FRONT of the default (same base_url+model only once, keeping the default rung's id); the default route still backs it up, so budget_s covers the alias rungs plus the default's 12 s. Keys are op:// item-UUID references only. Never Anthropic: automaticai/auto/fast and automaticai/free only on the holocene-converse token (MEMO_CONVERSE_SCOPED_KEY_REFS). Changing it changes no Hermes agent's own model.",
  "models": {
   "deepseek-flash": {
    "label": "DeepSeek Flash",
    "spoken": "Deep Seek Flash",
    "phrases": ["deepseek flash", "deep seek flash", "flash", "deepseek", "deep seek", "the fast one"],
+   "budget_s": 21,
    "routes": [
-    {"id": "r1", "base_url": "https://hyper.charm.land/v1", "key_ref": "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential", "model": "deepseek-v4.1-flash-1017", "timeout_s": 4, "temperature": 0.3},
-    {"id": "r2", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-flash", "timeout_s": 5, "temperature": 0.3, "max_tokens": 1500}
+    {"id": "flash-h", "base_url": "https://hyper.charm.land/v1", "key_ref": "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential", "model": "deepseek-v4.1-flash-1017", "timeout_s": 4, "temperature": 0.3},
+    {"id": "flash-d", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-flash", "timeout_s": 5, "temperature": 0.3, "max_tokens": 1500}
    ]
   },
   "deepseek-pro": {
    "label": "DeepSeek Pro",
    "spoken": "Deep Seek Pro",
    "phrases": ["deepseek pro", "deep seek pro", "pro", "the pro model", "the smart one"],
-   "budget_s": 20,
+   "budget_s": 30,
    "routes": [
     {"id": "pro-h", "base_url": "https://hyper.charm.land/v1", "key_ref": "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential", "model": "deepseek-v4-pro-0813", "timeout_s": 6, "temperature": 0.3, "max_tokens": 2000},
     {"id": "pro-d", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-v4-pro", "timeout_s": 12, "temperature": 0.3, "max_tokens": 2000}
@@ -35,7 +36,7 @@
    "spoken": "the auto router",
    "phrases": ["auto", "autorouter", "auto router", "the router", "automatic", "auto fast"],
    "routes": [
-    {"id": "r3", "base_url": "https://api.automaticai.io/v1", "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse", "model": "automaticai/auto/fast", "timeout_s": 7, "temperature": 1}
+    {"id": "r1", "base_url": "https://api.automaticai.io/v1", "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse", "model": "automaticai/auto/fast", "timeout_s": 12, "temperature": 1}
    ]
   }
  }
