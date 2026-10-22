@@ -346,7 +346,8 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertIn(draft["body"], prompt)
         self.assertIn('"Have the PM look into why the audio spool is disabled and report back"', prompt)
         self.assertIn('"Send it."', prompt)
-        self.assertNotIn("model", cmd["data"])  # the profile's own model, never a route the desk adds
+        self.assertEqual(cmd["data"]["model"], iw.VOICE_MODEL)  # the voice model, never the profile's default (automaticai/auto holds Claude routes)
+        self.assertFalse(cv.forbidden(cmd["data"]["model"]))
         self.assertEqual(cmd["data"]["context"]["reason"], "voice-delegation")
         d, = self.of_type("dispatched", key2)
         self.assertEqual((d["followup"], d["lane"], d["lane_reason"]), (1, "batch", "voice_delegation"))

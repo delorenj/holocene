@@ -22,10 +22,11 @@ export function convReplyUnit(conv: Conv | null | undefined): string | null {
 
 /**
  * Why the host's speech queue (SpeechArbiter.kt) handed a reply back that means a note is starting: the mic preempted it
- * (recording), the arming prompt reset the queue (reset), or the page stopped it to record (stopped). A focus loss (a
- * call, the car's own assistant) is not the driver speaking over it: that reply plays again.
+ * (recording), or the page stopped it to record (stopped). Neither a focus loss (a call, the car's own assistant) nor a
+ * reset (SpeechArbiter.reset: the page was torn down, the pad hidden) is the driver speaking over it: that reply plays
+ * again, because the car's claim stays on a skipped reply and a torn-down page would otherwise leave nobody to play it.
  */
-export const BARGE_REASONS = ['recording', 'reset', 'stopped']
+export const BARGE_REASONS = ['recording', 'stopped']
 
 /**
  * What to do with a reply the host's speech queue deferred (or the pad stopped) because a note is starting. 'skip': it

@@ -19,7 +19,7 @@ Environment=MEMO_AGENT_TIMEOUT_S=600
 Environment=MEMO_TRANSCRIBE_TIMEOUT_S=420
 # interactive = invoke lane (reserved gateway slots); batch = start lane (rollback lever, no gateway restart)
 Environment=MEMO_LANE=interactive
-# Per-turn model routes are the code defaults (voice sol-6.1, follow-up the profile's own model). Sonnet 5.5 was tried and rolled
+# Per-turn model routes are the code defaults (voice sol-6.1, follow-up the profile's own model, a desk delegation the voice model). Sonnet 5.5 was tried and rolled
 # back 2026-10-22 (Anthropic 400s Hermes gateway turns); override with MEMO_VOICE_MODEL / MEMO_FOLLOWUP_MODEL only here.
 # ---- the fast in-car conversation desk (HOLOC-23, converse.py; README "Fast conversation layer")
 # Shipped OFF. `mise run memo:converse on|shadow|off [--agents a,b|'*'] [--devices id]` flips it at runtime through the

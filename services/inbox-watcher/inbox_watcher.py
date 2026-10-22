@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
+import copy
 import fcntl
 import hashlib
 import heapq
@@ -300,7 +301,11 @@ CONVERSE_TTS_STEPS = int(os.environ.get("MEMO_CONVERSE_TTS_STEPS", "6"))
 CONVERSE_DELEGATE_LANE = os.environ.get("MEMO_CONVERSE_DELEGATE_LANE", "batch").strip().lower()
 if CONVERSE_DELEGATE_LANE not in mc_.GATEWAY_CONSUMERS:
     CONVERSE_DELEGATE_LANE = "batch"
-CONVERSE_DELEGATE_MODEL = os.environ.get("MEMO_CONVERSE_DELEGATE_MODEL", "").strip()
+# A delegated brief runs on the voice model unless MEMO_CONVERSE_DELEGATE_MODEL says otherwise ("profile" = the target
+# profile's own default, which for the PMs is automaticai/auto, a pool that contains Claude routes: never the default here).
+CONVERSE_DELEGATE_MODEL = os.environ.get("MEMO_CONVERSE_DELEGATE_MODEL", VOICE_MODEL).strip()
+if CONVERSE_DELEGATE_MODEL.lower() == "profile":
+    CONVERSE_DELEGATE_MODEL = ""
 if cv.forbidden(CONVERSE_DELEGATE_MODEL):
     CONVERSE_DELEGATE_MODEL = ""  # the never-Anthropic rule holds for the delegated turn's model override too
 # The earlier conversation a direct turn's prompt carries, at most this many characters.
@@ -308,6 +313,8 @@ CONVERSE_DIRECT_CONTEXT_CHARS = int(os.environ.get("MEMO_CONVERSE_DIRECT_CONTEXT
 # How long step_converse waits for the card the receive-time prefetch is building (download + Whisper usually cover it).
 CONVERSE_CARD_WAIT_S = float(os.environ.get("MEMO_CONVERSE_CARD_WAIT_S", "0.6"))
 CONVERSE_SWEEP_S = 60.0
+CONVERSE_SLOW_S = float(os.environ.get("MEMO_CONVERSE_SLOW_S", "15"))
+CONVERSE_SENDING_STUCK_S = 1800.0  # past the dispatch retry budget (900 s) with room to spare
 CONVERSE_RESULT_CHARS = 600
 CONVERSE_CLOSED_KEEP = 20
 # The main loop's longest sleep. It also wakes for the earliest due memo, the next S3 listing, and at once when a
@@ -321,7 +328,7 @@ OUTBOX_RETRY_S = 5       # a blocked outbox is retried this often, not every tic
 WAKE = threading.Event()
 
 # Retry backoff base seconds per failure stage (doubles each attempt, capped).
-BACKOFF = {"download": 10, "transcribe": 20, "dispatch": 10, "agent_reply": 5, "tts": 15, "reply_upload": 10}
+BACKOFF = {"download": 10, "transcribe": 20, "dispatch": 10, "agent_reply": 5, "tts": 15, "reply_upload": 10, "converse": 3}
 
 # Stages that fail for infrastructure reasons (S3, NATS, vox) retry on a TIME budget, not a count:
 # a minute of vox trouble after the agent already ran must not strand the work. Backoff is capped at 300 s.
@@ -1005,8 +1012,19 @@ class Watcher:
                 # Sticky lane: a memo that already escalated is a long ask. Its retry rides the batch lane (reason
                 # unchanged) instead of timing out on the interactive one with no escalation left.
                 m["lane"], m["lane_reason"] = "batch", ESCALATED_REASON
+        if stage == "converse":
+            # the desk decides this turn again (kill switch, eligibility and the conversation as it is now): the old decision,
+            # its read-back and its half-made delegation are dropped, never re-applied to a draft that moved on
+            for k in ("conv_raw", "conv", "delegate", *self.REPLY_ROUND_KEYS):
+                m.pop(k, None)
+            kept = [f for f in m.get("followups") or [] if not (f.get("kind") == "delegation" and not f.get("dispatched_ts"))]
+            if kept:
+                m["followups"] = kept
+            else:
+                m.pop("followups", None)  # a delegation that never left is not a dispatch: the desk decides this turn afresh
+            self.drop_command(m)
         fus = m.get("followups") or []
-        if (stage not in ("receive", "transcribe") and fus and fus[-1].get("state") == CANCELLED and m.get("command_id")
+        if (stage not in ("receive", "transcribe", "converse") and fus and fus[-1].get("state") == CANCELLED and m.get("command_id")
                 and fus[-1].get("command_id") == m.get("command_id")):
             # A follow-up cancelled while in flight is the memo's command again, whatever stage it stopped at: live once
             # more, so dispatch sends ITS prompt (not the memo's), reply finds ITS answer and it is spoken as a
@@ -1108,7 +1126,8 @@ class Watcher:
             fu["state"], fu["ended_at"] = CANCELLED, iso(now_utc())
         if m.get("delegate") or (fu is not None and fu.get("kind") == "delegation" and not m.get("publish_attempted")):
             # a confirmed brief that never left: its draft goes back to the conversation, so "send it" works again
-            self.restore_draft(m, "cancelled before the delegation was sent")
+            if self.restore_draft(m, "cancelled before the delegation was sent"):
+                m["resume_stage"] = "converse"  # memo:retry asks the desk again; it never replays a stale confirm
         if after and memo_escalated(m) and not m.get("publish_attempted") and stage not in ("await_agent", "reply", "speak", "mirror"):
             # after_dispatch stays true (the interactive command went out and ran); only the message is about the batch one
             msg = (f"cancelled at {stage} by memo:cancel while escalating to the batch lane: the interactive command was "
@@ -1279,17 +1298,27 @@ class Watcher:
             log("stage_failed", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
                 code=e.code, error=e.message[:300], attempt=n, retry_in_s=delay)
         else:
+            fu = live_followup(m)
+            if (e.stage == "dispatch" and fu is not None and fu.get("kind") == "delegation"
+                    and not self._delegation_published(m)):
+                # the confirmed brief could not be sent (the target is unroutable, the bus stayed down past the budget) and
+                # nothing left: the draft is pending again and the driver is told, instead of an "Already sent" forever
+                self.delegation_unsent(m, fu, e.code, e.message)
+                return
             m["status"] = "failed"
             m["failed_stage"] = e.stage
             m["failed_code"] = e.code
             m["failed_message"] = e.message[:300]
+            restored = False
             if m.get("delegate"):
                 # the read-back of a confirmed brief never made it out (vox down past its budget, say): nothing was
                 # sent, so the draft goes back to proposed and "send it" works again
-                self.restore_draft(m, f"the read-back failed at {e.stage}: {e.code}")
+                restored = self.restore_draft(m, f"the read-back failed at {e.stage}: {e.code}")
             m["resume_stage"] = ("await_agent" if e.stage == "agent_reply" and e.code == "timeout" and m.get("command_id")
                                  else "dispatch" if e.stage == "agent_reply" and e.code == mc_.TURN_TIMEOUT  # fresh command
                                  else RESUME_STAGE.get(e.stage, "receive"))
+            if restored:
+                m["resume_stage"] = "converse"  # memo:retry asks the desk again: the old "Sending to ..." line is never re-spoken
             m["resume_stage"] = resume_for(m)
             compact(m)
             log("memo_failed", "error", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=e.stage,
@@ -1652,6 +1681,16 @@ class Watcher:
                 sess["expired"] = {"brief_id": p.get("brief_id"), "title": p.get("title"), "at": now}
                 log("converse_draft_expired", conv_id=sess["conv_id"], agent=sess.get("agent"), brief_id=p.get("brief_id"),
                     title=p.get("title"), reason=f"no confirmation within {self.desk.draft_ttl_s:g} s", note="never sent")
+            if (isinstance(p, dict) and p.get("state") == "sending"
+                    and now - float(p.get("at") or 0) > CONVERSE_SENDING_STUCK_S):
+                # a draft "being sent" long after any dispatch could still be retrying: the delegation did not leave
+                for x in sess.get("delegations") or []:
+                    if x.get("brief_id") == p.get("brief_id") and x.get("state") == "sending":
+                        x["state"] = "not_sent"
+                p["state"] = "expired"
+                sess["pending"] = None
+                log("converse_draft_unsent", "warn", conv_id=sess["conv_id"], agent=sess.get("agent"),
+                    brief_id=p.get("brief_id"), title=p.get("title"), note="stuck 'sending' with no dispatch: cleared, never sent")
             if now - float(sess.get("last_at") or 0) > self.desk.idle_s:
                 self.close_session(sk, "idle")
         for k, slot in list(self.prefetch.items()):
@@ -1760,7 +1799,34 @@ class Watcher:
                     note="the desk's answer is dropped: nothing is spoken and no turn is recorded")
                 return
             self.prefetch.pop(key, None)
-            self._converse_apply(m, raw, time.time() - t0)
+            undo = self._apply_snapshot(m)
+            try:
+                self._converse_apply(m, raw, time.time() - t0)
+            except BaseException:
+                # the apply mutates the conversation before it publishes: a failure half way puts everything back, so the
+                # retry sees the conversation as it was (not a draft "being sent" by a turn that never finished)
+                self._apply_restore(m, undo)
+                raise
+
+    _APPLY_KEYS = ("delegate", "conv", "reply_text", "reply_stamp", "agent_done_ts", "prompt", "prompt_sha256", "stage", "next_at")
+
+    def _apply_snapshot(self, m: dict) -> dict:
+        return {"conversations": copy.deepcopy(self.s.data.get("conversations")),
+                "closed": copy.deepcopy(self.s.data.get("conversations_closed")),
+                "memo": {k: copy.deepcopy(m[k]) for k in self._APPLY_KEYS if k in m}}
+
+    def _apply_restore(self, m: dict, undo: dict) -> None:
+        if undo["conversations"] is not None:
+            self.s.data["conversations"] = undo["conversations"]
+        else:
+            self.s.data.pop("conversations", None)
+        if undo["closed"] is not None:
+            self.s.data["conversations_closed"] = undo["closed"]
+        for k in self._APPLY_KEYS:
+            if k in undo["memo"]:
+                m[k] = undo["memo"][k]
+            else:
+                m.pop(k, None)
 
     def _converse_apply(self, m: dict, raw: dict, took: float) -> None:
         """Lock held. The guard turns the decision into what is said and done; the conversation, the memo and the routed
@@ -1784,6 +1850,9 @@ class Watcher:
                 log("converse_retarget_refused", "warn", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"],
                     asked=dec.get("target"), reason=r, note="the work stays with the tile's agent")
         pend = sess.get("pending")
+        cs = final.get("cancel_sending")
+        if cs is not None:
+            final["say"] = self._cancel_sending(sess, cs, mid, final["say"], reasons)
         if final["drop"] and isinstance(pend, dict) and pend.get("state") == "proposed":
             pend["state"] = "dropped"
             sess["pending"] = None
@@ -1796,6 +1865,7 @@ class Watcher:
         if sent is not None:
             sent["state"] = "sending"
             sent["sent_by_memo"] = mid
+            sent["sent_by_key"] = key
             cid = cv.command_id_for(sent["brief_id"])
             words = [(time.strftime("%H:%M:%S", time.localtime(float(t.get("at") or now))), t.get("user") or "")
                      for t in cv.driver_turns(sess) if t.get("memo_id") != mid]
@@ -1814,6 +1884,9 @@ class Watcher:
                 "say": final["say"] if action != "direct" else "", "action": action, "path": raw.get("path"),
                 "model": llm.get("model"), "route": llm.get("route"), "ms": llm.get("latency_ms"),
                 "device": sender.get("device"), "guard": reasons or None}
+        pend_now = sess.get("pending") if isinstance(sess.get("pending"), dict) else None
+        if action == "propose" and pend_now is not None and pend_now.get("state") == "proposed":
+            turn["readback"] = pend_now.get("brief_id")  # what the driver just heard read back: a bare "yes" confirms this
         n = cv.upsert_turn(sess, turn)
         sess["last_at"] = now
         if action == "direct":
@@ -1824,7 +1897,8 @@ class Watcher:
             m["prompt_sha256"] = hashlib.sha256(m["prompt"].encode()).hexdigest()
         pend = sess.get("pending") if isinstance(sess.get("pending"), dict) else None
         m["conv"] = {"conv_id": sess["conv_id"], "sid": sess["sid"], "turn": n, "action": action, "path": raw.get("path"),
-                     "draft_title": (pend or {}).get("title"), "session_key": sk, "opened": opened, "reply_key": None}
+                     "draft_title": (pend or {}).get("title"), "session_key": sk, "opened": opened, "reply_key": None,
+                     "decide_ms": int(took * 1000)}
         if action != "direct":
             m["reply_text"] = final["say"]
             stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
@@ -1854,6 +1928,33 @@ class Watcher:
             say=(final["say"] or "")[:120] or None, delegate_to=(sent or {}).get("target"))
         self.done_stage(m, "converse", "dispatch" if action == "direct" else "speak", ms=took * 1000, action=action,
                         path=raw.get("path"), model=llm.get("model"), route=llm.get("route"), conv=sess["sid"], turn=n)
+
+    def _cancel_sending(self, sess: dict, cs: dict, mid: str, say: str, reasons: list[str]) -> str:
+        """Lock held. "Cancel that" while the read-back of a confirmed brief is still being spoken: if the brief has not been
+        published the delegation is stopped (the draft is dropped, nothing is ever sent) and the driver is told so; if it has
+        left, the driver is told that too. Returns what is spoken."""
+        other = self.s.memos.get(cs.get("sent_by_key") or "")
+        stopped = False
+        if other is not None and not other.get("publish_attempted"):
+            d = other.get("delegate")
+            fu = live_followup(other)
+            if d is not None and d.get("brief_id") == cs.get("brief_id"):
+                other.pop("delegate", None)  # still in the read-back: it will finish as a plain spoken line
+                stopped = True
+            elif fu is not None and fu.get("kind") == "delegation" and fu.get("brief_id") == cs.get("brief_id"):
+                self.cancel_memo(other)  # between the read-back and the publish
+                stopped = True
+        if stopped:
+            for x in sess.get("delegations") or []:
+                if x.get("brief_id") == cs.get("brief_id") and x.get("state") == "sending":
+                    x["state"] = "not_sent"
+            cs["state"] = "dropped"
+            sess["pending"] = None
+            log("converse_delegation_cancelled", memo_id=mid, conv_id=sess["conv_id"], brief_id=cs.get("brief_id"),
+                title=cs.get("title"), note="cancelled before it left; never sent")
+            return cv.SENDING_CANCELLED_LINE
+        reasons.append("cancel_too_late")
+        return cv.SENDING_TOO_LATE_LINE.format(target=cs.get("target_name") or cs.get("target"))
 
     def start_shadow(self, m: dict) -> None:
         """Lock held. MEMO_CONVERSE=shadow: the memo goes down today's path untouched; the desk decides on the side and
@@ -1940,10 +2041,10 @@ class Watcher:
             fu = next((x for x in reversed(m.get("followups") or []) if x.get("kind") == "delegation"), None)
             info = fu
         if not info:
-            return
+            return False
         sess = self._find_session(info.get("conv_id"))
         if sess is None:
-            return
+            return False
         for d in sess.get("delegations") or []:
             if d.get("brief_id") == info.get("brief_id") and d.get("state") == "sending":
                 d["state"] = "not_sent"
@@ -1952,6 +2053,33 @@ class Watcher:
             p["state"], p["restored_at"] = "proposed", time.time()
         log("delegation_restored", "warn", memo_id=m["memo_id"], key=m["key"], conv_id=info.get("conv_id"),
             brief_id=info.get("brief_id"), why=why, note="nothing was sent; the draft is pending again")
+        return True
+
+    def _delegation_published(self, m: dict) -> bool:
+        """Lock held. May the memo's delegation command have left? Never published: False. Published or unknowable: True."""
+        if not m.get("publish_attempted"):
+            return False
+        try:
+            return bool(mc_.journal_row(m.get("command_id")))
+        except Exception:  # noqa: BLE001 - cannot tell: leave the memo failed, as for any dispatch
+            return True
+
+    def delegation_unsent(self, m: dict, fu: dict, code: str, why: str) -> None:
+        """Lock held. A confirmed brief that could not leave: the follow-up fails, the draft is pending again, and the driver
+        hears so ("I couldn't send that to X") through the fast reply path, so no 'Sending...' stands uncorrected."""
+        fu.update(state="failed", error_code=code, error=why[:300], ended_at=iso(now_utc()))
+        self.restore_draft(m, f"the delegation could not be dispatched: {code}")
+        name = fu.get("display_name") or fu.get("target") or "that agent"
+        for k in self.REPLY_ROUND_KEYS:
+            m.pop(k, None)
+        self.drop_command(m)
+        m["reply_text"] = f"I couldn't send that to {name}, so nothing was sent. Say send it to try again."
+        m["agent_done_ts"] = time.time()
+        m.update(status="active", stage="speak", next_at=0.0)
+        log("delegation_unsent", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], code=code, error=why[:300],
+            target=fu.get("target"), brief_id=fu.get("brief_id"), note="nothing was published; the driver is told")
+        self.status(m)
+        WAKE.set()
 
     # -- dispatch (worker thread) --
 
@@ -2565,6 +2693,13 @@ class Watcher:
                 self.retract_reply(m, rkey, None)
                 return
             m["reply_key"] = rkey
+            if fast and journey > CONVERSE_SLOW_S:
+                # a fast turn that took longer than the budget allows: where the time went, for the operator
+                log("converse_slow", "warn", memo_id=mid, key=key, agent=agent, journey_s=round(journey, 1),
+                    tts_s=round(tts_s, 1), upload_s=round(t_up - t1, 1), chunks=len(parts),
+                    decide_ms=(m.get("conv") or {}).get("decide_ms"), path=(m.get("conv") or {}).get("path"),
+                    action=(m.get("conv") or {}).get("action"),
+                    note="record stop to the reply being up took more than MEMO_CONVERSE_SLOW_S")
             # Everything the phone decision and the replied fact need, persisted with the stage: the decision survives a
             # restart (it resumes from `up_ts`, the moment the car could start), and its audio is fetched back from the
             # car's copy only if the phone is to get one.

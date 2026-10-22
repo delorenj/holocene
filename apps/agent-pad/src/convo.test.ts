@@ -20,7 +20,7 @@ test('a barged fast-turn answer is skipped, everything else replays after the no
 
 test('only a note starting is a barge-in: a call taking the audio focus replays the answer', () => {
   assert.equal(onDeferred(UNIT, conv(), { reason: 'recording' }), 'skip')
-  assert.equal(onDeferred(UNIT, conv(), { reason: 'reset' }), 'skip')
+  assert.equal(onDeferred(UNIT, conv(), { reason: 'reset' }), 'requeue', 'a torn-down page is not the driver speaking')
   assert.equal(onDeferred(UNIT, conv(), { reason: 'stopped' }), 'skip', 'the page stopped it to record')
   assert.equal(onDeferred(UNIT, conv(), { reason: 'focus_loss_transient' }), 'requeue')
   assert.equal(onDeferred(UNIT, conv(), { reason: 'focus_taken_for_good' }), 'requeue')

@@ -653,7 +653,7 @@ class Card(unittest.TestCase):
         self.assertEqual([m["role"] for m in msgs], ["system", "user", "assistant", "user"])
         self.assertEqual(msgs[1]["content"], "what's Holocene working on?")
         self.assertEqual(json.loads(msgs[2]["content"]), {"say": "The desk.", "action": "reply"})
-        self.assertIn("PENDING DRAFT (proposed) for Holocene PM: Why the audio spool is disabled", msgs[3]["content"])
+        self.assertIn("PENDING DRAFT (proposed) for Holocene PM (target id holocene-pm): Why the audio spool is disabled", msgs[3]["content"])
         self.assertIn("spool check -> Holocene PM: running", msgs[3]["content"])
         self.assertTrue(msgs[3]["content"].endswith("[THE DRIVER SAID]\nsend it"))
 

@@ -689,8 +689,9 @@ deploy, restart, push or other change to a live system unless the Permission sec
 summary, no `BACKGROUND:` line) + the stored brief (`# title`, goal, `## Context`, `## Done when`, `## Permission`) + the
 driver's own words, oldest first, with times (the confirmation included) + a trace line (conversation, memo, brief id,
 tile). It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
-`uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the profile's own model
-(`MEMO_CONVERSE_DELEGATE_MODEL` empty; a forbidden one is ignored), `thread_id` = the memo id, `context.reason =
+`uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the **voice model** (`MEMO_CONVERSE_DELEGATE_MODEL`, default `MEMO_VOICE_MODEL` = sol-6.1; the PMs' own default is
+`automaticai/auto`, a pool with Claude routes, so it is never the default here; `profile` opts back in; a forbidden one is
+ignored), `thread_id` = the memo id, `context.reason =
 voice-delegation` with `conv_id`, `brief_id`, `brief_sha256`, `tile_agent_id`, `perm`. `MEMO_FOLLOWUP_MAX=0` does not
 stop it, and a delegated agent's own `BACKGROUND:` line is refused (spoken as not finished). Its result is spoken as
 `<Target>, follow-up on <title>. <summary>` (the car, or the phone after the 20 s grace, as any follow-up) and written
@@ -715,8 +716,8 @@ while its breaker is open (3 failures in 120 s: 60 s; **one 402 opens it for 10 
 300 s); a 401 re-reads the key once. A `propose` with neither a title nor a brief goal (small models send `say` + `action`
 only) counts as `incomplete_propose` and goes to the next rung; if no rung does better the guard builds the brief from the
 driver's own words. Keys are **op:// item-UUID references only** (`op read` at first use and once at start-up, memory only,
-never logged; a pasted key is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`)
-refuses a configured route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field
+never logged; a pasted key is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`, `openrouter/auto`; the name is NFKC
+normalised, zero-width characters stripped, and a non-ASCII name refused) refuses a configured route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field
 matches. If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is
 never failed for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; on
 2026-10-22 with the card-sized prompt: ministral-14b p50 1.0 s / p90 1.1 s (8 of 8 valid), gemini-3.5-flash-lite p50 0.8 s /
@@ -948,3 +949,33 @@ A turn timeout reads as its own outcome everywhere: the list stage label is `Age
 the **Agent finished** hop is failed with `turn_timeout` / `agent turn timed out after 300s on interactive lane (limit 300s)`
 and a meta line (`turn stopped · interactive limit 300s`, or `stop not confirmed, the turn may still be unwinding`), and
 `memo:trace` ends `STOPPED AT agent finished: turn timeout - agent turn timed out after 300s on interactive lane (limit 300s)`.
+
+
+### Review fixes (2026-10-22, HOLOC-23)
+
+An independent review of the desk found the following, all fixed and covered by `test_converse_review.py`:
+
+- **Confirmation is explicit.** `send it`, `go ahead`, `do it`, `ship it`, `make it so` alone (optionally behind yes/okay) are
+  the lexicon. A bare `yes` / `okay` / `sure` confirms only when the read-back was the desk's last words (`send_affirmed`,
+  `readback_just_heard`); `Okay, how long will that take?` or `Yeah. Also, who owns X?` never sends (a question beside a
+  confirmation re-reads the draft). Great / perfect / correct are not confirmations.
+- **Permission clamp** drops clauses with a negation (`don't change any code`, `do not deploy`) and questions (`why did it
+  restart?`); `change` alone (editing the draft) grants nothing; the turn before counts only while a draft is pending.
+- **Named handoff**: the target is exempt from re-naming once it was named and read back (`make the title shorter` keeps
+  Flume PM); a model confirm that echoes another id is ignored unless the driver named that agent in this turn; display
+  names resolve to roster ids; ordinary words that are also id stems (`monitoring`, `infra`) name nobody.
+- **Cancel / redirect while the read-back is still spoken**: cancel stops the delegation if it has not been published
+  (`Okay, cancelled before it left`), or says it is already on its way; a redirect or edit says it is already being sent.
+  Brief ids now carry the target and the proposal time, so a redirect never shares an id with the draft it replaces.
+- **A delegation that cannot be dispatched** (unroutable target, bus down past the budget) fails its follow-up, restores the
+  draft, and the driver hears `I couldn't send that to X, so nothing was sent`; a draft stuck in `sending` for 30 min is
+  cleared by the sweep. **memo:retry** of a confirm whose read-back failed or that was cancelled re-asks the desk
+  (`resume_stage=converse`, `conv_raw` and the half-made delegation dropped), so it never re-speaks `Sending to ...` with
+  nothing sent, never re-publishes a command id, and honours the kill switch. A failure half way through the apply rolls
+  the conversation and memo fields back.
+- **Config robustness**: a malformed `timeout_s` / `temperature` / `max_tokens` refuses that route (never raises out of
+  `settings()`); an unreadable key is `unreadable` only until its retry time; `op read` is waited on for at most the rest of
+  the ladder budget (the read finishes in the background).
+- **Never Anthropic**: delegated briefs run on the voice model, not the PM's `automaticai/auto` default; `forbidden()` is
+  hardened (see above); a response with no `model` field no longer credits the requested model.
+- `converse_slow` logs any fast turn whose reply took longer than `MEMO_CONVERSE_SLOW_S` (15 s) with its stage breakdown.

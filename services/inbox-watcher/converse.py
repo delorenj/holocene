@@ -39,17 +39,26 @@ import subprocess
 import threading
 import time
 import urllib.parse
+import unicodedata
 import uuid
 from pathlib import Path
 
 # ---------------------------------------------------------------- the never-Anthropic rule
 
-FORBIDDEN_MODEL_RE = re.compile(r"(claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto(/|$))", re.IGNORECASE)
+FORBIDDEN_MODEL_RE = re.compile(
+    r"(claude|anthropic|sonnet|opus|haiku|fable|^(?:automaticai/)?auto(?:[/_-]|$)|^automaticai/auto|(?:^|/)openrouter/auto(?:[/_-]|$))",
+    re.IGNORECASE | re.MULTILINE)
+_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), None)
 
 
 def forbidden(name) -> bool:
-    """True for any model, route id or host that names an Anthropic model or the automaticai/auto pool."""
-    return isinstance(name, str) and bool(FORBIDDEN_MODEL_RE.search(name.strip()))
+    """True for any model, route id or host that names an Anthropic model, the automaticai/auto pool or an OpenRouter auto
+    router. The name is NFKC-normalised and stripped of zero-width characters first, and a name with any non-ASCII
+    character is refused outright (no real model id has one; a look-alike letter must not slip past the pattern)."""
+    if not isinstance(name, str):
+        return False
+    t = unicodedata.normalize("NFKC", name).translate(_ZERO_WIDTH).strip()
+    return (not t.isascii()) or bool(FORBIDDEN_MODEL_RE.search(t))
 
 
 MODES = ("off", "shadow", "on")
@@ -152,14 +161,23 @@ def parse_routes(raw) -> tuple[list[dict], list[dict]]:
         if why:
             refused.append({"id": rid, "model": model or None, "reason": why})
             continue
-        seen.add(rid)
         effort = r.get("reasoning_effort")
+        try:
+            timeout_s = max(0.5, float(r.get("timeout_s") or 4))
+            temperature = float(r["temperature"]) if r.get("temperature") is not None else 0.3
+            max_tokens = int(r.get("max_tokens") or 700)
+            if not (timeout_s < 600 and 0 <= temperature <= 2 and 1 <= max_tokens <= 100000):
+                raise ValueError("out of range")
+        except (TypeError, ValueError, OverflowError) as e:
+            # a hand-edited flag file or unit env must turn this route off, never raise out of settings()
+            refused.append({"id": rid, "model": model, "reason": f"timeout_s/temperature/max_tokens is not a number in range: {e}"[:200]})
+            continue
+        seen.add(rid)
         out.append({
             "id": rid, "base_url": base, "host": netloc, "key_ref": ref, "model": model,
-            "timeout_s": max(0.5, float(r.get("timeout_s") or 4)),
-            "temperature": float(r["temperature"]) if r.get("temperature") is not None else 0.3,
+            "timeout_s": timeout_s, "temperature": temperature,
             "reasoning_effort": str(effort).strip().lower() if effort else None,
-            "max_tokens": int(r.get("max_tokens") or 700),
+            "max_tokens": max_tokens,
         })
     return out, refused
 
@@ -191,7 +209,10 @@ class KeyCache:
         self._bad: dict[str, tuple[float, str]] = {}  # ref -> (retry at, error)
         self._lock = threading.Lock()
 
-    def get(self, ref: str) -> str | None:
+    def get(self, ref: str, timeout: float | None = None) -> str | None:
+        """The key, or None when the reference is unreadable (off until its retry time). With `timeout` the read (`op read`,
+        up to 20 s) runs on a thread the caller waits on for at most that long: a slow op never holds a car turn past its
+        budget, and the read still completes in the background and fills the cache for the next turn."""
         if not ref:
             return ""  # a route with no key (a local endpoint): no Authorization header
         with self._lock:
@@ -200,6 +221,15 @@ class KeyCache:
             bad = self._bad.get(ref)
             if bad and bad[0] > self._clock():
                 return None
+        if timeout is None:
+            return self._load(ref)
+        box: list = []
+        t = threading.Thread(target=lambda: box.append(self._load(ref)), name="converse-key-read", daemon=True)
+        t.start()
+        t.join(max(0.05, timeout))
+        return box[0] if box else None
+
+    def _load(self, ref: str) -> str | None:
         try:
             val = (self._reader(ref) or "").strip()
             err = None if val else "empty value"
@@ -225,8 +255,9 @@ class KeyCache:
         with self._lock:
             if ref in self._vals:
                 return "ok"
-            if ref in self._bad:
-                return "unreadable"
+            bad = self._bad.get(ref)
+            if bad and bad[0] > self._clock():
+                return "unreadable"  # past its retry time it is only "unread": the next turn reads it again
         return "unread"
 
     def error(self, ref: str) -> str | None:
@@ -492,7 +523,7 @@ class Ladder:
             if r["host"] in dead_hosts or _domain(r) in dead_hosts:
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "host_down", "ms": 0})
                 continue
-            key = self.keys.get(r["key_ref"])
+            key = self.keys.get(r["key_ref"], timeout=max(0.3, left - 0.3))
             if key is None:
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "key_unreadable", "ms": 0})
                 continue
@@ -544,7 +575,7 @@ class Ladder:
         status, raw, err = post(key)
         if status == 401 and r["key_ref"]:
             self.keys.invalidate(r["key_ref"])  # rotated: read it once more
-            key2 = self.keys.get(r["key_ref"])
+            key2 = self.keys.get(r["key_ref"], timeout=max(0.3, timeout - (self.clock() - t0) - 0.2))
             if key2 is not None and self.clock() - t0 < timeout - 0.2:
                 status, raw, err = post(key2)
         ms = int((self.clock() - t0) * 1000)
@@ -577,7 +608,7 @@ class Ladder:
             det = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
             cached = det.get("cached_tokens") if det.get("cached_tokens") is not None else usage.get("prompt_cache_hit_tokens")
         return {"attempt": {**att, "outcome": "ok", "answered_model": model, "http_status": status},
-                "decision": decision, "model": model or r["model"], "usage": usage,
+                "decision": decision, "model": model, "usage": usage,
                 "cached_tokens": int(cached) if isinstance(cached, (int, float)) else None}
 
 
@@ -593,7 +624,12 @@ def norm(text: str) -> str:
 _YES = r"(?:yes|yeah|yep|yup|ok|okay|sure|alright|all right|correct|perfect|great|sounds good|looks good|that's right)"
 _SEND = (r"(?:send it|send that|send this|send it off|send it over|send that over|go ahead|go for it|do it|ship it|"
          r"confirm|confirmed|kick it off|start it|make it so|please do|yes please)")
-CONFIRM_ONLY_RE = re.compile(rf"(?:{_YES} ?)*(?:(?:please )?{_SEND}(?: (?:please|now|then|thanks|thank you))*)?")
+# "send it" and its kin, said alone. A bare "yes" / "okay" is NOT here: it only confirms right after the read-back (see bare_yes).
+CONFIRM_ONLY_RE = re.compile(rf"(?:{_YES} ?)*(?:please )?{_SEND}(?: (?:please|now|then|thanks|thank you))*")
+BARE_YES_RE = re.compile(rf"(?:{_YES}|please|thanks|thank you|right|yes please)(?: (?:{_YES}|please|thanks|thank you|right|do it))*")
+SEND_RE = re.compile(rf"\b{_SEND}\b")
+QUESTION_RE = re.compile(r"\b(?:how|what|what's|whats|when|who|whom|whose|why|where|which|is|are|was|were|does|did|do you|have you|"
+                         r"can you tell|could you tell)\b")
 CANCEL_ONLY_RE = re.compile(
     r"(?:(?:no|nope|nah|ok|okay|actually) ?)*(?:cancel(?: it| that| the draft)?|scrap (?:it|that)|forget (?:it|that|about it)"
     r"|never ?mind|drop (?:it|that)|don't send (?:it|that)|do not send (?:it|that)|no|nope)(?: (?:please|thanks|thank you))*")
@@ -602,12 +638,15 @@ END_ONLY_RE = re.compile(
     r"im done|we're done|we are done|end (?:the )?conversation|talk (?:to you )?later|goodbye|good bye|bye|bye bye|see you|"
     r"that'll be all)(?: (?:thanks|thank you|bye|for now))*")
 FORCE_DIRECT_RE = re.compile(r"\b(?:ask|tell|have|let)\s+(?:the\s+)?([a-z0-9][a-z0-9' -]{0,40}?)\s+directly\b|\bfull agent\b")
-AFFIRM_RE = re.compile(r"\b(?:yes|yeah|yep|yup|sure|ok|okay|confirm(?:ed)?|go ahead|do it|send it|send that|send this|ship it|"
-                       r"sounds good|kick it off|start it|please do|go for it)\b")
+AFFIRM_RE = SEND_RE
 NEGATION_RE = re.compile(r"\b(?:don't|dont|do not|not|never|no|nope|stop|wait|hold on|hold off|cancel|but|instead|change|"
                          r"except|without|later)\b")
-CHANGE_WORDS_RE = re.compile(r"\b(?:change|changes|fix|fixes|edit|modify|write|implement|commit|patch|refactor|code changes?|"
-                             r"make the change|update the code)\b")
+_NEG_CUE_RE = re.compile(r"\b(?:don't|dont|do not|doesn't|never|no|not|without|nothing|avoid|n't|skip|except)\b|n't\b")
+_QUESTION_START_RE = re.compile(r"^\s*(?:why|what|when|how|did|does|is|was|were|has|had|who|where|which)\b")
+# "change" alone is how a driver edits a draft ("change the title"), so it only counts next to code
+CHANGE_WORDS_RE = re.compile(r"\b(?:fix|fixes|edit|modify|implement|commit|patch|refactor|code changes?|changes? (?:the )?code|"
+                             r"make (?:the|a|those) changes?|update (?:the )?code|write (?:the |a |some )?(?:code|fix|patch|tests?|"
+                             r"feature|script|function))\b")
 DEPLOY_WORDS_RE = re.compile(r"\b(?:deploy|deployed|deploying|redeploy|restart|release|roll ?out|push (?:it|to (?:prod|"
                              r"production|main)))\b")
 # A reply that claims work was sent or started when nothing was (only a confirmed draft is ever sent).
@@ -638,16 +677,59 @@ def force_direct(text: str) -> str | None:
 
 
 def affirm(text: str) -> bool:
+    """An explicit send phrase ("send it", "go ahead", "do it") anywhere in the transcript."""
     return AFFIRM_RE.search(norm(text)) is not None
+
+
+def bare_yes(text: str) -> bool:
+    """Only an acknowledgement ("yes", "okay", "sure"): it answers the read-back, nothing else."""
+    n = norm(text)
+    return bool(n) and BARE_YES_RE.fullmatch(n) is not None and not confirm_only(text)
+
+
+def is_question(text: str) -> bool:
+    return "?" in (text or "") or QUESTION_RE.search(norm(text)) is not None
+
+
+def readback_just_heard(sess: dict | None, pend: dict | None) -> bool:
+    """True when the desk's last utterance was this pending draft's read-back: the newest driver turn proposed it."""
+    if not isinstance(pend, dict):
+        return False
+    turns = driver_turns(sess or {})
+    return bool(turns) and turns[-1].get("action") == "propose" and turns[-1].get("readback") == pend.get("brief_id")
+
+
+def send_affirmed(text: str, sess: dict | None, pend: dict | None) -> bool:
+    """Is this transcript a confirmation of the pending draft? Never on a negation, never on a question, never on a bare
+    acknowledgement unless the read-back was the last thing the driver heard. (The model proposes; this decides.)"""
+    if not (text or "").strip() or negated(text):
+        return False
+    if confirm_only(text):
+        return True
+    if bare_yes(text):
+        return readback_just_heard(sess, pend)
+    return affirm(text) and not is_question(text)
 
 
 def negated(text: str) -> bool:
     return NEGATION_RE.search(norm(text)) is not None
 
 
+def _perm_text(words: list[str]) -> str:
+    """What the driver's own words ask for, minus what they forbid: clauses with a negation ("don't change any code", "do not
+    deploy") and clauses that are questions ("why did it restart?") grant nothing."""
+    kept: list[str] = []
+    for w in words:
+        for clause in re.split(r"[.!?;,\n]+|\b(?:but|and then|then|and)\b", (w or "").lower().replace("\u2019", "'")):
+            if not clause.strip() or _NEG_CUE_RE.search(clause) or _QUESTION_START_RE.match(clause):
+                continue
+            kept.append(clause)
+    return norm(" ".join(kept))
+
+
 def perm_allowed(words: list[str]) -> str:
-    """The highest permission the driver's own words allow (their last transcripts)."""
-    text = norm(" ".join(words))
+    """The highest permission the driver's own words allow."""
+    text = _perm_text(words)
     if DEPLOY_WORDS_RE.search(text):
         return "deploy_ok"
     if CHANGE_WORDS_RE.search(text):
@@ -662,7 +744,9 @@ def clamp_perm(requested: str, words: list[str]) -> str:
 
 # ---------------------------------------------------------------- names (handoff)
 
-_GENERIC = {"pm", "agent", "the", "a", "an", "director", "specialist", "reporter", "company", "project", "manager"}
+_GENERIC = {"pm", "agent", "the", "a", "an", "director", "specialist", "reporter", "company", "project", "manager",
+            # ordinary words that are also a stem of an agent id (monitoring-pm, infra-pm): said in passing they name no one
+            "monitoring", "infra", "infrastructure", "ops", "docs", "board", "data", "core", "platform", "general", "main"}
 
 
 def name_tokens(agent_id: str, *names: str) -> list[str]:
@@ -718,8 +802,10 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def brief_id_for(conv_id: str, body_sha: str) -> str:
-    return str(uuid.uuid5(NS, f"brief:{conv_id}:{body_sha}"))
+def brief_id_for(conv_id: str, body_sha: str, target: str = "", stamp: float = 0.0) -> str:
+    """One id per proposed draft: the same brief for another agent, or proposed again later, is another brief (so a
+    redirect never shares an id, and a command id, with the draft it replaces)."""
+    return str(uuid.uuid5(NS, f"brief:{conv_id}:{body_sha}:{target}:{int(stamp)}"))
 
 
 def command_id_for(brief_id: str) -> str:
@@ -761,13 +847,14 @@ def pending_draft(sess: dict | None, now: float, ttl_s: float) -> dict | None:
     return d
 
 
-def recent_delegation(sess: dict | None, now: float, within_s: float, sha: str | None = None) -> dict | None:
+def recent_delegation(sess: dict | None, now: float, within_s: float, sha: str | None = None,
+                      target: str | None = None) -> dict | None:
     for d in reversed((sess or {}).get("delegations") or []):
         if d.get("state") in ("not_sent",):
             continue
         if now - float(d.get("at") or 0) > within_s:
             continue
-        if sha is None or d.get("brief_sha256") == sha:
+        if (sha is None or d.get("brief_sha256") == sha) and (target is None or d.get("target") == target):
             return d
     return None
 
@@ -807,12 +894,32 @@ def context_for_direct(sess: dict | None, chars: int = 1200) -> str:
 
 # ---------------------------------------------------------------- the guard (deterministic; the model only proposes)
 
-def filter_sent_claims(say: str) -> tuple[str, bool]:
+def filter_sent_claims(say: str, about: str = "") -> tuple[str, bool]:
+    """Drop sentences that claim work was sent or started. `about` (a confirmed delegation's title and target) keeps a claim
+    that is true: only a sentence that shares a word with it survives; with nothing on the board every claim goes."""
     if not SENT_CLAIM_RE.search(say or ""):
         return say, False
-    kept = [s for s in re.split(r"(?<=[.!?])\s+", say) if s and not SENT_CLAIM_RE.search(s)]
+    words = {w for w in re.findall(r"[a-z0-9]{4,}", (about or "").lower())}
+
+    def true_claim(sentence: str) -> bool:
+        if not words:
+            return False
+        if re.search(r"\b(?:sent|started|kicked off|delegated|dispatched|handed) (?:it|that|this)\b", sentence.lower()):
+            return True  # "I've sent it": the thing on the board
+        return bool(words & set(re.findall(r"[a-z0-9]{4,}", sentence.lower())))
+    sentences = [x for x in re.split(r"(?<=[.!?])\s+", say) if x]
+    kept = [x for x in sentences if not SENT_CLAIM_RE.search(x) or true_claim(x)]
+    if len(kept) == len(sentences):
+        return say, False
     out = " ".join(kept).strip()
-    return (f"{out} Nothing was sent." if out else "Nothing has been sent yet."), True
+    tail = "Nothing new was sent." if words else "Nothing was sent."
+    return (f"{out} {tail}" if out else ("Nothing new has been sent." if words else "Nothing has been sent yet.")), True
+
+
+SENDING_BUSY_LINE = "That one is already being sent to {target}. Tell me again once I've called back."
+SENDING_CANCELLED_LINE = "Okay, cancelled before it left. Nothing was sent."
+SENDING_TOO_LATE_LINE = "It's already on its way to {target}, so I can't cancel it. I'll call you back with the result."
+NOT_CONFIRMED_SUFFIX = " To send it, say send it on its own."
 
 
 def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, handoff: str, route_fn, names_fn,
@@ -820,31 +927,40 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     """The final decision from the model's (or the lexicon's) decision. Returns (final, reasons).
 
     final: {action, say, draft (a new pending draft, for propose), send (the pending draft to send, for confirm),
-    drop (bool: the pending draft goes), close (bool: the conversation ends), already (the earlier delegation)}."""
+    drop (bool: the pending draft goes), close (bool: the conversation ends), already (the earlier delegation),
+    cancel_sending (the draft being sent that the driver cancelled: the watcher stops it if it has not left)}."""
     reasons: list[str] = []
     action = dec.get("action") or "reply"
-    words = [t.get("user") or "" for t in driver_turns(sess)[-1:]] + [transcript]
     pend = pending_draft(sess, now, draft_ttl_s)
+    # What the driver's own words grant a permission: this turn, plus the turn before it while a draft is being edited.
+    words = ([t.get("user") or "" for t in driver_turns(sess)[-1:]] if pend is not None else []) + [transcript]
     # "I've sent it" is a true thing to say while a confirmed delegation is on the board: only a claim with nothing sent is filtered
-    sent_something = pend is None and recent_delegation(sess, now, dedupe_s) is not None
+    board = recent_delegation(sess, now, dedupe_s) if pend is None else None
+    about = f"{board.get('title') or ''} {board.get('target_name') or board.get('target') or ''}" if board else ""
     out = {"action": action, "say": dec.get("say") or "", "draft": None, "send": None, "drop": False, "close": False,
-           "already": None}
+           "already": None, "cancel_sending": None}
+    resolve = getattr(names_fn, "resolve", None)
 
     def propose_from(src: dict, base: dict | None = None) -> None:
         target = (src.get("target") or (base or {}).get("target") or tile).strip()
-        if target != tile:
+        if resolve is not None:
+            target = resolve(target)
+        pend_target = (base or {}).get("target")
+        if target != tile and target != pend_target:
+            # another agent than the tile (and not the one the pending draft already named and read back): only if the
+            # driver said its name in THIS turn
             ok_named = handoff == "named"
             tokens = names_fn(target) if ok_named else []
             route = route_fn(target) if ok_named else {"ok": None}
             if handoff != "named":
                 reasons.append("handoff_off")
-                target = tile
-            elif not tokens or not any(named(w, tokens) for w in words):
+                target = pend_target or tile
+            elif not tokens or not named(transcript, tokens):
                 reasons.append("handoff_not_named")
-                target = tile
+                target = pend_target or tile
             elif route.get("ok") is not True:
                 reasons.append("unroutable_target")
-                target = tile
+                target = pend_target or tile
         said = (transcript or "").strip()
         title = (src.get("title") or (base or {}).get("title") or "").strip() or title_from_words(said) or "Untitled request"
         brief = src.get("brief") if (src.get("brief") or {}).get("goal") else (base or {}).get("brief") or src.get("brief") or {}
@@ -855,17 +971,17 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append(f"perm_clamped:{src.get('perm')}->{perm}")
         body = brief_body(title, brief, perm)
         body_sha = sha256(body)
-        bid = brief_id_for(sess["conv_id"], body_sha)
+        bid = brief_id_for(sess["conv_id"], body_sha, target, now)
         name = tile_name if target == tile else (names_fn.display(target) if hasattr(names_fn, "display") else target)
         draft = {"brief_id": bid, "brief_sha256": body_sha, "title": title, "target": target, "target_name": name,
                  "perm": perm, "brief": brief, "body": body, "memo_id": memo_id, "at": now, "state": "proposed"}
         out.update(action="propose", draft=draft, say=readback(draft))
 
+    def busy() -> None:
+        reasons.append("edit_while_sending")
+        out.update(action="reply", say=SENDING_BUSY_LINE.format(target=pend.get("target_name") or pend.get("target")))
+
     if action == "confirm":
-        if pend is not None and dec.get("target") and dec["target"] != pend.get("target"):
-            reasons.append("retarget_needs_readback")
-            propose_from({"target": dec["target"], "title": pend["title"], "brief": pend["brief"], "perm": pend["perm"]})
-            return out, reasons
         if pend is None or pend.get("state") == "sending":
             prior = (pend if pend is not None and pend.get("state") == "sending" else None) or recent_delegation(sess, now, dedupe_s)
             exp = sess.get("expired")
@@ -882,16 +998,27 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("no_pending_draft")
             out.update(action="reply", say=NOTHING_PENDING_LINE)
             return out, reasons
-        if not affirm(transcript) or negated(transcript):
+        want = resolve(dec["target"]) if (resolve is not None and dec.get("target")) else dec.get("target")
+        if want and want != pend.get("target") and want != tile:
+            # the model names another agent on a confirm: a retarget only if the driver said that agent's name just now;
+            # otherwise the model merely echoed an id and the draft keeps the target that was read back
+            tokens = names_fn(want) if handoff == "named" else []
+            if tokens and named(transcript, tokens):
+                reasons.append("retarget_needs_readback")
+                propose_from({"target": want, "title": pend["title"], "brief": pend["brief"], "perm": pend["perm"]})
+                return out, reasons
+            reasons.append("confirm_target_ignored")
+        if not send_affirmed(transcript, sess, pend):
             reasons.append("not_affirmed")
-            out.update(action="propose", say=readback(pend))
+            out.update(action="propose", say=readback(pend) + NOT_CONFIRMED_SUFFIX if bare_yes(transcript) or is_question(transcript)
+                       else readback(pend))
             return out, reasons
         if sha256(pend.get("body") or "") != pend.get("brief_sha256"):
             reasons.append("draft_changed")
             out.update(action="reply", say="That draft changed since I read it back, so nothing was sent. Tell me again what you want done.",
                        drop=True)
             return out, reasons
-        dup = recent_delegation(sess, now, dedupe_s, sha=pend["brief_sha256"])
+        dup = recent_delegation(sess, now, dedupe_s, sha=pend["brief_sha256"], target=pend.get("target"))
         if dup is not None:
             reasons.append("duplicate_brief")
             out.update(say=already_sent_line(dup), already=dup, drop=True)
@@ -904,21 +1031,22 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         out.update(action="reply", say=NOTHING_PENDING_LINE)
         return out, reasons
     if action == "propose":
-        if pend is None and confirm_only(transcript):
-            # "send it" with nothing to send is never a new request called "Send it" (a model that proposes it)
-            reasons.append("no_pending_draft")
-            out.update(action="reply", say=NOTHING_PENDING_LINE)
+        if pend is not None and pend.get("state") == "sending":
+            busy()
             return out, reasons
         propose_from(dec, pend)
         return out, reasons
     if action == "cancel":
         if pend is not None and pend.get("state") == "proposed":
             out.update(say=DROPPED_LINE, drop=True)
+        elif pend is not None and pend.get("state") == "sending":
+            reasons.append("cancel_while_sending")
+            out.update(say=SENDING_CANCELLED_LINE, cancel_sending=pend)
         else:
             out.update(say=NOTHING_TO_CANCEL_LINE)
         return out, reasons
     if action == "end":
-        say, hit = filter_sent_claims(out["say"] or END_LINE) if not sent_something else (out["say"] or END_LINE, False)
+        say, hit = filter_sent_claims(out["say"] or END_LINE, about)
         if hit:
             reasons.append("sent_claim_filtered")
         out.update(say=say or END_LINE, close=True, drop=pend is not None and pend.get("state") == "proposed")
@@ -926,7 +1054,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     if action == "direct":
         return out, reasons
     # reply
-    say, hit = filter_sent_claims(out["say"]) if not sent_something else (out["say"], False)
+    say, hit = filter_sent_claims(out["say"], about)
     if hit:
         reasons.append("sent_claim_filtered")
     if not say.strip():
@@ -1036,6 +1164,16 @@ class CardCache:
         rname = next((str(r.get("name") or "") for r in self.roster() if r.get("id") == agent), "")
         return name_tokens(agent, self.display(agent), rname)
 
+    def resolve(self, raw: str) -> str:
+        """A target the model wrote as a display name ("Flume PM") or an id with spaces becomes the roster id; anything else is
+        returned as it was (the guard then refuses it as unroutable)."""
+        t = (raw or "").strip()
+        ids = {r["id"] for r in self.roster()} | set(self.registry())
+        if t in ids:
+            return t
+        slug = norm(t).replace(" ", "-")
+        return slug if slug in ids else t
+
     def __call__(self, agent: str) -> list[str]:  # names_fn for guard(): the tokens that name an agent
         return self.tokens(agent)
 
@@ -1136,7 +1274,7 @@ def build_messages(*, agent: str, name: str, card: dict, sess: dict | None, tran
     pend = (sess or {}).get("pending")
     state = [f"Local time {time.strftime('%H:%M', time.localtime(now))}. Turn {len(driver_turns(sess)) + 1} of this conversation."]
     if isinstance(pend, dict) and pend.get("state") in ("proposed", "sending"):
-        state.append(f"PENDING DRAFT ({pend['state']}) for {pend.get('target_name')}: {pend.get('title')} "
+        state.append(f"PENDING DRAFT ({pend['state']}) for {pend.get('target_name')} (target id {pend.get('target')}): {pend.get('title')} "
                      f"[{PERM_TEXT.get(pend.get('perm'), 'Read-only')}]\n{pend.get('body', '')[:1200]}")
     else:
         state.append("PENDING DRAFT: none.")
@@ -1272,7 +1410,10 @@ class Desk:
     def routes(self, raw) -> tuple[list[dict], list[dict]]:
         k = raw if isinstance(raw, str) else json.dumps(raw)
         if k not in self._routes:
-            routes, refused = parse_routes(raw)
+            try:
+                routes, refused = parse_routes(raw)
+            except Exception as e:  # noqa: BLE001 - a malformed route list turns the desk off, never the watcher
+                routes, refused = [], [{"id": None, "model": None, "reason": f"routes unusable: {type(e).__name__}: {e}"[:200]}]
             for r in refused:
                 self.log("converse_route_refused", "warn", route=r.get("id"), model=r.get("model"), reason=r["reason"])
             self._routes[k] = (routes, refused)
@@ -1284,7 +1425,11 @@ class Desk:
 
     def wants(self, agent: str | None) -> bool:
         """Cheap: may a memo for this agent take the converse (or shadow) path at all right now?"""
-        s = self.settings()
+        try:
+            s = self.settings()
+        except Exception as e:  # noqa: BLE001 - a broken desk config is today's path
+            self.log("converse_config_error", "warn", error=f"{type(e).__name__}: {e}"[:200])
+            return False
         return s["mode"] != "off" and self.agent_allowed(s, agent)
 
     def usable_routes(self, s: dict) -> list[dict]:
@@ -1328,6 +1473,8 @@ class Desk:
         if confirm_only(transcript) and (pend is not None or recent_delegation(sess, now, self.dedupe_s)
                                          or (isinstance(exp, dict) and now - float(exp.get("at") or 0) < self.dedupe_s)):
             lex = ("confirm_only", {"action": "confirm"})
+        elif bare_yes(transcript) and pend is not None and readback_just_heard(sess, pend):
+            lex = ("confirm_only", {"action": "confirm"})  # "yes" right after the read-back
         elif cancel_only(transcript) and pend is not None:
             lex = ("cancel_only", {"action": "cancel"})
         elif end_only(transcript):
