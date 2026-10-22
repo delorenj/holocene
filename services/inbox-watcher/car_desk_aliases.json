@@ -9,7 +9,7 @@
    "phrases": ["deepseek flash", "deep seek flash", "flash", "deepseek", "deep seek", "the fast one"],
    "routes": [
     {"id": "r1", "base_url": "https://hyper.charm.land/v1", "key_ref": "op://DeLoSecrets/qlnfw3xdnaxrelksmhnpqqolwe/credential", "model": "deepseek-v4.1-flash-1017", "timeout_s": 4, "temperature": 0.3},
-    {"id": "r2", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-flash", "timeout_s": 5, "temperature": 0.3}
+    {"id": "r2", "base_url": "https://api.deepseek.com", "key_ref": "op://DeLoSecrets/35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja", "model": "deepseek-flash", "timeout_s": 5, "temperature": 0.3, "max_tokens": 1500}
    ]
   },
   "deepseek-pro": {

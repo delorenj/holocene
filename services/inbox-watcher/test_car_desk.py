@@ -222,6 +222,11 @@ class Phrases(unittest.TestCase):
                            ("go with the autorouter", mo("auto")), ("Reset the model.", mo("default")),
                            ("use the default model", mo("default")), ("Can you switch to deep seek flash please?", mo("deepseek-flash"))):
             self.assertEqual(cv.setting_phrase(said, CATALOG, self.table), want, said)
+        # whisper's spelling one letter off (live 2026-10-22: "Use the walkin' voice!"); never for short names or two near ones
+        self.assertEqual(cv.setting_phrase("Use the walkin' voice!", CATALOG, self.table), v("walken"))
+        self.assertEqual(cv.setting_phrase("use the morgen voice", CATALOG, self.table), v("morgan"))
+        self.assertIsNone(cv.setting_phrase("use the nick voice", CATALOG, self.table))
+        self.assertIsNone(cv.resolve_voice("walkin", CATALOG))  # typed values (CLI, skills) are exact
         for said in ("switch to marge", "switch to flume", "use the default", "what voice is that", "switch to rick",
                      "use the walken voice and then tell me what's on the board", "Send it.", "switch to banana voice",
                      "Have the PM switch to the new database"):

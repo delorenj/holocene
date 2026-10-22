@@ -892,14 +892,41 @@ def voice_index(catalog: list[dict]) -> dict[str, str]:
     return idx
 
 
-def resolve_voice(said: str, catalog: list[dict]) -> str | None:
-    """The voice name a spoken or typed value means, or None. 'default' resolves to the literal 'default'."""
+def _within_one_edit(a: str, b: str) -> bool:
+    """True when a and b differ by at most one insertion, deletion or substitution."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) > len(b):
+        a, b = b, a
+    i = j = edits = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(a) == len(b):
+            i += 1
+        j += 1
+    return edits + (len(b) - j) <= 1
+
+
+def resolve_voice(said: str, catalog: list[dict], fuzzy: bool = False) -> str | None:
+    """The voice name a spoken or typed value means, or None. 'default' resolves to the literal 'default'. `fuzzy` (the
+    speech path only): a speech-to-text spelling one letter off a name of five letters or more ("walkin" for walken) counts
+    when exactly one voice is that close."""
     k = _key(said)
     if not k:
         return None
     if k in {_key(w) for w in DEFAULT_WORDS}:
         return "default"
-    return voice_index(catalog).get(k)
+    idx = voice_index(catalog)
+    if k in idx or not fuzzy or len(k) < 5:
+        return idx.get(k)
+    near = {v for p, v in idx.items() if len(p) >= 5 and _within_one_edit(k, p)}
+    return near.pop() if len(near) == 1 else None
 
 
 def _alias_key(text: str) -> str:
@@ -961,7 +988,7 @@ def setting_phrase(text: str, catalog: list[dict], table: dict | None) -> dict |
         m = rx.fullmatch(n)
         if m is None:
             continue
-        v = "default" if m.groupdict().get("reset") else resolve_voice(m.group("v"), catalog)
+        v = "default" if m.groupdict().get("reset") else resolve_voice(m.group("v"), catalog, fuzzy=True)
         if v:
             return {"tool_name": TOOL_VOICE, "args": {"voice": v}}
     for rx in _MODEL_RES:

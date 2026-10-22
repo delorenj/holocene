@@ -712,7 +712,7 @@ inside `MEMO_CONVERSE_BUDGET_S` (**12 s**: a 402 on r1 plus r2 at its timeout st
 | rung | route | key (op:// item-UUID ref) | timeout | measured 2026-10-22 (card-sized prompt, ~9.8k chars) |
 | --- | --- | --- | --- | --- |
 | r1 | Hyper `deepseek-v4.1-flash-1017` | item "Holocene Auto" `qlnfw3xdnaxrelksmhnpqqolwe/credential` | 4 s | **402 billing_error** in 0.06-0.16 s (out of credit; earlier p50 0.94 s) |
-| r2 | DeepSeek API `https://api.deepseek.com`, `deepseek-flash` (= DeepSeek-V4.1-Flash) | item "DeepSeek" field "API Key" `35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja` | 5 s | 1.27-1.55 s; full ladder (r1 402 then r2) 1.36-1.42 s |
+| r2 | DeepSeek API `https://api.deepseek.com`, `deepseek-flash` (= DeepSeek-V4.1-Flash), max_tokens 1500 | item "DeepSeek" field "API Key" `35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja` | 5 s | 1.27-1.55 s; full ladder (r1 402 then r2) 1.36-1.42 s; with tools + recall (12.4k chars) p50 2.3-2.5 s, 10/10; `reasoning_effort=low` came back empty 1-2 of 10 |
 | r3 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 7 s | 3.75-4.35 s, answered by `glm-5.3` (served route `automaticai/personal/glm-5.3`) |
 
 then today's full-agent path. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk.
@@ -886,6 +886,26 @@ in the log). After editing it:
 ```bash
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
+
+## Verified live: tiles, tools and the new ladder (2026-10-22, sim emulator-5554)
+
+Watcher at 9de56bd + b9703c1 (restarted idle; heartbeat: routes r1/r2/r3, `key_status ok` per rung, r3 `scope ok`, tools
+`car_set_model`, `car_set_voice` loaded from the car-desk scope, 12 vox voices). Driver: `converse-e2e/tools/drive_converse.py`,
+holocene-pm tile, speech through the `holo_testmic` null sink (the emulator's mic started ~2 s late this run: utterances were
+padded with 2.5 s of lead-in silence; two recordings still came out empty or as "Yes").
+
+| memo | driver said (whisper heard) | path | result |
+| --- | --- | --- | --- |
+| 8139c55f | "Use Walken voice." ("Use the walkin' voice!") | LLM: r1 `http_402` (breaker opened), r2 deepseek-flash 1741 ms -> `action tool` | `car_set_voice(walken)` via the skill, exit 0, 784 ms; "Switched Holocene PM to Walken." `voiced`/`replied` `voice=walken` |
+| 8078da50 | "Switch to Deep Seek Pro!" | `setting_phrase` (no LLM call) | `car_set_model(deepseek-pro)` via the skill, 124 ms; "Holocene PM now thinks with Deep Seek Pro." |
+| b02d569c, 5f183acd | two questions | ladder pro-h (breaker) > **pro-d deepseek-v4-pro** | answered in 4757 / 2844 ms, spoken in walken |
+| f3a98ef4 | "Reset the model." | `setting_phrase` | back to the default ladder |
+| 0f56b037 | a question | r1 402, r2 deepseek-flash `empty` (no content), **r3 auto/fast -> glm-5.3** | 8457 ms; r2 now has max_tokens 1500 |
+
+`mise run memo:trace 8139c55f` shows `tool deepseek-flash@r2 (2 attempts, 1741 ms, ...) failed: r1 http_402 ... tool
+car_set_voice(voice=walken) ok via skill 784 ms tile voice walken model default ladder`. The voice was reset afterwards
+(`mise run memo:voice holocene-pm --clear`). Whisper's "walkin'" now also matches the phrase short-circuit (one letter off a
+name of five letters or more, on the speech path only).
 
 ## Verified live: the fast in-car desk (2026-10-22, sim emulator-5554)
 
