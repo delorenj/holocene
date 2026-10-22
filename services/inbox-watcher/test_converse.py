@@ -520,6 +520,20 @@ class Guard(unittest.TestCase):
         final, reasons = g({"action": "reply", "say": "I've sent it."}, sess, "what about the new one")
         self.assertIn("sent_claim_filtered", reasons)
 
+    def test_send_it_after_a_draft_timed_out_says_so_instead_of_already_sent(self):
+        sess = session()
+        sess["delegations"] = [{"brief_id": "b-1", "brief_sha256": "x" * 64, "title": "Old", "target": "holocene-pm",
+                                "state": "done", "at": 1005.0}]
+        sess["expired"] = {"brief_id": "b-2", "title": "New", "at": 1500.0}
+        final, reasons = g({"action": "confirm"}, sess, "send it", now=1700.0)
+        self.assertEqual((final["action"], final["say"]), ("reply", cv.EXPIRED_LINE))
+        self.assertIsNone(final["send"])
+        self.assertIn("draft_expired", reasons)
+        # a delegation sent AFTER the expiry is a real 'already sent'
+        sess["delegations"][0]["at"] = 1600.0
+        final, reasons = g({"action": "confirm"}, sess, "send it", now=1700.0)
+        self.assertIn("already_sent", reasons)
+
     def test_cancel_drops_the_pending_draft_and_end_closes(self):
         sess = session()
         sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]

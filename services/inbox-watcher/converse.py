@@ -689,6 +689,7 @@ NOTHING_PENDING_LINE = "There's nothing waiting to send. Tell me what you want d
 DROPPED_LINE = "Dropped. Nothing was sent."
 NOTHING_TO_CANCEL_LINE = "Okay. Nothing was waiting to send."
 END_LINE = "Okay. Talk soon."
+EXPIRED_LINE = "That draft timed out, so nothing was sent. Tell me again what you want done."
 
 
 # ---------------------------------------------------------------- briefs + ids
@@ -858,6 +859,13 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             return out, reasons
         if pend is None or pend.get("state") == "sending":
             prior = (pend if pend is not None and pend.get("state") == "sending" else None) or recent_delegation(sess, now, dedupe_s)
+            exp = sess.get("expired")
+            if (pend is None and isinstance(exp, dict) and now - float(exp.get("at") or 0) < dedupe_s
+                    and float(exp.get("at") or 0) > float((prior or {}).get("at") or 0)):
+                # the draft the driver means timed out after the last thing that was sent: say so, never "Already sent"
+                reasons.append("draft_expired")
+                out.update(action="reply", say=EXPIRED_LINE)
+                return out, reasons
             if prior is not None:
                 reasons.append("already_sent")
                 out.update(say=already_sent_line(prior), already=prior)

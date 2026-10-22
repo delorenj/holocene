@@ -1649,6 +1649,7 @@ class Watcher:
                     and now - max(float(p.get("at") or 0), float(p.get("restored_at") or 0)) > self.desk.draft_ttl_s):
                 p["state"] = "expired"
                 sess["pending"] = None
+                sess["expired"] = {"brief_id": p.get("brief_id"), "title": p.get("title"), "at": now}
                 log("converse_draft_expired", conv_id=sess["conv_id"], agent=sess.get("agent"), brief_id=p.get("brief_id"),
                     title=p.get("title"), reason=f"no confirmation within {self.desk.draft_ttl_s:g} s", note="never sent")
             if now - float(sess.get("last_at") or 0) > self.desk.idle_s:
@@ -1790,6 +1791,7 @@ class Watcher:
                 title=pend.get("title"), note="never sent")
         if final["draft"] is not None:
             sess["pending"] = final["draft"]
+            sess.pop("expired", None)
         sent = final["send"]
         if sent is not None:
             sent["state"] = "sending"
