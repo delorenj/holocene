@@ -227,6 +227,24 @@ class Phrases(unittest.TestCase):
                      "Have the PM switch to the new database"):
             self.assertIsNone(cv.setting_phrase(said, CATALOG, self.table), said)
 
+    def test_the_voice_list_never_makes_the_car_wait_once_it_has_one(self):
+        now = [1000.0]
+        calls = []
+        gate = threading.Event()
+
+        def fetch(timeout):
+            calls.append(timeout)
+            if len(calls) > 1:
+                gate.wait(2)
+            return CATALOG
+        vc = cv.VoiceCatalog("http://x", ttl_s=10, fetch=fetch, clock=lambda: now[0])
+        self.assertEqual(len(vc.get()), 12)  # empty: fetched in line
+        now[0] += 60  # stale
+        t0 = time.time()
+        self.assertEqual(len(vc.get()), 12)  # the stale list at once, refreshed in the background
+        self.assertLess(time.time() - t0, 0.5)
+        gate.set()
+
     def test_a_tool_decision_normalises(self):
         d = cv.normalize_decision({"action": "tool", "tool_name": "car_set_voice", "args": {"voice": "walken"}, "say": ""})
         self.assertEqual((d["action"], d["tool_name"], d["args"]), ("tool", "car_set_voice", {"voice": "walken"}))

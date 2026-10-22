@@ -706,26 +706,104 @@ converse, sends `heard: null` for a fast turn (no "<agent> heard: ..." echo in f
 turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_key}`: `reply_key` is THIS turn's reply of
 record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
 
-**The ladder (never Anthropic).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order, inside `MEMO_CONVERSE_BUDGET_S`
-(8 s): r1 Hyper `deepseek-v4.1-flash-1017` (4 s), r2 Hyper `deepseek-v4.1-flash` (4 s; skipped in a call where r1 timed out
-or could not connect, same host), r3m gateway `automaticai/mistral-allowance/ministral-14b` (3 s), r3c gateway
-`automaticai/gemini-free/gemini-3.5-flash-lite` (3 s), r3a gateway `automaticai/personal/kimi-k3s` (temperature 1, effort
-medium), r3b gateway `automaticai/personal/glm-5.3-flash` (effort medium; the gateway refuses `low`). r3m and r3c were added
-on 2026-10-22, when Hyper ran out of credit: kimi and glm are an availability fallback, not a latency path. A rung is skipped
-while its breaker is open (3 failures in 120 s: 60 s; **one 402 opens it for 10 min**) or its key is unreadable (retried every
-300 s); a 401 re-reads the key once. A `propose` with neither a title nor a brief goal (small models send `say` + `action`
-only) counts as `incomplete_propose` and goes to the next rung; if no rung does better the guard builds the brief from the
-driver's own words. Keys are **op:// item-UUID references only** (`op read` at first use and once at start-up, memory only,
-never logged; a pasted key is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`, `openrouter/auto`; the name is NFKC
-normalised, zero-width characters stripped, and a non-ASCII name refused) refuses a configured route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field
-matches. If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is
-never failed for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; on
-2026-10-22 with the card-sized prompt: ministral-14b p50 1.0 s / p90 1.1 s (8 of 8 valid), gemini-3.5-flash-lite p50 0.8 s /
-p90 2.7 s with 4-8 s spikes. Live with the real card (~3k prompt tokens): r1 answered a propose in 1.0-1.4 s (2944 of 3030
-prompt tokens cached after the first call, 0.007 hypercredits per cached turn). Hyper's `usage` carries `cost` and
-`remaining.hypercredits` and lands on the routed fact as is: the shared key had about 9.5 hypercredits left that day and was
-out (`402 billing_error`) a few hours later. The gateway token `holocene-converse` (id 88) is scoped to exactly these four
-gateway routes, no claude and no auto.
+**The ladder (never Anthropic; operator decision 2026-10-22).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order,
+inside `MEMO_CONVERSE_BUDGET_S` (**12 s**: a 402 on r1 plus r2 at its timeout still leaves r3 its full 7 s):
+
+| rung | route | key (op:// item-UUID ref) | timeout | measured 2026-10-22 (card-sized prompt, ~9.8k chars) |
+| --- | --- | --- | --- | --- |
+| r1 | Hyper `deepseek-v4.1-flash-1017` | item "Holocene Auto" `qlnfw3xdnaxrelksmhnpqqolwe/credential` | 4 s | **402 billing_error** in 0.06-0.16 s (out of credit; earlier p50 0.94 s) |
+| r2 | DeepSeek API `https://api.deepseek.com`, `deepseek-flash` (= DeepSeek-V4.1-Flash) | item "DeepSeek" field "API Key" `35x5d67bgad73f6rypivp35gfa/oa3xka3ys6fhdgvumw7gztmyja` | 5 s | 1.27-1.55 s; full ladder (r1 402 then r2) 1.36-1.42 s |
+| r3 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 7 s | 3.75-4.35 s, answered by `glm-5.3` (served route `automaticai/personal/glm-5.3`) |
+
+then today's full-agent path. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk.
+Hyper is out of credit (both keys `402`): a 402 opens that rung's breaker for 10 min, so it is skipped in ~0.2 s and comes
+back by itself after a top-up (one 0.2 s probe per 10 min). DeepSeek accepts `temperature` and `reasoning_effort`
+`low|high|max` (its `/models`; default high); the rungs send neither effort. A rung is also skipped while its breaker is open
+(3 failures in 120 s: 60 s) or its key is unreadable (retried every 300 s); a 401 re-reads the key once. A `propose` with
+neither a title nor a brief goal counts as `incomplete_propose` and goes to the next rung; if no rung does better the guard
+builds the brief from the driver's own words. Keys are **op:// item-UUID references only** (`op read` at first use and
+once at start-up, memory only, never logged; a pasted key is refused; `op read` of all three refs works from a
+`systemd-run --user` shell).
+
+The rule: `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`, `openrouter/auto`; NFKC
+normalised, zero-width characters stripped, a non-ASCII name refused) refuses a configured route
+(`converse_route_refused`; no route left = off), with ONE exception: exactly `automaticai/auto/fast` and `automaticai/free`,
+and only on a route whose key is in `MEMO_CONVERSE_SCOPED_KEY_REFS` (the holocene-converse token; anything else is
+`auto_unscoped`). Bare `automaticai/auto` (an orchestrator-class request, frontier tier), `/orchestrator`, `/subagent` and
+`openrouter/auto` stay refused everywhere, and the delegated turn's model override still refuses every auto name. Such a
+router rung is used only while its **scope proof** is fresh: `GET <base>/models` with the token lists models and none is
+Anthropic (at start-up, re-checked every 10 min in the background; a Claude id in the scope = `scope_unsafe`, no proof yet =
+`scope_unproven`, both skip the rung without sending anything). Every answer is checked: a `model` field that is forbidden,
+or an `X-AutomaticAI-Route` header (the route that served an auto/free request) that names Anthropic, is thrown away
+(`forbidden_model`, a failure of the rung); a router answer with no route header is not used (`route_unproven`).
+
+The gateway side (verified in `middleware/automaticai.go` `resolveAutomaticAIAuto` and `auto.go` `evaluate`): auto needs the
+`aai-personal` group and the auto name in the token's scope, then every candidate is intersected with the token's scope
+(`TokenModelLimitAllows`). The holocene-converse token was re-scoped on 2026-10-22 (`gateway-tokens.py scope
+holocene-converse --models <12 routes> --auto --free`, key and expiry kept) to 37 names, **none Anthropic**:
+`automaticai/personal/{glm-5.3-flash, kimi-k3s, glm-5.3, kimi-k3, kimi-2.8}`, `automaticai/hypercharm/{glm-5.3, kimi-k3,
+minimax-m3}`, `automaticai/deepseek/{deepseek-flash, deepseek-v4-pro}`, `automaticai/mistral-allowance/ministral-14b`,
+`automaticai/gemini-free/gemini-3.5-flash-lite`, the four auto names, `automaticai/free`, and the auto policy's 20 free
+routes (OpenRouter `:free`, kilo-anon, cf, zai-free, mistral-small, groq, agnes, bazaarlink, vercel). `sol-6.1` is left out
+(frontier tier: auto/fast never climbs past rung 3, and Sol's weekly pool is the voice turns'). Auto/fast's fast tier is
+glm-5.3-flash, kimi-k3s and `damien/claude-haiku-4.5`; with this scope the haiku route can never be a candidate. Four live
+calls to `automaticai/auto/fast` were answered by `glm-5.3` (`X-AutomaticAI-Auto: role=fast; rung=3`), two to
+`automaticai/free` by agnes-3.0-flash and cf glm-5.3-flash.
+
+If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never
+failed for an LLM reason.
+
+**Tiles: a voice and a model per agent (HOLOC-23, 2026-10-22).** The flag file carries `tiles: {<agent>: {voice, model,
+voice_set_at/by, model_set_at/by}}`, written under an fcntl lock (`.converse.json.lock`; the watcher, the CLI and the skills
+all write the same file; `memo:converse on|off` keeps the map). A file that only holds tiles keeps the unit's mode.
+
+- **Voice** (car only; the agent's Telegram/Hermes `tts.voice` is untouched): `tiles[agent].voice`, else `MEMO_VOX_VOICE`
+  (rick). Valid = vox's list (`voxxy -q voice list --json`, `GET <vox>/voices`; 12 today: brule carlin damian david dumply
+  marge morgan morty peter rick walken walken2); a display name, a unique first/last word (`freeman`) or spoken digits
+  (`walken two` = walken2) resolve. The voice is **locked per reply at its first render** (`voice_lock` on the memo: chunks,
+  the full file and retries keep it; a follow-up round locks again). If vox answers `voice 'x' not found`, the render falls
+  back to the default voice at once (`voice_fallback` log, no 1800 s TTS retry). `voiced` / `replied` facts carry `voice`
+  (used) and, on a fallback, `voice_requested` + `voice_fallback`. Progress narration uses the tile's voice too unless
+  `MEMO_PROGRESS_VOICE` pins one.
+- **Model** (the desk's ladder only; the agent's own Hermes model, the direct-turn and delegated-turn models are
+  untouched): `tiles[agent].model` names an alias in **`car_desk_aliases.json`** (version 1, shared by the watcher, the CLI
+  and the car-set-model skill). The alias's routes go in FRONT of the default ladder; a `(base_url, model)` already in the
+  ladder keeps its id (one breaker per upstream) and appears once; the rest of the ladder still backs it up.
+
+  | alias | phrases | routes in front | measured 2026-10-22 |
+  | --- | --- | --- | --- |
+  | `deepseek-flash` | deepseek flash, flash | r1 Hyper flash-1017 (4 s), r2 DeepSeek `deepseek-flash` (5 s) | = the default ladder |
+  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (9 s, max_tokens 2000), budget 16 s | pro-h 402; pro-d 1.96-3.6 s |
+  | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s) | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
+  | `auto` | auto, autorouter | r3 gateway `automaticai/auto/fast` (7 s) | 3.9-4.4 s (glm-5.3) |
+  | `default` | default model, reset the model | none (clears the tile's model) | |
+
+**Switching from the car.** Two ways, one effect:
+1. **Setting phrases** (no LLM call; `path=setting_phrase`): a whole utterance like "use walken voice", "switch to the Walken
+   two voice", "switch the voice to Morgan Freeman", "reset the voice", "switch to deepseek pro", "use the free model",
+   "switch the model to auto", "reset the model". A bare name is a voice only next to the word voice ("switch to marge" is
+   an agent, not a voice); "use the default" alone names nothing.
+2. **The `tool` action**: the decision may be `{"action": "tool", "tool_name": "...", "args": {...}}`. The tools are the
+   Skillex skills of the desk's own scope, `MEMO_CONVERSE_TOOLS_DIR` = `~/.local/state/holocene-auto/car-desk-scope`
+   (`skillex init`, `inherit off`, `enable pack car-desk@0.1.0`): every `.agents/skills/*/SKILL.md` whose
+   `metadata.tool.consumers` names `car-desk`, with its `tool.json` (an OpenAI function object), read at start-up and again
+   on any mtime change. Today: `car_set_voice(voice)` (skill car-set-voice) and `car_set_model(model: deepseek-flash |
+   deepseek-pro | free | auto | default)` (skill car-set-model). They are listed in the system prompt's TOOLS block; the
+   model's args are validated against the schema (type, enum, required, additionalProperties false, maxLength) and the
+   skill's entrypoint runs with no shell, stdin closed, at most 3 s: `<entrypoint> --json --agent <tile> --by car --<arg>
+   <value>`; it writes through the watcher's own verb (below). Without the scope, a phrase still switches in process through
+   the same locked writer (`via=builtin`).
+
+The tool runs in the converse step before the decision is stored, so a restart re-applies the outcome and never runs it
+twice; shadow mode never runs a tool. What the driver hears is a template, spoken in the NEW voice: "Switched Holocene PM
+to Walken.", "Holocene PM now thinks with Deep Seek Pro.", "Holocene PM is back to the default voice.", or "I couldn't
+change the voice: there's no voice called bob." The routed fact carries `tool {tool, args, ok, via, exit, ms, error}`,
+`tile_model` (the alias that decided the turn), `tile_voice` (the voice the reply is spoken in) and `served_route`.
+
+**CLI verbs (the watcher's own; the skills call them).** `mise run memo:voice <agent> [<voice>|--clear] [--json]` and
+`mise run memo:model <agent> [<alias>|--clear] [--json]` (`memo_trace.py voice|model`): validate, write the tile under the
+lock, print the result (exit 3 on a refused value). No restart: the watcher reads the file per reply / per turn. The skills
+themselves are run with `skillex`, never a mise task.
 
 **State.** `state.json` `conversations` keyed `<device>|<agent>` (`conv_id`, `sid`, `turns[]` upserted by memo id,
 `pending` draft, `delegations[]`) and `conversations_closed` (the last 20). Idle `MEMO_CONVERSE_IDLE_S` (900 s) closes one
@@ -736,7 +814,8 @@ gateway routes, no claude and no auto.
    `~/.local/state/holocene-auto/inbox-watcher/converse.json` atomically; it wins over the unit's env and is read per memo.
    `mise run memo:converse status` prints the effective mode, source, agents and routes and the watcher's own view
    (heartbeat `converse`: mode, source, `key_status`, breaker state, the fact contract). `--routes-file f.json` overrides
-   the ladder (S11 tests), `--clear-routes` drops the override.
+   the ladder (S11 tests), `--clear-routes` drops the override. `status` also prints each tile's voice, model and ladder,
+   the loaded tools, and the watcher's view of every rung (key, scope proof, breaker).
 2. The unit: `MEMO_CONVERSE=off|shadow|on` (shipped `off`), `MEMO_CONVERSE_AGENTS`, `MEMO_CONVERSE_DEVICES`,
    `MEMO_CONVERSE_HANDOFF`. An invalid value turns the desk off (logged), never the watcher.
 3. Per memo: "ask <agent> directly" / "full agent" forces today's path. `shadow` runs today's path untouched and logs
@@ -763,7 +842,8 @@ what was said), the pending draft (with its body) and the delegations with memo 
 Log events: `converse_decided`, `converse_skipped`, `converse_guard`, `converse_retarget_refused`,
 `converse_attempt_failed`, `converse_route_refused`, `converse_config`, `converse_contract`, `conversation_opened`,
 `conversation_closed`, `converse_draft_expired`, `converse_draft_dropped`, `delegation_sent`, `delegation_result`,
-`delegation_restored`, `converse_shadow`.
+`delegation_restored`, `converse_shadow`, `converse_tool`, `converse_tools_loaded`, `converse_scope_unproven`,
+`voice_fallback`.
 
 ## Bloodbank facts
 

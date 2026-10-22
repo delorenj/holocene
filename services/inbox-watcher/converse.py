@@ -1891,6 +1891,7 @@ class VoiceCatalog:
         self.ttl_s, self.clock = ttl_s, clock
         self._fetch = fetch or self._http
         self._at, self._list = 0.0, []
+        self._refreshing = False
         self._lock = threading.Lock()
 
     def _http(self, timeout: float) -> list[dict]:
@@ -1900,15 +1901,30 @@ class VoiceCatalog:
         return data if isinstance(data, list) else (data.get("voices") or [])
 
     def get(self, timeout: float = 1.5) -> list[dict]:
+        """The list. A stale one is returned at once and refreshed in the background (the car never waits on vox for
+        it); only an empty cache is fetched in line."""
         with self._lock:
-            if self._list and self.clock() - self._at < self.ttl_s:
+            fresh = self._list and self.clock() - self._at < self.ttl_s
+            if fresh:
                 return self._list
+            stale = list(self._list)
+            refreshing = self._refreshing
+            if stale and not refreshing:
+                self._refreshing = True
+        if stale:
+            if not refreshing:
+                threading.Thread(target=self._refresh, args=(timeout,), name="vox-voices", daemon=True).start()
+            return stale
+        return self._refresh(timeout)
+
+    def _refresh(self, timeout: float) -> list[dict]:
         try:
             rows = [{"name": str(v.get("name")), "display_name": str(v.get("display_name") or "")}
                     for v in self._fetch(timeout) if isinstance(v, dict) and v.get("name")]
         except Exception:  # noqa: BLE001
             rows = []
         with self._lock:
+            self._refreshing = False
             if rows:
                 self._at, self._list = self.clock(), rows
             return self._list
