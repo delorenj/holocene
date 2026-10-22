@@ -335,5 +335,95 @@ class Detached(MemoHarness, unittest.TestCase):
                                                          "bloodbank.cmd.agent.invocation.start"])
 
 
+class TraceDetachAndFollowup(unittest.TestCase):
+    """memo:trace shows the detach, the quick answer and the follow-up as their own hops; the verdict names both."""
+
+    CMD1, CMD2 = "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"
+    KEY = "inbox/holocene-pm/2026/10/21/followup-trace.ogg"
+
+    def _events(self, followup_replied=True):
+        mid = mc_.memo_id_for(self.KEY)
+
+        def ev(typ, at, **data):
+            return {"type": f"bloodbank.{typ}", "time": at, "data": {"memo_id": mid, "occurred_at": at, **data}}
+        out = [
+            ev("audio.memo.received", "2026-10-21T02:00:00.100Z", detect_lag_ms=5),
+            ev("audio.memo.transcribed", "2026-10-21T02:00:01.000Z", transcript_chars=20, processing_seconds=0.5, model="m",
+               transcript_text="crank circuit"),
+            ev("audio.memo.dispatched", "2026-10-21T02:00:02.000Z", command_id=self.CMD1, command_subject="x", lane="interactive",
+               lane_reason=None, model="automaticai/personal/sol-6.1"),
+            ev("agent.invocation.started", "2026-10-21T02:00:03.000Z", command_id=self.CMD1),
+            ev("agent.invocation.detached", "2026-10-21T02:05:03.000Z", command_id=self.CMD1, elapsed_seconds=300.2,
+               timeout_seconds=300.0, ceiling_seconds=2700.0),
+            ev("agent.invocation.completed", "2026-10-21T02:06:00.000Z", command_id=self.CMD1, detached=True,
+               detached_after_seconds=300.2, elapsed_seconds=357.0,
+               model_override={"requested": "automaticai/personal/sol-6.1", "applied": True, "reason": "applied"}),
+            ev("audio.memo.replied", "2026-10-21T02:06:05.000Z", reply_chars=40, tts_seconds=1.0, tts_engine="fakevox",
+               reply_s3_key="replies/a.ogg", late=True, escalated=False, detached=True, background=True,
+               background_plan="walk the tabs", command_id=self.CMD1),
+            ev("audio.memo.dispatched", "2026-10-21T02:06:06.000Z", command_id=self.CMD2, command_subject="x", lane="batch",
+               lane_reason=mc_.FOLLOWUP_REASON, followup=1, followup_of_command_id=self.CMD1, followup_plan="walk the tabs"),
+            ev("agent.invocation.started", "2026-10-21T02:06:07.000Z", command_id=self.CMD2),
+        ]
+        if followup_replied:
+            out += [ev("agent.invocation.completed", "2026-10-21T02:09:00.000Z", command_id=self.CMD2),
+                    ev("audio.memo.replied", "2026-10-21T02:09:04.000Z", reply_chars=80, tts_seconds=1.0, tts_engine="fakevox",
+                       reply_s3_key="replies/b.ogg", late=True, followup=1, followup_of_command_id=self.CMD1,
+                       command_id=self.CMD2, reply_text="All eight tabs are green.")]
+        return out
+
+    def _build(self, events, rec):
+        import contextlib
+        import memo_trace as mt
+        rows = {
+            self.CMD1: {"state": "completed", "outcome": "success", "profile": "holocene-pm", "created_at": "2026-10-21T02:00:02Z",
+                        "updated_at": "2026-10-21T02:06:00Z", "lane": "interactive", "failure_code": None, "terminal": [],
+                        "detached_at": "2026-10-21T02:05:03Z"},
+            self.CMD2: {"state": "completed" if rec.get("status") == "done" else "started", "outcome": "success",
+                        "profile": "holocene-pm", "created_at": "2026-10-21T02:06:06Z", "updated_at": "2026-10-21T02:09:00Z",
+                        "lane": "batch", "failure_code": None, "terminal": []}}
+        lm = lambda k: {"size": 9, "last_modified": mc_.parse_iso("2026-10-21T02:00:00Z" if k == self.KEY else "2026-10-21T02:06:05Z")}  # noqa: E731
+        with contextlib.ExitStack() as st:
+            for target, name, kw in ((mt.c, "candystore_events", {"return_value": events}), (mt.c, "s3_stat", {"side_effect": lm}),
+                                     (mt.c, "journal_row", {"side_effect": rows.get}),
+                                     (mt.c, "find_reply", {"return_value": {"prompt": "hi", "text": "x"}}),
+                                     (mt, "upload_log_line", {"return_value": (None, None)}),
+                                     (mt, "watcher_record", {"return_value": rec}),
+                                     (mt, "watcher_heartbeat", {"return_value": {"age_s": 1.0}}),
+                                     (mt, "watcher_unit_active", {"return_value": "active"}),
+                                     (mt, "earshot_stat", {"return_value": None}),
+                                     (mt, "earshot_beacons", {"return_value": []})):
+                st.enter_context(unittest.mock.patch.object(target, name, **kw))
+            hops, ctx = mt.build(self.KEY)
+            return hops, ctx, mt.verdict(hops, ctx)
+
+    def test_a_spoken_follow_up_shows_the_detach_both_replies_and_completes(self):
+        rec = {"status": "done", "lane": "batch", "lane_reason": mc_.FOLLOWUP_REASON, "command_id": self.CMD2,
+               "followups": [{"n": 1, "command_id": self.CMD2, "state": "spoken"}]}
+        hops, ctx, (v, ok) = self._build(self._events(), rec)
+        names = [h.name for h in hops]
+        self.assertIn("agent:detached", names)
+        self.assertIn("followup#1:dispatched", names)
+        self.assertIn("followup#1:agent:invocation.done", names)
+        self.assertIn("followup#1:replied", names)
+        self.assertEqual(ctx["command_id"], self.CMD1)  # the main hops are the quick answer's command
+        main = next(h for h in hops if h.name == "fact:replied")
+        self.assertIn("QUICK ANSWER", main.detail)
+        done = next(h for h in hops if h.name == "agent:invocation.done")
+        self.assertIn("detached after 300.2s", done.detail)
+        self.assertIn("applied", done.detail)
+        self.assertTrue(ok)
+        self.assertTrue(v.startswith("COMPLETE (quick answer)"), v)
+        self.assertIn("follow-up 1 spoken 179.0s after the quick answer", v)
+        self.assertIn("detached at the wall clock", v)
+
+    def test_a_running_follow_up_is_named_in_the_verdict(self):
+        rec = {"status": "active", "stage": "await_agent", "lane": "batch", "lane_reason": mc_.FOLLOWUP_REASON,
+               "command_id": self.CMD2, "followups": [{"n": 1, "command_id": self.CMD2, "state": "running"}]}
+        hops, ctx, (v, ok) = self._build(self._events(followup_replied=False), rec)
+        self.assertTrue(v.startswith("COMPLETE (quick answer)"), v)
+        self.assertIn("follow-up 1 RUNNING in the background", v)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,8 @@ export type HopFailure = { eventId: string; at: string; stage?: string; code?: s
 /** From the audio.memo.replied fact: spoken late / from the escalated batch turn, and where the full text went next to the audio. */
 export type ReplyInfo = {
   late: boolean; escalated: boolean; earshotKey?: string; earshotTextKey?: string;
+  /** The turn ran past the interactive wall clock and ran on (detached); a quick answer that handed off a background plan. */
+  detached?: boolean; background?: boolean; backgroundPlan?: string; model?: string; modelApplied?: boolean;
   /** Why the phone copy was left out: car_spoke | car_holds | no_answer (car_live: the older presence rule). */
   earshotSkipped?: string;
   /** Why it went the way it did: car_started | car_holds | claim_failed (left out) or no_car_claim | car_let_go | browser_sender | skip_off (mirrored). */
@@ -90,6 +92,11 @@ export type MemoSummary = {
   laneReason?: string;
   escalated?: boolean;
   late?: boolean;
+  /** The interactive turn passed the gateway's wall clock and ran on (no kill, no batch re-run). */
+  detached?: boolean;
+  /** The reply was a quick answer that handed the long part to a background follow-up. */
+  background?: boolean;
+  followup?: { n: number; status: FollowUp["status"]; seconds?: number };
   cancelled?: Cancellation;
   transcriptPreview?: string;
   replyPreview?: string;
@@ -101,9 +108,18 @@ export type MemoSummary = {
   narrationCount?: number;
 };
 
+/** Answer-then-background: the quick answer's BACKGROUND: plan, run as follow-up n on the same thread and spoken later. */
+export type FollowUp = {
+  n: number; commandId?: string; ofCommandId?: string; status: "running" | "spoken" | "failed"; plan?: string; lane?: Lane;
+  model?: string; dispatchedAt: string; startedAt?: string; doneAt?: string; repliedAt?: string; replyText?: string;
+  replyKey?: string; afterAnswerSeconds?: number; seconds?: number; error?: string;
+};
+export type Detach = { at: string; elapsedSeconds?: number; ceilingSeconds?: number };
+
 export type MemoDetail = MemoSummary & {
   commandId?: string; escalatedFromCommandId?: string; transcript?: string; replyText?: string; hops: Hop[]; events: JourneyEvent[];
   progress?: ProgressLine[]; narrations?: Narration[]; speech?: SpeechDecision[]; chunks?: ReplyChunk[]; timing?: MemoTiming;
+  detach?: Detach; followups?: FollowUp[];
 };
 
 export type CollectionSource = { state: string; lastEventAt: string | null; catchingUp: boolean; error?: string | null };

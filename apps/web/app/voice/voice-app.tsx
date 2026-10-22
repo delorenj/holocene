@@ -5,7 +5,7 @@ import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, audioChip, captureChip, clockTime, dayTime, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, phoneCopyText, statement } from "./model";
-import type { Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
+import type { FollowUp, Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
 
 // Voice memos: the memo:trace timeline for every memo, drawn from the Bloodbank collection.
 // Read-only. The API groups the facts by correlation id; this file only draws them.
@@ -175,6 +175,8 @@ function MemoList({ memos, selected, now, onSelect }: { memos: MemoSummary[]; se
                 <span className={`voice-stage is-${m.status}`}>{m.stageLabel}</span>
                 {m.lane ? <LaneChip lane={m.lane} reason={m.laneReason} /> : null}
                 {m.late ? <LateChip /> : null}
+                {m.detached ? <DetachedChip /> : null}
+                {m.followup ? <FollowupChip followup={m.followup} /> : null}
                 {m.audio ? <span className={`voice-level${m.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(m.audio)}</span> : null}
                 {m.status === "stuck" ? <span className="voice-badge is-stuck">stuck</span> : null}
                 {m.status === "failed" ? <span className="voice-badge is-failed">failed</span> : null}
@@ -202,6 +204,50 @@ function LaneChip({ lane, reason }: { lane: Lane; reason?: string }) {
 
 function LateChip() {
   return <span className="voice-flag is-late" title="the reply was spoken late: the agent finished after the memo's first deadline">late reply</span>;
+}
+
+function DetachedChip() {
+  return <span className="voice-flag is-detached" title="the interactive turn passed the gateway's 300 s wall clock and was let run on (no kill, no batch re-run); its reply is spoken late">detached</span>;
+}
+
+const FOLLOWUP_WORD: Record<FollowUp["status"], string> = { running: "running", spoken: "spoken", failed: "failed" };
+
+function FollowupChip({ followup }: { followup: { n: number; status: FollowUp["status"]; seconds?: number } }) {
+  return (
+    <span className={`voice-flag is-followup is-${followup.status}`}
+      title="answer-then-background: the agent answered in a sentence or two and handed the long part to a background follow-up on the same conversation, spoken later as a follow-up">
+      follow-up {FOLLOWUP_WORD[followup.status]}{followup.status === "running" && followup.seconds !== undefined ? ` ${formatDuration(followup.seconds)}` : ""}
+    </span>
+  );
+}
+
+function FollowUps({ memo }: { memo: MemoDetail }) {
+  const list = memo.followups ?? [];
+  if (!list.length) return null;
+  return (
+    <section className="voice-followups" aria-label="Background follow-ups">
+      <h3 className="hub-label">Follow-up{list.length > 1 ? "s" : ""}: the long part, after the quick answer</h3>
+      <ol>
+        {list.map((f) => (
+          <li key={f.commandId ?? f.n} className={`voice-followup is-${f.status}`}>
+            <p className="voice-followup-head">
+              <span className={`voice-flag is-followup is-${f.status}`}>#{f.n} {FOLLOWUP_WORD[f.status]}</span>
+              {" "}{f.lane ?? "batch"} lane{f.model ? ` · ${f.model}` : ""}
+              {f.seconds !== undefined ? ` · ${f.status === "running" ? "running for" : "took"} ${formatDuration(f.seconds)}` : ""}
+              {f.afterAnswerSeconds !== undefined ? ` · spoken ${formatDuration(f.afterAnswerSeconds)} after the quick answer` : ""}
+            </p>
+            {f.plan ? <blockquote><span className="hub-label">Handed off</span><p>{f.plan}</p></blockquote> : null}
+            {f.replyText ? <blockquote><span className="hub-label">Agent said (follow-up)</span><p>{f.replyText}</p></blockquote> : null}
+            {f.error ? <p className="hub-note">{f.error}</p> : null}
+            <dl className="voice-ids">
+              {f.commandId ? <div><dt>command</dt><dd><CopyRef value={f.commandId} /></dd></div> : null}
+              {f.replyKey ? <div><dt>reply</dt><dd><CopyRef value={f.replyKey} /></dd></div> : null}
+            </dl>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 function Journey({ memoId, now }: { memoId: string; now: number }) {
@@ -237,6 +283,8 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
               {dayTime(memo.startedAt)} · total {formatLatency(total * 1000)}
               {memo.lane ? <> · <LaneChip lane={memo.lane} reason={memo.laneReason} /></> : null}
               {memo.late ? <> · <LateChip /></> : null}
+              {memo.detached ? <> · <DetachedChip /></> : null}
+              {memo.followup ? <> · <FollowupChip followup={memo.followup} /></> : null}
               {memo.audio ? <> · <span className={`voice-level${memo.audio.silent ? " is-silent" : ""}`} title="loudest sample of the recording, measured before transcribing">{audioChip(memo.audio)}</span></> : null}
               {captureChip(memo.capture) ? <> · <span className={`voice-level${memo.capture?.silent ? " is-silent" : ""}`} title="level the device's recorder reported">{captureChip(memo.capture)}</span></> : null}
             </p>
@@ -280,12 +328,25 @@ function Timeline({ memo, now, error, watcher }: { memo: MemoDetail; now: number
         </div>
       ) : null}
 
+      {memo.detached && !memo.cancelled && memo.status !== "failed" ? (
+        <div className="voice-note is-detached" role="status">
+          <span className="hub-label">Detached at the wall clock</span>
+          <p>
+            The interactive turn ran past the gateway&apos;s {memo.detach?.elapsedSeconds !== undefined ? `${Math.round(memo.detach.elapsedSeconds)} s` : "300 s"} limit
+            and was let run on with its slot released: no kill, no batch re-run.
+            {memo.status === "complete" ? " The reply was spoken as a late reply." : ` The car was told it will be called back; the reply is spoken late (the gateway stops it at ${memo.detach?.ceilingSeconds ?? 2700} s).`}
+          </p>
+        </div>
+      ) : null}
+
       {memo.transcript || memo.replyText ? (
         <div className="voice-text">
           {memo.transcript ? <blockquote><span className="hub-label">Heard</span><p>{memo.transcript}</p></blockquote> : null}
-          {memo.replyText ? <blockquote><span className="hub-label">Agent said{memo.late ? " (late reply)" : ""}</span><p>{memo.replyText}</p></blockquote> : null}
+          {memo.replyText ? <blockquote><span className="hub-label">Agent said{memo.background ? " (quick answer)" : memo.late ? " (late reply)" : ""}</span><p>{memo.replyText}</p></blockquote> : null}
         </div>
       ) : null}
+
+      <FollowUps memo={memo} />
 
       <WhileWaiting memo={memo} />
 

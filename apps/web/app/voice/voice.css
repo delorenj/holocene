@@ -170,6 +170,11 @@
   color: var(--ink-3);
 }
 .hub-root .voice-flag.is-late { color: var(--working); }
+/* detached: the turn ran past the wall clock and kept going (informational); follow-up: the background half of a reply */
+.hub-root .voice-flag.is-detached { color: var(--stuck); }
+.hub-root .voice-flag.is-followup { color: var(--working); }
+.hub-root .voice-flag.is-followup.is-spoken { color: var(--cleared); }
+.hub-root .voice-flag.is-followup.is-failed { color: var(--broken); }
 
 /* ---------- detail ---------- */
 
@@ -266,6 +271,25 @@
 .hub-root .voice-note.is-cancelled { border-style: dashed; }
 .hub-root .voice-note.is-escalated { border-color: var(--stuck); }
 .hub-root .voice-note.is-escalated .hub-label { color: var(--stuck); }
+.hub-root .voice-note.is-detached { border-color: var(--stuck); border-style: dotted; }
+.hub-root .voice-note.is-detached .hub-label { color: var(--stuck); }
+
+/* answer-then-background: each follow-up the quick answer handed off */
+.hub-root .voice-followups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px solid var(--line-strong);
+  border-left-width: 6px;
+  border-left-color: var(--working);
+}
+.hub-root .voice-followups ol { display: flex; flex-direction: column; gap: 10px; }
+.hub-root .voice-followup { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hub-root .voice-followup-head { font: 400 12px/18px var(--font-mono); overflow-wrap: anywhere; }
+.hub-root .voice-followup blockquote { margin: 0; padding-left: 10px; border-left: 2px solid var(--line-strong); }
+.hub-root .voice-followup blockquote p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hub-root .voice-followup.is-failed { color: var(--ink-2); }
 .hub-root .voice-note p {
   margin-top: 4px;
   font: 400 12px/18px var(--font-mono);

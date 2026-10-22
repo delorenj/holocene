@@ -70,6 +70,10 @@ export function statement(memos: MemoSummary[]): string {
   if (count("running")) parts.push(`${count("running")} in flight.`);
   const escalated = memos.filter((m) => m.escalated && (m.status === "running" || m.status === "stuck")).length;
   if (escalated) parts.push(`${escalated} escalated to the batch lane.`);
+  const detached = memos.filter((m) => m.detached && (m.status === "running" || m.status === "stuck")).length;
+  if (detached) parts.push(`${detached} detached, running on.`);
+  const background = memos.filter((m) => m.followup?.status === "running").length;
+  if (background) parts.push(`${background} answered, follow-up running.`);
   if (count("complete")) parts.push(`${count("complete")} complete.`);
   if (count("cancelled")) parts.push(`${count("cancelled")} cancelled.`);
   return parts.join(" ");

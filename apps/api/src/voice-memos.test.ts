@@ -761,3 +761,69 @@ test("a car that started the reply is not waiting on the replied fact", () => {
   assert.equal(carStartedMs(base), T0 + 72 * 1000);
   assert.equal(firstAudioUpMs(base), T0 + 70 * 1000);
 });
+
+// ---- detach at the wall clock, answer-then-background (2026-10-22)
+
+const FCMD = "6f1d1c3a-1111-4b2b-9c3c-000000000001";
+const detachedFact = (s = 350) => fact("agent.invocation.detached", s, { command_id: CMD, elapsed_seconds: 300.2, timeout_seconds: 300, ceiling_seconds: 2700 }, MEMO, "hermes-agent:holocene-pm");
+const fuDispatched = (s = 62) => fact("audio.memo.dispatched", s, { occurred_at: iso(s), command_id: FCMD, lane: "batch", lane_reason: "voice_followup", followup: 1, followup_of_command_id: CMD, followup_plan: "walk the 8 tabs", model: "automaticai/personal/sol-6.1" });
+const fuStarted = (s = 63) => fact("agent.invocation.started", s, { command_id: FCMD }, MEMO, "hermes-agent:holocene-pm");
+const fuCompleted = (s = 240) => fact("agent.invocation.completed", s, { command_id: FCMD }, MEMO, "hermes-agent:holocene-pm");
+const fuReplied = (s = 245, failed = false) => fact("audio.memo.replied", s, { occurred_at: iso(s), command_id: FCMD, followup: 1, followup_of_command_id: CMD, reply_text: "All eight tabs are green.", reply_s3_key: "replies/y.ogg", late: true, ...(failed ? { followup_failed: true } : {}) });
+const quickAnswer = (s = 60) => fact("audio.memo.replied", s, { occurred_at: iso(s), command_id: CMD, reply_text: "I'll walk the tabs and call you back.", reply_s3_key: "replies/x.ogg", background: true, background_plan: "walk the 8 tabs" });
+
+test("a detached turn is running on, not stuck, until the gateway's ceiling", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), detachedFact()], now(50 + 1200))!;
+  assert.equal(d.status, "running");
+  assert.equal(d.detached, true);
+  assert.deepEqual(d.detach, { at: iso(350), elapsedSeconds: 300.2, ceilingSeconds: 2700 });
+  assert.match(d.stageLabel, /^Detached, running on/);
+  assert.match(d.hops.find(h => h.id === "agent_done")!.detail, /detached at the wall clock after 300 s/);
+  const late = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), detachedFact()], now(50 + 2800))!;
+  assert.equal(late.status, "stuck");
+});
+
+test("a detached turn's completion names the detach and the model the gateway applied", () => {
+  const done = fact("agent.invocation.completed", 400, { command_id: CMD, detached: true, detached_after_seconds: 300.2, elapsed_seconds: 357,
+    model_override: { requested: "automaticai/personal/sol-6.1", applied: true, reason: "applied" } }, MEMO, "hermes-agent:holocene-pm");
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), detachedFact(), done, replied(405)], now(500))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.detached, true);
+  assert.match(d.hops.find(h => h.id === "agent_done")!.detail, /detached at the wall clock after 300.2 s, ran on \(357 s in all\) · model automaticai\/personal\/sol-6.1$/);
+});
+
+test("a quick answer with a running follow-up is answered, and the follow-up is its own record", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), quickAnswer(), fuDispatched(), fuStarted()], now(120))!;
+  assert.equal(d.status, "complete");
+  assert.equal(d.commandId, CMD);  // the memo's own command, not the follow-up's
+  assert.equal(d.stageLabel, "Answered · follow-up running");
+  assert.equal(d.totalSeconds, 60);  // time to the spoken answer
+  assert.equal(d.replyText, "I'll walk the tabs and call you back.");
+  assert.equal(d.background, true);
+  assert.equal(d.followups.length, 1);
+  const f = d.followups[0];
+  assert.equal(f.status, "running");
+  assert.equal(f.commandId, FCMD);
+  assert.equal(f.ofCommandId, CMD);
+  assert.equal(f.plan, "walk the 8 tabs");
+  assert.equal(f.lane, "batch");
+  assert.equal(f.seconds, 58);
+  assert.deepEqual(d.followup, { n: 1, status: "running", seconds: 58 });
+  // the follow-up's dispatch is not a hop of the memo
+  assert.equal(d.hops.find(h => h.id === "dispatched")!.events.length, 1);
+  assert.equal(toSummary(d).followup?.status, "running");
+});
+
+test("a spoken follow-up reports its reply and how long after the quick answer it came", () => {
+  const d = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), quickAnswer(), fuDispatched(), fuStarted(), fuCompleted(), fuReplied()], now(300))!;
+  assert.equal(d.stageLabel, "Complete · follow-up spoken");
+  const f = d.followups[0];
+  assert.equal(f.status, "spoken");
+  assert.equal(f.replyText, "All eight tabs are green.");
+  assert.equal(f.afterAnswerSeconds, 185);
+  assert.equal(d.hops.find(h => h.id === "replied")!.events.length, 1);  // the quick answer only
+  assert.equal(d.replyText, "I'll walk the tabs and call you back.");
+  const failed = buildMemoDetail(MEMO, [uploaded(), received(), transcribed(), dispatched(), started(), completed(), quickAnswer(), fuDispatched(), fuStarted(), fuReplied(245, true)], now(300))!;
+  assert.equal(failed.followups[0].status, "failed");
+  assert.equal(failed.stageLabel, "Complete · follow-up failed");
+});

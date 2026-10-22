@@ -43,9 +43,11 @@ def paint(status: str, text: str) -> str:
 
 
 class Hop:
-    def __init__(self, name, status, ts=None, detail="", optional=False, superseded=False):
+    def __init__(self, name, status, ts=None, detail="", optional=False, superseded=False, followup=None):
         self.name, self.status, self.ts, self.detail, self.optional = name, status, ts, detail, optional
         self.superseded = superseded  # a hop of an earlier turn that the memo moved past (escalated to the batch lane)
+        # N on a hop of background follow-up N (answer-then-background): after the quick answer, never the memo's verdict
+        self.followup = followup
 
 
 # ------------------------------------------------------------------ evidence
@@ -478,10 +480,17 @@ def build(key: str) -> tuple[list[Hop], dict]:
     ctx["stage_times"] = [(evt_ts(e), e["type"].rsplit(".", 1)[-1]) for e in events
                           if e["type"].rsplit(".", 1)[-1] in ("received", "transcribed", "dispatched") and e["type"].startswith("bloodbank.audio.memo.")]
 
+    def is_followup(ev: dict) -> bool:
+        """A dispatched or replied fact of a background follow-up (answer-then-background): its own block of hops."""
+        d = ev.get("data") or {}
+        return bool(d.get("followup")) or d.get("lane_reason") == c.FOLLOWUP_REASON
+
     def fact(action: str) -> dict | None:
         lst = by_type.get(f"bloodbank.audio.memo.{action}")
         if lst and action == "received":
             lst = [e for e in lst if not (e.get("data") or {}).get("revived")] or lst
+        if lst and action in ("dispatched", "replied", "voiced"):
+            lst = [e for e in lst if not is_followup(e)]
         return lst[-1] if lst else None
 
     def add_fact_hop(name, action, describe, optional=False):
@@ -513,20 +522,25 @@ def build(key: str) -> tuple[list[Hop], dict]:
                         + (f" | {dev}" if dev else ""), optional=True))
     def describe_dispatch(d: dict) -> str:
         base = (f"command {d.get('command_id')} -> {d.get('command_subject')} "
-                f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}")
+                f"lane={d.get('lane') or c.lane_from_subject(d.get('command_subject')) or 'batch (pre-lane)'}"
+                + (f" model={d.get('model')}" if d.get("model") else ""))
         if d.get("lane_reason") == c.ESCALATED_REASON:
             return (base + f" ESCALATED: the interactive turn (command {d.get('escalated_from_command_id')}) hit the "
                     "gateway's wall clock, so the same prompt was re-dispatched on the batch lane")
+        if d.get("lane_reason") == c.FOLLOWUP_REASON:
+            return (base + f" FOLLOW-UP {d.get('followup')} of command {d.get('followup_of_command_id')}: "
+                    f"{str(d.get('followup_plan') or '')[:90]!r}")
         return base + (f" (fallback: {d.get('lane_reason')})" if d.get("lane_reason") else "")
 
     # 4/5/5b. one command's journal row, agent turn and (for the current one) what the agent was given
-    def turn_hops(command_id, disp, prior: int = 0):
+    def turn_hops(command_id, disp, prior: int = 0, followup: int | None = None):
         """gateway_journal + agent:invocation.* (+ hermes_session) for ONE command. prior=N numbers an EARLIER turn of a
-        memo that was re-dispatched (escalated): its hops are history, named turnN:..., and never decide the verdict."""
+        memo that was re-dispatched (escalated): its hops are history, named turnN:..., and never decide the verdict.
+        followup=N: the turn of background follow-up N, named followup#N:..., shown but never the memo's verdict."""
         start = len(hops)
         row = None
         lane = lane_of(disp, rec)
-        if not prior:
+        if not prior and not followup:
             ctx["lane"] = lane
         # 4. gateway journal (by command id, never 'latest')
         if command_id:
@@ -538,7 +552,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                 if row:
                     bad = row["state"].startswith("rejected") or (row["state"] == "completed" and row.get("outcome") not in ("success", None))
                     lane = lane_of(disp, rec, row)
-                    if not prior:
+                    if not prior and not followup:
                         ctx["lane"] = lane
                     detail = (f"lane={row.get('lane') or lane} profile={row['profile']} state={row['state']} "
                               f"outcome={row.get('outcome')} created={row['created_at']} updated={row['updated_at']}"
@@ -584,12 +598,30 @@ def build(key: str) -> tuple[list[Hop], dict]:
         # 5a. what the agent said it was doing (gateway: agent.invocation.progressed) and which of it the car heard
         # (watcher: audio.memo.narrated), in time order. Annotations: a quick or silent turn has none.
         hops.extend(progress_hops(by_type, command_id))
+        # 5a'. the gateway kept the turn running past the interactive wall clock (slot released, no kill, no re-run)
+        det = next((e for t in (c.DETACHED_TYPE, c.PROGRESS_TYPE) for e in by_type.get(t, []) if c.detached_fact(e, command_id)),
+                   None) if command_id else None
+        if det or (row and row.get("detached_at")):
+            dd = (det or {}).get("data") or {}
+            hops.append(Hop("agent:detached", OK, evt_ts(det) if det else c.parse_iso(row.get("detached_at")),
+                            f"passed the {dd.get('timeout_seconds') or 300}s wall clock"
+                            + (f" at {dd.get('elapsed_seconds')}s" if dd.get("elapsed_seconds") is not None else "")
+                            + " and kept running (slot released; no kill, no batch re-run; the reply is a late one"
+                            + (f"; stopped at {dd.get('ceiling_seconds')}s if still running" if dd.get("ceiling_seconds") else "")
+                            + ")"))
         if failed:
             d = failed.get("data") or {}
             hops.append(Hop("agent:invocation.done", FAILED, evt_ts(failed),
-                            f"invocation.failed {d.get('error_code')}: {d.get('error_message')}"))
+                            f"invocation.failed {d.get('error_code')}: {d.get('error_message')}"
+                            + (f" (timeout_source={d.get('timeout_source')})" if d.get("timeout_source") else "")))
         elif done:
-            hops.append(Hop("agent:invocation.done", OK, evt_ts(done), "invocation.completed"))
+            d = done.get("data") or {}
+            mo = d.get("model_override") or {}
+            hops.append(Hop("agent:invocation.done", OK, evt_ts(done), "invocation.completed"
+                            + (f" (detached after {d.get('detached_after_seconds')}s, {d.get('elapsed_seconds')}s in all)"
+                               if d.get("detached") else "")
+                            + (f" model {mo.get('requested')}: {'applied' if mo.get('applied') else 'NOT applied'}"
+                               f" ({mo.get('reason')})" if mo else "")))
         elif row and row["state"] == "completed" and row.get("outcome") == "success":
             hops.append(Hop("agent:invocation.done", OK, c.parse_iso(row["updated_at"]), "journal completed/success (fact not in Candystore)"))
         else:
@@ -597,7 +629,7 @@ def build(key: str) -> tuple[list[Hop], dict]:
                             detail="no invocation.completed/failed for this command"))
 
         # 5b. what the agent actually received (Hermes session, keyed by chat_id = memo_id)
-        if row and row["state"] == "completed" and not prior:
+        if row and row["state"] == "completed" and not prior and not followup:
             sent_chars = ((disp or {}).get("data") or {}).get("prompt_chars")
             sent_hash = ((disp or {}).get("data") or {}).get("prompt_sha256")
             try:
@@ -622,10 +654,16 @@ def build(key: str) -> tuple[list[Hop], dict]:
         if prior:
             for h in hops[start:]:
                 h.name, h.superseded = f"turn{prior}:{h.name}", True
+        if followup:
+            for h in hops[start:]:
+                h.name, h.followup = f"followup#{followup}:{h.name}", followup
 
     # 3b. dispatches. A memo whose interactive turn timed out is re-dispatched on the batch lane (or retried by hand):
-    # every dispatch gets its own hops, and the earlier ones are marked superseded.
-    disps = by_type.get("bloodbank.audio.memo.dispatched", [])
+    # every dispatch gets its own hops, and the earlier ones are marked superseded. A background follow-up's dispatch is
+    # not one of them: it comes after the quick answer and gets its own block (8b).
+    all_disps = by_type.get("bloodbank.audio.memo.dispatched", [])
+    disps = [e for e in all_disps if not is_followup(e)]
+    fdisps = [e for e in all_disps if is_followup(e)]
     last_cmd = ((disps[-1].get("data") or {}).get("command_id") if disps else None)
     rec_cmd = (rec or {}).get("command_id")
     # the escalation is minted (new command id saved) but its dispatched fact has not landed yet
@@ -648,7 +686,8 @@ def build(key: str) -> tuple[list[Hop], dict]:
     turn_hops(command_id, disp)
 
     # 6. reply: chunk by chunk (audio.memo.voiced: the car can start on chunk 1), then the full file (replied)
-    voiced = sorted(by_type.get("bloodbank.audio.memo.voiced", []), key=lambda e: e.get("time") or "")
+    voiced = sorted((e for e in by_type.get("bloodbank.audio.memo.voiced", []) if not is_followup(e)),
+                    key=lambda e: e.get("time") or "")
     firsts: dict = {}
     for e in voiced:  # a stage retry re-uploads a chunk under the same key; its first announcement counts
         firsts.setdefault((e.get("data") or {}).get("chunk"), e)
@@ -670,7 +709,10 @@ def build(key: str) -> tuple[list[Hop], dict]:
                            + (f", {d.get('reply_chunks')} chunks (first up {d.get('first_chunk_seconds')}s, last "
                               f"{d.get('last_chunk_seconds')}s after the reply text)" if d.get("reply_chunks") else "")
                            + (", spoken as a late reply" if d.get("late") else "")
-                           + (" (after escalating to the batch lane)" if d.get("escalated") else ""))
+                           + (" (after escalating to the batch lane)" if d.get("escalated") else "")
+                           + (" (the turn was detached at the wall clock and ran on)" if d.get("detached") else "")
+                           + (f"; QUICK ANSWER, background plan: {str(d.get('background_plan') or '')[:80]!r}"
+                              if d.get("background") else ""))
     rep = fact("replied")
     reply_key = ((rep or {}).get("data") or {}).get("reply_s3_key") or (rec or {}).get("reply_key")
     ctx["reply_key"] = reply_key
@@ -726,6 +768,39 @@ def build(key: str) -> tuple[list[Hop], dict]:
             hops.extend(phone_retry_hops(rec))
         except Exception as e:  # noqa: BLE001
             hops.append(Hop("phone_object", UNKNOWN, detail=str(e)[:140], optional=True))
+
+    # 7b. answer-then-background: each follow-up the quick answer handed off, its turn and the reply spoken for it later
+    freplied = [e for e in by_type.get("bloodbank.audio.memo.replied", []) if is_followup(e)]
+    recfus = {fu.get("command_id"): fu for fu in ((rec or {}).get("followups") or []) if isinstance(fu, dict)}
+    fus_ctx = []
+    seen = set()
+    for ev in fdisps:
+        d = ev.get("data") or {}
+        n, fcid = d.get("followup") or len(fus_ctx) + 1, d.get("command_id")
+        seen.add(fcid)
+        hops.append(Hop(f"followup#{n}:dispatched", OK, evt_ts(ev), describe_dispatch(d), followup=n))
+        turn_hops(fcid, ev, followup=n)
+        rep = next((e for e in freplied if (e.get("data") or {}).get("command_id") == fcid), None)
+        state = (recfus.get(fcid) or {}).get("state")
+        if rep:
+            rd = rep.get("data") or {}
+            hops.append(Hop(f"followup#{n}:replied", FAILED if rd.get("followup_failed") else OK, evt_ts(rep),
+                            ("SPOKEN AS A FAILURE: " if rd.get("followup_failed") else "")
+                            + f"{rd.get('reply_chars')} chars -> {rd.get('reply_s3_key')}: {str(rd.get('reply_text') or '')[:90]!r}",
+                            followup=n))
+            state = "failed" if rd.get("followup_failed") else "spoken"
+        else:
+            hops.append(Hop(f"followup#{n}:replied", UNKNOWN, detail=f"not spoken yet (watcher: {state or 'no record'})",
+                            optional=True, followup=n))
+        fus_ctx.append({"n": n, "command_id": fcid, "state": state or "running", "dispatched": evt_ts(ev),
+                        "replied": evt_ts(rep) if rep else None})
+    for fcid, fu in recfus.items():  # minted, not yet published (or its fact not in Candystore yet)
+        if fcid not in seen:
+            hops.append(Hop(f"followup#{fu.get('n')}:dispatched", MISSING,
+                            detail=f"follow-up {fcid} is {fu.get('state')}; no dispatched fact yet", optional=True,
+                            followup=fu.get("n")))
+            fus_ctx.append({"n": fu.get("n"), "command_id": fcid, "state": fu.get("state"), "dispatched": None, "replied": None})
+    ctx["followups"] = fus_ctx
 
     # 8. the car's status object (what the tile shows) and its speech arbiter's decisions (rendered as their own block)
     try:
@@ -834,8 +909,8 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
             return f"STOPPED AT record: SILENT MICROPHONE - {msg} (the pad held the recording back; nothing was uploaded)", False
         return f"STOPPED AT {h.name[len('fact:failed['):-1]}: {h.detail}", False
     for h in hops:
-        if h.superseded:
-            continue  # an earlier turn the memo moved past (escalated to the batch lane): history, not a stop
+        if h.superseded or h.followup:
+            continue  # an earlier turn the memo moved past (escalated to the batch lane), or a background follow-up
         if h.name.startswith("fact:failed"):
             continue  # a retryable failure is annotation; the stage hop it belongs to decides the verdict
         if h.optional and h.status != FAILED:
@@ -863,6 +938,19 @@ def verdict(hops: list[Hop], ctx: dict) -> tuple[str, bool]:
                  else "; played on the pad") if pad else "; playback on the pad not reported")
         if ctx.get("escalated_from"):
             tail = "; escalated to the batch lane after the interactive turn timed out (spoken as a late reply)" + tail
+        if any(h.name == "agent:detached" for h in hops):
+            tail = "; the turn was detached at the wall clock and ran on (spoken as a late reply, no re-run)" + tail
+        for fu in ctx.get("followups") or []:
+            if fu.get("replied"):
+                tail += (f"; follow-up {fu['n']} {'spoken as a failure' if fu['state'] == 'failed' else 'spoken'} "
+                         f"{(fu['replied'] - end.ts).total_seconds():.1f}s after the quick answer")
+            elif fu.get("state") in c.FOLLOWUP_LIVE:
+                since = f" for {(c.now_utc() - fu['dispatched']).total_seconds():.0f}s" if fu.get("dispatched") else ""
+                tail += f"; follow-up {fu['n']} RUNNING in the background{since}"
+            else:
+                tail += f"; follow-up {fu['n']} {fu.get('state')}"
+        if ctx.get("followups"):
+            return f"COMPLETE (quick answer) in {(end.ts - s3.ts).total_seconds():.1f}s{tail}", True
         phone = next((h for h in hops if h.name == "phone_started" and h.status == OK and h.ts), None)
         if phone:
             tail += (f"; speaking on the phone {(phone.ts - end.ts).total_seconds():.1f}s after the full reply was up "
@@ -1067,12 +1155,19 @@ def cmd_list(args) -> int:
         except Exception:  # noqa: BLE001
             events = []
         rec = watcher_record(o["key"])
-        disp = next((e for e in reversed(events) if e["type"].endswith("audio.memo.dispatched")), None)
+        disp = next((e for e in reversed(events) if e["type"].endswith("audio.memo.dispatched")
+                     and (e.get("data") or {}).get("lane_reason") != c.FOLLOWUP_REASON), None)
         lane = lane_of(disp, rec) if (disp or (rec or {}).get("lane")) else "-"
         if ((disp or {}).get("data") or {}).get("lane_reason") == c.ESCALATED_REASON:
             lane = f"{lane} (esc.)"  # the interactive turn timed out; this is the batch re-dispatch
+        if any(e["type"].endswith("agent.invocation.detached") for e in events):
+            lane = f"{lane} (det.)"  # the interactive turn ran past the wall clock and was let run on
+        stage = furthest(events, rec)
+        fus = (rec or {}).get("followups") or []
+        if fus and not stage.startswith(("FAILED", "CANCELLED")):
+            stage = f"{stage} +f/u {fus[-1].get('state')}"  # answer-then-background: the follow-up's state
         print(f"{c.iso(o['last_modified'])[:19]:<21} {str(c.agent_from_key(o['key'])):<16} {mid[:8]:<10} {lane:<12} "
-              f"{furthest(events, rec):<26} {o['key']}")
+              f"{stage:<26} {o['key']}")
     return 0
 
 

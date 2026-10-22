@@ -438,6 +438,42 @@ Behaviour worth knowing:
   `MEMO_TURN_UNWIND_WAIT_S` (10) before it escalates, so the batch turn does not start beside a turn that may still be
   unwinding. The late-reply rescue window of an escalated memo runs from its batch deadline, so a batch reply after 2 h
   is still spoken. `bloodbank-ntfy-router` pushes the `failed` fact like any terminal memo failure.
+- **A detached turn is waited out, not killed and re-run (2026-10-22).** With `extra.interactive.detach_on_timeout`
+  on, the gateway lets an interactive turn that reaches the 300 s wall clock run on with its slot released (bloodbank
+  `docs/interactive-command-lane.md` section 9). The watcher sees it from the journal's `executions.detached_at` (every
+  poll) or from `agent.invocation.detached` / a `progressed` fact with `detached=true` (Candystore, for a turn older
+  than `MEMO_DETACH_PROBE_AFTER_S`, 240). Once per command it logs `memo_detached`, waits up to
+  `MEMO_DETACHED_WAIT_S` (3000; the gateway's ceiling is 2700) from the dispatch, says `MEMO_DETACHED_LINE` once in the
+  car ("<agent>, still on it. I will call you back when it is done.", a narrated progress clip with `kind=detached`)
+  and stops the 30 s narration. The reply is a late reply, and `replied` carries `detached=true`. A detached turn that
+  the gateway stops at its ceiling (`turn_timeout`, `timeout_source=detached_ceiling`, `detached=true`) fails the memo
+  with no batch re-run: it already ran the whole time a re-run would. The escalation above stays for a gateway that
+  stopped the turn at the wall clock (detach off, `max_detached` reached, an envelope deadline).
+- **Answer-then-background (2026-10-22).** `MEMO_VOICE_PREFIX` gives a voice turn a budget (about a minute, at most 3
+  tool calls, no vox-speak, no sleep-and-recheck, no deploys unless asked; a driver IS waiting, whatever the gateway's
+  platform hint says) and one way out for a long ask: answer in a sentence or two, then end the reply with a line
+  `BACKGROUND: <complete instructions>`. The watcher never speaks that line (`split_background`). After the quick
+  answer's `replied` fact (`background=true`, `background_plan`), the plan goes back to the same agent as follow-up N:
+  `MEMO_FOLLOWUP_PREFIX` + plan, a new command id persisted before the publish, its own `prompt_sha256`, the same
+  thread id (the Hermes session holds the whole talk), `MEMO_FOLLOWUP_LANE` (batch: no wall clock), the 2 h deadline,
+  `context.reason=voice-followup`, `context.followup_of`, and a `dispatched` fact with `lane_reason=voice_followup`,
+  `followup=N`, `followup_of_command_id`, `followup_plan`. The memo stays active (car stage `working`, status object
+  `followup {n, state}`), nothing is narrated while it runs, and its reply is spoken as "<agent>, follow-up. ..." into a
+  NEW `replies/<day>/<HHMMSS>Z-<agent>-<memo_id>.ogg` (the pad plays every reply unit of a memo it sent; the claim for
+  the phone is the memo's, so whoever spoke the quick answer speaks the follow-up). Its `replied` fact carries
+  `followup=N`. A follow-up that fails, times out, or completes without new text is spoken as such
+  (`followup_failed=true`) instead of failing a memo whose answer was already given; `memo:cancel` keeps it quiet. One
+  follow-up per memo by default (`MEMO_FOLLOWUP_MAX=1`; 0 turns the hand-off off, the line is still never spoken). This
+  is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the watcher already owns
+  the memo, its cancel and its trace.
+- **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL` (follow-ups:
+  `MEMO_FOLLOWUP_MODEL`), default `automaticai/personal/sol-6.1`, and the gateway runs that one turn on it through an
+  internal `/model <route> --once` (bloodbank `docs/interactive-command-lane.md` section 10). On the real heavy step of a
+  crank circuit (20.7k-token prompt): glm-5.3@max (where `automaticai/auto` lands for the desks' tokens) 51 s, kimi-2.8
+  11-27 s, sol-6.1 8.4 s at high and 13-15 s at the providers' xhigh (what goes on the wire: effort is not a per-turn
+  knob on this provider, the route is). Hermes' fallback chain (glm-5.3, kimi-2.8) takes over when the Sol pool answers
+  403/429. `dispatched` and `replied` carry `model`, `replied` the gateway's `model_override {requested, applied,
+  reason}`. Empty `MEMO_VOICE_MODEL` = the profile's own model.
 - **A revive tells the journey.** Every `memo:retry` / rescue revive at a stage other than `receive` publishes a small
   `audio.memo.received` fact with `revived=true`, `revived_to` and `revive_why` (no detection data; ntfy-router mutes
   `received`). `memo:trace`, `memo:list` and Holocene `/voice` treat a failed or cancelled fact older than a later stage
