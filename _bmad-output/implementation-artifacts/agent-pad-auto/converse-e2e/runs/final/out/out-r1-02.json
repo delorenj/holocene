@@ -1,0 +1,167 @@
+{
+ "name": "r1-02",
+ "text": "Which agents are on my roster?",
+ "offset_s": 0.14339494705200195,
+ "start_pressed": 1792710222.5855527,
+ "mic_recording_seen": 1792710228.4442766,
+ "paplay": [
+  1792710228.8443513,
+  1792710231.130168,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710232.1302848,
+ "mic_idle_seen": 1792710232.9123378,
+ "memo_id": "a20e3aec-14cb-5b40-8280-a4dbff510edf",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T230344Z.ogg",
+ "discovered": 1792710234.015,
+ "first_kind": "reply",
+ "first_start": 1792710243.827605,
+ "first_audible": null,
+ "stop_to_first_start_s": 11.7,
+ "stop_to_upload_discover_s": 1.88,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 6685,
+   "cached_tokens": 3136,
+   "conv_turn": 2,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Twenty-nine agents, mostly one PM per repo. Besides me there's Grolf for 33god, Infra, Flume, Navi, Bloodbank, Voxxy, and the two DeLoNET ones. Want the full list read out?",
+   "say_chars": 172,
+   "lexicon": false,
+   "card_age_s": 7.1,
+   "decide_ms": 6722,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 6685,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "fast",
+     "turn": 2,
+     "action": "reply",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   6.01,
+   "queued",
+   "progress",
+   "behind_ack"
+  ],
+  [
+   7.17,
+   "start",
+   "progress",
+   "waited_ms=1162"
+  ],
+  [
+   9.53,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   11.69,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   11.7,
+   "start",
+   "reply",
+   "waited_ms=10"
+  ],
+  [
+   11.7,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   14.3,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   16.98,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   17.86,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   23.56,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   30.9,
+   "end",
+   "reply",
+   "chunks=3"
+  ]
+ ]
+}

@@ -1,0 +1,21 @@
+PASS  1 speech x speech (queue): 0 overlaps
+FAIL  2 speech x recording (queue vs app mic + OS capture, tolerance 60 ms): 1 overlap(s)
+        24 ms  speech ack ack:stopped:59420493 [1792710151.189, 1792710156.639)  x  recording OS capture active [1792710143.519, 1792710151.273)
+PASS  3 HAL assistant mix x OS capture (tolerance 60 ms): 0 overlaps
+PASS  4 speaker output x mic open (tap, tolerance 60 ms): 0 overlaps
+PASS  5 speaker output with no owning utterance (latency 700 ms): 0 overlaps
+PASS  6 a sound running into the next utterance (no silence within 700 ms of its start): 0 overlaps
+        info: progress progress:73798fcb-20b -> echo echo:73798fcb-20b4-51da-9: the first still sounded 37 ms into the next, then the end of silence before it
+        info: ack ack:stopped:59804896 -> ack ack:sent:59805657: the first still sounded 9 ms into the next, then 353 ms of silence before it
+        info: ack ack:stopped:59923360 -> ack ack:sent:59924755: the first still sounded 32 ms into the next, then 301 ms of silence before it
+        info: progress progress:fdbc2311-8e4 -> arming arm:60087229: the first still sounded 13 ms into the next, then 398 ms of silence before it
+        info: ack ack:stopped:60099673 -> ack ack:sent:60100728: the first still sounded 5 ms into the next, then 362 ms of silence before it
+        info: ack ack:sent:60100728 -> reply 231339Z-holocene-pm-fdbc: the first still sounded 102 ms into the next, then 171 ms of silence before it
+        info: ack ack:stopped:60288663 -> ack ack:sent:60289999: the first still sounded 49 ms into the next, then 421 ms of silence before it
+        info: ack ack:sent:60289999 -> reply 231633Z-holocene-pm-baa5: the first still sounded 58 ms into the next, then 737 ms of silence before it
+        info: ack ack:stopped:60378221 -> ack ack:sent:60380287: the first still sounded 65 ms into the next, then 362 ms of silence before it
+        info: ack ack:sent:60475584 -> reply 231958Z-holocene-pm-ba95: the first still sounded 4 ms into the next, then 887 ms of silence before it
+        info: ack ack:stopped:60540792 -> ack ack:sent:60541998: the first still sounded 8 ms into the next, then the end of silence before it
+        info: ack ack:stopped:60593339 -> ack ack:sent:60593569: the first still sounded 40 ms into the next, then 331 ms of silence before it
+      speaker output: 197 spans, 334.4 s of sound in the window
+RESULT OVERLAPS FOUND  (95 utterances, 18 app recordings, 18 OS capture windows, 94 HAL mix windows)

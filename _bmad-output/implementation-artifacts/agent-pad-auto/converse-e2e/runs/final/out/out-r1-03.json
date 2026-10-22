@@ -1,0 +1,152 @@
+{
+ "name": "r1-03",
+ "text": "Which commit message style does this project use?",
+ "offset_s": -0.11313247680664062,
+ "start_pressed": 1792710494.5515082,
+ "mic_recording_seen": 1792710497.9401999,
+ "paplay": [
+  1792710498.3402796,
+  1792710501.083218,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710502.083319,
+ "mic_idle_seen": 1792710503.018569,
+ "memo_id": "73798fcb-20b4-51da-962e-01aeaca7321f",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T230814Z.ogg",
+ "discovered": 1792710503.444,
+ "first_kind": "echo",
+ "first_start": 1792710508.5621324,
+ "first_audible": null,
+ "stop_to_first_start_s": 6.48,
+ "stop_to_upload_discover_s": 1.36,
+ "facts": {
+  "routed": {
+   "action": "direct",
+   "decided_action": "direct",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 3784,
+   "cached_tokens": 3200,
+   "conv_turn": 3,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": null,
+   "say_chars": null,
+   "lexicon": false,
+   "card_age_s": 48.2,
+   "decide_ms": 3826,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 3784,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "598b2413-af9a-41ae-bebc-92b00316632b",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   5.21,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   5.22,
+   "start",
+   "progress",
+   "waited_ms=18"
+  ],
+  [
+   6.02,
+   "queued",
+   "echo",
+   "behind_progress"
+  ],
+  [
+   6.48,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   6.48,
+   "start",
+   "echo",
+   "waited_ms=460"
+  ],
+  [
+   14.0,
+   "end",
+   "echo",
+   ""
+  ],
+  [
+   14.11,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   14.13,
+   "start",
+   "progress",
+   "waited_ms=15"
+  ],
+  [
+   16.01,
+   "end",
+   "progress",
+   ""
+  ]
+ ]
+}

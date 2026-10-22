@@ -1,0 +1,118 @@
+{
+ "name": "r5-d",
+ "text": "Use rick voice.",
+ "offset_s": -0.1765449047088623,
+ "start_pressed": 1792711316.9245918,
+ "mic_recording_seen": 1792711320.0362768,
+ "paplay": [
+  1792711320.4363422,
+  1792711322.0567224,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792711323.0568254,
+ "mic_idle_seen": 1792711323.228175,
+ "memo_id": "7f65678d-941d-5830-a85c-4c1daa9ad39b",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T232156Z.ogg",
+ "discovered": 1792711323.33,
+ "first_kind": "reply",
+ "first_start": 1792711326.1805449,
+ "first_audible": null,
+ "stop_to_first_start_s": 3.12,
+ "stop_to_upload_discover_s": 0.27,
+ "facts": {
+  "routed": {
+   "action": "tool",
+   "decided_action": "tool",
+   "path": "setting_phrase",
+   "model_answered": null,
+   "route": null,
+   "attempts": 0,
+   "latency_ms": null,
+   "cached_tokens": null,
+   "conv_turn": 16,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Switched Holocene PM to Rick.",
+   "say_chars": 29,
+   "lexicon": true,
+   "card_age_s": 1.0,
+   "decide_ms": 579,
+   "requested_model": null,
+   "served_route": null,
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": {
+    "ms": 571,
+    "ok": true,
+    "via": "skill",
+    "args": {
+     "voice": "rick"
+    },
+    "exit": 0,
+    "tool": "car_set_voice",
+    "error": null
+   }
+  },
+  "attempt_log": null,
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "setting_phrase",
+     "turn": 16,
+     "action": "tool",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 1,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   3.12,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   3.12,
+   "start",
+   "reply",
+   "waited_ms=1"
+  ],
+  [
+   5.42,
+   "end",
+   "reply",
+   ""
+  ]
+ ]
+}

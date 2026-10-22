@@ -1,0 +1,181 @@
+# Final regression of the live fast conversation desk (HOLOC-23)
+
+Date: 2026-10-22, 18:59-19:25 EDT (22:59-23:25 UTC), 26 minutes wall clock. Live build: watcher up since 17:31 EDT (commit `c04553e`),
+route `automaticai/auto/fast` (glm-5.3 served), hold cue 3 s / 9 s, PhraseBank, wake hint. Emulator `emulator-5554` only. No code was
+changed except the test harness. hermes-gateway, watcher and agent-pad-upload were not restarted.
+
+**Verdict: partial.** R3, R4, R5 pass; R1 passes on latency and cue behaviour but exposed a real defect (long-answer questions fall
+through to the full agent); **R2 (delegation exactly-once) and R6 (kill switch) were NOT RUN** because the full-agent budget was spent
+before them (see "Limits, said plainly"). The speaker tap ran, so `speech_overlap.py` ran all 6 checks.
+
+## Setup and host load
+
+| item | value |
+|---|---|
+| uptime at start | 18:59:07 load 61.86 / 45.99 / 34.38; 18:59:33 63.88; mic-check ran, then 19:00:29 load 38.45 (under the 45 gate, so no pause was needed); 19:01:24 25.8 |
+| load during the run | 18-55 (1-min); 53.9 at 19:06 (R1), 18.7-26 from 19:12 on; 12.6 at the end (19:24) |
+| `auto:sim:mic-check` | **INCONCLUSIVE twice** ("the app's mic probe did not report a result"), same as the earlier ladder run. Not SILENT, so no recovery applied. The first memo (`r1-01`) transcribed exactly what was spoken, which is the working proof the paplay -> holo_testmic -> emulator mic path is healthy. The qemu capture stream was already on `holo_testmic.monitor`. |
+| speaker tap | `sim_audio_tap.py` started 19:01:44, 94 000 packets, ended with the run. Clock offset device-host: median -160 ms (per-turn -176..+143 ms). |
+| driver | `tools/final_driver.py` (wraps `runs/phase2/p2_driver_patch.py`, survives Candystore timeouts) + two harness fixes below; `tools/final_r3.py`, `tools/final_r4.py`; `runs/final/runturns.sh`. |
+
+Harness fixes (test harness only): (1) `rec_start` matched `HoloceneSpeech: deferred ack ... mic=recording reason=recording` (a stop cue
+queued while the mic was still recording) as "mic is recording"; now only the `HoloceneSpeech: mic ` state line counts. (2) `rec_stop`
+never retapped, so one lost stop tap meant a 56 s capture and a cascade (see D2); now it waits 8 s for any sign the stop registered
+(`mic=idle` or `ack:stopped`) and retaps once only if there is none.
+
+## Per-memo table
+
+`stop` = record-STOP press (host clock). `start reply` = logcat `HoloceneSpeech: start reply` for that memo (device clock - offset).
+`beacon` = the pad's `playback started` beacon in the upload-proxy log. `audible` = first tap packet with rms >= 30 after `start reply`.
+All in seconds after stop. `desk` = the fast route's call, ms. Raw: [`runs/final/final-table.json`](runs/final/final-table.json),
+[`table.txt`](runs/final/table.txt), [`turns.jsonl`](runs/final/turns.jsonl).
+
+| id | memo | heard (transcript) | action / path / model | desk ms | start reply | beacon | audible | hold cue (uploaded -> played) |
+|---|---|---|---|---|---|---|---|---|
+| r1-01 | d02ace4a | What is the Holocene project in one sentence? | reply / fast / glm-5.3 | 2540 | 12.92 | 14.22 | 14.77 | none (desk < 3 s) |
+| r1-02 | a20e3aec | Which agents are on my roster? | reply / fast / glm-5.3 | 6685 | 11.70 | 13.17 | 13.63 | "Thinking." +5.9 -> played +7.2, answer +11.7 |
+| r1-03 | 73798fcb | Which commit message style does this project use? | direct / fast -> agent | 3784 | 47.44 | 47.75 | 48.31 | "Hold on." +5.1, keep-alives +13.9, +22.9, all played |
+| r1-04 | c7ba14fd | What does a fast-ass do compared to the full agent? | direct / force_direct | - | 70.50 | 71.11 | 71.63 | "Still thinking." +10.3, "Still on it." +19.4 |
+| r1-05 | 3a970507 | Does Holocene publish domain events, or does it only collect them? | reply / fast / glm-5.3 | 2953 | 7.29 | 7.63 | 8.04 | none |
+| r1-06 | 67e62dbe | What is the production first rule for Holocene? | reply / fast / glm-5.3 | 2802 | 7.49 | 7.87 | 8.27 | none |
+| r3-a | fdbc2311 | Walk me through the Holocene serving path and the change workflow step by step | direct / fallback `all_routes_failed` (outcome `empty`) | 9871 | 79.99 | 80.84 | 80.02 | 5 uploaded (desk cues +5.1, +11.1, keep-alives to +38.0), 4 played |
+| r3-b | df7ab335 | What is the operating model of Holocene? | reply / fast / glm-5.3 | 2999 | 37.22 | 37.48 | 37.95 | dropped `answer_ready` (+5.8) |
+| r3a-a | baa574e1 | Explain in detail, in a few sentences, what the Fast Desk does ... | direct / fallback `all_routes_failed` (outcome `bad_json`) | 11190 | 62.23 | 63.32 | 64.21 | 4 uploaded, 4 played |
+| r3a-b | 09c921f4 | What was the first agent you listed earlier? | reply / fast / glm-5.3 | 3626 | 32.77 | 32.90 | 33.36 | "Thinking." +5.3, queued behind a reply, dropped `memo_final`, never played |
+| r3b-a | 0f75e05e | What is the Holocene project in one sentence? | reply / fast / glm-5.3 | 4224 | 9.44 | 9.97 | 10.39 | "Hang on." +6.1 -> played +6.3, answer +9.44 |
+| r3b-b | 3adc1a9b | Does Holocene publish domain events, or does it only collect them? | reply / fast / glm-5.3 | 2474 | 6.79 | 7.46 | 8.15 | none |
+| r4-a | ba95e3fb | Which agents are on my roster? | reply / fast / glm-5.3 | 6040 | 16.59 | 17.14 | 17.49 | "Hold on." uploaded +5.07, **never played** (R4) |
+| r4-b | 5f1e6dfa | Use Morgan voice! | tool `car_set_voice` (setting_phrase) | tool 2192 | 25.06 | 25.37 | 25.79 | none |
+| r5-c | 820b543f | Which agents are on my roster? | reply / fast / glm-5.3 | 6952 | 12.42 | 13.00 | 13.50 | "Hold on." in **morgan** +5.4 -> played +5.8, answer +12.4 |
+| r5-d | 7f65678d | Use Rick Voice. | tool `car_set_voice` (setting_phrase) | tool 571 | 3.12 | 3.27 | 3.65 | none |
+
+Plus two recordings that are not memos of interest: the first `r1-03` attempt (56 s capture that came back `empty_capture`, D2) and the
+silent 112 s recording it triggered (`38d910f1`, `empty_transcript`, FAILED@transcribe, nothing spoken). 18 recorded memos in all.
+
+Reading the latency column: logcat `start reply` and the pad's beacon agree within 0.1-0.7 s (the beacon trails by the push/HTTP
+round trip); audible trails `start reply` by 0.4-0.5 s. Fast-desk answers that were not queued behind anything (r1-01, r1-02, r1-05,
+r1-06, r3b-a, r3b-b, r5-c; n=7): stop -> `start reply` 6.8 / 7.3 / 7.5 / 9.4 / 11.7 / 12.4 / 12.9 s (p50 9.4, max 12.9); stop ->
+beacon p50 10.0 / max 14.2; stop -> audible p50 10.4 / max 14.8. The sub-3 s desk calls land at 7-8 s audible, the 6-7 s desk calls at
+13.5-13.6 s. r1-01 is the slow outlier of the set (host load 52-64, `stop -> upload` 6.3 s against 1.2-2.4 s for the rest). Voice
+tool memos (`Use X voice`) are 3.1-3.7 s audible when nothing is ahead of them.
+
+## Scenarios
+
+### R1: four conversational questions answerable from the card (r1-01, r1-02, r1-05, r1-06): PASS (latency, cue); defect D1 elsewhere
+
+All four were answered by `auto/fast` (glm-5.3, 2.5 / 6.7 / 3.0 / 2.8 s), content from the card (Holocene is a sink and does not publish,
+production-first rule, roster of 29 agents). Hold cue: only the desk calls over 3 s got one (r1-02 at +5.9 s after stop = 3.0 s into
+the desk call; r5-c and r3b-a likewise); the 2.5-3.0 s calls got none. **Every cue that played started before that memo's answer**, none
+after (checked for all memos: each `start progress` precedes `start reply`; r3a-b's cue was queued behind a reply and dropped on
+`memo_final`). The cue plays 0.2-1.3 s after upload. My first replacement questions for r1-03 and r1-04 were badly chosen (see
+"Limits"); they are in the table because they ran.
+
+### R2: delegation exactly-once: **NOT RUN**
+
+Needs a memo that reaches Hermes (the delegation dispatch). The full-agent budget (2) was already used up by then. The live
+delegation path is therefore unverified by this run; the last proof remains `evidence.md` S9 and the unit tests. No `Send it.` was
+spoken, nothing was dispatched as a delegation, nothing to clean up.
+
+### R3: barge-in during a fast reply: PASS (r3b-a / r3b-b)
+
+`r3b-a` (fast reply, 3 chunks) started at +9.44 s; the new recording was started 2.9 s later (tap press 1792711119.96). The arbiter
+halted the reply (`halt reply stopped` at +12.75 s), and the pad's playback beacon for that reply key says
+`phase:"skipped" error:"barged_in"` (proxy log, 23:18:41Z). After the note, `r3b-b`'s own reply played (6.8 s) and **r3b-a's reply
+was never replayed** (no `start`/`queued reply` for memo 0f75e05e after the halt, in logcat or the tap). The two earlier attempts
+(`r3-a`/`r3a-a`) fell through to the full agent (D1) and are not valid barge-ins of a fast reply; in `r3a-a` the barge halted the
+agent's reply and that agent reply was replayed after the note (the pre-existing S9 behaviour for agent results).
+
+### R4: cue vs recording: PASS (r4-a / r4-b)
+
+Roster question (desk 6.0 s); the next recording was started 3.54 s after the stop (arming prompt 3.3 s, mic `recording` at +7.05 s,
+idle at +12.6 s). The "Hold on." cue was uploaded at +5.07 s, in the middle of arming, and **never queued or played** (no speech event
+for `ba95e3fb` before the answer; the pad dropped it, `mayPlayProgress`). Nothing played during the note or after it except the
+answer, which started at +16.59 s, after the note's stop cue.
+
+### R5: voice switch: PASS (+ finding D4)
+
+- `Use Morgan voice!` -> tool `car_set_voice`, "Switched Holocene PM to Morgan." spoken in morgan (`voiced_voices ["morgan"]`).
+- Next reply (`r5-c`) in morgan, and its hold cue was a morgan clip (`hold_cue ... voice:'morgan' text:'Hold on.'`, played +5.8 s).
+- `Use Rick Voice.` -> "Switched Holocene PM to Rick." (rick). The flag file then still held `tiles: {holocene-pm: {voice: rick}}`
+  (D4); `mise run memo:voice holocene-pm --clear` -> flag file `tiles: {}`, `memo:converse status` "tiles (none ...)".
+
+### R6: kill switch: **NOT RUN**
+
+The old interactive path is a full agent turn, and the budget was gone. `memo:converse off` was never issued: the live mode stayed
+`on` throughout.
+
+## Overlap audit (whole window 1792710100-1792711400; 95 utterances, 18 app recordings, 18 OS capture windows, 94 HAL mix windows)
+
+All 6 checks ran, with the speaker tap ([`overlap-tap-offset-160.txt`](runs/final/overlap-tap-offset-160.txt); offsets -145 / -160 / -175 give the same result).
+
+| tolerance | 1 speech x speech | 2 speech x recording | 3 HAL mix x OS mic | 4 audio x mic open | 5 audio with no owner | 6 tail into next |
+|---|---|---|---|---|---|---|
+| 60 ms (tap) | PASS 0 | **FAIL 1 (24 ms)** | PASS 0 | PASS 0 | PASS 0 | PASS 0 |
+| 100 ms (tap) | PASS 0 | PASS 0 | PASS 0 | PASS 0 | PASS 0 | PASS 0 |
+| 60 ms (logcat only) | PASS 0 | **FAIL 1 (24 ms)** | PASS 0 | - | - | - |
+
+The one flag is the same artefact documented in `evidence.md` (post-fix window): the pad's own `ack:stopped` cue started at
+1792710151.189, 46 ms after the app's mic went idle (`mic=idle` 151.143), while the OS audio-recording dump logged the capture as ended
+at 151.273 (130 ms after the app released it; the dump lags under load). Not a fast-desk utterance over a note. Check 6's info lines
+show the stop tone -> sent tone and progress -> echo hand-offs sounding 4-52 ms into the next utterance and then silence, as in earlier runs.
+So: zero true overlaps; one 24 ms flag at 60 ms tolerance, none at 100 ms.
+
+## Defects
+
+**D1 (major): `auto/fast` returns `empty` / `bad_json` after ~10 s for long-answer requests, and the turn falls through to the full
+agent.** r3-a ("Walk me through the Holocene serving path and the change workflow, step by step, in some detail"): one attempt, 9 871 ms,
+HTTP 200 served by glm-5.3, outcome `empty` -> `all_routes_failed`. r3a-a ("Explain in detail, in a few sentences, what the Fast Desk
+does, how drafts work, and how sending to an agent works. Take your time."): one attempt, 11 190 ms, HTTP 200, outcome `bad_json`.
+That second prompt is the s10-a prompt that took **1.1 s and 258 chars** earlier today (`runs/turns.jsonl`, s10-a), so it is not
+the wording alone: the long generation either hit an output cap or ran out the 14 s budget with truncated JSON. A single attempt is
+made (`attempts:1`); there is no retry inside the budget. Cost: a card-answerable conversational question became a full agent turn,
+first answer at 62-80 s instead of 8-13 s, plus 4-5 hold/keep-alive cues. Suspects: `services/inbox-watcher/converse.py` (budget
+and retry on `empty`/`bad_json`, the reply-length instruction) and the gateway route's output cap. Evidence: `runs/final/turns.jsonl`
+(`attempt_log`), `runs/final/out/out-r3.txt`, `out-r3a.txt`.
+
+**D2 (minor, load-related): a lost stop tap, then a 56 s capture with audible levels returned `empty_capture`.** `r1-03` (first
+attempt): the stop tap 3 s after the utterance did not register (no `mic=idle` for 51 s; 1 158 `AudioRecord reported overrun`
+warnings in that logcat, host load ~50). The next tap stopped it and the pad reported `record_failed code:"empty_capture" error:"native
+recorder returned no audio" duration_ms:55990 peak_dbfs:-3.5 rms_dbfs:-21.1`: the capture had signal but the native recorder handed
+back no audio. The car said nothing about the failure (only `ack:stopped`), so a driver would believe the note was sent. Evidence:
+`runs/final/record_failed.jsonl`. I cannot tell a lost stop tap from an `adb input tap` dropped under host load, so only the second
+half is filed as a product issue. Suspect: the pad / native recorder path (`apps/agent-pad`, Kotlin recorder), not investigated.
+
+**D3 (minor, tooling): `mise run auto:sim:mic-check` is INCONCLUSIVE** (probe never reports; twice today and in the ladder run). The mic
+path works (every memo transcribed correctly), so the check gives no signal on this sim state. Not chased.
+
+**D4 (minor): the spoken reset "use rick voice" leaves a tile record.** After `Use Rick Voice.` the flag file still has
+`tiles: {holocene-pm: {voice: rick}}`; only `memo:voice holocene-pm --clear` restores `tiles: {}`. Functionally identical to the
+default, but it is not a reset, and `memo:converse status` shows a tile line until cleared. Suspect: the `car_set_voice` skill's
+handling of the default voice name.
+
+**Observation, not filed as a defect (O1): a fast reply is held behind the previous memo's reply/keep-alives.** In the three barge
+cases the new note's reply had its TTS ready (`stage tts` done at +16.4 / +11.7 / +7.0 s) but `stage replied` took 22.1 / 22.2 / 19.0 s,
+and the reply played 37.2 / 32.8 / 25.1 s after stop (r3-b, r3a-b, r4-b). That looks like the per-conversation order (the older memo's
+reply or keep-alive plays first, and `r4-a`'s reply is 20 s long), which is by design, but it means a voice command spoken just
+after a slow question is confirmed 25 s later.
+
+## Limits, said plainly
+
+- **Full-agent budget exceeded: 4 memos reached a full agent turn against the limit of 2** (r1-03, r1-04, r3-a, r3a-a). Two were my
+  test design: "Which commit message style does this project use?" is not on the card, so the desk correctly chose `direct` (same
+  as `s1-a11`); and "What does the fast desk do compared to the full agent?" contains "full agent", which is the force-direct phrase
+  (`FORCE_DIRECT_RE`), a lexicon route working as designed. Two were D1 (the fast route failing). Having passed 2, I stopped
+  running anything that could reach an agent, which is why R2 and R6 were not run. They need the next budget.
+- Memos recorded: 18 of 18 allowed (the lost r1-03 capture and the silent 112 s stray count). Wall clock 26 of 40 min. No timer wait
+  over 60 s. The R3/R4 timings are one run each.
+- `stop -> first audible` is measured from the stop *press*; the pad's stop cue and tone are part of what follows it. Not
+  comparable to the phase-2 table, whose numbers were contaminated by overlapping replies.
+- Live config left as found and verified: flag file `mode on`, agents `*`, devices `[]` (any car), `tiles {}`; no routes override
+  (`routes r1=automaticai/auto/fast` from the unit). Voice was set to morgan and reset (`--clear`). The sim, the watcher and the
+  upload proxy were not restarted. Tap and logcat loop stopped.
+
+## Files
+
+`runs/final/`: `turns.jsonl`, `final-table.json`, `table.txt`, `out/` (per-turn driver output), `watcher-events.jsonl.gz`,
+`proxy.jsonl.gz` (agent-pad-upload log incl. playback beacons), `speech-logcat.txt.gz` (HoloceneSpeech + audio focus + OS capture
+lines), `speaker-tap.jsonl.gz`, `overlap-*.txt`, `record_failed.jsonl`, `analyze_final.py`, `runturns.sh`. Harness: `tools/final_driver.py`,
+`tools/final_r3.py`, `tools/final_r4.py`.
+
+Rerun the audit: `zcat runs/final/speaker-tap.jsonl.gz > /tmp/tap.jsonl; zcat runs/final/speech-logcat.txt.gz > /tmp/l.txt;
+python3 apps/auto/tools/speech_overlap.py --logcat /tmp/l.txt --tap /tmp/tap.jsonl --offset-ms=-160 --tol-ms 60 --from 1792710100 --to 1792711400`.

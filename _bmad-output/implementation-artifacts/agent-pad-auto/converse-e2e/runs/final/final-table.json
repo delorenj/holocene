@@ -1,0 +1,630 @@
+[
+ {
+  "stop_to_upload": 6.3,
+  "name": "r1-01",
+  "memo": "d02ace4a",
+  "said": "What is the Holocene project, in one sentence?",
+  "heard": "What is the Holocene project in one sentence?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 2540,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 12.92,
+  "stop_to_beacon": 14.22,
+  "stop_to_audible": 14.77,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 1.88,
+  "name": "r1-02",
+  "memo": "a20e3aec",
+  "said": "Which agents are on my roster?",
+  "heard": "Which agents are on my roster?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 6685,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 11.7,
+  "stop_to_beacon": 13.17,
+  "stop_to_audible": 13.63,
+  "hold_cues_uploaded": [
+   [
+    5.9,
+    1,
+    "rick",
+    "Thinking."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    7.2,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 1.36,
+  "name": "r1-03",
+  "memo": "73798fcb",
+  "said": "Which commit message style does this project use?",
+  "heard": "Which commit message style does this project use?",
+  "action": "direct",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 3784,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 47.44,
+  "stop_to_beacon": 47.75,
+  "stop_to_audible": 48.31,
+  "hold_cues_uploaded": [
+   [
+    5.1,
+    1,
+    "rick",
+    "Hold on."
+   ],
+   [
+    13.9,
+    2,
+    "rick",
+    "Still on it."
+   ],
+   [
+    22.9,
+    3,
+    "rick",
+    "Still thinking."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    5.2,
+    "start"
+   ],
+   [
+    14.1,
+    "start"
+   ],
+   [
+    23.1,
+    "start"
+   ],
+   [
+    40.5,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 1
+ },
+ {
+  "stop_to_upload": 1.22,
+  "name": "r1-04",
+  "memo": "c7ba14fd",
+  "said": "What does the fast desk do compared to the full agent?",
+  "heard": "What does a fast-ass do compared to the full agent?",
+  "action": "direct",
+  "path": "force_direct",
+  "model": null,
+  "served": null,
+  "route": null,
+  "desk_ms": null,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 70.5,
+  "stop_to_beacon": 71.11,
+  "stop_to_audible": 71.63,
+  "hold_cues_uploaded": [
+   [
+    10.3,
+    1,
+    "rick",
+    "Still thinking."
+   ],
+   [
+    19.4,
+    2,
+    "rick",
+    "Still on it."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    13.2,
+    "start"
+   ],
+   [
+    36.8,
+    "start"
+   ],
+   [
+    62.7,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 1
+ },
+ {
+  "stop_to_upload": 1.69,
+  "name": "r1-05",
+  "memo": "3a970507",
+  "said": "Does Holocene publish domain events, or does it only collect them?",
+  "heard": "Does Holocene publish domain events, or does it only collect them?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 2953,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 7.29,
+  "stop_to_beacon": 7.63,
+  "stop_to_audible": 8.04,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 1.75,
+  "name": "r1-06",
+  "memo": "67e62dbe",
+  "said": "What is the production first rule for Holocene?",
+  "heard": "What is the production first rule for Holocene?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 2802,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 7.49,
+  "stop_to_beacon": 7.87,
+  "stop_to_audible": 8.27,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 1.4,
+  "name": "r3-b",
+  "memo": "df7ab335",
+  "said": "What is the operating model of Holocene?",
+  "heard": "What is the operating model of Holocene?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 2999,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 37.22,
+  "stop_to_beacon": 37.48,
+  "stop_to_audible": 37.95,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [
+   [
+    5.8,
+    "answer_ready"
+   ]
+  ],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": null,
+  "name": "r3-a",
+  "memo": "fdbc2311",
+  "said": "Walk me through the Holocene serving path and the change workflow, step by step, in some detail.",
+  "heard": "Walk me through the Holocene serving path and the change workflow step by step in some detail.",
+  "action": "direct",
+  "path": "fallback",
+  "model": null,
+  "served": null,
+  "route": null,
+  "desk_ms": 9871,
+  "reason": "all_routes_failed",
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 79.99,
+  "stop_to_beacon": 80.84,
+  "stop_to_audible": 80.02,
+  "hold_cues_uploaded": [
+   [
+    5.1,
+    1,
+    "rick",
+    "Hold on."
+   ],
+   [
+    11.1,
+    2,
+    "rick",
+    "Still on it."
+   ],
+   [
+    19.9,
+    3,
+    "rick",
+    "Still thinking."
+   ],
+   [
+    29.0,
+    4,
+    "rick",
+    "Still on it."
+   ],
+   [
+    38.0,
+    5,
+    "rick",
+    "Still thinking."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    5.3,
+    "start"
+   ],
+   [
+    11.3,
+    "start"
+   ],
+   [
+    20.2,
+    "start"
+   ],
+   [
+    29.2,
+    "start"
+   ],
+   [
+    38.5,
+    "start"
+   ],
+   [
+    62.3,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 1
+ },
+ {
+  "stop_to_upload": 1.61,
+  "name": "r3a-b",
+  "memo": "09c921f4",
+  "said": "What was the first agent you listed earlier?",
+  "heard": "What was the first agent you listed earlier?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 3626,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 32.77,
+  "stop_to_beacon": 32.9,
+  "stop_to_audible": 33.36,
+  "hold_cues_uploaded": [
+   [
+    5.3,
+    1,
+    "rick",
+    "Thinking."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": null,
+  "name": "r3a-a",
+  "memo": "baa574e1",
+  "said": "Explain in detail, in a few sentences, what the fast desk does, how drafts work, and how sending to an agent works. Take your time.",
+  "heard": "Explain in detail, in a few sentences, what the Fast Desk does, how drafts work, and how sending to an agent works. Take your time.",
+  "action": "direct",
+  "path": "fallback",
+  "model": null,
+  "served": null,
+  "route": null,
+  "desk_ms": 11190,
+  "reason": "all_routes_failed",
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 62.23,
+  "stop_to_beacon": 63.32,
+  "stop_to_audible": 64.21,
+  "hold_cues_uploaded": [
+   [
+    6.3,
+    1,
+    "rick",
+    "Thinking."
+   ],
+   [
+    12.4,
+    2,
+    "rick",
+    "Still thinking."
+   ],
+   [
+    21.7,
+    3,
+    "rick",
+    "Still on it."
+   ],
+   [
+    30.7,
+    4,
+    "rick",
+    "Still thinking."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    6.5,
+    "start"
+   ],
+   [
+    12.7,
+    "start"
+   ],
+   [
+    22.6,
+    "start"
+   ],
+   [
+    30.8,
+    "start"
+   ],
+   [
+    39.2,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 1
+ },
+ {
+  "stop_to_upload": 1.58,
+  "name": "r3b-b",
+  "memo": "3adc1a9b",
+  "said": "Does Holocene publish domain events, or does it only collect them?",
+  "heard": "Does Holocene publish domain events, or does it only collect them?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 2474,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 6.79,
+  "stop_to_beacon": 7.46,
+  "stop_to_audible": 8.15,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": null,
+  "name": "r3b-a",
+  "memo": "0f75e05e",
+  "said": "What is the Holocene project, in one sentence?",
+  "heard": "What is the Holocene project in one sentence?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 4224,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 9.44,
+  "stop_to_beacon": 9.97,
+  "stop_to_audible": 10.39,
+  "hold_cues_uploaded": [
+   [
+    6.1,
+    1,
+    "rick",
+    "Hang on."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    6.3,
+    "start"
+   ]
+  ],
+  "playback_skipped": [
+   [
+    "skipped",
+    "barged_in"
+   ]
+  ],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 2.4,
+  "name": "r4-b",
+  "memo": "5f1e6dfa",
+  "said": "Use morgan voice.",
+  "heard": "Use Morgan voice!",
+  "action": "tool",
+  "path": "setting_phrase",
+  "model": null,
+  "served": null,
+  "route": null,
+  "desk_ms": null,
+  "reason": null,
+  "tool": {
+   "ms": 2192,
+   "ok": true,
+   "via": "skill",
+   "args": {
+    "voice": "morgan"
+   },
+   "exit": 0,
+   "tool": "car_set_voice",
+   "error": null
+  },
+  "tile_voice": "morgan",
+  "stop_to_start_reply": 25.06,
+  "stop_to_beacon": 25.37,
+  "stop_to_audible": 25.79,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": null,
+  "name": "r4-a",
+  "memo": "ba95e3fb",
+  "said": "Which agents are on my roster?",
+  "heard": "Which agents are on my roster?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 6040,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "rick",
+  "stop_to_start_reply": 16.59,
+  "stop_to_beacon": 17.14,
+  "stop_to_audible": 17.49,
+  "hold_cues_uploaded": [
+   [
+    5.1,
+    1,
+    "rick",
+    "Hold on."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 1.54,
+  "name": "r5-c",
+  "memo": "820b543f",
+  "said": "Which agents are on my roster?",
+  "heard": "Which agents are on my roster?",
+  "action": "reply",
+  "path": "fast",
+  "model": "glm-5.3",
+  "served": "automaticai/personal/glm-5.3",
+  "route": "r1",
+  "desk_ms": 6952,
+  "reason": null,
+  "tool": null,
+  "tile_voice": "morgan",
+  "stop_to_start_reply": 12.42,
+  "stop_to_beacon": 13.0,
+  "stop_to_audible": 13.5,
+  "hold_cues_uploaded": [
+   [
+    5.4,
+    1,
+    "morgan",
+    "Hold on."
+   ]
+  ],
+  "hold_dropped": [],
+  "progress_started": [
+   [
+    5.8,
+    "start"
+   ]
+  ],
+  "playback_skipped": [],
+  "dispatched": 0
+ },
+ {
+  "stop_to_upload": 0.27,
+  "name": "r5-d",
+  "memo": "7f65678d",
+  "said": "Use rick voice.",
+  "heard": "Use Rick Voice.",
+  "action": "tool",
+  "path": "setting_phrase",
+  "model": null,
+  "served": null,
+  "route": null,
+  "desk_ms": null,
+  "reason": null,
+  "tool": {
+   "ms": 571,
+   "ok": true,
+   "via": "skill",
+   "args": {
+    "voice": "rick"
+   },
+   "exit": 0,
+   "tool": "car_set_voice",
+   "error": null
+  },
+  "tile_voice": "rick",
+  "stop_to_start_reply": 3.12,
+  "stop_to_beacon": 3.27,
+  "stop_to_audible": 3.65,
+  "hold_cues_uploaded": [],
+  "hold_dropped": [],
+  "progress_started": [],
+  "playback_skipped": [],
+  "dispatched": 0
+ }
+]

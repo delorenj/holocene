@@ -1,0 +1,160 @@
+{
+ "name": "r1-06",
+ "text": "What is the production first rule for Holocene?",
+ "offset_s": -0.10313034057617188,
+ "start_pressed": 1792710685.725216,
+ "mic_recording_seen": 1792710689.4357958,
+ "paplay": [
+  1792710689.8358765,
+  1792710692.426445,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710693.4265442,
+ "mic_idle_seen": 1792710694.3698065,
+ "memo_id": "67e62dbe-1569-5a47-83e8-0193cb4a0d11",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T231125Z.ogg",
+ "discovered": 1792710695.173,
+ "first_kind": "reply",
+ "first_start": 1792710700.9161303,
+ "first_audible": null,
+ "stop_to_first_start_s": 7.49,
+ "stop_to_upload_discover_s": 1.75,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 2802,
+   "cached_tokens": 3456,
+   "conv_turn": 6,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Treat the live Holocene deployment as the only target: when a change is accepted, propagate it to production services and verify it's served before calling the work done. No dev-only handoffs, no staging lanes, and local dev servers are just temporary workbenches.",
+   "say_chars": 264,
+   "lexicon": false,
+   "card_age_s": 3.3,
+   "decide_ms": 2822,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 2801,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "fast",
+     "turn": 6,
+     "action": "reply",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 4,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   7.49,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   7.49,
+   "start",
+   "reply",
+   "waited_ms=4"
+  ],
+  [
+   7.49,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   9.13,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   10.93,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   11.66,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   14.02,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   15.95,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   19.11,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   26.04,
+   "end",
+   "reply",
+   "chunks=4"
+  ]
+ ]
+}

@@ -1,0 +1,155 @@
+{
+ "name": "r1-04",
+ "text": "What does the fast desk do compared to the full agent?",
+ "offset_s": -0.13959455490112305,
+ "start_pressed": 1792710526.0670831,
+ "mic_recording_seen": 1792710530.0325456,
+ "paplay": [
+  1792710530.4326441,
+  1792710533.1857138,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710534.1858716,
+ "mic_idle_seen": 1792710534.8908613,
+ "memo_id": "c7ba14fd-fdcc-588a-b596-390a5fdb0ece",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T230846Z.ogg",
+ "discovered": 1792710535.402,
+ "first_kind": "echo",
+ "first_start": 1792710537.8155947,
+ "first_audible": null,
+ "stop_to_first_start_s": 3.63,
+ "stop_to_upload_discover_s": 1.22,
+ "facts": {
+  "routed": {
+   "action": "direct",
+   "decided_action": "direct",
+   "path": "force_direct",
+   "model_answered": null,
+   "route": null,
+   "attempts": 0,
+   "latency_ms": null,
+   "cached_tokens": null,
+   "conv_turn": 4,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": null,
+   "say_chars": null,
+   "lexicon": true,
+   "card_age_s": 76.5,
+   "decide_ms": 94,
+   "requested_model": null,
+   "served_route": null,
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": null,
+  "n_routed": 1,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "7d72de3b-f508-4d85-a47d-b672ad1f2ca7",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.progressed",
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   2.15,
+   "queued",
+   "echo",
+   "behind_ack"
+  ],
+  [
+   3.63,
+   "start",
+   "echo",
+   "waited_ms=1465"
+  ],
+  [
+   8.39,
+   "end",
+   "echo",
+   ""
+  ],
+  [
+   10.42,
+   "queued",
+   "progress",
+   "behind_progress"
+  ],
+  [
+   13.2,
+   "start",
+   "progress",
+   "waited_ms=2777"
+  ],
+  [
+   14.94,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   19.72,
+   "queued",
+   "progress",
+   "behind_reply"
+  ],
+  [
+   29.6,
+   "drop",
+   "progress",
+   "superseded"
+  ],
+  [
+   29.6,
+   "queued",
+   "progress",
+   "behind_reply"
+  ],
+  [
+   36.8,
+   "start",
+   "progress",
+   "waited_ms=7200"
+  ],
+  [
+   43.03,
+   "end",
+   "progress",
+   ""
+  ]
+ ]
+}

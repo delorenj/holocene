@@ -1,0 +1,148 @@
+{
+ "name": "r1-01",
+ "text": "What is the Holocene project, in one sentence?",
+ "offset_s": -0.1454780101776123,
+ "start_pressed": 1792710138.1282394,
+ "mic_recording_seen": 1792710143.7947664,
+ "paplay": [
+  1792710144.1948466,
+  1792710146.9576893,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710147.9633968,
+ "mic_idle_seen": 1792710151.3532221,
+ "memo_id": "d02ace4a-eb45-54fa-b6ac-b16bf449792e",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T230219Z.ogg",
+ "discovered": 1792710154.262,
+ "first_kind": "reply",
+ "first_start": 1792710160.881478,
+ "first_audible": null,
+ "stop_to_first_start_s": 12.92,
+ "stop_to_upload_discover_s": 6.3,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 2540,
+   "cached_tokens": 2560,
+   "conv_turn": 1,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Holocene is the 33GOD control-plane dashboard for a single operator: it collects Bloodbank events and renders them through filters and read projections.",
+   "say_chars": 152,
+   "lexicon": false,
+   "card_age_s": 2.7,
+   "decide_ms": 2625,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 2540,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "fast",
+     "turn": 1,
+     "action": "reply",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   12.91,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   12.92,
+   "start",
+   "reply",
+   "waited_ms=5"
+  ],
+  [
+   12.92,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   14.64,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   16.75,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   19.51,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   23.66,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   33.99,
+   "end",
+   "reply",
+   "chunks=3"
+  ]
+ ]
+}

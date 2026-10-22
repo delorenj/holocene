@@ -1,0 +1,5 @@
+PASS  1 speech x speech (queue): 0 overlaps
+FAIL  2 speech x recording (queue vs app mic + OS capture, tolerance 60 ms): 1 overlap(s)
+        24 ms  speech ack ack:stopped:59420493 [1792710151.189, 1792710156.639)  x  recording OS capture active [1792710143.519, 1792710151.273)
+PASS  3 HAL assistant mix x OS capture (tolerance 60 ms): 0 overlaps
+RESULT OVERLAPS FOUND  (95 utterances, 18 app recordings, 18 OS capture windows, 94 HAL mix windows)

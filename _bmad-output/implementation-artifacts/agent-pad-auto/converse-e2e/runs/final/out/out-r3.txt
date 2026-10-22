@@ -1,0 +1,122 @@
+A memo fdbc2311-8e4d-557f-a6e1-6b04b0df82a3
+A first start None
+{
+ "name": "r3-b",
+ "text": "What is the operating model of Holocene?",
+ "offset_s": -0.16225051879882812,
+ "barge_pressed": 1792710816.668371,
+ "start_pressed": 1792710816.6683965,
+ "mic_recording_seen": 1792710820.6813574,
+ "paplay": [
+  1792710825.3366272,
+  1792710828.0882795,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792710829.0883996,
+ "mic_idle_seen": 1792710829.661493,
+ "memo_id": "df7ab335-c046-530f-9991-ae279376d5db",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T231336Z.ogg",
+ "discovered": 1792710830.485,
+ "first_kind": "reply",
+ "first_start": 1792710866.3122506,
+ "first_audible": null,
+ "stop_to_first_start_s": 37.22,
+ "stop_to_upload_discover_s": 1.4,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 2999,
+   "cached_tokens": 3584,
+   "conv_turn": 8,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Holocene is the 33GOD control-plane dashboard for a single operator. There's no separate staging lane, no dev-prod handoff, and no second user group, so no release ceremony is needed.",
+   "say_chars": 183,
+   "lexicon": false,
+   "card_age_s": 4.1,
+   "decide_ms": 3061,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 2999,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "fast",
+     "turn": 8,
+     "action": "reply",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   37.22,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   37.22,
+   "start",
+   "reply",
+   "waited_ms=2"
+  ],
+  [
+   49.36,
+   "end",
+   "reply",
+   ""
+  ]
+ ]
+}
+{"A_speech": [[5.3, "queued", "progress", ""], [5.3, "start", "progress", "waited_ms=2"], [6.85, "end", "progress", ""], [11.32, "queued", "progress", ""], [11.32, "start", "progress", "waited_ms=2"], [12.02, "queued", "echo", "behind_progress"], [13.48, "end", "progress", ""], [13.5, "start", "echo", "waited_ms=1479"], [18.95, "end", "echo", ""], [20.19, "queued", "progress", ""], [20.2, "start", "progress", "waited_ms=3"], [22.12, "end", "progress", ""], [29.19, "queued", "progress", ""], [29.19, "start", "progress", "waited_ms=4"], [30.75, "end", "progress", ""], [38.49, "queued", "progress", ""], [38.49, "start", "progress", "waited_ms=3"], [40.79, "end", "progress", ""], [62.3, "queued", "progress", ""], [62.3, "start", "progress", "waited_ms=5"], [64.63, "halt", "progress", "recording"], [64.93, "deferred", "progress", "requeued"], [70.71, "drop", "progress", "memo_final"], [77.91, "queued", "reply", "behind_ack"], [78.09, "chunk", "reply", "buffered"], [79.99, "start", "reply", "waited_ms=2094"], [79.99, "chunk", "reply", "first"], [86.43, "chunk", "reply", "buffered"], [86.95, "chunk", "reply", "next"], [97.65, "chunk", "reply", "next"], [113.27, "end", "reply", "chunks=3"]], "A_routed": "fallback", "B_barge_at": 1792710816.668371}

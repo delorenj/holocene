@@ -1,0 +1,120 @@
+{
+ "name": "r4-b",
+ "text": "Use morgan voice.",
+ "offset_s": -0.17081475257873535,
+ "barge_pressed": 1792711194.4417443,
+ "start_pressed": 1792711194.441772,
+ "mic_recording_seen": 1792711198.1709163,
+ "paplay": [
+  1792711200.152644,
+  1792711201.9369528,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792711202.9399664,
+ "mic_idle_seen": 1792711203.7182724,
+ "memo_id": "5f1e6dfa-01ee-5c60-b4b4-fc56efb634cc",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T231954Z.ogg",
+ "discovered": 1792711205.337,
+ "first_kind": "reply",
+ "first_start": 1792711228.0038147,
+ "first_audible": null,
+ "stop_to_first_start_s": 25.06,
+ "stop_to_upload_discover_s": 2.4,
+ "facts": {
+  "routed": {
+   "action": "tool",
+   "decided_action": "tool",
+   "path": "setting_phrase",
+   "model_answered": null,
+   "route": null,
+   "attempts": 0,
+   "latency_ms": null,
+   "cached_tokens": null,
+   "conv_turn": 14,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Switched Holocene PM to Morgan.",
+   "say_chars": 31,
+   "lexicon": true,
+   "card_age_s": 16.2,
+   "decide_ms": 2236,
+   "requested_model": null,
+   "served_route": null,
+   "tile_model": null,
+   "tile_voice": "morgan",
+   "tool": {
+    "ms": 2192,
+    "ok": true,
+    "via": "skill",
+    "args": {
+     "voice": "morgan"
+    },
+    "exit": 0,
+    "tool": "car_set_voice",
+    "error": null
+   }
+  },
+  "attempt_log": null,
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "setting_phrase",
+     "turn": 14,
+     "action": "tool",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "morgan",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 1,
+  "voiced_voices": [
+   "morgan"
+  ],
+  "types": [
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   25.04,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   25.06,
+   "start",
+   "reply",
+   "waited_ms=23"
+  ],
+  [
+   27.95,
+   "end",
+   "reply",
+   ""
+  ]
+ ]
+}
+{"A_memo": "ba95e3fb-0190-5598-b0ad-92e5b9d2f5c6", "A_speech": [[14.32, "queued", "reply", "behind_ack"], [14.83, "chunk", "reply", "buffered"], [16.24, "chunk", "reply", "buffered"], [16.59, "start", "reply", "waited_ms=2273"], [16.59, "chunk", "reply", "first"], [17.81, "chunk", "reply", "buffered"], [21.19, "chunk", "reply", "next"], [27.36, "chunk", "reply", "next"], [33.12, "chunk", "reply", "next"], [36.57, "end", "reply", "chunks=4"]], "A_routed": "fast", "B_start_press": 1792711194.4417443, "A_stop": 1792711190.90152}

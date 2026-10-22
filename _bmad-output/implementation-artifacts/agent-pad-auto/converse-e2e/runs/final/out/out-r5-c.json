@@ -1,0 +1,179 @@
+{
+ "name": "r5-c",
+ "text": "Which agents are on my roster?",
+ "offset_s": -0.1744065284729004,
+ "start_pressed": 1792711263.164122,
+ "mic_recording_seen": 1792711266.7056332,
+ "paplay": [
+  1792711267.1057174,
+  1792711269.2109876,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792711270.2110922,
+ "mic_idle_seen": 1792711270.7993445,
+ "memo_id": "820b543f-8ce0-5328-8126-7f280d75d764",
+ "key": "inbox/holocene-pm/2026/10/22/20261022T232103Z.ogg",
+ "discovered": 1792711271.749,
+ "first_kind": "reply",
+ "first_start": 1792711282.6344066,
+ "first_audible": null,
+ "stop_to_first_start_s": 12.42,
+ "stop_to_upload_discover_s": 1.54,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 6952,
+   "cached_tokens": 3136,
+   "conv_turn": 15,
+   "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Same answer as before: twenty-nine agents. Me for Holocene, Grolf for 33god, and PMs for Infra, Flume, Navi, Bloodbank, Voxxy, Deckard, Skillex, Monitoring, and the rest, plus the two DeLoNET agents. Want the full list of names?",
+   "say_chars": 228,
+   "lexicon": false,
+   "card_age_s": 87.2,
+   "decide_ms": 6987,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "morgan",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 6952,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "answered_model": "glm-5.3"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "df35bd98",
+     "path": "fast",
+     "turn": 15,
+     "action": "reply",
+     "conv_id": "df35bd98-b40d-49cf-bbf2-2abd00c1d8aa"
+    },
+    "chars": null,
+    "voice": "morgan",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 4,
+  "voiced_voices": [
+   "morgan"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   5.81,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   5.82,
+   "start",
+   "progress",
+   "waited_ms=19"
+  ],
+  [
+   8.01,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   12.42,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   12.42,
+   "start",
+   "reply",
+   "waited_ms=4"
+  ],
+  [
+   12.42,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   15.4,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   17.33,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   18.68,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   21.07,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   22.87,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   27.83,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   32.19,
+   "end",
+   "reply",
+   "chunks=4"
+  ]
+ ]
+}
