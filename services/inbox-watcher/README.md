@@ -707,18 +707,24 @@ record, so the pad tells a barged fast-turn reply (not replayed) from a follow-u
 
 **The ladder (never Anthropic).** `MEMO_CONVERSE_ROUTES` (JSON, in the unit), in order, inside `MEMO_CONVERSE_BUDGET_S`
 (8 s): r1 Hyper `deepseek-v4.1-flash-1017` (4 s), r2 Hyper `deepseek-v4.1-flash` (4 s; skipped in a call where r1 timed out
-or could not connect, same host), r3a gateway `automaticai/personal/kimi-k3s` (temperature 1, effort medium), r3b gateway
-`automaticai/personal/glm-5.3-flash` (effort medium; the gateway refuses `low`). A rung is skipped while its breaker is
-open (3 failures in 120 s: 60 s) or its key is unreadable (retried every 300 s); a 401 re-reads the key once. Keys are
-**op:// item-UUID references only** (`op read` at first use and once at start-up, memory only, never logged; a pasted key
-is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`) refuses a configured
-route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field matches. If every
-rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never failed
-for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; the gateway
-rungs are an availability fallback, not a latency path. Live on 2026-10-22 with the real card (~3k prompt tokens): r1 answered a
-propose in 1.0-1.4 s (2944 of 3030 prompt tokens cached after the first call, 0.007 hypercredits per cached turn), and
-once took over 3 s, hence its 4 s timeout. Hyper's `usage` carries `cost` and `remaining.hypercredits` and lands on the
-routed fact as is: the shared key had about 9.5 hypercredits left that day, not hundreds.
+or could not connect, same host), r3m gateway `automaticai/mistral-allowance/ministral-14b` (3 s), r3c gateway
+`automaticai/gemini-free/gemini-3.5-flash-lite` (3 s), r3a gateway `automaticai/personal/kimi-k3s` (temperature 1, effort
+medium), r3b gateway `automaticai/personal/glm-5.3-flash` (effort medium; the gateway refuses `low`). r3m and r3c were added
+on 2026-10-22, when Hyper ran out of credit: kimi and glm are an availability fallback, not a latency path. A rung is skipped
+while its breaker is open (3 failures in 120 s: 60 s; **one 402 opens it for 10 min**) or its key is unreadable (retried every
+300 s); a 401 re-reads the key once. A `propose` with neither a title nor a brief goal (small models send `say` + `action`
+only) counts as `incomplete_propose` and goes to the next rung; if no rung does better the guard builds the brief from the
+driver's own words. Keys are **op:// item-UUID references only** (`op read` at first use and once at start-up, memory only,
+never logged; a pasted key is refused). `FORBIDDEN_MODEL_RE` (`claude|anthropic|sonnet|opus|haiku|fable|^automaticai/auto`)
+refuses a configured route (`converse_route_refused`; no route left = off) and throws away any answer whose `model` field
+matches. If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is
+never failed for an LLM reason. Measured (cbdfee5): r1 p50 0.94 s / p90 1.41 s, r2 2.5 s, r3a 4.05 s / 11 s, r3b 7.7 s; on
+2026-10-22 with the card-sized prompt: ministral-14b p50 1.0 s / p90 1.1 s (8 of 8 valid), gemini-3.5-flash-lite p50 0.8 s /
+p90 2.7 s with 4-8 s spikes. Live with the real card (~3k prompt tokens): r1 answered a propose in 1.0-1.4 s (2944 of 3030
+prompt tokens cached after the first call, 0.007 hypercredits per cached turn). Hyper's `usage` carries `cost` and
+`remaining.hypercredits` and lands on the routed fact as is: the shared key had about 9.5 hypercredits left that day and was
+out (`402 billing_error`) a few hours later. The gateway token `holocene-converse` (id 88) is scoped to exactly these four
+gateway routes, no claude and no auto.
 
 **State.** `state.json` `conversations` keyed `<device>|<agent>` (`conv_id`, `sid`, `turns[]` upserted by memo id,
 `pending` draft, `delegations[]`) and `conversations_closed` (the last 20). Idle `MEMO_CONVERSE_IDLE_S` (900 s) closes one

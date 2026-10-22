@@ -534,6 +534,12 @@ class Guard(unittest.TestCase):
         final, reasons = g({"action": "confirm"}, sess, "send it", now=1700.0)
         self.assertIn("already_sent", reasons)
 
+    def test_a_model_that_proposes_send_it_with_no_draft_is_not_believed(self):
+        final, reasons = g({"action": "propose", "say": "Draft.", "title": "Send it"}, session(), "Send it!")
+        self.assertEqual((final["action"], final["say"]), ("reply", cv.NOTHING_PENDING_LINE))
+        self.assertIn("no_pending_draft", reasons)
+        self.assertIsNone(final["draft"])
+
     def test_cancel_drops_the_pending_draft_and_end_closes(self):
         sess = session()
         sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]

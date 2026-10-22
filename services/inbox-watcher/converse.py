@@ -890,6 +890,11 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         out.update(send=pend, say=sending_line(pend))
         return out, reasons
     if action == "propose":
+        if pend is None and confirm_only(transcript):
+            # "send it" with nothing to send is never a new request called "Send it" (a model that proposes it)
+            reasons.append("no_pending_draft")
+            out.update(action="reply", say=NOTHING_PENDING_LINE)
+            return out, reasons
         propose_from(dec, pend)
         return out, reasons
     if action == "cancel":
@@ -1305,7 +1310,9 @@ class Desk:
         now = self.clock() if now is None else now
         pend = pending_draft(sess, now, self.draft_ttl_s)
         lex = None
-        if confirm_only(transcript) and (pend is not None or recent_delegation(sess, now, self.dedupe_s)):
+        exp = (sess or {}).get("expired")
+        if confirm_only(transcript) and (pend is not None or recent_delegation(sess, now, self.dedupe_s)
+                                         or (isinstance(exp, dict) and now - float(exp.get("at") or 0) < self.dedupe_s)):
             lex = ("confirm_only", {"action": "confirm"})
         elif cancel_only(transcript) and pend is not None:
             lex = ("cancel_only", {"action": "cancel"})
