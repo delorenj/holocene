@@ -144,7 +144,8 @@ class RouterRule(unittest.TestCase):
         # route behind an alias included
         budget = float(next(ln for ln in unit.splitlines() if ln.startswith("Environment=MEMO_CONVERSE_BUDGET_S=")).split("=")[-1])
         self.assertGreaterEqual(budget, sum(r["timeout_s"] for r in ladder))
-        for alias, rs in (("deepseek-pro", pro), ("deepseek-flash", flash)):
+        free_rs, _ = cv.parse_routes(table["models"]["free"]["routes"])
+        for alias, rs in (("deepseek-pro", pro), ("deepseek-flash", flash), ("free", free_rs)):
             self.assertGreaterEqual(table["models"][alias]["budget_s"], sum(r["timeout_s"] for r in rs + ladder), alias)
         self.assertGreaterEqual(pro[1]["timeout_s"], 11)  # pro-d answered in 8982 ms once on a loaded host
         free, _ = cv.parse_routes(table["models"]["free"]["routes"])

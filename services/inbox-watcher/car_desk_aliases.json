@@ -27,6 +27,7 @@
    "label": "the free router",
    "spoken": "the free router",
    "phrases": ["free", "free model", "free router", "the free one", "automaticai free"],
+   "budget_s": 20,
    "routes": [
     {"id": "free", "base_url": "https://api.automaticai.io/v1", "key_ref": "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse", "model": "automaticai/free", "timeout_s": 8, "temperature": 0.7}
    ]

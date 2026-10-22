@@ -423,7 +423,7 @@ def timing_line(ctx: dict, hops: list[Hop]) -> str | None:
 
 
 def routed_of(d: dict) -> str:
-    """One line for the fast desk's decision: 'reply deepseek-v4.1-flash-1017@r1 (1 attempt, 812 ms, 900 in / 40 out,
+    """One line for the fast desk's decision: 'reply glm-5.3@r1 (1 attempt, 812 ms, 900 in / 40 out,
     640 cached) conv 7f3a1b2c turn 3', with failed rungs, guard notes and the fallback reason when there are any."""
     u = d.get("usage") or {}
     att = d.get("attempt_log") or []
