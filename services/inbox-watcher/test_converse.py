@@ -320,6 +320,22 @@ class Ladder(unittest.TestCase):
         res = cv.Ladder(routes, self.keys, self.breaker, budget_s=8).call([{"role": "user", "content": "x"}])
         self.assertEqual([a["outcome"] for a in res["attempts"]], ["timeout", "host_down", "ok"])
 
+    def test_a_timeout_on_one_gateway_channel_does_not_blame_the_others(self):
+        port = self.srvs[0].server_port
+        routes, _ = cv.parse_routes([
+            {"id": "g1", "base_url": f"http://127.0.0.1:{port}/v1", "key_ref": "op://V/a/b", "model": "automaticai/mistral-allowance/m1", "timeout_s": 0.4},
+            {"id": "g2", "base_url": f"http://127.0.0.1:{port}/v1", "key_ref": "op://V/a/b", "model": "automaticai/personal/m2", "timeout_s": 0.4}])
+        self.srvs[0].modes = ["timeout"]  # only the first call is slow
+        res = cv.Ladder(routes, self.keys, self.breaker, budget_s=8).call([{"role": "user", "content": "x"}])
+        self.assertEqual([a["outcome"] for a in res["attempts"]], ["timeout", "ok"])
+        # ...but the same channel is skipped
+        routes, _ = cv.parse_routes([
+            {"id": "g1", "base_url": f"http://127.0.0.1:{port}/v1", "key_ref": "op://V/a/b", "model": "automaticai/personal/m1", "timeout_s": 0.4},
+            {"id": "g2", "base_url": f"http://127.0.0.1:{port}/v1", "key_ref": "op://V/a/b", "model": "automaticai/personal/m2", "timeout_s": 0.4}])
+        self.srvs[0].modes = ["timeout"]
+        res = cv.Ladder(routes, self.keys, self.breaker, budget_s=8).call([{"role": "user", "content": "x"}])
+        self.assertEqual([a["outcome"] for a in res["attempts"]], ["timeout", "host_down"])
+
     def test_the_key_never_appears_in_a_log_line_a_result_or_an_error(self):
         for mode in ("500", "timeout", "badjson", "forbidden"):
             self.srvs[0].modes = [mode]

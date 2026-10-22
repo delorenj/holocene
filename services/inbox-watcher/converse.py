@@ -452,11 +452,18 @@ def parse_decision(text: str) -> dict:
 
 # ---------------------------------------------------------------- the ladder
 
+def _domain(r: dict) -> str:
+    """Where a timeout is blamed: the host for a bare model name (Hyper), the upstream channel behind a gateway
+    (`automaticai/<channel>/<model>`): ministral timing out says nothing about gemini on the same gateway."""
+    m = r.get("model") or ""
+    return f"{r['host']}|{m.rsplit('/', 1)[0]}" if "/" in m else r["host"]
+
+
 class Ladder:
     """Try the rungs in order inside one total budget. Every rung's outcome is recorded; the first usable decision wins.
 
-    A rung is skipped while its breaker is open, while its key is unreadable, and after an earlier rung on the same host
-    timed out or could not connect in this call (the same host is down). A 401 re-reads the key once. A forbidden
+    A rung is skipped while its breaker is open, while its key is unreadable, after an earlier rung on the same host
+    could not connect in this call, and after an earlier rung of the same upstream channel timed out (see _domain). A 401 re-reads the key once. A forbidden
     `model` in the answer throws it away (never-Anthropic). Never raises for an LLM reason."""
 
     def __init__(self, routes: list[dict], keys: KeyCache, breaker: Breaker, http_: Http | None = None,
@@ -482,7 +489,7 @@ class Ladder:
             if self.breaker.is_open(r["id"]):
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "breaker_open", "ms": 0})
                 continue
-            if r["host"] in dead_hosts:
+            if r["host"] in dead_hosts or _domain(r) in dead_hosts:
                 attempts.append({"route": r["id"], "model": r["model"], "outcome": "host_down", "ms": 0})
                 continue
             key = self.keys.get(r["key_ref"])
@@ -510,8 +517,10 @@ class Ladder:
             self.log("converse_attempt_failed", "warn", route=r["id"], model=r["model"], outcome=res["attempt"]["outcome"],
                      ms=res["attempt"]["ms"], http_status=res["attempt"].get("http_status"),
                      breaker_opened=opened or None)
-            if res["attempt"]["outcome"] in ("timeout",) or res["attempt"]["outcome"].startswith("connect"):
-                dead_hosts.add(r["host"])
+            if res["attempt"]["outcome"].startswith("connect"):
+                dead_hosts.add(r["host"])  # nothing answers there
+            elif res["attempt"]["outcome"] == "timeout":
+                dead_hosts.add(_domain(r))  # that upstream is slow; another channel behind the same gateway may not be
         if weak is not None:  # no rung did better than the incomplete proposal: the guard builds the brief from the driver's words
             r, res = weak
             return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"], "requested_model": r["model"],
