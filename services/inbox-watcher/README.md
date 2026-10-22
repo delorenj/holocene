@@ -480,15 +480,19 @@ Behaviour worth knowing:
   2026-10-22 sim). This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
   watcher already owns the memo, its cancel and its trace.
 - **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL`, default
-  `automaticai/personal/sol-6.1`; a follow-up carries `MEMO_FOLLOWUP_MODEL`, default empty (the profile's own model:
-  nobody waits on it, and one follow-up on Sol used 3.5x the tokens of a whole round of voice turns from the pool that
-  keeps them fast). The gateway runs that one turn on it through an
+  `automaticai/personal/claude-sonnet-5.5` (operator-approved 2026-10-22; was `automaticai/personal/sol-6.1` until the
+  OpenAI pool ran down to ~2% of the week). A follow-up carries `MEMO_FOLLOWUP_MODEL`, default the same route (it ran on
+  the profile's own GLM-5.3 at max before: 252 of a 285 s follow-up was model time). The route is in the gateway scope of
+  the car agents' tokens (`hermes`, the fleet token 27 car desks share, and `hermes-delonet-director`) and in every
+  profile's `providers.automaticai.models`. Rollback: `Environment=MEMO_VOICE_MODEL=automaticai/personal/sol-6.1` and
+  `MEMO_FOLLOWUP_MODEL=` (empty = the profile's own model) in the unit, restart the watcher between memos; or unscope the
+  route from the tokens (Hermes' fallback chain then answers). The gateway runs that one turn on it through an
   internal `/model <route> --once` (bloodbank `docs/interactive-command-lane.md` section 10). On the real heavy step of a
   crank circuit (20.7k-token prompt): glm-5.3@max (where `automaticai/auto` lands for the desks' tokens) 51 s, kimi-2.8
-  11-27 s, sol-6.1 8.4 s at high and 13-15 s at the providers' xhigh (what goes on the wire: effort is not a per-turn
-  knob on this provider, the route is). Hermes' fallback chain (glm-5.3, kimi-2.8) takes over when the Sol pool answers
-  403/429. `dispatched` and `replied` carry `model`, `replied` the gateway's `model_override {requested, applied,
-  reason}`. Empty `MEMO_VOICE_MODEL` = the profile's own model.
+  11-27 s, sol-6.1 8.4 s at high and 13-15 s at the providers' xhigh, sonnet-5.5 5.1 s (what goes on the wire: effort is
+  not a per-turn knob on this provider, the route is). Hermes' fallback chain (glm-5.3, kimi-2.8) takes over when the
+  route answers 403/429. `dispatched` and `replied` carry `model`, `replied` the gateway's `model_override {requested,
+  applied, reason}`. Empty `MEMO_VOICE_MODEL` = the profile's own model.
 - **A revive tells the journey.** Every `memo:retry` / rescue revive at a stage other than `receive` publishes a small
   `audio.memo.received` fact with `revived=true`, `revived_to` and `revive_why` (no detection data; ntfy-router mutes
   `received`). `memo:trace`, `memo:list` and Holocene `/voice` treat a failed or cancelled fact older than a later stage

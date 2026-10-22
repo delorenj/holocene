@@ -156,14 +156,18 @@ NO_HANDOFF_LINE = "Nothing was started in the background, so no follow-up is com
 # glm-5.3@max, where automaticai/auto lands for the desks' tokens, 51 s (113 s at high); kimi-2.8@high 11-27 s;
 # sol-6.1 8.4 s at high and 13-15 s at xhigh (the providers' extra_body effort, which is what goes on the wire: per-turn
 # effort is not a knob on this provider, the route is); production per-call mean 13.4-15.9 s on GLM vs 8.4-9.3 s on Sol.
-# Sonnet 5.5 was 5.1 s but no hermes desk token may use a Claude route. Hermes' fallback chain (glm-5.3, kimi-2.8) takes
-# over on a route-limit 403/429, so an exhausted Sol pool costs a fast failure per call, never the memo. The route must be
-# in the profile's providers.automaticai.models (every profile lists it). Empty = the profile's own model.
-VOICE_MODEL = os.environ.get("MEMO_VOICE_MODEL", "automaticai/personal/sol-6.1").strip()
-# A background follow-up has nobody waiting on it, and Sol's weekly pool is what keeps the VOICE turns fast (2026-10-22
-# review: one follow-up made 12 Sol calls, 933k input tokens, 3.5x all 18 voice-turn calls of that round). So it runs on
-# the profile's own model unless MEMO_FOLLOWUP_MODEL names one.
-FOLLOWUP_MODEL = os.environ.get("MEMO_FOLLOWUP_MODEL", "").strip()
+# Sonnet 5.5 was 5.1 s. 2026-10-22 (operator-approved): the voice turn AND the follow-up run on
+# automaticai/personal/claude-sonnet-5.5, because the OpenAI pool behind sol-6.1 is nearly spent for the week and the
+# follow-ups' own model (GLM-5.3 at max) spent 252 of a 285 s follow-up in the model. That route is in the fleet token's
+# scope ("hermes") and in hermes-delonet-director's; set MEMO_VOICE_MODEL=automaticai/personal/sol-6.1 to roll back.
+# Hermes' fallback chain (glm-5.3, kimi-2.8) takes over on a route-limit 403/429, so an exhausted route costs a fast
+# failure per call, never the memo. The route must be in the profile's providers.automaticai.models (every profile
+# lists it). Empty = the profile's own model.
+VOICE_MODEL = os.environ.get("MEMO_VOICE_MODEL", "automaticai/personal/claude-sonnet-5.5").strip()
+# A background follow-up has nobody waiting on it, but it is a model-bound plan turn on the batch lane (252 of 285 s was
+# model time on the profile's own GLM-5.3), so it takes the same fast route. MEMO_FOLLOWUP_MODEL= (empty) = the
+# profile's own model, the pre-2026-10-22 behaviour.
+FOLLOWUP_MODEL = os.environ.get("MEMO_FOLLOWUP_MODEL", "automaticai/personal/claude-sonnet-5.5").strip()
 # A detached interactive turn (the gateway kept it running past its 300 s wall clock and released the slot) is waited for
 # this long from its dispatch: the gateway's own ceiling for a detached turn is 2700 s (detached_ceiling_seconds), and it
 # publishes failed(turn_timeout, timeout_source=detached_ceiling) when it cuts one off there.

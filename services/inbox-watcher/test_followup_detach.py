@@ -94,7 +94,7 @@ class VoiceTurnModel(MemoHarness, unittest.TestCase):
     def test_the_command_carries_the_fast_model(self):
         key, m = self.to_await("vm-defaults")
         (_, cmd), = self.cmds(key)
-        self.assertEqual(iw.VOICE_MODEL, "automaticai/personal/sol-6.1")
+        self.assertEqual(iw.VOICE_MODEL, "automaticai/personal/claude-sonnet-5.5")
         self.assertEqual(cmd["data"]["model"], iw.VOICE_MODEL)
         self.assertNotIn("reasoning_effort", cmd["data"])  # not a per-turn knob on this provider: the route is
         self.assertEqual(self.of_type("dispatched", key)[-1]["model"], iw.VOICE_MODEL)
@@ -132,9 +132,10 @@ class VoiceTurnModel(MemoHarness, unittest.TestCase):
                      "spoken summary", "do not write a BACKGROUND: line"):
             self.assertIn(must, p)
 
-    def test_a_follow_up_runs_on_the_profile_model_by_default(self):
-        # Sol's weekly pool keeps the VOICE turns fast; nobody waits on a follow-up (2026-10-22 review)
-        self.assertEqual(iw.FOLLOWUP_MODEL, "")
+    def test_a_follow_up_runs_on_the_fast_route_by_default(self):
+        # 2026-10-22: the follow-up was GLM-5.3 at max (252 of 285 s in the model); both turns take Sonnet 5.5
+        self.assertEqual(iw.FOLLOWUP_MODEL, "automaticai/personal/claude-sonnet-5.5")
+        self.assertEqual(iw.FOLLOWUP_MODEL, iw.VOICE_MODEL)
 
 
 class AnswerThenBackground(MemoHarness, unittest.TestCase):
@@ -168,7 +169,7 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         self.assertEqual(c2["data"]["prompt"], iw.FOLLOWUP_PREFIX + "Walk all 8 zellij tabs and report.")
         ctx = c2["data"]["context"]
         self.assertEqual((ctx["reason"], ctx["followup_of"], ctx["followup_depth"]), ("voice-followup", cid1, 1))
-        self.assertNotIn("model", c2["data"])  # the profile's own model: Sol stays for the voice turns
+        self.assertEqual(c2["data"]["model"], iw.FOLLOWUP_MODEL)  # the follow-up names its route too (batch lane)
         self.assertEqual(c1["data"]["model"], iw.VOICE_MODEL)
         a = c2["argv"]
         self.assertEqual(a[a.index("--correlation") + 1], m["memo_id"])  # Candystore and memo:trace group it with the memo
