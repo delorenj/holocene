@@ -403,6 +403,21 @@ def normalize_decision(obj: dict) -> dict:
     }
 
 
+_TITLE_LEAD_RE = re.compile(r"^(?:(?:ok|okay|so|hey|please|can you|could you|i want you to|i need you to|go|and)\s+)*"
+                            r"(?:(?:have|ask|tell|get|let|make)\s+(?:the\s+)?(?:[a-z0-9']+\s+){0,2}?(?:pm|agent|assistant|desk)\s+(?:to\s+)?)?", re.I)
+_TITLE_TAIL_RE = re.compile(r"\s+(?:the|a|an|to|of|in|on|and|or|for|with|that|which|is|are|my)$", re.I)
+
+
+def title_from_words(said: str, n: int = 8) -> str:
+    """A short title from the driver's own words (a model that sent no title): the request without 'have the PM ...', at most n
+    words, never ending on a stop word."""
+    t = _TITLE_LEAD_RE.sub("", (said or "").strip()).strip()
+    t = " ".join(t.split()[:n]).rstrip(".,;:!?")
+    while _TITLE_TAIL_RE.search(t):
+        t = _TITLE_TAIL_RE.sub("", t)
+    return (t[:1].upper() + t[1:]) if t else ""
+
+
 def incomplete_propose(d: dict) -> bool:
     """A propose with neither a title nor a brief goal: nothing to read back or send (small models answer with say+action only)."""
     return d.get("action") == "propose" and not (d.get("brief") or {}).get("goal") and not d.get("title")
@@ -821,8 +836,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
                 reasons.append("unroutable_target")
                 target = tile
         said = (transcript or "").strip()
-        title = (src.get("title") or (base or {}).get("title") or "").strip() \
-            or " ".join(said.split()[:8]).rstrip(".,;:!?") or "Untitled request"
+        title = (src.get("title") or (base or {}).get("title") or "").strip() or title_from_words(said) or "Untitled request"
         brief = src.get("brief") if (src.get("brief") or {}).get("goal") else (base or {}).get("brief") or src.get("brief") or {}
         if not brief.get("goal"):
             brief = {**brief, "goal": said[:1500] or title}  # a model that gave no brief: the driver's own words are the goal

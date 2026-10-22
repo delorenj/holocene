@@ -234,6 +234,13 @@ class Ladder(unittest.TestCase):
         self.assertEqual(final["draft"]["title"], "Have the PM check which tests cover the")
         self.assertIn("Have the PM check which tests cover the converse stage and report back", final["draft"]["body"])
 
+    def test_a_title_made_from_the_drivers_words(self):
+        f = cv.title_from_words
+        self.assertEqual(f("Have the PM check which git branch the holocene repo is on and report back."), "Check which git branch the holocene repo")
+        self.assertEqual(f("Have the PM count the lines in the converse file and report back"), "Count the lines in the converse file")
+        self.assertEqual(f("Please ask Holocene PM to look into the audio spool"), "Look into the audio spool")
+        self.assertEqual(f(""), "")
+
     def test_the_breaker_opens_after_three_failures_in_two_minutes(self):
         self.srvs[0].default = "500"
         for _ in range(3):
