@@ -533,3 +533,22 @@ python3 $E/../../ttfr/round2/proxy_overlap.py --since 2026-10-22T06:34:00 --unti
 - `round2/tools/`: `drive.py` (with the adb retry and the Stop re-tap), `timeline.py` (with follow-ups, detaches and
   escalations; `OFF_MS` sets the clock offset), `clock.py`, `logcat_loop2.sh`, `poll.sh`, `lanes.sh`, `collect.sh`,
   `wj.py`, `sess.py` and `synth.py`. They expect `/tmp/ttfa2` paths.
+
+## Update 2026-10-22 (08:16 UTC): Sonnet 5.5 for the voice turn and the follow-up
+
+Operator-approved: `automaticai/personal/claude-sonnet-5.5` scoped onto the gateway tokens the car agents use (`hermes`, shared
+by 27 of the 29 pad desks, and `hermes-delonet-director`), and `MEMO_VOICE_MODEL` / `MEMO_FOLLOWUP_MODEL` set to it (unit env and
+code defaults, holocene `6e650d9`). Watcher restarted at 08:16:41 between memos.
+
+One sim memo, `0a24d782` (B.wav: the service-check ask), through the Honda sim:
+- the command carried `model=automaticai/personal/claude-sonnet-5.5`; both turns report `model_override ... applied`;
+- **neither turn ran on Sonnet.** Anthropic answered Hermes' first call of each turn with HTTP 400 "Third-party apps now draw
+  from your extra usage, not your plan limits" (gateway log 04:17:09 EDT, 191 ms, token `aai:hermes`), and Hermes fell back to
+  `glm-5.3` (agent.log: "Fallback activated: ...claude-sonnet-5.5 -> ...glm-5.3"; every later call `model=...glm-5.3`);
+- quick answer: upload to first audio +105.8 s (the turn itself 100 s, 3 calls of 34.8, 12.2 and 31.5 s on GLM at xhigh);
+  follow-up result spoken 441.7 s after the quick answer (426 s turn, 20 calls, 18k output tokens on GLM);
+- the same 400 on `automaticai/intelliforia/claude-sonnet-5.5` (team account: "ask your workspace admin"). A plain
+  gateway curl and a Hermes CLI call (`provider=custom`) on the same token and route succeed in 1-2 s, so it is Anthropic
+  classifying the gateway-turn request, as the owner found on 2026-10-01.
+Net effect today: voice turns cost one failed 0.2 s call and run on glm-5.3, which is what an exhausted Sol pool does too.
+Real fixes: enable extra usage on the personal Claude account, or point the voice turn at kimi-2.8 (11-27 s on the heavy step).

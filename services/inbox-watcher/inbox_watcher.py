@@ -160,6 +160,11 @@ NO_HANDOFF_LINE = "Nothing was started in the background, so no follow-up is com
 # automaticai/personal/claude-sonnet-5.5, because the OpenAI pool behind sol-6.1 is nearly spent for the week and the
 # follow-ups' own model (GLM-5.3 at max) spent 252 of a 285 s follow-up in the model. That route is in the fleet token's
 # scope ("hermes") and in hermes-delonet-director's; set MEMO_VOICE_MODEL=automaticai/personal/sol-6.1 to roll back.
+# KNOWN BLOCKER (live e2e 2026-10-22, memo 0a24d782): Anthropic answers Hermes' gateway turns on this route with HTTP 400
+# "Third-party apps now draw from your extra usage, not your plan limits" (the intelliforia route says the same), so every
+# turn falls through Hermes' chain to glm-5.3 after one ~0.2 s failed call. The model_override fact still says applied:
+# it means /model took, not that Sonnet answered. Check the profile's agent.log "API call #n: model=", not the fact. It
+# starts working once the Claude account has extra usage enabled (or the route stops being classed third-party).
 # Hermes' fallback chain (glm-5.3, kimi-2.8) takes over on a route-limit 403/429, so an exhausted route costs a fast
 # failure per call, never the memo. The route must be in the profile's providers.automaticai.models (every profile
 # lists it). Empty = the profile's own model.

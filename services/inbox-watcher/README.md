@@ -486,7 +486,12 @@ Behaviour worth knowing:
   the car agents' tokens (`hermes`, the fleet token 27 car desks share, and `hermes-delonet-director`) and in every
   profile's `providers.automaticai.models`. Rollback: `Environment=MEMO_VOICE_MODEL=automaticai/personal/sol-6.1` and
   `MEMO_FOLLOWUP_MODEL=` (empty = the profile's own model) in the unit, restart the watcher between memos; or unscope the
-  route from the tokens (Hermes' fallback chain then answers). The gateway runs that one turn on it through an
+  route from the tokens (Hermes' fallback chain then answers). **Not live yet (2026-10-22 e2e, memo `0a24d782`):**
+  Anthropic rejects Hermes' gateway turns on both Claude routes (personal and intelliforia) with HTTP 400 "Third-party
+  apps now draw from your extra usage, not your plan limits", although a plain gateway call or a Hermes CLI call on
+  the same token succeeds; Hermes falls back to glm-5.3 on the first call of every turn and the `model_override` fact
+  still says `applied` (it means `/model` took). Verify the model from the profile's `agent.log` (`API call #n:
+  model=`), not from the fact. It works once the Claude account has extra usage enabled. The gateway runs that one turn on it through an
   internal `/model <route> --once` (bloodbank `docs/interactive-command-lane.md` section 10). On the real heavy step of a
   crank circuit (20.7k-token prompt): glm-5.3@max (where `automaticai/auto` lands for the desks' tokens) 51 s, kimi-2.8
   11-27 s, sol-6.1 8.4 s at high and 13-15 s at the providers' xhigh, sonnet-5.5 5.1 s (what goes on the wire: effort is
