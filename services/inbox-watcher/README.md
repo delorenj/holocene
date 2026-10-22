@@ -647,6 +647,24 @@ in the log). After editing it:
 cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate agent-pad-upload
 ```
 
+## Verified live: fast model, answer-then-background (2026-10-22, sim emulator-5554)
+
+Four holocene-pm memos from the simulator (flite speech through the null-sink mic), watcher 4e52756 + f9c35f5,
+gateway eac6bb0 (detach on, `data.model`), the GPU whisper server on. Times are from the upload (server clock).
+
+| memo | ask | result |
+| --- | --- | --- |
+| 2cbf4423 | "what is your status? one sentence" | STT 0.57 s (GPU), sol-6.1 applied, turn 10.6 s, reply playing in the car at +20.2 s |
+| 7554c8d1 | "read every README in the repo and summarize each" | quick answer playing at +30.6 s ("I'll read every README ..."), follow-up 1 on batch dispatched 1 s after its replied fact, 195 s of work, the car played it at +233.7 s |
+| 225824b2 | "run sleep 170 twice, do not hand it off" (garbled by STT) | handed off anyway: quick answer at +30.3 s, follow-up spoken 186.7 s later |
+| c5728a71 | "run sleep 170 two times, no background" | one 202 s interactive turn with narration, reply at +203.2 s (no detach needed) |
+
+For comparison, the real car on 2026-10-21: median reply 188 s, p75 393 s, four memos killed at 300 s and re-run
+(answers at 384-1989 s). 7554c8d1's follow-up spoke the head of a 7140-char report; its closing summary is what is
+spoken now (`spoken_summary`, 4th commit). A detach was not reproduced through a memo: the budget and Sol keep turns
+under 300 s. The gateway's own live proof (command 426a8f89: detached at 300.0 s, completed at 355.2 s) wrote the
+same `detached_at` column and facts that `test_followup_detach.Detached` feeds the watcher.
+
 ## Verified live: chunked reply over the push channel (2026-10-20)
 
 Memo `1ac175ad` from the sim ("reply with a long paragraph", 1063-character reply, 3 chunks): the agent finished at
