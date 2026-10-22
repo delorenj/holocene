@@ -377,5 +377,14 @@ class LevelsAlongsideWhisper(Harness):
         self.assertFalse(cm.exception.retryable)
 
 
+class MainWiring(unittest.TestCase):
+    def test_main_starts_the_discovery_watch_and_the_phrase_warm_up_after_the_baseline(self):
+        import inspect
+        src = inspect.getsource(iw.main)
+        base, disc, warm = (src.index(x) for x in ("w.baseline_if_first_start()", "w.start_discovery_watch()", "w.warm_phrases()"))
+        self.assertLess(base, disc)   # a first start baselines the inbox before the watch thread can see "new" objects
+        self.assertLess(base, warm)
+
+
 if __name__ == "__main__":
     unittest.main()

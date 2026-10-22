@@ -4541,6 +4541,9 @@ def main() -> int:
                 return 1
             time.sleep(10)
 
+    # after the baseline: on a first start the existing inbox objects are baselined, never replayed as "new" by the watch thread
+    w.start_discovery_watch()
+    w.warm_phrases()
     deadline = time.time() + args.drain_timeout
     last_discover = 0.0
     while not STOP:
