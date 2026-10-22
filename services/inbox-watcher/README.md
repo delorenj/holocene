@@ -944,12 +944,13 @@ under load (load average 70-85), not estimated.
 Controlled A/B of the real watcher on a scratch bucket (`holo-bench`; same Whisper, LLM ladder and vox; `bb-emit --check` as
 the publisher), 6 spoken memos each, seconds from the PUT returning:
 
-| point | before (alias `delo`, mc, sync facts, 1 s tick) | after | change |
+| point (p50, seconds after the PUT returned) | before (alias `delo`, mc, sync facts, 1 s tick) | after (all levers) | change |
 |---|---|---|---|
-| discovered | 0.81 | 0.39 | -0.42 |
-| download done | 1.97 | 0.59 | -1.38 (the download itself 295 ms -> 3 ms) |
-| `transcribed` stage done | 2.7 | 1.9 | about -0.8 |
-| first chunk uploaded, measured from the decision | 3.07-4.41 | 2.21-3.50 | about -1.0 (TTS 2.5-2.8 s -> 1.9-2.4 s, chunk upload 0.35 s -> 0.07 s) |
+| discovered | 0.81 | 0.25 | -0.56 (the proxy's wake hint is not in this bench; it makes this ~0) |
+| download done | 1.97 | 0.39 | -1.58 (the download itself 295 ms -> 3 ms) |
+| transcript ready (Whisper done) | 2.73 | 1.14 | -1.59 |
+| `transcribed` stage done / fact | 3.07 | 1.35 | -1.7 |
+| first chunk uploaded, measured from the decision | 3.07-4.41 | 1.9-2.3 | about -1.2 (TTS 2.5-2.8 s -> 1.8-2.1 s, chunk upload 0.35 s -> 0.07 s) |
 
 The decision itself (the LLM, 2.4-6.7 s through `automaticai/auto/fast` in these runs) was the same code on both sides and
 is now the largest hop.
