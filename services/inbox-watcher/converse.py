@@ -403,6 +403,11 @@ def normalize_decision(obj: dict) -> dict:
     }
 
 
+def incomplete_propose(d: dict) -> bool:
+    """A propose with neither a title nor a brief goal: nothing to read back or send (small models answer with say+action only)."""
+    return d.get("action") == "propose" and not (d.get("brief") or {}).get("goal") and not d.get("title")
+
+
 def parse_decision(text: str) -> dict:
     """One decision from the model's content. Tolerates code fences and text around the object. Content with no object
     at all (the model answered in prose) is a reply whose say is that prose; content that starts like JSON but does not
@@ -452,6 +457,7 @@ class Ladder:
         if not self.routes:
             return {"ok": False, "attempts": attempts, "fallback_reason": "no_routes", "latency_ms": 0}
         reason = "all_routes_failed"
+        weak = None
         for r in self.routes:
             left = self.budget_s - (self.clock() - t0)
             if left < 0.3:
@@ -470,6 +476,12 @@ class Ladder:
                 continue
             res = self._one(r, key, messages, min(r["timeout_s"], left))
             attempts.append(res["attempt"])
+            if res.get("decision") is not None and incomplete_propose(res["decision"]) and r is not self.routes[-1]:
+                # a small model that proposes with no title and no brief: ask the next rung, keep this one as the last resort
+                res["attempt"]["outcome"] = "incomplete_propose"
+                weak = weak or (r, res)
+                self.breaker.ok(r["id"])
+                continue
             if res.get("decision") is not None:
                 self.breaker.ok(r["id"])
                 return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"],
@@ -485,6 +497,11 @@ class Ladder:
                      breaker_opened=opened or None)
             if res["attempt"]["outcome"] in ("timeout",) or res["attempt"]["outcome"].startswith("connect"):
                 dead_hosts.add(r["host"])
+        if weak is not None:  # no rung did better than the incomplete proposal: the guard builds the brief from the driver's words
+            r, res = weak
+            return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"], "requested_model": r["model"],
+                    "attempts": attempts, "usage": res.get("usage"), "cached_tokens": res.get("cached_tokens"),
+                    "latency_ms": int((self.clock() - t0) * 1000), "fallback_reason": None}
         if attempts and all(a["outcome"] == "key_unreadable" for a in attempts):
             reason = "key_unreadable"
         return {"ok": False, "attempts": attempts, "fallback_reason": reason, "latency_ms": int((self.clock() - t0) * 1000)}
@@ -803,10 +820,12 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             elif route.get("ok") is not True:
                 reasons.append("unroutable_target")
                 target = tile
-        title = (src.get("title") or (base or {}).get("title") or "").strip() or "Untitled request"
+        said = (transcript or "").strip()
+        title = (src.get("title") or (base or {}).get("title") or "").strip() \
+            or " ".join(said.split()[:8]).rstrip(".,;:!?") or "Untitled request"
         brief = src.get("brief") if (src.get("brief") or {}).get("goal") else (base or {}).get("brief") or src.get("brief") or {}
         if not brief.get("goal"):
-            brief = {**brief, "goal": title}
+            brief = {**brief, "goal": said[:1500] or title}  # a model that gave no brief: the driver's own words are the goal
         perm = clamp_perm(src.get("perm") or (base or {}).get("perm") or "read_only", words)
         if perm != (src.get("perm") or "read_only"):
             reasons.append(f"perm_clamped:{src.get('perm')}->{perm}")

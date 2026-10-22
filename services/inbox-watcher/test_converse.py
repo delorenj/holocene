@@ -81,6 +81,10 @@ def fake_server():
     return srv
 
 
+PROPOSE_FULL = {"say": "I'll have the PM check.", "action": "propose", "target": "holocene-pm", "title": "Check the converse tests",
+                "brief": {"goal": "Find which tests cover the converse stage.", "context": [], "done_when": ["Listed."]}, "perm": "read_only"}
+
+
 class Routes(unittest.TestCase):
     def test_the_never_anthropic_rule_refuses_claude_and_auto_routes_at_parse(self):
         raw = json.dumps([
@@ -212,6 +216,23 @@ class Ladder(unittest.TestCase):
         self.srvs[0].model = "k3-256k"  # the gateway answers kimi-k3s as "k3-256k"
         res = self.call()
         self.assertEqual((res["ok"], res["model"], res["requested_model"]), (True, "k3-256k", "deepseek-v4.1-flash-1017"))
+
+    def test_a_propose_with_no_title_and_no_brief_goes_to_the_next_rung(self):
+        self.srvs[0].decision = {"say": "Draft.", "action": "propose"}  # what a small model sends
+        self.srvs[1].decision = {**PROPOSE_FULL}
+        res = self.call()
+        self.assertEqual((res["route"], res["decision"]["title"]), ("r2", "Check the converse tests"))
+        self.assertEqual([a["outcome"] for a in res["attempts"]], ["incomplete_propose", "ok"])
+        self.assertTrue(self.breaker.is_open("r1") is False)  # not a failure of the rung
+        # nobody does better: the weak proposal is the answer and the guard builds the brief from the driver's words
+        self.srvs[1].decision = {"say": "Draft.", "action": "propose"}
+        self.srvs[2].decision = {"say": "Draft.", "action": "propose"}
+        res = self.call()
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["route"], "r3")
+        final, _ = g(res["decision"], session(), "Have the PM check which tests cover the converse stage and report back")
+        self.assertEqual(final["draft"]["title"], "Have the PM check which tests cover the")
+        self.assertIn("Have the PM check which tests cover the converse stage and report back", final["draft"]["body"])
 
     def test_the_breaker_opens_after_three_failures_in_two_minutes(self):
         self.srvs[0].default = "500"
