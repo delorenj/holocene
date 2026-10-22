@@ -46,13 +46,16 @@ Environment=MEMO_S3_ALIAS=delodrive
 Environment=MEMO_S3_DIRECT=1
 # received / transcribed / voiced published by one ordered thread instead of a bb-emit subprocess in the path (0.16-0.25 s each)
 Environment=MEMO_FACTS_ASYNC=1
+Environment=MEMO_PUSH_HINT_URL=http://127.0.0.1:8698/internal/push
 # the desk's fixed lines ("Dropped. Nothing was sent." ...) are rendered once per voice and kept in <state>/phrases/
 Environment=MEMO_PHRASEBANK=1
 # a thread lists inbox/ every 0.4 s (0.1 s per listing, no process) and starts a new memo at once; the proxy's wake hint is faster still
 Environment=MEMO_DISCOVER_FAST_S=0.4
-# the first spoken chunk of a fast reply is 45 characters (render ~1.3 s + 0.018 s per character: 64 chars 2.7 s, 45 chars 2.3 s);
-# the second 80 so it is ready before the first has finished playing; replies under 60 characters stay one piece
-Environment=MEMO_CONVERSE_CHUNK_CHARS=45,80,170,300
+# the fast reply's chunk caps. No gap between chunks needs chunk n+1's render <= chunk n's playing time. vox renders ~1.6 s +
+# 0.018 s/char at 6 steps and speaks ~0.051 s/char, so c(n+1) <= 2.8 c(n) - 89: 55 -> 65 -> 95 -> 180 -> 300. (45,80 left a
+# 0.7-1.3 s pause after a 2.3 s first beat while the 69-93 char second chunk rendered in 3.2-3.4 s; HOLOC-23 review.)
+# Replies under 60 characters stay one piece.
+Environment=MEMO_CONVERSE_CHUNK_CHARS=55,65,95,180,300
 Environment=MEMO_CONVERSE_CHUNK_MIN_CHARS=60
 # The default is ONE route (operator decision 2026-10-22: "use aai/auto/fast and its existing fallback chain, no pinned model
 # or gateway rebuild"): automaticai/auto/fast on api.automaticai.io with the Claude-free holocene-converse token (id 88).

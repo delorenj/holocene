@@ -348,7 +348,7 @@ def mc(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
 def mc_pipe(url: str, body: bytes, attr: str | None, timeout: int = 20) -> subprocess.CompletedProcess:
     """`mc pipe --quiet [--attr ...] <url>` with `body` on stdin; in-process when the direct path is on."""
     loc = s3direct._remote(url, S3_ALIAS)
-    if loc is not None and s3direct.pipe_cli(S3_ALIAS, loc[0], loc[1], body, attr):
+    if loc is not None and s3direct.pipe_cli(S3_ALIAS, loc[0], loc[1], body, attr, timeout):
         return subprocess.CompletedProcess(["s3direct", "pipe", url], 0, b"", b"")
     cmd = [MC_BIN, "pipe", "--quiet"] + (["--attr", attr] if attr else []) + [url]
     return subprocess.run(cmd, input=body, capture_output=True, timeout=timeout)

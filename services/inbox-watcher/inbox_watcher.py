@@ -304,6 +304,9 @@ FACTS_ASYNC = os.environ.get("MEMO_FACTS_ASYNC", "0") == "1"
 # per voice and kept on disk, so a turn that ends in one is spoken from a file (a copy, ~1 ms) instead of a 1.5-3.5 s vox
 # render. Warmed in the background at start-up (lowest vox priority) and learned on first use. MEMO_PHRASEBANK=0 turns it off.
 PHRASEBANK = os.environ.get("MEMO_PHRASEBANK", "0") == "1"
+# Only a render by the tile voice's own engine is kept: a fallback engine's render (vox outage -> another engine) would
+# otherwise be replayed for good under the tile voice's key. Comma list; an unknown engine name is never banked.
+PHRASEBANK_ENGINES = frozenset(x.strip() for x in os.environ.get("MEMO_PHRASEBANK_ENGINES", "voxcpm").split(",") if x.strip())
 FACT_DRAIN_WAIT_S = float(os.environ.get("MEMO_FACT_DRAIN_WAIT_S", "3"))
 # ---- the fast in-car conversation desk (HOLOC-23; converse.py, README "Fast conversation layer")
 # MEMO_CONVERSE=off|shadow|on is only the default: the flag file <state>/converse.json (`mise run memo:converse ...`) wins,
@@ -913,6 +916,12 @@ class Watcher:
         self.facts.wait_idle(10.0)  # queued facts are published before the process goes
         for p in self.pools.values():
             p.shutdown(wait=wait, cancel_futures=not wait)
+        # the drain may have moved last_fact_id or put a failed publish in the outbox: persist it, or a restart loses it
+        try:
+            with self.mu:
+                self.s.save()
+        except Exception as e:  # noqa: BLE001
+            log("shutdown_save_failed", "error", error=f"{type(e).__name__}: {e}"[:200])
 
     # ---- facts -----------------------------------------------------------
 
@@ -2852,7 +2861,7 @@ class Watcher:
                 pass
         try:
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, v))
-            self.phrases.put(text, v, steps, audio)
+            self.phrases.put(text, v, steps, audio, engine)
             return audio, engine
         except VoiceNotFound as e:
             if v == VOICE:
@@ -2863,7 +2872,7 @@ class Watcher:
                 log("voice_fallback", "warn", memo_id=m.get("memo_id"), key=m.get("key"), agent=m.get("agent"),
                     requested=v, used=VOICE, error=str(e)[:200], note="vox does not know the tile's voice: the default voice")
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
-            self.phrases.put(text, VOICE, steps, audio)
+            self.phrases.put(text, VOICE, steps, audio, engine)
             return audio, engine
 
     def warm_phrases(self) -> None:
@@ -2882,7 +2891,9 @@ class Watcher:
         def render(text: str, voice: str) -> Path:
             d = Path(tempfile.mkdtemp(prefix="memo-phrase-"))
             try:
-                audio, _ = synthesize(text, d, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, voice))
+                audio, engine = synthesize(text, d, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, voice))
+                if engine not in PHRASEBANK_ENGINES:
+                    raise RuntimeError(f"served by {engine}, not banked")
                 keep = d.with_name(d.name + ".ogg")
                 shutil.copyfile(audio, keep)
                 return keep
@@ -3940,7 +3951,7 @@ class Watcher:
                         audio = None
                 try:
                     audio, engine = synthesize(text, tmp, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, v))
-                    self.phrases.put(text, v, CONVERSE_TTS_STEPS, audio)
+                    self.phrases.put(text, v, CONVERSE_TTS_STEPS, audio, engine)
                     voice = v
                     break
                 except VoiceNotFound:
@@ -4484,8 +4495,11 @@ class PhraseBank:
         except OSError:
             return None
 
-    def put(self, text: str, voice: str, steps: int | None, audio: Path) -> None:
+    def put(self, text: str, voice: str, steps: int | None, audio: Path, engine: str | None = None) -> None:
         if not self.enabled or not self.banked(text):
+            return
+        if engine is not None and engine not in PHRASEBANK_ENGINES:
+            log("phrasebank_skip", "warn", engine=engine, voice=voice, chars=len(text), note="fallback engine render not banked")
             return
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
@@ -4649,8 +4663,12 @@ def start_wake_listener(w: "Watcher", port: int = WAKE_PORT) -> "http.server.Thr
 # before the fact is emitted; the proxy pushes it at once and drops the NATS copy as a duplicate. Fail-open and bounded: a
 # proxy that is down or slow costs nothing but the time it would have saved. `data` must carry the keys the fact carries
 # (chunk_s3_key / reply_s3_key / progress_s3_key, chunk, chunks, narration, seq) or the duplicate is not recognised.
-# (A test run never reaches the live proxy: with unittest loaded the default is off unless MEMO_PUSH_HINT_URL says otherwise.)
-PUSH_HINT_URL = os.environ.get("MEMO_PUSH_HINT_URL", "" if "unittest" in sys.modules else "http://127.0.0.1:8698/internal/push")
+# Off unless MEMO_PUSH_HINT_URL is set (the unit sets it): a test, a bench or a hand run never reaches the live proxy. A watcher on
+# any bucket but the live one (MEMO_PUSH_HINT_BUCKET, default holocene-auto) never hints either, so a scratch-bucket A/B that
+# copied the unit's environment cannot push its memos into the car's replay ring.
+PUSH_HINT_URL = os.environ.get("MEMO_PUSH_HINT_URL", "")
+if BUCKET != os.environ.get("MEMO_PUSH_HINT_BUCKET", "holocene-auto"):
+    PUSH_HINT_URL = ""
 PUSH_HINT_TIMEOUT_S = float(os.environ.get("MEMO_PUSH_HINT_TIMEOUT_S", "0.3"))
 PUSH_HINT_ACTIONS = ("received", "transcribed", "dispatched", "narrated", "voiced", "replied")
 
@@ -4705,7 +4723,6 @@ def main() -> int:
     w.lane_probe.start()
     w.status_writer.start()
     w.start_progress_watch()
-    start_wake_listener(w)
     # The fast desk: bb-emit must accept its two facts before they are ever queued, and its keys are read once now (off
     # the critical path, memory only) so the heartbeat can say whether they work before the switch is flipped on.
     w.check_contracts()
@@ -4728,6 +4745,7 @@ def main() -> int:
 
     # after the baseline: on a first start the existing inbox objects are baselined, never replayed as "new" by the watch thread
     w.start_discovery_watch()
+    start_wake_listener(w)   # also after the baseline: a hint must never create a memo the baseline then overwrites
     w.warm_phrases()
     deadline = time.time() + args.drain_timeout
     last_discover = 0.0

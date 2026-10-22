@@ -231,6 +231,8 @@ os.environ.update({
     # The fast desk never reaches a real alias table, skill scope or vox voice list from a test (HOLOC-23 tiles)
     # The hold cue (HOLOC-23) is off for every other test; its own tests turn it on locally
     "MEMO_CONVERSE_HOLD_CUE_S": "0",
+    # the fake vox answers engine "fakevox": bankable here like voxcpm is live (a fallback engine's render never is)
+    "MEMO_PHRASEBANK_ENGINES": "voxcpm,fakevox",
     "MEMO_CONVERSE_ALIASES": str(ROOT / "no-aliases.json"), "MEMO_CONVERSE_TOOLS_DIR": str(ROOT / "no-car-desk-scope"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent))

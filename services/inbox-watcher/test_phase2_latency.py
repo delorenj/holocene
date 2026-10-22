@@ -44,6 +44,7 @@ class FakeS3(ThreadingHTTPServer):
         self.requests: list[tuple[str, str, dict]] = []
         self.connections = 0
         self.fail = False
+        self.cut_once = False   # the next object GET sends half its body and drops the connection
 
         outer = self
 
@@ -95,6 +96,15 @@ class FakeS3(ThreadingHTTPServer):
                 obj = outer.objects.get(self._key())
                 if obj is None:
                     return self._send(404, b"<Error/>")
+                if outer.cut_once:
+                    outer.cut_once = False
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(obj[0])))
+                    self.end_headers()
+                    self.wfile.write(obj[0][: len(obj[0]) // 2])
+                    self.wfile.flush()
+                    self.close_connection = True
+                    return
                 self._send(200, obj[0])
 
             def do_HEAD(self):
@@ -144,6 +154,34 @@ class DirectS3(unittest.TestCase):
         mc_.mc_pipe("delo/holocene-auto/inbox/holocene-pm/2026/10/22/x.ogg", b"OggS", None)
         keys = [o["key"] for o in mc_.s3_list_inbox()]
         self.assertEqual(keys, ["inbox/holocene-pm/2026/10/22/x.ogg"])
+
+    def test_an_upload_without_attr_gets_the_type_mc_would_guess(self):
+        # mc stores audio/ogg for a .ogg with no --attr; one-file replies and Earshot drops rely on it.
+        for name, want in (("r.ogg", "audio/ogg"), ("r.opus", "audio/ogg"), ("n.json", "application/json"), ("blob", "application/octet-stream")):
+            f = self.tmp / name
+            f.write_bytes(b"OggS")
+            self.assertEqual(mc_.mc("cp", "--quiet", str(f), f"delo/holocene-auto/replies/{name}").returncode, 0)
+            self.assertEqual(self.srv.objects[f"holocene-auto/replies/{name}"][1]["content-type"], want, name)
+
+    def test_a_download_cut_mid_body_is_retried_onto_a_clean_file(self):
+        body = bytes(range(256)) * 400
+        self.srv.objects["holocene-auto/inbox/a.ogg"] = (body, {})
+        self.srv.cut_once = True
+        out = self.tmp / "a.ogg"
+        self.assertEqual(mc_.mc("cp", "--quiet", "delo/holocene-auto/inbox/a.ogg", str(out)).returncode, 0)
+        self.assertEqual(out.read_bytes(), body)   # not half a copy followed by a whole one
+
+    def test_a_hung_server_costs_the_callers_timeout_not_two_socket_timeouts(self):
+        import socket
+        hung = socket.socket()
+        hung.bind(("127.0.0.1", 0))
+        hung.listen(8)          # accepts the TCP handshake, never answers
+        self.addCleanup(hung.close)
+        c = s3direct.Client(f"http://127.0.0.1:{hung.getsockname()[1]}", "AK", "SK")
+        with unittest.mock.patch.object(s3direct, "_alias_client", return_value=c):
+            t0 = time.monotonic()
+            self.assertIsNone(s3direct.mc_cli("delo", ("stat", "delo/holocene-auto/k"), 1))
+            self.assertLess(time.monotonic() - t0, 2.5)
 
     def test_one_connection_serves_many_calls(self):
         for i in range(6):
@@ -275,6 +313,27 @@ class PhraseBanking(Harness):
             self.assertEqual(len(renders), 3)   # free text is never banked
             self.assertIsNone(bank.get(line, "walken", 6))   # another voice is another file
 
+    def test_a_render_by_a_fallback_engine_is_spoken_but_never_banked(self):
+        line = "Dropped. Nothing was sent."
+        bank = iw.PhraseBank(Path(tempfile.mkdtemp(prefix="pb-")), enabled=True)
+        self.w.phrases = bank
+        engines = ["elevenlabs", "voxcpm", "voxcpm"]
+        calls = []
+
+        def fake_synth(text, tmp, **kw):
+            calls.append(text)
+            out = tmp / "reply.ogg"
+            out.write_bytes(b"OggS" + bytes(300))
+            return out, engines[len(calls) - 1]
+        with unittest.mock.patch.object(iw, "synthesize", side_effect=fake_synth):
+            _, e1 = self.w._synth(self.m, line, Path(tempfile.mkdtemp(prefix="pbt-")), 6, iw.TtsGate.FAST)
+            self.assertEqual(e1, "elevenlabs")
+            self.assertIsNone(bank.get(line, iw.VOICE, 6))           # the outage render is not kept
+            self.w._synth(self.m, line, Path(tempfile.mkdtemp(prefix="pbt-")), 6, iw.TtsGate.FAST)
+            self.assertIsNotNone(bank.get(line, iw.VOICE, 6))        # the tile engine's render is
+            _, e3 = self.w._synth(self.m, line, Path(tempfile.mkdtemp(prefix="pbt-")), 6, iw.TtsGate.FAST)
+        self.assertEqual((len(calls), e3), (2, "phrasebank"))
+
     def test_warm_renders_the_missing_lines_and_stops_when_something_waits(self):
         bank = iw.PhraseBank(Path(tempfile.mkdtemp(prefix="pb-")), lines=lambda: ["A one.", "B two."], enabled=True)
 
@@ -382,9 +441,31 @@ class MainWiring(unittest.TestCase):
     def test_main_starts_the_discovery_watch_and_the_phrase_warm_up_after_the_baseline(self):
         import inspect
         src = inspect.getsource(iw.main)
-        base, disc, warm = (src.index(x) for x in ("w.baseline_if_first_start()", "w.start_discovery_watch()", "w.warm_phrases()"))
+        base, disc, warm, wake = (src.index(x) for x in ("w.baseline_if_first_start()", "w.start_discovery_watch()",
+                                                          "w.warm_phrases()", "start_wake_listener(w)"))
         self.assertLess(base, disc)   # a first start baselines the inbox before the watch thread can see "new" objects
         self.assertLess(base, warm)
+        self.assertLess(base, wake)   # nor may a wake hint create a memo the baseline then overwrites
+
+    def test_the_push_hint_is_off_unless_configured(self):
+        import subprocess
+        import sys
+        env = {k: v for k, v in os.environ.items() if not k.startswith("MEMO_PUSH_HINT")}
+        code = "import inbox_watcher as w; print(repr(w.PUSH_HINT_URL))"
+        out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, cwd=Path(__file__).parent)
+        self.assertEqual(out.stdout.strip().splitlines()[-1], "''")
+        env.update(MEMO_PUSH_HINT_URL="http://127.0.0.1:1/internal/push", MEMO_BUCKET="holo-bench")
+        out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, cwd=Path(__file__).parent)
+        self.assertEqual(out.stdout.strip().splitlines()[-1], "''")   # a scratch bucket never hints the live proxy
+
+
+class ShutdownPersists(Harness):
+    def test_a_fact_that_fails_in_the_final_drain_is_saved_to_the_outbox_on_disk(self):
+        with self.stub_emit(delay=0.1, fail=True), unittest.mock.patch.object(iw, "FACTS_ASYNC", True):
+            self.w.fact_fast("received", self.m, {"key": self.m["key"]})
+            self.w.shutdown(False)
+        on_disk = json.loads((self.state.dir / "state.json").read_text())
+        self.assertTrue(on_disk.get("outbox"), "the failed publish must survive a restart")
 
 
 if __name__ == "__main__":

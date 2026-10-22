@@ -904,7 +904,11 @@ function App() {
             st.gate = null
             if (!(await passGate(st.unit, gate)) || streaming.current !== st || recordingRef.current || arming.current) return
           }
-          host.playReplyChunk(st.unit, i, u.n, await blobToBase64(blob), 'opus')
+          const b64 = await blobToBase64(blob)
+          // Looked at again after the encode: a focus retry (playFailed -> pump) may have started a new stream for this reply
+          // meanwhile, and this older one must not hand the host the same chunk a second time.
+          if (streaming.current !== st || recordingRef.current || arming.current) return
+          host.playReplyChunk(st.unit, i, u.n, b64, 'opus')
           st.offered.add(i)
           st.fails = 0
           replyBytes.current += blob.size
@@ -956,7 +960,8 @@ function App() {
       if (how === 'skip') { leaveToPhone(key); return }
       // No live hold yet (a fresh reply: its first hold is still out): the same answer is awaited, but alongside the
       // download instead of before it, with the 'claim' verdict (no answer = wait, not play) applied by passGate.
-      gate = { answer: how === 'claim' ? holdFor(key) : claimReply(key, 'hold'), plan: how === 'claim' ? 'claim' : 'play' }
+      // holdFor in both cases: a hold already out (the renew interval's, the ingest one) is shared, never sent twice.
+      gate = { answer: holdFor(key), plan: how === 'claim' ? 'claim' : 'play' }
       if (playingKey.current !== key) return // interrupted while the claim was out
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began meanwhile
     }
@@ -1083,7 +1088,7 @@ function App() {
         // A reply handed to the host keeps its hold until the audio really starts: the host's speech queue may hold it
         // back (another utterance, a recording), and the start is what claims it for good.
         const pending = key !== playingKey.current || !startedKeys.current.has(key)
-        if (pending && units.current.has(key) && holdDue(claims.current.get(key), now)) void claimReply(key, 'hold')
+        if (pending && units.current.has(key) && holdDue(claims.current.get(key), now)) void holdFor(key)
       }
       for (const [key, t] of [...phoneTook.current]) {
         if (now - t.at >= PHONE_RECHECK_MAX_MS) forgetPhoneTake(key)
@@ -1454,9 +1459,9 @@ function App() {
     // The outbox is written BEFORE the first attempt and cleared on success: if the app is backgrounded, killed or
     // loses the network mid-send, the recording is still on disk and the retry timer finishes the job.
     await ownMemo(key) // its reply is this pad's to play, however fast it comes back
-    // The outbox row is written WHILE the first PUT runs, not before it (the write used to sit ahead of the upload):
-    // durability is unchanged because the row is awaited before it is deleted, and a PUT that fails finds it written.
-    const stored = outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture }).then(() => true, () => false)
+    // The outbox row is on disk before the first PUT starts (one IndexedDB write, a few ms): an app killed mid-PUT still
+    // has the recording. A row write that fails does not stop the upload (it used to abort it).
+    await outboxPut({ key, agentName: agent.name, blob, attempts: 0, at: Date.now(), capture }).catch(() => undefined)
     try {
       void memoIdFor(key).then((memo) => setMemoShort(memo ? memo.slice(0, 8) : null))
       const delays = [0, 1500, 4000, 10000, 20000]
@@ -1467,10 +1472,8 @@ function App() {
           await new Promise((r) => setTimeout(r, delays[i]))
         }
         try {
-          const rowWritten = stored // settled long ago on a retry; on the first PUT it is awaited only now
           await putObject(key, blob, capture)
           noteSent()
-          await rowWritten
           await outboxDel(key)
           setStatus(`sent → ${agent.name}`)
           setPhase('sent')
@@ -1480,7 +1483,6 @@ function App() {
           if (i > 0) clientEvent({ event: 'upload_recovered', key, attempts: i + 1 })
           return
         } catch (e) {
-          await stored // the first row write is done before any later write to the same row
           if (e instanceof UploadRejected) {
             // Retrying a refusal only repeats it: keep the audio, stop here.
             await holdRejected({ key, agentName: agent.name, blob, attempts: i, at: Date.now(), capture }, e, agent.id, true)

@@ -19,7 +19,9 @@ import hashlib
 import hmac
 import http.client
 import json
+import mimetypes
 import os
+import time
 import re
 import subprocess
 import threading
@@ -32,6 +34,15 @@ ENABLED = os.environ.get("MEMO_S3_DIRECT", "0") == "1"
 REGION = os.environ.get("MEMO_S3_REGION", "us-east-1")
 CONNECT_TIMEOUT_S = float(os.environ.get("MEMO_S3_DIRECT_TIMEOUT_S", "20"))
 _EMPTY_SHA = hashlib.sha256(b"").hexdigest()
+# mc guesses a Content-Type from the file extension when no --attr is given; the direct path must store the same type,
+# or a one-file reply / an Earshot drop lands as binary/octet-stream instead of audio/ogg.
+_EXT_TYPES = {".ogg": "audio/ogg", ".opus": "audio/ogg", ".oga": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/x-wav",
+              ".m4a": "audio/mp4", ".webm": "audio/webm", ".json": "application/json", ".txt": "text/plain"}
+
+
+def guess_type(name: str) -> str:
+    ext = os.path.splitext(name)[1].lower()
+    return _EXT_TYPES.get(ext) or mimetypes.guess_type(name)[0] or "application/octet-stream"
 
 
 class DirectUnavailable(Exception):
@@ -71,7 +82,7 @@ class Client:
         self.access, self.secret = access, secret
         self._tl = threading.local()
 
-    def _conn(self, fresh: bool = False) -> http.client.HTTPConnection:
+    def _conn(self, timeout: float, fresh: bool = False) -> http.client.HTTPConnection:
         c = getattr(self._tl, "conn", None)
         if c is None or fresh:
             if c is not None:
@@ -80,8 +91,16 @@ class Client:
                 except Exception:  # noqa: BLE001
                     pass
             cls = http.client.HTTPSConnection if self.https else http.client.HTTPConnection
-            c = self._tl.conn = cls(self.host, timeout=CONNECT_TIMEOUT_S)
+            c = self._tl.conn = cls(self.host, timeout=timeout)
+        c.timeout = timeout
+        if c.sock is not None:
+            c.sock.settimeout(timeout)
         return c
+
+    def budget(self, seconds: float | None) -> None:
+        """The wall-clock budget of this thread's next calls (the caller's mc timeout). Both attempts of a request share
+        it, so a hung MinIO costs at most the budget before the mc fallback runs, not 2 x CONNECT_TIMEOUT_S."""
+        self._tl.deadline = None if seconds is None else time.monotonic() + max(0.5, min(seconds, CONNECT_TIMEOUT_S))
 
     def request(self, method: str, bucket: str, key: str = "", query: dict | None = None, body: bytes = b"",
                 headers: dict | None = None, into=None) -> tuple[int, dict, bytes]:
@@ -90,20 +109,33 @@ class Client:
         path = "/" + _quote(f"{bucket}/{key}" if key else bucket)
         q = "&".join(f"{_quote(k)}={_quote(str(v))}" for k, v in sorted((query or {}).items()))
         sha = hashlib.sha256(body).hexdigest() if body else _EMPTY_SHA
+        deadline = getattr(self._tl, "deadline", None)
+        start = into.tell() if into is not None else 0
         for attempt in (0, 1):
+            left = CONNECT_TIMEOUT_S if deadline is None else deadline - time.monotonic()
+            if left <= 0.05:
+                raise DirectUnavailable("budget spent")
             h = sigv4_headers(method, self.host, path, q, headers or {}, sha, self.access, self.secret)
             h["content-length"] = str(len(body))
-            c = self._conn(fresh=attempt == 1)
+            c = self._conn(min(left, CONNECT_TIMEOUT_S), fresh=attempt == 1)
+            if into is not None and attempt == 1:  # a body cut mid-way must not stay in front of the retried copy
+                into.seek(start)
+                into.truncate()
             try:
                 c.request(method, path + (f"?{q}" if q else ""), body=body or None, headers=h)
                 r = c.getresponse()
                 rh = {k.lower(): v for k, v in r.getheaders()}
                 if into is not None and r.status == 200:
+                    got = 0
                     while True:
                         buf = r.read(1 << 20)
                         if not buf:
                             break
                         into.write(buf)
+                        got += len(buf)
+                    want = rh.get("content-length")
+                    if want is not None and got != int(want):  # read(amt) returns short, not an error, on a cut body
+                        raise http.client.IncompleteRead(b"", int(want) - got)
                     return r.status, rh, b""
                 return r.status, rh, r.read()
             except (http.client.HTTPException, ConnectionError, OSError):
@@ -244,7 +276,7 @@ def _iso(s: str) -> str:
     return s
 
 
-def pipe_cli(alias: str, bucket: str, key: str, body: bytes, attr: str | None) -> bool:
+def pipe_cli(alias: str, bucket: str, key: str, body: bytes, attr: str | None, timeout: float | None = None) -> bool:
     """`mc pipe --attr ...`: True when the direct path stored the object, False when the caller must run mc."""
     if not ENABLED:
         return False
@@ -252,11 +284,14 @@ def pipe_cli(alias: str, bucket: str, key: str, body: bytes, attr: str | None) -
     if c is None:
         return False
     try:
+        c.budget(timeout)
         ctype, cache = _attr(attr)
         c.put(bucket, key, body, ctype, None, cache)
         return True
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        c.budget(None)
 
 
 def mc_cli(alias: str, args: tuple, timeout: float) -> subprocess.CompletedProcess | None:
@@ -267,9 +302,12 @@ def mc_cli(alias: str, args: tuple, timeout: float) -> subprocess.CompletedProce
     if c is None:
         return None
     try:
+        c.budget(timeout)
         return _serve(c, alias, list(args))
     except Exception:  # noqa: BLE001 - the direct path never fails a call: mc runs it
         return None
+    finally:
+        c.budget(None)
 
 
 def _serve(c: Client, alias: str, args: list[str]) -> subprocess.CompletedProcess | None:
@@ -299,6 +337,7 @@ def _serve(c: Client, alias: str, args: list[str]) -> subprocess.CompletedProces
         src, dst = _remote(rest[0], alias), _remote(rest[1], alias)
         if src is None and dst is not None:  # upload
             ctype, cache = _attr(attr)
+            ctype = ctype or guess_type(rest[0])  # what mc itself would store without --attr
             data = Path(rest[0]).read_bytes()
             c.put(dst[0], dst[1], data, ctype, tags, cache)
             return _done(0, args=args)
