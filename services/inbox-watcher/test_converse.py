@@ -223,6 +223,21 @@ class Ladder(unittest.TestCase):
         self.assertEqual(res["attempts"][0]["outcome"], "breaker_open")
         self.assertEqual(len(self.srvs[0].calls), before)  # r1 not even asked
 
+    def test_a_402_out_of_credit_opens_the_rung_for_ten_minutes_at_once(self):
+        self.srvs[0].default = "402"
+        self.assertEqual(self.call()["route"], "r2")  # one failure is enough
+        self.assertTrue(self.breaker.is_open("r1"))
+        before = len(self.srvs[0].calls)
+        self.assertEqual(self.call()["attempts"][0]["outcome"], "breaker_open")
+        self.assertEqual(len(self.srvs[0].calls), before)
+        now = [1000.0]
+        b = cv.Breaker(clock=lambda: now[0])
+        b.trip("r1", cv.BILLING_OPEN_S)
+        now[0] += 599
+        self.assertTrue(b.is_open("r1"))
+        now[0] += 2
+        self.assertFalse(b.is_open("r1"))
+
     def test_breaker_clock(self):
         now = [1000.0]
         b = cv.Breaker(clock=lambda: now[0])

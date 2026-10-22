@@ -237,6 +237,9 @@ class KeyCache:
 
 # ---------------------------------------------------------------- circuit breaker
 
+BILLING_OPEN_S = 600.0  # a 402 (out of credit) skips that rung for ten minutes; a top-up is noticed within that
+
+
 class Breaker:
     """fails failures of one rung within window_s open it for open_s: the ladder skips it meanwhile."""
 
@@ -266,6 +269,12 @@ class Breaker:
                 self._hist[rid] = []
                 return True
         return False
+
+    def trip(self, rid: str, secs: float) -> None:
+        """Open a rung for `secs` at once (an account that is out of credit stays out: 402 is not retried every minute)."""
+        with self._lock:
+            self._open[rid] = max(self._open.get(rid, 0.0), self._clock() + secs)
+            self._hist.pop(rid, None)
 
     def ok(self, rid: str) -> None:
         with self._lock:
@@ -468,6 +477,9 @@ class Ladder:
                         "cached_tokens": res.get("cached_tokens"),
                         "latency_ms": int((self.clock() - t0) * 1000), "fallback_reason": None}
             opened = self.breaker.fail(r["id"])
+            if res["attempt"].get("http_status") == 402:
+                self.breaker.trip(r["id"], BILLING_OPEN_S)
+                opened = True
             self.log("converse_attempt_failed", "warn", route=r["id"], model=r["model"], outcome=res["attempt"]["outcome"],
                      ms=res["attempt"]["ms"], http_status=res["attempt"].get("http_status"),
                      breaker_opened=opened or None)
