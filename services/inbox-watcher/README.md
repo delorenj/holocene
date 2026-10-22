@@ -932,8 +932,8 @@ heard the stop tone and then nothing for up to ~27 s. Now:
 
 | when | what the car hears | knob (default) |
 |---|---|---|
-| the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
-| still waiting at 9 s | one of "Still on it." / "Still here." / "Working on it." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
+| the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." / "Hang on." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
+| still waiting at 9 s | one of "Still on it." / "Still thinking." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
 | the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | the same second-cue lines (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
 
 - **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES`, warmed per tile voice at
@@ -942,7 +942,7 @@ heard the stop tone and then nothing for up to ~27 s. Now:
   per tile. Every line is about a second of speech or less, and that is **measured, not assumed**: the watcher probes the clip it
   is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s; `hold_cue_dropped` reason `too_long`,
   and the line is not used again until a restart). Measured on `rick` (the default voice): One sec. 0.97 s, Thinking. 0.65 s,
-  Hold on. 0.65 s, Still on it. 0.97 s. On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
+  Hold on. 0.65 s, Hang on. 0.65 s, Still on it. 0.97 s, Still thinking. 0.97 s (the candidates "Still here." and "Working on it." rendered 1.29 s, so they are not shipped). On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
   hand-off, so keep the lines short: a longer line delays the echo behind it. While the cue waits for its mark the watcher
   also renders and banks the chosen line if the tile voice has no banked copy (a voice changed at run time), so the cue is a
   file copy at the mark rather than a 1.5-3.5 s live render.

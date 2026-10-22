@@ -9,9 +9,9 @@ heard nothing, ~27 s worst case.
 
 | piece | where | behaviour |
 |---|---|---|
-| desk-wait cue 1 | `Watcher.start_hold_cues` (`inbox_watcher.py`) | a thread per desk call; if the decision is not in `MEMO_CONVERSE_HOLD_CUE_S` (3, 0 = every hold cue off) after the call started, one of "One sec." / "Thinking." / "Hold on." / "Let me see." |
-| desk-wait cue 2 | same | at `MEMO_CONVERSE_HOLD_CUE2_S` (9, 0 = none), "Still on it." / "Still working on it." |
-| fall-through gap | `Watcher.maybe_keepalive`, called from `poll_progress` | a `conv.action=direct` turn waiting on its agent says "Still on it." / "Still working on it." 7 s after dispatch, then every 8 s, at most 3, until the agent's own narration starts (`MEMO_CONVERSE_HOLD_FALL_FIRST_S/_GAP_S/_MAX`) |
+| desk-wait cue 1 | `Watcher.start_hold_cues` (`inbox_watcher.py`) | a thread per desk call; if the decision is not in `MEMO_CONVERSE_HOLD_CUE_S` (3, 0 = every hold cue off) after the call started, one of "One sec." / "Thinking." / "Hold on." / "Hang on." (originally also "Let me see.", dropped in the review follow-up) |
+| desk-wait cue 2 | same | at `MEMO_CONVERSE_HOLD_CUE2_S` (9, 0 = none), "Still on it." / "Still thinking." (originally "Still working on it.", dropped in the review follow-up) |
+| fall-through gap | `Watcher.maybe_keepalive`, called from `poll_progress` | a `conv.action=direct` turn waiting on its agent says "Still on it." / "Still thinking." 7 s after dispatch, then every 8 s, at most 3, until the agent's own narration starts (`MEMO_CONVERSE_HOLD_FALL_FIRST_S/_GAP_S/_MAX`) |
 | voice | `PhraseBank` (hold lines added to `fixed_lines()`), `_tile_voice` | tile voice (`tiles[agent].voice`), default voice when vox lacks it; a cue is a file copy (`engine: phrasebank`, ~0 ms), never a vox render on the critical path; never the same line twice in a row per tile |
 | wire | `memo_common.progress_key_for(..., hold=True)`, fact `audio.memo.narrated` `kind=hold_cue\|hold_cue2\|hold_keepalive` | clip `progress/<day>/<memo>-<n>h.ogg`, shares the `<n>` numbering with the agent's narration; no new Bloodbank type (`bb-emit --check --strict` valid); pushed with the early-push hint |
 | pad | `status.ts` `newestProgress` (flags `hold`), `mayPlayProgress`, `main.tsx` `sayProgress` | plays it through the existing `speechProgress` queue; drops (does not defer) a hold cue while the driver is arming or recording. An older pad does not match `-<n>h.ogg` and never plays it |
@@ -25,7 +25,7 @@ Invariants and where they are enforced:
 - A cue that has not started when the answer is ready is dropped: the watcher checks the desk's decision (or the agent turn) before the
   render, after it and after the upload, so a stale cue is never uploaded (`hold_cue_dropped`: `answer_ready`, `turn_finished`,
   `cancelled`, `agent_narrating`); the arbiter drops a queued progress clip once the memo has its reply (`memo_final`).
-- A cue already playing is under a second (all lines <= 24 characters), the answer follows it; the live run shows `waited_ms=4`.
+- A cue already playing is short, the answer follows it; the live run shows `waited_ms=4`. (First version: lines were limited by character count only, which the independent review showed was not a duration bound; see the follow-up below.)
 - No cue while recording: arbiter defers it, and the pad drops it (`mayPlayProgress`, unit-tested).
 - Non-converse memos: `maybe_keepalive` needs `m["conv"]`, the desk thread only runs in `step_converse`; the kill switch
   (`mise run memo:converse off`) skips the desk, so no desk wait and no cue.
@@ -126,3 +126,34 @@ Cue start was 4.4 s after the desk call started (3 s mark + about 1.3 s from upl
   the tap-based checks 4-6 did not run.)
 - hc-01 shows why the keep-alive window is 8 s and not smaller: the agent's first progress line arrived at 22 s after dispatch, so
   the real narration came at +44 s after the stop; three keep-alives were budgeted and two were needed.
+
+## Review follow-up (independent review of the above, same day)
+
+Seven findings; the fixes are in the commit that adds this section. Measured with `ffprobe` on the banked clips (voice `rick`, 6 steps).
+
+| finding | verdict | what changed |
+|---|---|---|
+| Major: clips are longer than the "<1 s" spec; "Still working on it." 1.61 s, "Let me see." 1.13 s, and the pad's queue is held 2-3 s per cue, so the echo waited 0.9 s behind cue 2 | **fixed** | Shipped lines are now One sec. 0.97 s, Thinking. 0.65 s, Hold on. 0.65 s, Hang on. 0.65 s (cue 1) and Still on it. 0.97 s, Still thinking. 0.97 s (cue 2 / keep-alive). "Let me see.", "Still working on it." removed; "Still here." and "Working on it." were tried and rendered 1.29 s, so they are not shipped. The watcher now probes the clip it is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s): `hold_cue_dropped reason=too_long`, and that line is not used again until a restart. The README states the measured durations, not character counts. Remaining pad-side cost: a cue holds the queue for its length plus about 1 s of focus hand-off (live run below: 0.65 s clip, 1.75 s span), which is the arbiter's, not ours. |
+| Major: the cue ranks as `progress` (below the echo), not `cue` | **left** (disclosed) | The arbiter's `cue` rank has no JS entry point without a Kotlin change; the brief forbade one. With clips <= 1 s the cost is bounded: an echo waits at most about 2 s behind a cue that has already started, and a cue that has not started is dropped when the reply or echo arrives first. |
+| Minor: `sayProgress` gated `mayPlayProgress` only before the download | **fixed** | `main.tsx` re-checks `finalAt` and `mayPlayProgress` after the download and the base64 encode, immediately before `speechProgress` / the queue, so a record press during the await drops the cue. (The pure function was already unit-tested; the re-check is a one-line call to it.) |
+| Minor: a cue uploaded, then found stale after the upload, stays in S3 and can be played | **fixed** | `_hold_run` removes the object (`mc rm`) on the post-upload drop; the log carries `removed: true`. Test `test_a_cue_uploaded_just_before_the_answer_is_removed_from_the_bucket`. The clip number is not committed on that branch, and hold keys (`-<n>h.ogg`) never collide with narration keys anyway. |
+| Minor: uncommitted `PHRASEBANK_ENGINES` dirt broke one hold-cue test | **not real now** | The other workflow's commit `2f81e7a` landed with `MEMO_PHRASEBANK_ENGINES=voxcpm,fakevox` in the test environment; `test_hold_cue.py` passes 22/22 on the committed tree, and the watcher now running has that code. |
+| Minor: hold cues share the narration counters (`narrations=6`, status `narration` block pairs the hold key with the previous real text, `NARRATE_MAX` counts cues) | **fixed in part** | `NARRATE_MAX` now counts real narrations only (`hold_count`), and the status object's `narration` block names a hold clip with its own `text`, `kind` and a null `seq`. The shared clip numbering stays on purpose: a separate counter would hand a hold clip and a real narration the same `narration` number in the `narrated` facts (clip keys would stay distinct, the facts would not). `narrations=` in `memo_trace` still counts the clips the pad saw. Car-side speech lines in `memo_trace` still say `progress`: the arbiter's `notified` fact carries no clip key, so a hold marker is not derivable. |
+| Minor: gaps the cue does not cover (1) 30 s `NARRATE_GAP_S` after the agent's first narration; (2) the reply TTS render after the decision; (3) a tile voice changed at run time is not warmed; (4) restart/retry restarts the timers | (1) **left** (2) **left** (3) **fixed** (4) **left** | (1) The brief bounds the silence *before the first narration*; the gap between agent narrations is the existing 30 s pacing, left. (2) The reply's own render (2-3 s) has no fixed text to bank. (3) While a cue waits for its mark the watcher now renders and banks the chosen line for the tile voice if it is not banked (`_hold_prime`), so the first cue after a voice change is a file copy; test `test_a_voice_that_is_not_banked_is_rendered_during_the_wait_not_at_the_mark`. (4) A restart mid-desk-call is rare and restarts the timers by design; noted in the README. |
+| Minor: one sim cue lost to `focus_denied`; "zero overlaps" is logcat only | **left** (not reproducible, platform side) | In the follow-up run below the cue got focus normally. `focus_denied` is `AudioManager.requestAudioFocus` refusing on the sim and is handled by the Kotlin speech host (out of scope); a refused cue is a missing cue and nothing waits on it. The overlap result is still logcat-only (no speaker tap), as stated above. |
+
+### Live check after the changes (1 memo, emulator-5554 only)
+
+Watcher restarted at idle with the new code (`memo:converse on --clear-routes`, status: mode on, agents `*`, devices any car, routes
+`r1=automaticai/auto/fast` from the unit). Pad rebuilt and served (`vite build`). Memo hc2-01, the hc-03 prompt: desk call 4.1 s (glm-5.3).
+
+| t | event |
+|---|---|
+| +0 | ack stop tone, `ack:sent` ends at 769.64 (device clock) |
+| 3.1 s into the desk call | cue 1 "Hang on." uploaded (phrasebank, `tts_ms=0`, rick) |
+| 771.90 | cue queued and starts at once (`waited_ms=2`), ends 773.65: a 0.65 s clip, 1.75 s on the pad |
+| 776.66 | reply queued and starts at once (`waited_ms=6`): the answer was not delayed; four chunks to 792.59 |
+
+Files: [`runs/hold-cue/out-hc2-01.json`](runs/hold-cue/out-hc2-01.json), [`runs/hold-cue/speech-logcat-review.txt.gz`](runs/hold-cue/speech-logcat-review.txt.gz).
+Not re-run: the fall-through path and the drop-while-recording path (code paths unchanged apart from the shorter line set and the
+extra pad re-check; both unit-tested). Tests: `test_hold_cue.py` 22/22, full watcher suite and pad suite recorded in the commit.

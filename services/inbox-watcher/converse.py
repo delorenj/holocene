@@ -1104,8 +1104,8 @@ DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 # stops using) a line whose render is longer than MEMO_CONVERSE_HOLD_MAX_CLIP_S (default 1.2 s), because a cue that plays long
 # holds the pad's speech queue and delays the echo behind it. HOLD_CUE_LINES at ~3 s, HOLD_CUE2_LINES at ~9 s and as the
 # keep-alive while a memo that fell through to the full agent has said nothing for a while. Never the same line twice in a row.
-HOLD_CUE_LINES = ("One sec.", "Thinking.", "Hold on.")
-HOLD_CUE2_LINES = ("Still on it.", "Still here.", "Working on it.")
+HOLD_CUE_LINES = ("One sec.", "Thinking.", "Hold on.", "Hang on.")
+HOLD_CUE2_LINES = ("Still on it.", "Still thinking.")
 
 
 def pick_hold_line(lines: tuple[str, ...], last: str | None, rnd=None) -> str:
