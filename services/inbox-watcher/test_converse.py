@@ -480,6 +480,18 @@ class Guard(unittest.TestCase):
         self.assertIn("Nothing was sent.", final["say"])
         self.assertIn("sent_claim_filtered", reasons)
 
+    def test_a_sent_claim_is_true_while_a_confirmed_delegation_is_on_the_board(self):
+        sess = session()
+        sess["delegations"] = [{"brief_id": "b-1", "brief_sha256": "x" * 64, "title": "Spool", "target": "holocene-pm",
+                                "state": "running", "at": 1005.0}]
+        final, reasons = g({"action": "reply", "say": "I've sent it to the PM. They're looking into it."}, sess, "how's that going")
+        self.assertEqual(final["say"], "I've sent it to the PM. They're looking into it.")
+        self.assertNotIn("sent_claim_filtered", reasons)
+        # ...but not about a NEW draft that is still unsent
+        sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]
+        final, reasons = g({"action": "reply", "say": "I've sent it."}, sess, "what about the new one")
+        self.assertIn("sent_claim_filtered", reasons)
+
     def test_cancel_drops_the_pending_draft_and_end_closes(self):
         sess = session()
         sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]

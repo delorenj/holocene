@@ -783,6 +783,8 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     action = dec.get("action") or "reply"
     words = [t.get("user") or "" for t in driver_turns(sess)[-1:]] + [transcript]
     pend = pending_draft(sess, now, draft_ttl_s)
+    # "I've sent it" is a true thing to say while a confirmed delegation is on the board: only a claim with nothing sent is filtered
+    sent_something = pend is None and recent_delegation(sess, now, dedupe_s) is not None
     out = {"action": action, "say": dec.get("say") or "", "draft": None, "send": None, "drop": False, "close": False,
            "already": None}
 
@@ -856,7 +858,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             out.update(say=NOTHING_TO_CANCEL_LINE)
         return out, reasons
     if action == "end":
-        say, hit = filter_sent_claims(out["say"] or END_LINE)
+        say, hit = filter_sent_claims(out["say"] or END_LINE) if not sent_something else (out["say"] or END_LINE, False)
         if hit:
             reasons.append("sent_claim_filtered")
         out.update(say=say or END_LINE, close=True, drop=pend is not None and pend.get("state") == "proposed")
@@ -864,7 +866,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     if action == "direct":
         return out, reasons
     # reply
-    say, hit = filter_sent_claims(out["say"])
+    say, hit = filter_sent_claims(out["say"]) if not sent_something else (out["say"], False)
     if hit:
         reasons.append("sent_claim_filtered")
     if not say.strip():
