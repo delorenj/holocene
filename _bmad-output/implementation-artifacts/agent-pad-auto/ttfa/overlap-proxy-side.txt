@@ -1,0 +1,61 @@
+speech decisions: 181   utterances: 47   mic-busy windows: 8   recordings: 8
+  mono 17965.297 s    5.91 s  arming   end    -
+  mono 17977.699 s    8.84 s  ack      end    cf45c0b9
+  mono 17986.537 s    0.67 s  ack      end    cf45c0b9
+  mono 17987.205 s    7.84 s  echo     end    cf45c0b9
+  mono 18014.333 s   10.79 s  progress end    cf45c0b9
+  mono 18047.316 s    6.12 s  progress halt   cf45c0b9
+  mono 18055.007 s   28.35 s  reply    end    cf45c0b9
+  mono 18192.801 s    2.21 s  arming   end    -
+  mono 18203.174 s    2.61 s  ack      end    203fffe1
+  mono 18205.785 s    0.54 s  ack      end    203fffe1
+  mono 18206.322 s    5.15 s  echo     end    203fffe1
+  mono 18228.526 s    7.09 s  progress end    203fffe1
+  mono 18246.475 s   12.03 s  reply    halt   203fffe1
+  mono 18258.860 s    1.95 s  arming   end    -
+  mono 18273.180 s    0.28 s  ack      halt   2ed95c43
+  mono 18273.816 s    2.16 s  arming   end    -
+  mono 18288.690 s    2.66 s  ack      end    bb5ee4c4
+  mono 18302.129 s    0.60 s  ack      end    bb5ee4c4
+  mono 18309.825 s    5.02 s  echo     end    bb5ee4c4
+  mono 18314.851 s   17.79 s  reply    end    203fffe1
+  mono 18368.136 s    4.17 s  progress end    bb5ee4c4
+  mono 18449.753 s    2.15 s  arming   end    -
+  mono 18464.035 s    2.64 s  ack      end    14bc97c8
+  mono 18466.674 s    0.45 s  ack      end    14bc97c8
+  mono 18467.346 s    4.14 s  echo     end    14bc97c8
+  mono 18475.966 s    2.32 s  arming   end    -
+  mono 18482.642 s    2.71 s  ack      end    99859e9c
+  mono 18485.611 s    0.44 s  ack      end    99859e9c
+  mono 18490.421 s    4.51 s  progress end    14bc97c8
+  mono 18494.933 s    4.14 s  echo     end    99859e9c
+  mono 18499.070 s    5.97 s  progress end    bb5ee4c4
+  mono 18608.598 s    5.70 s  progress end    bb5ee4c4
+  mono 18665.919 s   11.90 s  progress end    14bc97c8
+  mono 18807.411 s    3.38 s  arming   end    -
+  mono 18816.117 s    4.62 s  ack      end    652474fb
+  mono 18820.738 s    0.81 s  ack      end    652474fb
+  mono 18821.547 s    8.30 s  echo     end    652474fb
+  mono 18829.851 s    1.63 s  progress halt   14bc97c8
+  mono 18832.828 s    5.61 s  reply    end    14bc97c8
+  mono 18839.745 s   11.34 s  reply    end    652474fb
+  mono 19040.271 s    0.47 s  reply    halt   203fffe1
+  mono 19041.201 s   30.87 s  reply    end    203fffe1
+  mono 19513.457 s    3.20 s  arming   end    -
+  mono 19522.710 s    6.35 s  ack      end    0e9a75fc
+  mono 19529.061 s    1.28 s  ack      end    0e9a75fc
+  mono 19530.469 s    9.34 s  echo     end    0e9a75fc
+  mono 19570.620 s   36.22 s  reply    end    0e9a75fc
+  mono 17965.293 s   12.39 s  MIC BUSY (arming + recording)
+  mono 18192.800 s   10.37 s  MIC BUSY (arming + recording)
+  mono 18258.597 s   14.58 s  MIC BUSY (arming + recording)
+  mono 18273.465 s   15.22 s  MIC BUSY (arming + recording)
+  mono 18449.751 s   14.28 s  MIC BUSY (arming + recording)
+  mono 18475.964 s    6.68 s  MIC BUSY (arming + recording)
+  mono 18807.349 s    8.77 s  MIC BUSY (arming + recording)
+  mono 19513.455 s    9.26 s  MIC BUSY (arming + recording)
+
+check 1 speech x speech: PASS 0 overlaps
+check 2 speech x mic busy: PASS 0 overlaps
+check 3 arming prompt x recording: PASS 0 overlaps
+RESULT ZERO OVERLAPS

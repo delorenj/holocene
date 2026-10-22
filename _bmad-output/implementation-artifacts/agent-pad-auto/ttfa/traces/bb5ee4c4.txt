@@ -1,0 +1,57 @@
+memo_id  bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8
+key      inbox/holocene-pm/2026/10/22/20261022T051135Z.ogg
+agent    holocene-pm
+command  5104db54-f8e5-4d8e-a4d7-e60655b5da62
+lane     interactive   queues: interactive: pulling, 1/4 in flight, 0 queued | batch: pulling, 0/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8&limit=100'
+
+  OK      s3_object                  2026-10-22T05:12:05.000Z           inbox/holocene-pm/2026/10/22/20261022T051135Z.ogg  58232 bytes
+  OK      upload_proxy_log           2026-10-22T05:12:05.013Z  +0.0s    {"ts":"2026-10-22T05:12:05.013Z","svc":"agent-pad-upload","event":"upload","key":"inbox/holocene-pm/2026/10/22/20261022T051135Z.ogg","memo_id":"bb5ee4c4-9bb3-5a
+  OK      fact:uploaded              2026-10-22T05:12:05.014Z  +0.0s    58232 bytes ua=Mozilla/5.0 (Linux; Android 13; IVI-SYST | device heard peak -7 dBFS, window avg -10 dBFS
+  OK      fact:received              2026-10-22T05:12:06.086Z  +1.1s    watcher saw it, lag 1080ms
+  OK      fact:transcribed           2026-10-22T05:12:07.287Z  +1.2s    187 chars in 0.56s (large-v3-turbo, gpu server, cuda), audio max -6 dBFS, mean -24 dBFS over 11.7 s: 'Wall clock test. Do this right now in this turn, with no background handoff. Run'
+  OK      audio_level                2026-10-22T05:12:07.287Z  +0.0s    max -6 dBFS, mean -24 dBFS over 11.7 s  -> audible | device heard peak -7 dBFS, window avg -10 dBFS
+  OK      fact:dispatched            2026-10-22T05:12:07.658Z  +0.4s    command 5104db54-f8e5-4d8e-a4d7-e60655b5da62 -> bloodbank.cmd.agent.invocation.invoke lane=interactive model=automaticai/personal/sol-6.1
+  OK      gateway_journal            2026-10-22T05:12:07.683Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-22T05:12:07.683313Z updated=2026-10-22T05:18:07.676307Z
+  OK      agent:invocation.started   2026-10-22T05:12:07.683Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      agent:progress#1           2026-10-22T05:12:21.106Z  +13.4s   13.0s into the turn: 'I’m running the first 170-second wait.'
+  OK      car:narrated#1             2026-10-22T05:12:26.504Z  +5.4s    spoke progress #1 -> progress/2026/10/22/bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8-1.ogg (tts 2.45s voxcpm, 18.8s after dispatch)
+  OK      agent:progress#2           2026-10-22T05:15:15.259Z  +168.8s  187.2s into the turn: 'The first wait finished; I’m running the second 170-second wait.'
+  OK      car:narrated#2             2026-10-22T05:15:21.069Z  +5.8s    spoke progress #2 -> progress/2026/10/22/bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8-2.ogg (tts 3.04s voxcpm, 193.4s after dispatch)
+  OK      car:narrated#3             2026-10-22T05:17:11.166Z  +110.1s  spoke progress #2 -> progress/2026/10/22/bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8-3.ogg (tts 2.74s voxcpm, 303.5s after dispatch)
+  OK      agent:detached             2026-10-22T05:17:08.073Z  +0.0s    passed the 300.0s wall clock at 300.0s and kept running (slot released; no kill, no batch re-run; the reply is a late one; stopped at 2700.0s if still running)
+  OK      agent:invocation.done      2026-10-22T05:18:07.676Z  +59.6s   invocation.completed (detached after 300.0s, 359.6s in all) model automaticai/personal/sol-6.1: applied
+  OK      hermes_session             2026-10-22T05:12:07.683Z  +0.0s    agent was given exactly what the watcher sent (1032 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiti'
+  OK      car:chunk#1of1             2026-10-22T05:18:10.649Z  +363.0s  33 chars, tts 1.87s, 2.65s after the agent finished -> replies/2026/10/22/051808Z-holocene-pm-bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.ogg
+  OK      fact:replied               2026-10-22T05:18:32.549Z  +21.9s   8 chars, tts 1.87s (voxcpm) -> replies/2026/10/22/051808Z-holocene-pm-bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.ogg, spoken as a late reply (the turn was detached at the wall clock and ran on)
+  OK      reply_object               2026-10-22T05:18:10.000Z  +0.0s    replies/2026/10/22/051808Z-holocene-pm-bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.ogg  9078 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      phone_decision             -                                  mirrored to the phone: no car claimed it within the grace window after its first audio was up (switched off, or out of reach)
+  OK      phone_text                 2026-10-22T05:18:32.000Z  +22.0s   s3://earshot/phone/2026/10/22/051808194Z-holocene-pm-bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.txt  8 bytes (the full reply text)
+  OK      phone_object               2026-10-22T05:18:32.000Z  +0.0s    s3://earshot/phone/2026/10/22/051808194Z-holocene-pm-bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.ogg  9078 bytes
+  OK      phone_detected             2026-10-22T05:18:34.004Z  +2.0s    SM-S948U app 0.1.3
+  OK      phone_started              2026-10-22T05:18:34.253Z  +0.2s    SM-S948U app 0.1.3
+  OK      phone_finished             2026-10-22T05:18:37.367Z  +3.1s    SM-S948U app 0.1.3
+  OK      car_status_object          2026-10-22T05:18:32.697Z  +0.0s    status/2026/10/22/bb5ee4c4-9bb3-5a9e-946a-0fa6c204a5d8.json: stage=done progress_seq=2 narrations=3 elapsed=387.7s
+
+car speech (14 arbiter decisions reported by the device, audio.memo.notified; time since upload):
+  -0.1s     ack       deferred     reason recording  while recording  mic recording
+  -0.1s     ack       start        reason waited_ms=59
+  -0.1s     ack       end          
+  +0.1s     ack       start        reason waited_ms=4
+  +0.7s     ack       end          
+  +7.8s     echo      start        reason waited_ms=3
+  +12.9s    echo      end          
+  +66.2s    progress  start        reason waited_ms=3
+  +70.3s    progress  end          
+  +197.1s   progress  start        reason waited_ms=676
+  +203.0s   progress  end          
+  +306.7s   progress  start        reason waited_ms=10
+  +312.3s   progress  end          
+  +363.2s   progress  end          
+
+timing   since upload (server clock): ack -0.1s | heard-echo +7.8s | first progress +16.1s | first narration +21.5s | progress played +66.2s | first audio up +365.6s | phone decided +387.5s
+         after the agent finished: first audio up +3.0s
+
+VERDICT  COMPLETE in 365.0s; the turn was detached at the wall clock and ran on (spoken as a late reply, no re-run); playback on the pad not reported; speaking on the phone 24.3s after the full reply was up (389.3s recording-to-voice)

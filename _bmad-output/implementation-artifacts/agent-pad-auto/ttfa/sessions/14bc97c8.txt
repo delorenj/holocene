@@ -1,0 +1,8 @@
+session 20261022_011449_017764fb chat 14bc97c8-fdef-5480-b4d8-49d84aac0d40 model automaticai/personal/sol-6.1 msgs 7 tools 2 api_calls 3 out_tok 422 reasoning_tok 0
+  +    0.0s (gap    0.0s) user       [Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiting to hear your answ
+  +   14.8s (gap   14.8s) assistant terminal:{"background":false,"command":"sleep 170","heartbeat":0,"notify":false,"persist_on_release I’m running the first 170-second sleep in the foreground.
+  +  185.6s (gap  170.8s) tool       {"output": "", "exit_code": 0, "error": null}
+  +  189.7s (gap    4.1s) assistant terminal:{"background":false,"command":"sleep 170","heartbeat":0,"notify":false,"persist_on_release The first sleep finished; I’m running the second 170-second sleep now.
+  +  360.6s (gap  170.9s) tool       {"output": "", "exit_code": 0, "error": null}
+  +  362.4s (gap    1.8s) assistant  finished
+  +  362.6s (gap    0.1s) session_meta  
