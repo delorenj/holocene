@@ -1169,7 +1169,7 @@ DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 # longest silence before the answer or the fall-through is ~7 s. Never the same line twice in a row.
 HOLD_CUE_LINES = ("One sec.", "Thinking.", "Hold on.", "Hang on.")
 HOLD_CUE2_LINES = ("Still on it.", "Still thinking.")
-HOLD_CUE3_LINES = ("Almost there.", "Almost done.")
+HOLD_CUE3_LINES = ("Almost there.", "Any second.")
 
 
 def pick_hold_line(lines: tuple[str, ...], last: str | None, rnd=None) -> str:
