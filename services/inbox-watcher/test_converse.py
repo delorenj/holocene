@@ -724,6 +724,38 @@ class Guard(unittest.TestCase):
                       memo_id="m-3")[0]["draft"]
         self.assertEqual(d3["built_by"], ["m-3"])
 
+    def test_a_delegation_still_running_past_the_dedupe_window_is_still_on_its_way(self):
+        # review minor: the batch lane queued the proof delegation for 36 min; "cancel that" at minute 31 must not say "nothing"
+        sess = session()
+        sess["delegations"] = [{"brief_id": "b1", "brief_sha256": "x", "title": "Spool", "target": "holocene-pm",
+                                "target_name": "Holocene PM", "state": "running", "at": 1000.0}]
+        final, reasons = g({"action": "cancel"}, sess, "cancel that", now=1000.0 + 2400)
+        self.assertIn("cancel_too_late", reasons)
+        self.assertIn("already on its way", final["say"])
+        final, reasons = g({"action": "confirm"}, sess, "send it", now=1000.0 + 2400)
+        self.assertIn("already_sent", reasons)
+        # a finished one is history after the window
+        sess["delegations"][0]["state"] = "done"
+        final, reasons = g({"action": "cancel"}, sess, "cancel that", now=1000.0 + 2400)
+        self.assertEqual(final["say"], cv.NOTHING_TO_CANCEL_LINE)
+        # and a stuck one does not hold forever
+        sess["delegations"][0]["state"] = "running"
+        final, reasons = g({"action": "cancel"}, sess, "cancel that", now=1000.0 + cv.IN_FLIGHT_MAX_S + 10)
+        self.assertEqual(final["say"], cv.NOTHING_TO_CANCEL_LINE)
+
+    def test_a_turn_that_withdraws_the_draft_starts_a_fresh_chain_of_driver_words(self):
+        for said in ("actually forget that, instead check the API port", "never mind, check the API port", "scratch that. check the port"):
+            self.assertTrue(cv.withdraws_draft(said), said)
+        for said in ("make it about the spool flag", "also check the port", "forget the title, keep the rest", "send it"):
+            self.assertFalse(cv.withdraws_draft(said), said)
+        sess = session()
+        d1 = g(PROPOSE, sess, "find the garage door noise cause")[0]["draft"]
+        sess["pending"] = d1
+        d2 = cv.guard(cv.normalize_decision({**PROPOSE, "title": "API port"}), sess, "actually forget that, instead check the API port",
+                      tile="holocene-pm", tile_name="Holocene PM", handoff="named", route_fn=route_fn, names_fn=Names(),
+                      now=1011.0, memo_id="m-2")[0]["draft"]
+        self.assertEqual(d2["built_by"], ["m-2"])
+
     def test_draft_turns_are_only_the_ones_that_built_this_draft(self):
         sess = session()
         for i, (mid, action, text) in enumerate([("a", "propose", "old request"), ("b", "cancel", "cancel that"),

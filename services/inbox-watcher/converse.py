@@ -833,6 +833,19 @@ SENT_CLAIM_RE = re.compile(r"\b(?:i(?:'ve| have)? (?:sent|started|kicked off|del
                            r"on it now)\b", re.IGNORECASE)
 
 
+# A turn that opens by taking back the draft on the table ("actually forget that, instead ..."): what it replaces is not
+# this draft's words, so the delegated prompt's driver words start over from this turn (F4, 2026-10-22 review).
+WITHDRAW_LEAD_RE = re.compile(
+    r"(?:(?:no|nope|nah|ok|okay|actually|wait|hold on) ?)*(?:forget (?:it|that|about (?:it|that)|what i (?:said|asked))|"
+    r"scrap (?:it|that)|scratch that|never ?mind|disregard (?:it|that)|ignore (?:it|that)|drop (?:it|that)|"
+    r"do not (?:do|send) (?:it|that)|don't (?:do|send) (?:it|that)|instead of that|new (?:request|topic|question))\b")
+
+
+def withdraws_draft(text: str) -> bool:
+    n = norm(text)
+    return bool(n) and WITHDRAW_LEAD_RE.match(n) is not None
+
+
 def confirm_only(text: str) -> bool:
     n = norm(text)
     return bool(n) and CONFIRM_ONLY_RE.fullmatch(n) is not None
@@ -1246,12 +1259,19 @@ def pending_draft(sess: dict | None, now: float, ttl_s: float) -> dict | None:
     return d
 
 
+# A delegation that is still on its way (sending, running) stays "recent" past the dedupe window: the gateway's batch lane
+# can queue it behind other work for far longer than 30 minutes (2026-10-22: 36 min), and "cancel that" or a second "Send it"
+# about it must still get the true answer, never "nothing was waiting".
+IN_FLIGHT_MAX_S = 6 * 3600.0
+
+
 def recent_delegation(sess: dict | None, now: float, within_s: float, sha: str | None = None,
                       target: str | None = None) -> dict | None:
     for d in reversed((sess or {}).get("delegations") or []):
         if d.get("state") in ("not_sent",):
             continue
-        if now - float(d.get("at") or 0) > within_s:
+        limit = max(within_s, IN_FLIGHT_MAX_S) if d.get("state") in ("sending", "running") else within_s
+        if now - float(d.get("at") or 0) > limit:
             continue
         if (sha is None or d.get("brief_sha256") == sha) and (target is None or d.get("target") == target):
             return d
@@ -1380,7 +1400,9 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         bid = brief_id_for(sess["conv_id"], body_sha, target, now)
         name = tile_name if target == tile else (names_fn.display(target) if hasattr(names_fn, "display") else target)
         # the turns that built this draft: an edit of a proposed draft continues its chain, anything else starts one
-        chain = list(pend.get("built_by") or []) if (pend is not None and pend.get("state") == "proposed") else []
+        # (a turn that opens by withdrawing the draft on the table starts a fresh chain: its words replace, not edit)
+        chain = (list(pend.get("built_by") or [])
+                 if (pend is not None and pend.get("state") == "proposed" and not withdraws_draft(transcript)) else [])
         if memo_id and memo_id not in chain:
             chain.append(memo_id)
         draft = {"brief_id": bid, "brief_sha256": body_sha, "title": title, "target": target, "target_name": name,

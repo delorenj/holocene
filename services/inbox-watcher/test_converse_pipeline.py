@@ -403,6 +403,51 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.finish_delegation(m, "Because the flag is unset.")
         self.assertEqual(len(self.cmds(key)), 1)
 
+    def test_the_read_back_is_still_mirrored_to_the_phone_when_no_car_claims_it(self):
+        # review major: no_wait must not leave the "Sending to ..." line heard nowhere. The dispatch goes at once, and the
+        # phone retry takes the undecided phone copy after the car's grace window.
+        self.propose()
+        idle = {"car": None, "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car"}
+        calls = []
+
+        def claim(mid, body=None, reply_key=None):
+            calls.append((body or {}).get("action") or "status")
+            return {**idle, "ok": True} if (body or {}).get("action") == "take" else dict(idle)
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 120.0), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=claim):
+            key, m = self.say("Send it.")
+            self.assertEqual(m["stage"], "await_agent")
+            r = m["phone_retry"]
+            self.assertEqual((r["state"], r["before"], r["rkey"]), ("pending", "delegation_readback", self.of_type("replied", key)[0]["reply_s3_key"]))
+            self.assertGreater(r["next_at"] - time.time(), 60, "the car keeps its grace window")
+            self.assertNotIn("take", calls)
+            self.assertIsNone(m.get("earshot_key"))
+            r["next_at"] = 0.0  # the grace window is over
+            self.tick_until(lambda: r["state"] == "done")
+        self.assertEqual(r["outcome"], "phone_dropped")
+        self.assertIn("take", calls)
+        mir, = self.of_type("mirrored", key)
+        self.assertEqual(mir["earshot_skipped_before"], "delegation_readback")
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_a_car_that_starts_the_read_back_keeps_it_from_the_phone_retry(self):
+        self.propose()
+        state = {"car": None}
+
+        def claim(mid, body=None, reply_key=None):
+            return {"car": state["car"], "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car", "ok": True}
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 120.0), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=claim):
+            key, m = self.say("Send it.")
+            r = m["phone_retry"]
+            state["car"] = "started"
+            r["next_at"] = 0.0
+            self.tick_until(lambda: r["state"] == "done")
+        self.assertEqual(r["outcome"], "car_heard")
+        self.assertEqual(self.of_type("mirrored", key), [])
+
     def test_cancel_after_the_brief_was_published_says_it_is_already_on_its_way(self):
         self.propose()
         key, m = self.say("Send it.")

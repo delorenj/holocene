@@ -2990,11 +2990,11 @@ class EarshotMirror(unittest.TestCase):
         self.assertEqual(self.decide(lambda b: {"car": "started", "sender_host": "car"}, no_wait=True)[0], ("car_spoke", "car_started"))
         # a browser sender has no car: the phone copy is kept
         self.assertEqual(self.decide(lambda b: {"car": None, "sender_host": "browser"}, no_wait=True)[0], (None, "browser_sender"))
-        # a proxy that cannot be asked is not waited for either
+        # a proxy that cannot be asked is not waited for either (the phone retry offers the line again)
         def down(b):
             raise OSError("proxy down")
         out, _, waited = self.decide(down, no_wait=True)
-        self.assertEqual((out, waited), (("delegation_readback", "delegation_readback"), 0))
+        self.assertEqual((out, waited), (("delegation_readback", "delegation_unasked"), 0))
         # and the default still waits the grace (the proxy grants the take once nobody claimed it)
         out, _, waited = self.decide(lambda b: ({"ok": True, "owner": "phone", "held_ever": False} if b and b["action"] == "take" else idle(b)))
         self.assertEqual(out, (None, "no_car_claim"))

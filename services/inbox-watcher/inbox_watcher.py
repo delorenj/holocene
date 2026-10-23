@@ -3262,6 +3262,9 @@ class Watcher:
             m["earshot_reason"] = why
             if skip:
                 m["earshot_skipped"] = skip
+                if skip == "delegation_readback":
+                    # not decided: the car was offered the line; the phone copy follows if nobody claims it
+                    self.arm_readback_phone_copy(m, rkey, t_up, chunked, offered=why == "delegation_readback")
                 self.s.save()
                 return None
             m["earshot_attempted"] = want
@@ -3384,6 +3387,25 @@ class Watcher:
                  f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
                  f"for {EARSHOT_RETRY_TOTAL_S:g} s{again}"}]}
 
+    def arm_readback_phone_copy(self, m: dict, rkey: str, t_up: float, chunked: bool, offered: bool) -> None:
+        """Lock held. The "Sending to ..." read-back of a delegation went out without a phone decision (it must not hold the
+        dispatch): the phone retry takes over, so the line is heard somewhere. First round when the car's grace window ends
+        (EARSHOT_CAR_GRACE_S after the first audio was up); a car that holds or starts it meanwhile keeps it. An offer the
+        proxy could not take is made again by the first round."""
+        if EARSHOT_RETRY_TOTAL_S <= 0:
+            return
+        now = time.time()
+        first = max(1.0, EARSHOT_CAR_GRACE_S - (now - t_up))
+        text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
+        m["phone_retry"] = {
+            "state": "pending", "since_ts": now, "deadline_ts": now + EARSHOT_RETRY_TOTAL_S, "next_at": now + first,
+            "rounds": 0, "rkey": rkey, "reply_text": text or None, "stamp": m.get("reply_stamp"), "before": "delegation_readback",
+            "offer": None if offered else {"by": "watcher", "action": "offer", "reply_key": rkey, "key": m["key"],
+                                           "announce": not chunked},
+            "decisions": [{"at": iso(now_utc()), "decision": "deferred", "why": (
+                f"the delegation's read-back does not wait for the phone decision: the phone is tried in {first:.0f} s if no "
+                f"car claims it, for {EARSHOT_RETRY_TOTAL_S:g} s")}]}
+
     @staticmethod
     def phone_retry_pending(m: dict) -> bool:
         r = m.get("phone_retry")
@@ -3428,7 +3450,7 @@ class Watcher:
             "reply_s3_key": r.get("rkey"), "earshot_key": ekey,
             "earshot_text_key": r.get("earshot_text_key") or (m.get("earshot_text_key") if m.get("reply_key") == r.get("rkey") else None),
             "rounds": r.get("rounds"), "after_release_seconds": round(time.time() - r["since_ts"], 1),
-            "earshot_skipped_before": "car_released"})
+            "earshot_skipped_before": r.get("before") or "car_released"})
 
     @staticmethod
     def _retry_due(r: dict) -> float:
@@ -3507,6 +3529,10 @@ class Watcher:
                 self._phone_mirrored(m, r, want)
                 return self._retry_finish(m, "phone_has_it", f"{want} is in the Earshot channel", earshot_key=want)
         try:
+            if r.get("offer"):
+                claim_call(mid, r["offer"], reply_key=rkey)  # the offer the first decision could not make
+                with self.mu:
+                    r["offer"] = None
             st = claim_call(mid, reply_key=rkey)
         except Exception as e:  # noqa: BLE001
             with self.mu:
@@ -4174,8 +4200,11 @@ EARSHOT_REASONS = {
     "claim_failed": (f"the upload proxy could not be asked who speaks it for {int(EARSHOT_HOLD_MAX_S)} s: left to the car, "
                      "which speaks a reply only with the proxy's yes"),
     "skip_off": "MEMO_EARSHOT_SKIP_CAR=0 mirrors every reply",
-    "delegation_readback": ("the \"Sending to ...\" read-back of a confirmed delegation is the car's: the delegation does not "
-                            "wait for the phone decision, and the result is mirrored on its own"),
+    "delegation_readback": ("the \"Sending to ...\" read-back of a confirmed delegation was offered to the car: the delegation "
+                            "does not wait for the phone decision, which runs on in the background (phone_retry) and "
+                            "mirrors the line if no car claims it"),
+    "delegation_unasked": ("the upload proxy could not be asked about the \"Sending to ...\" read-back: the delegation does "
+                           "not wait for it; the phone retry offers the line again and mirrors it if no car claims it"),
     "drop_failed": (f"the phone took it, but its Earshot drop failed {EARSHOT_DROP_TRIES} times: the take was given back so the "
                     "car may play it"),
 }
@@ -4200,10 +4229,12 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
 
     no_wait (the "Sending to <agent>: <title>." read-back of a confirmed delegation): decided at once, never waited for. The
     offer still goes to the proxy (it pushes the line to the car); a browser sender is still mirrored; a car that already
-    started it keeps the phone copy out; anything else leaves the line to the car (skip "delegation_readback"): the
-    delegation is dispatched right after this decision, so nothing here may hold it for a grace window, a hold or a
-    proxy that cannot be asked (2026-10-22: the agent started 22.6 s after "Send it" behind the 20 s grace). The
-    delegated RESULT is a reply of its own and is mirrored the usual way."""
+    started it keeps the phone copy out; anything else is NOT decided here (skip "delegation_readback", why
+    "delegation_readback", or "delegation_unasked" when the offer could not be made): the delegation is dispatched right
+    after this, so nothing here may hold it for a grace window, a hold or a proxy that cannot be asked (2026-10-22: the
+    agent started 22.6 s after "Send it" behind the 20 s grace). The caller (_phone_copy) hands the rest of the decision
+    to the phone retry (arm_readback_phone_copy), which waits the grace and the holds in the background, so the
+    read-back is never heard nowhere. The delegated RESULT is a reply of its own and is mirrored the usual way."""
     if not EARSHOT_SKIP_CAR:
         return None, "skip_off"
     link = {"down_at": None, "back_at": None, "fails": 0}
@@ -4255,7 +4286,7 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
         if (h := halted()) is not None:
             return h
         if no_wait:
-            return done("delegation_readback", "delegation_readback")
+            return done("delegation_readback", "delegation_unasked")
         if clock() - t_up >= EARSHOT_HOLD_MAX_S:
             return done("no_answer", "claim_failed")
         sleep(EARSHOT_POLL_S)
