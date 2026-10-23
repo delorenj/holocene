@@ -371,23 +371,20 @@ phone grace is no longer in the path. (f5, a plain `Already sent` line that is n
 `22:09:46 "Please draft a task for Holocene PM, ask it to look up which port ..."` and `22:10:50 "Send it"` only; no garage door, no
 hold cue. The stored brief is above it, verbatim.
 
-**Gateway outcome: NOT reached within the window.** Exactly-once is proven on the publish side: 1 `dispatched`, 1 `delegated`, 1 emit of command
-537e470c, and the duplicate "Send it!" published nothing (no `dispatched`/`delegated` fact and no command emit for f5; the watcher's `delegation_sent` fired once). But the
-gateway had written **no `executions` row** for 537e470c by 02:40 UTC (30 min after the 02:10:55 publish), so no Hermes turn has run and there is no first
-user message in the holocene-pm `state.db` to compare. The batch lane was occupied the whole time by other profiles' runs
-(`green-in-between-pm`, a new `started` batch row every few minutes, none for holocene-pm; the stray f0 follow-up 50701f3a published 02:05:51 is queued
-the same way). The F4 check therefore uses the prompt the watcher pinned and published: `delegated-prompt-from-watcher-state.txt`, its sha256 equals the
-`dispatched` fact's `prompt_sha256` (the watcher refuses to send a prompt that differs from the pinned one, `_prompt_for_send`). If the gateway
-later runs the command, its first user message is that file; verify with
-`sqlite3 ~/.hermes/profiles/holocene-pm/state.db` / `sqlite3 -readonly ~/.hermes/bloodbank-hermes-gateway-state.sqlite3 "select * from executions where command_id='537e470c-a3f9-5ef3-aa47-be3da51b1c2c'"`.
-Not retried and not worked around (no gateway restart, no second publish).
+**Gateway outcome: reached, 36 minutes late (queue).** The gateway wrote exactly **1 `executions` row** for 537e470c (profile holocene-pm, lane batch,
+created 02:46:16 UTC, `completed/success`; `runs/r2-followups/journal-rows-for-537e470c.txt` = 1), i.e. one Hermes turn (holocene-pm session
+`20261022_224617_539a7d29`, 1 user message). The batch lane was occupied by other profiles' runs (`green-in-between-pm`, a new `started` batch row every few
+minutes) and the command only started at 02:46, 36 minutes after the 02:10:55 publish; the stray f0 follow-up 50701f3a ran just before it (02:44,
+`completed/success`; its memo was cancelled so it was not spoken). **F4 on the Hermes side:** the session's first (only) user message
+(`hermes-first-user-message.txt`) is byte-identical to the prompt the watcher pinned and published (`delegated-prompt-from-watcher-state.txt`, 1674 chars);
+its "driver's own words" are the 22:09:46 proposal and "Send it" only, no garage door, no hold cue. The agent answered "The Holocene API uses **port 4000**" with its source.
 
 ### Notes
 1. **The desk fall-through is real under this load and cost two stray agent turns** (f0, f1; r1 12 s budget, load 130-164 from other
    processes: qemu, uvicorn, a scoring job). It is the open risk already noted in "Two new observations"; the propose/confirm gate is bypassed when the
    desk times out. Not changed here (config left as found). Stray work: f0's batch follow-up 50701f3a is queued in the gateway behind another profile's
    long batch run and may still run; its result is not spoken (memo cancelled). f1 was a read-only one-sentence question.
-2. The batch lane was backed up behind other profiles' batch runs, so the delegated agent has not started (see "Gateway outcome"): that is the
+2. The batch lane was backed up behind other profiles' batch runs, so the delegated agent started 36 min after the dispatch (see "Gateway outcome"): that is the
    gateway queue, not the watcher; the metric for F2 is confirm -> `dispatched`. Worth its own look: a voice delegation waits in the same FIFO as
    overnight batch work.
 3. Live config at the end: flag `mode on`, agents `*`, devices any car, handoff named, no routes override, tiles `{}`. hermes-gateway, proxy and
