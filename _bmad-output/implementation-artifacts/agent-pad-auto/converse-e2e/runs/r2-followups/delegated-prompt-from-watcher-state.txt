@@ -1,0 +1,23 @@
+[Delegated from the driver's car conversation with the fast desk. The driver heard the brief below read back and confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. Do it yourself: never delegate to a subagent (delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, restart, push or other change to a live system unless the Permission section below allows it; the driver's words came through speech-to-text, so where anything is unclear do only the read-only part and say what you left undone. Your final message is spoken to the driver as a follow-up: end it with a spoken summary of the result in two to four sentences, and do not write a BACKGROUND: line.]
+
+# Which port the Holocene API uses
+
+Look up which port the Holocene API service listens on and report back.
+
+## Context
+- The driver asked by voice while driving.
+- The live API is the user systemd service holocene-api.service; verify from the service definition or code rather than assuming.
+- Read-only: make no changes.
+
+## Done when
+- The port number is named with its source, and the answer is reported back.
+
+## Permission
+Read-only: inspect, read and report. Make no code change, commit, push, deploy, restart or other change to a live system.
+
+## The driver's own words (speech-to-text, oldest first)
+- 22:09:46 "Please draft a task for Holocene PM, ask it to look up which port the Holocene API service listens on and report back."
+- 22:10:50 "Send it"
+
+## Trace
+conversation 4fd72026-b9de-4d92-814e-78d64453646a · memo 08e6c726-f7be-5d80-81a9-8331189f84be · brief b49bc880-b8af-5d78-9136-bd1efdd32652 · asked via holocene-pm

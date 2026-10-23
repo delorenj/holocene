@@ -2995,8 +2995,8 @@ class EarshotMirror(unittest.TestCase):
             raise OSError("proxy down")
         out, _, waited = self.decide(down, no_wait=True)
         self.assertEqual((out, waited), (("delegation_readback", "delegation_readback"), 0))
-        # and the default still waits the grace
-        out, _, waited = self.decide(idle)
+        # and the default still waits the grace (the proxy grants the take once nobody claimed it)
+        out, _, waited = self.decide(lambda b: ({"ok": True, "owner": "phone", "held_ever": False} if b and b["action"] == "take" else idle(b)))
         self.assertEqual(out, (None, "no_car_claim"))
         self.assertGreaterEqual(waited, iw.EARSHOT_CAR_GRACE_S)
 

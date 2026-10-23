@@ -1,0 +1,250 @@
+{
+ "name": "f3-propose",
+ "text": "Please draft a task for Holocene PM. Ask it to look up which port the Holocene API service listens on, and report back.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+ "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+ "put_t": 1792721377.8529994,
+ "elapsed_s": 43.9,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T02:09:38Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "size_bytes": 31662,
+     "detected_at": "2026-10-23T02:09:38.627Z",
+     "occurred_at": "2026-10-23T02:09:38.627Z",
+     "uploaded_at": "2026-10-23T02:09:38.299Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 328,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T02:09:39Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "language": "en",
+     "word_count": 23,
+     "occurred_at": "2026-10-23T02:09:39.459Z",
+     "audio_max_dbfs": -7.0,
+     "audio_mean_dbfs": -24.2,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Please draft a task for Holocene PM, ask it to look up which port the Holocene API service listens on and report back.",
+     "transcript_chars": 118,
+     "processing_seconds": 0.59,
+     "audio_duration_seconds": 8.64
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T02:09:43Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 3579,
+     "occurred_at": "2026-10-23T02:09:42.866Z",
+     "spoken_text": "One sec.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.4,
+     "progress_s3_key": "progress/2026/10/23/517dcec3-2c59-59f5-81c8-6b9ef4ece07d-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T02:09:46Z",
+    "data": {
+     "say": "Draft for Holocene PM: Which port the Holocene API uses. Read-only. Say send it, or tell me what to change.",
+     "sid": "4fd72026",
+     "path": "fast",
+     "perm": "read_only",
+     "tool": null,
+     "guard": null,
+     "route": "r1",
+     "title": "Which port the Holocene API uses",
+     "usage": {
+      "total_tokens": 4908,
+      "prompt_tokens": 4567,
+      "completion_tokens": 341,
+      "prompt_tokens_details": {
+       "cached_tokens": 3328
+      },
+      "completion_tokens_details": {
+       "reasoning_tokens": 184
+      }
+     },
+     "action": "propose",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "target": "holocene-pm",
+     "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a",
+     "lexicon": false,
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "attempts": 1,
+     "brief_id": "b49bc880-b8af-5d78-9136-bd1efdd32652",
+     "conv_turn": 4,
+     "decide_ms": 6863,
+     "say_chars": 107,
+     "card_age_s": 70.9,
+     "latency_ms": 6847,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 6847,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "ok",
+       "http_status": 200,
+       "served_route": "automaticai/personal/glm-5.3",
+       "finish_reason": "stop",
+       "answered_model": "glm-5.3",
+       "reasoning_tokens": 184,
+       "completion_tokens": 341
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T02:09:46.342Z",
+     "reply_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.ogg",
+     "served_route": "automaticai/personal/glm-5.3",
+     "cached_tokens": 3328,
+     "decided_action": "propose",
+     "model_answered": "glm-5.3",
+     "fallback_reason": null,
+     "requested_model": "automaticai/auto/fast",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T02:09:48Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 14315,
+     "occurred_at": "2026-10-23T02:09:48.665Z",
+     "spoken_text": "Draft for Holocene PM: Which port the Holocene API",
+     "tts_seconds": 2.28,
+     "chunk_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.ogg",
+     "spoken_chars": 50,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 2.28,
+     "since_agent_done_seconds": 2.32
+    }
+   },
+   {
+    "time": "2026-10-23T02:09:50Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 13391,
+     "occurred_at": "2026-10-23T02:09:50.701Z",
+     "spoken_text": "uses. Read-only. Say send it, or tell me what to change.",
+     "tts_seconds": 2.04,
+     "chunk_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.ogg",
+     "spoken_chars": 56,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 4.32,
+     "since_agent_done_seconds": 4.36
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T02:10:09Z",
+    "data": {
+     "conv": {
+      "sid": "4fd72026",
+      "path": "fast",
+      "turn": 4,
+      "action": "propose",
+      "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg",
+     "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "Draft for Holocene PM: Which port the Holocene API uses. Read-only. Say send it, or tell me what to change.",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 34120,
+     "earshot_key": "phone/2026/10/23/020946342Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.ogg",
+     "occurred_at": "2026-10-23T02:10:08.848Z",
+     "reply_chars": 107,
+     "reply_up_at": "2026-10-23T02:09:50.899Z",
+     "tts_seconds": 4.51,
+     "full_seconds": 22.47,
+     "prompt_match": null,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/020946Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.ogg",
+     "spoken_chars": 107,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 12.27,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/020946342Z-holocene-pm-517dcec3-2c59-59f5-81c8-6b9ef4ece07d.txt",
+     "last_chunk_seconds": 4.32,
+     "first_chunk_seconds": 2.28,
+     "earshot_wait_seconds": 17.95,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ }
+}

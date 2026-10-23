@@ -1,0 +1,206 @@
+{
+ "name": "f5-send-again",
+ "text": "Send it.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+ "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+ "put_t": 1792721450.919462,
+ "elapsed_s": 39.7,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T02:10:51Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "size_bytes": 5520,
+     "detected_at": "2026-10-23T02:10:51.561Z",
+     "occurred_at": "2026-10-23T02:10:51.638Z",
+     "uploaded_at": "2026-10-23T02:10:51.441Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 120,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T02:10:52Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "language": "en",
+     "word_count": 2,
+     "occurred_at": "2026-10-23T02:10:52.500Z",
+     "audio_max_dbfs": -6.3,
+     "audio_mean_dbfs": -29.7,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Send it!",
+     "transcript_chars": 8,
+     "processing_seconds": 0.54,
+     "audio_duration_seconds": 1.92
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T02:10:52Z",
+    "data": {
+     "say": "Already sent to Holocene PM: Which port the Holocene API uses. I'll call you back with the result.",
+     "sid": "4fd72026",
+     "path": "confirm_only",
+     "perm": "read_only",
+     "tool": null,
+     "guard": [
+      "already_sent"
+     ],
+     "route": null,
+     "title": "Which port the Holocene API uses",
+     "usage": null,
+     "action": "confirm",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "target": "holocene-pm",
+     "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a",
+     "lexicon": true,
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "attempts": 0,
+     "brief_id": "b49bc880-b8af-5d78-9136-bd1efdd32652",
+     "conv_turn": 6,
+     "decide_ms": 13,
+     "say_chars": 98,
+     "card_age_s": 2.9,
+     "latency_ms": null,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": null,
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T02:10:52.532Z",
+     "reply_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.ogg",
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "confirm",
+     "model_answered": null,
+     "fallback_reason": null,
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T02:10:58Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 8884,
+     "occurred_at": "2026-10-23T02:10:58.119Z",
+     "spoken_text": "Already sent to Holocene PM:",
+     "tts_seconds": 3.62,
+     "chunk_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.ogg",
+     "spoken_chars": 28,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 5.55,
+     "since_agent_done_seconds": 5.59
+    }
+   },
+   {
+    "time": "2026-10-23T02:11:00Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 17961,
+     "occurred_at": "2026-10-23T02:11:00.655Z",
+     "spoken_text": "Which port the Holocene API uses. I'll call you back with the result.",
+     "tts_seconds": 2.53,
+     "chunk_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.ogg",
+     "spoken_chars": 69,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 8.08,
+     "since_agent_done_seconds": 8.12
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T02:11:18Z",
+    "data": {
+     "conv": {
+      "sid": "4fd72026",
+      "path": "confirm_only",
+      "turn": 6,
+      "action": "confirm",
+      "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T021050Z.ogg",
+     "memo_id": "5f0574e9-9db7-5fd0-9656-243eb1e52f0f",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "Already sent to Holocene PM: Which port the Holocene API uses. I'll call you back with the result.",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 32822,
+     "earshot_key": "phone/2026/10/23/021052531Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.ogg",
+     "occurred_at": "2026-10-23T02:11:18.424Z",
+     "reply_chars": 98,
+     "reply_up_at": "2026-10-23T02:11:00.980Z",
+     "tts_seconds": 8.4,
+     "full_seconds": 25.85,
+     "prompt_match": null,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/021052Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.ogg",
+     "spoken_chars": 98,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 9.34,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/021052531Z-holocene-pm-5f0574e9-9db7-5fd0-9656-243eb1e52f0f.txt",
+     "last_chunk_seconds": 8.08,
+     "first_chunk_seconds": 5.55,
+     "earshot_wait_seconds": 17.44,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ }
+}

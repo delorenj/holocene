@@ -1,0 +1,32 @@
+`/tmp/ttfa2/f0-withdrawn.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 20.49 KiB │ 20.49 KiB   │ 00m00s   │ 37.31 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "f0-withdrawn", "key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg", "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6", "put_at": "2026-10-23T02:04:28.789745+00:00", "synth_s": 5.2}
+{
+ "name": "f0-withdrawn",
+ "memo": "5ade3616",
+ "heard": "Have the PM look into why the garage door opener is making a grinding noise and report back.",
+ "action": "direct",
+ "path": "fallback",
+ "model": null,
+ "lat_ms": 12012,
+ "say": "",
+ "dispatched": 2,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "routed": 1,
+  "dispatched": 2,
+  "started": 2,
+  "progressed": 1,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 95.5
+}

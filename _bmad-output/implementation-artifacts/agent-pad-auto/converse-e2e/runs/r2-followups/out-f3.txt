@@ -1,0 +1,28 @@
+`/tmp/ttfa2/f3-propose.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 30.92 KiB │ 30.92 KiB   │ 00m00s   │ 73.84 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "f3-propose", "key": "inbox/holocene-pm/2026/10/23/20261023T020937Z.ogg", "memo_id": "517dcec3-2c59-59f5-81c8-6b9ef4ece07d", "put_at": "2026-10-23T02:09:38.322410+00:00", "synth_s": 5.9}
+{
+ "name": "f3-propose",
+ "memo": "517dcec3",
+ "heard": "Please draft a task for Holocene PM, ask it to look up which port the Holocene API service listens on and report back.",
+ "action": "propose",
+ "path": "fast",
+ "model": "glm-5.3",
+ "lat_ms": 6847,
+ "say": "Draft for Holocene PM: Which port the Holocene API uses. Read-only. Say send it, or tell me what to change.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 43.9
+}

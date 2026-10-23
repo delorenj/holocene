@@ -1,0 +1,32 @@
+`/tmp/ttfa2/f1-propose.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 21.39 KiB │ 21.39 KiB   │ 00m00s   │ 63.37 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "f1-propose", "key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg", "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b", "put_at": "2026-10-23T02:06:40.355942+00:00", "synth_s": 4.8}
+{
+ "name": "f1-propose",
+ "memo": "4e8c1c0d",
+ "heard": "Have Holocene PM say in one sentence what the whole queue feature does, and report back.",
+ "action": "direct",
+ "path": "fallback",
+ "model": null,
+ "lat_ms": 12054,
+ "say": "",
+ "dispatched": 1,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "started": 2,
+  "routed": 1,
+  "dispatched": 1,
+  "progressed": 3,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 89.4
+}

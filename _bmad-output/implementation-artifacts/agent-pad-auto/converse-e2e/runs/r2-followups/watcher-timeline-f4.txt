@@ -1,0 +1,27 @@
+02:10:49.504 discovered {'stage': 'receive'}
+02:10:49.562 stage_done {'stage': 'received', 'next': 'transcribe'}
+02:10:49.593 stage_done {'stage': 'download', 'ms': 1}
+02:10:49.703 fact_published {'stage': 'received', 'fact': 'audio.memo.received'}
+02:10:50.184 whisper_server_done {'stage': 'transcribe', 'ms': 411}
+02:10:50.184 audio_level {'stage': 'transcribe'}
+02:10:50.185 stage_done {'stage': 'transcribed', 'next': 'converse', 'ms': 411}
+02:10:50.235 converse_decided {}
+02:10:50.236 stage_done {'stage': 'converse', 'next': 'speak', 'ms': 28}
+02:10:50.330 fact_published {'stage': 'transcribed', 'fact': 'audio.memo.transcribed'}
+02:10:50.516 fact_published {'stage': 'routed', 'fact': 'audio.memo.routed'}
+02:10:52.072 chunk_voiced {'stage': 'tts'}
+02:10:52.239 fact_published {'stage': 'voiced', 'fact': 'audio.memo.voiced'}
+02:10:54.501 chunk_voiced {'stage': 'tts'}
+02:10:54.703 fact_published {'stage': 'voiced', 'fact': 'audio.memo.voiced'}
+02:10:54.720 reply_joined {'ms': 206}
+02:10:54.721 stage_done {'stage': 'tts', 'ms': 4455}
+02:10:54.730 stage_done {'stage': 'tts', 'next': 'mirror', 'ms': 8}
+02:10:54.866 earshot_skipped {'reason': 'delegation_readback', 'why': 'delegation_readback', 'waited_s': 2.8}
+02:10:55.493 fact_published {'stage': 'replied', 'fact': 'audio.memo.replied'}
+02:10:55.493 stage_done {'stage': 'replied', 'next': 'dispatch', 'ms': 764}
+02:10:55.494 followup_started {'stage': 'dispatch', 'lane': 'batch', 'n': 1, 'kind': 'delegation', 'command_id': '537e470c-a3f9-5ef3-aa47-be3da51b1c2c'}
+02:10:55.936 fact_published {'stage': 'dispatched', 'fact': 'audio.memo.dispatched'}
+02:10:56.130 fact_published {'stage': 'delegated', 'fact': 'audio.memo.delegated'}
+02:10:56.130 delegation_sent {'command_id': '537e470c-a3f9-5ef3-aa47-be3da51b1c2c'}
+02:10:56.130 stage_done {'stage': 'dispatched', 'next': 'await_agent', 'ms': 150, 'lane': 'batch', 'command_id': '537e470c-a3f9-5ef3-aa47-be3da51b1c2c'}
+02:10:58.093 agent_waiting {'stage': 'agent', 'lane': 'batch', 'waited_s': 2, 'command_id': '537e470c-a3f9-5ef3-aa47-be3da51b1c2c'}

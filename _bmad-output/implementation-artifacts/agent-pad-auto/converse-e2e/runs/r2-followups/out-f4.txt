@@ -1,0 +1,29 @@
+`/tmp/ttfa2/f4-send.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T021048Z.ogg`
+┌──────────┬─────────────┬──────────┬────────────┐
+│ Total    │ Transferred │ Duration │ Speed      │
+│ 3.95 KiB │ 3.95 KiB    │ 00m00s   │ 7.82 KiB/s │
+└──────────┴─────────────┴──────────┴────────────┘
+{"name": "f4-send", "key": "inbox/holocene-pm/2026/10/23/20261023T021048Z.ogg", "memo_id": "08e6c726-f7be-5d80-81a9-8331189f84be", "put_at": "2026-10-23T02:10:49.484870+00:00", "synth_s": 21.9}
+{
+ "name": "f4-send",
+ "memo": "08e6c726",
+ "heard": "Send it",
+ "action": "confirm",
+ "path": "confirm_only",
+ "model": null,
+ "lat_ms": null,
+ "say": "Sending to Holocene PM: Which port the Holocene API uses. I'll call you back.",
+ "dispatched": 1,
+ "delegated": 1,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1,
+  "dispatched": 1,
+  "delegated": 1
+ },
+ "elapsed_s": 22.0
+}

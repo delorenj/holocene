@@ -1,0 +1,467 @@
+{
+ "name": "f0-withdrawn",
+ "text": "Have the PM look into why the garage door opener is making a grinding noise and report back",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+ "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+ "put_t": 1792721068.077863,
+ "elapsed_s": 95.5,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T02:04:29Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "size_bytes": 20985,
+     "detected_at": "2026-10-23T02:04:28.856Z",
+     "occurred_at": "2026-10-23T02:04:28.856Z",
+     "uploaded_at": "2026-10-23T02:04:28.725Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 131,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T02:04:30Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "language": "en",
+     "word_count": 18,
+     "occurred_at": "2026-10-23T02:04:30.274Z",
+     "audio_max_dbfs": -4.0,
+     "audio_mean_dbfs": -22.3,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Have the PM look into why the garage door opener is making a grinding noise and report back.",
+     "transcript_chars": 92,
+     "processing_seconds": 1.1,
+     "audio_duration_seconds": 5.6
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T02:04:33Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 3579,
+     "occurred_at": "2026-10-23T02:04:33.447Z",
+     "spoken_text": "One sec.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:04:39Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4004,
+     "occurred_at": "2026-10-23T02:04:39.377Z",
+     "spoken_text": "Still on it.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:04:51Z",
+    "data": {
+     "seq": 3,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "narration": 3,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T02:04:51.064Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 8.5,
+     "progress_s3_key": "progress/2026/10/23/5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-3h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:05:00Z",
+    "data": {
+     "seq": 4,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "narration": 4,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4004,
+     "occurred_at": "2026-10-23T02:05:00.309Z",
+     "spoken_text": "Still on it.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 17.7,
+     "progress_s3_key": "progress/2026/10/23/5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-4h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:05:07Z",
+    "data": {
+     "seq": 1,
+     "kind": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "narration": 5,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 21260,
+     "occurred_at": "2026-10-23T02:05:07.582Z",
+     "spoken_text": "Holocene PM: I\u2019ll check the home-system guidance before setting up the investigation.",
+     "tts_seconds": 2.92,
+     "elapsed_seconds": 25.0,
+     "progress_s3_key": "progress/2026/10/23/5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-5.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T02:04:42Z",
+    "data": {
+     "say": null,
+     "sid": "4fd72026",
+     "path": "fallback",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": null,
+     "title": null,
+     "usage": null,
+     "action": "direct",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "target": null,
+     "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a",
+     "lexicon": false,
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 1,
+     "decide_ms": 12040,
+     "say_chars": null,
+     "card_age_s": 13.0,
+     "latency_ms": 12012,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 12011,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "timeout"
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": true,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T02:04:42.327Z",
+     "reply_s3_key": null,
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "direct",
+     "model_answered": null,
+     "fallback_reason": "all_routes_failed",
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "dispatched": [
+   {
+    "time": "2026-10-23T02:04:42Z",
+    "data": {
+     "lane": "interactive",
+     "model": "automaticai/personal/sol-6.1",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "dispatch_ms": 154,
+     "lane_reason": null,
+     "occurred_at": "2026-10-23T02:04:42.602Z",
+     "prompt_chars": 983,
+     "voice_prefix": true,
+     "prompt_sha256": "110abac39a9643d8ad0806c713ae0e725a70dca36c0adf744cca64c702b1d2bf",
+     "command_subject": "bloodbank.cmd.agent.invocation.invoke",
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:05:51Z",
+    "data": {
+     "lane": "batch",
+     "model": null,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "followup": 1,
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "50701f3a-ed2f-4573-b20f-e05733a9a92e",
+     "dispatch_ms": 167,
+     "lane_reason": "voice_followup",
+     "occurred_at": "2026-10-23T02:05:51.323Z",
+     "prompt_chars": 1256,
+     "voice_prefix": true,
+     "followup_plan": "As holocene-pm, investigate the reported garage-door opener grinding noise. Check existing home records, maintenance history, and any available recordings; identify the opener model if documented and consult its manufacturer\u2019s troubleshooting guidance. Do not remotely operate the door, attempt repairs, or book paid service. Distinguish verified findings from possible causes, flag conditions requiring a garage-door technician, and report back here. If evidence is insufficient, request the single most useful missing detail rather than claiming a diagnosis.",
+     "prompt_sha256": "ef700ba7339add2c811e61ba2ead57120fa7060becfc513645c5ccd62621b102",
+     "command_subject": "bloodbank.cmd.agent.invocation.start",
+     "idempotency_key": "2ba250fb-c2ed-5f1f-91dc-19bcba8bc4dc",
+     "target_agent_id": "holocene-pm",
+     "followup_of_command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a"
+    }
+   }
+  ],
+  "started": [
+   {
+    "time": "2026-10-23T02:04:43.497980Z",
+    "data": {
+     "lane": "interactive",
+     "turn_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "prompt_text": "[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiting to hear your answer aloud, whatever else says no human is present: answer within about a minute and at most 3 tool calls. The driver hears your progress aloud while you work: before each tool call, write one short sentence saying what you are about to do. Never run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long command unless asked. If the ask needs longer work, do not start it now: tell the driver in one or two sentences what you will do, then end your reply with a line that starts with BACKGROUND: followed by complete instructions for yourself. That work starts right after, on this same conversation, and its result is spoken to the driver as a follow-up.] Have the PM look into why the garage door opener is making a grinding noise and report back.",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:04:43.498012Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg"
+     },
+     "turn_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "profile_name": "holocene-pm",
+     "invocation_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   }
+  ],
+  "progressed": [
+   {
+    "time": "2026-10-23T02:05:04.365784Z",
+    "data": {
+     "seq": 1,
+     "lane": "interactive",
+     "text": "I\u2019ll check the home-system guidance before setting up the investigation.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg"
+     },
+     "turn_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "profile_name": "holocene-pm",
+     "invocation_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "text_truncated": false,
+     "elapsed_seconds": 20.2,
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "completed": [
+   {
+    "time": "2026-10-23T02:05:26.540393Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg"
+     },
+     "turn_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "profile_name": "holocene-pm",
+     "invocation_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:05:26.540427Z",
+    "data": {
+     "lane": "interactive",
+     "outcome": "completed",
+     "turn_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "thread_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "519d8316-2f7f-5022-b30c-46b49e8d399a",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T02:05:30Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "followup": null,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 23426,
+     "occurred_at": "2026-10-23T02:05:30.232Z",
+     "spoken_text": "Holocene PM. I\u2019ll investigate the garage-door opener\u2019s grinding noise and report back with what I can verify",
+     "tts_seconds": 3.6,
+     "chunk_s3_key": "replies/2026/10/23/020526Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020526Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6.ogg",
+     "spoken_chars": 108,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 3.61,
+     "since_agent_done_seconds": 3.66
+    }
+   },
+   {
+    "time": "2026-10-23T02:05:33Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "followup": null,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 19091,
+     "occurred_at": "2026-10-23T02:05:33.317Z",
+     "spoken_text": "and the safest next step. For now, avoid running it again just to test the noise.",
+     "tts_seconds": 3.09,
+     "chunk_s3_key": "replies/2026/10/23/020526Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020526Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6.ogg",
+     "spoken_chars": 81,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 6.7,
+     "since_agent_done_seconds": 6.74
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T02:05:51Z",
+    "data": {
+     "conv": {
+      "sid": "4fd72026",
+      "path": "fallback",
+      "turn": 1,
+      "action": "direct",
+      "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a"
+     },
+     "late": false,
+     "model": "automaticai/personal/sol-6.1",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020428Z.ogg",
+     "memo_id": "5ade3616-3b32-52c2-a21e-4a2bf9afd7e6",
+     "profile": "holocene-pm",
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": true,
+     "command_id": "112aff66-df92-47b0-bd44-a3cf0b121d1a",
+     "reply_text": "I\u2019ll investigate the garage-door opener\u2019s grinding noise and report back with what I can verify and the safest next step. For now, avoid running it again just to test the noise.",
+     "session_id": "20261022_220443_ab89e220",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 51830,
+     "earshot_key": "phone/2026/10/23/020526621Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6.ogg",
+     "occurred_at": "2026-10-23T02:05:50.887Z",
+     "reply_chars": 177,
+     "reply_up_at": "2026-10-23T02:05:33.630Z",
+     "tts_seconds": 7.0,
+     "full_seconds": 24.27,
+     "prompt_match": true,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/020526Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6.ogg",
+     "spoken_chars": 190,
+     "agent_seconds": 43.98,
+     "earshot_reason": "no_car_claim",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "background_plan": "As holocene-pm, investigate the reported garage-door opener grinding noise. Check existing home records, maintenance history, and any available recordings; identify the opener model if documented and consult its manufacturer\u2019s troubleshooting guidance. Do not remotely operate the door, attempt repairs, or book paid service. Distinguish verified findings from possible causes, flag conditions requiring a garage-door technician, and report back here. If evidence is insufficient, request the single most useful missing detail rather than claiming a diagnosis.",
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 64.77,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/020526621Z-holocene-pm-5ade3616-3b32-52c2-a21e-4a2bf9afd7e6.txt",
+     "last_chunk_seconds": 6.7,
+     "first_chunk_seconds": 3.61,
+     "earshot_wait_seconds": 17.26,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "routed": 1,
+  "dispatched": 2,
+  "started": 2,
+  "progressed": 1,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ }
+}

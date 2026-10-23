@@ -1,0 +1,492 @@
+{
+ "name": "f1-propose",
+ "text": "Have Holocene PM say in one sentence what the Hold cue feature does and report back",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+ "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+ "put_t": 1792721199.9496753,
+ "elapsed_s": 89.4,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T02:06:40Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "size_bytes": 21900,
+     "detected_at": "2026-10-23T02:06:40.548Z",
+     "occurred_at": "2026-10-23T02:06:40.549Z",
+     "uploaded_at": "2026-10-23T02:06:40.328Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 220,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T02:06:41Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "language": "en",
+     "word_count": 16,
+     "occurred_at": "2026-10-23T02:06:41.451Z",
+     "audio_max_dbfs": -6.8,
+     "audio_mean_dbfs": -24.6,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Have Holocene PM say in one sentence what the whole queue feature does, and report back.",
+     "transcript_chars": 88,
+     "processing_seconds": 0.55,
+     "audio_duration_seconds": 6.08
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T02:06:44Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 3337,
+     "occurred_at": "2026-10-23T02:06:44.657Z",
+     "spoken_text": "Hang on.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/4e8c1c0d-159e-58dc-b659-6684286ff29b-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:06:51Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T02:06:50.744Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.2,
+     "progress_s3_key": "progress/2026/10/23/4e8c1c0d-159e-58dc-b659-6684286ff29b-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:02Z",
+    "data": {
+     "seq": 3,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "narration": 3,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4004,
+     "occurred_at": "2026-10-23T02:07:02.239Z",
+     "spoken_text": "Still on it.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 8.4,
+     "progress_s3_key": "progress/2026/10/23/4e8c1c0d-159e-58dc-b659-6684286ff29b-3h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:11Z",
+    "data": {
+     "seq": 4,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "narration": 4,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T02:07:11.195Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 17.3,
+     "progress_s3_key": "progress/2026/10/23/4e8c1c0d-159e-58dc-b659-6684286ff29b-4h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:15Z",
+    "data": {
+     "seq": 1,
+     "kind": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "narration": 5,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 21606,
+     "occurred_at": "2026-10-23T02:07:15.435Z",
+     "spoken_text": "Holocene PM: I\u2019ll check the current feature wording so I can give you an accurate one-sentence summary.",
+     "tts_seconds": 2.9,
+     "elapsed_seconds": 21.6,
+     "progress_s3_key": "progress/2026/10/23/4e8c1c0d-159e-58dc-b659-6684286ff29b-5.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "started": [
+   {
+    "time": "2026-10-23T02:06:53.906726Z",
+    "data": {
+     "lane": "interactive",
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "prompt_text": "[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiting to hear your answer aloud, whatever else says no human is present: answer within about a minute and at most 3 tool calls. The driver hears your progress aloud while you work: before each tool call, write one short sentence saying what you are about to do. Never run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long command unless asked. If the ask needs longer work, do not start it now: tell the driver in one or two sentences what you will do, then end your reply with a line that starts with BACKGROUND: followed by complete instructions for yourself. That work starts right after, on this same conversation, and its result is spoken to the driver as a follow-up.] [Earlier in this car conversation (speech-to-text): Driver: Have the PM look into why the garage door opener is making a grinding noise and report back. / Desk: I\u2019ll investigate the garage-door opener\u2019s grinding noise and report back with what I can verify and the safest next step. For now, avoid running it again just to test the noise.] Have Holocene PM say in one sentence what the whole queue feature does, and report back.",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:06:53.906755Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg"
+     },
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "invocation_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T02:06:53Z",
+    "data": {
+     "say": null,
+     "sid": "4fd72026",
+     "path": "fallback",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": null,
+     "title": null,
+     "usage": null,
+     "action": "direct",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "target": null,
+     "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a",
+     "lexicon": false,
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 2,
+     "decide_ms": 12076,
+     "say_chars": null,
+     "card_age_s": 13.0,
+     "latency_ms": 12054,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 12053,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "timeout"
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T02:06:53.590Z",
+     "reply_s3_key": null,
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "direct",
+     "model_answered": null,
+     "fallback_reason": "all_routes_failed",
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "dispatched": [
+   {
+    "time": "2026-10-23T02:06:54Z",
+    "data": {
+     "lane": "interactive",
+     "model": "automaticai/personal/sol-6.1",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "dispatch_ms": 194,
+     "lane_reason": null,
+     "occurred_at": "2026-10-23T02:06:53.861Z",
+     "prompt_chars": 1319,
+     "voice_prefix": true,
+     "prompt_sha256": "344649d380589df87f1c943b49afe5e1a46e6955ef7f170713f268875d5a0260",
+     "command_subject": "bloodbank.cmd.agent.invocation.invoke",
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "progressed": [
+   {
+    "time": "2026-10-23T02:07:12.299179Z",
+    "data": {
+     "seq": 1,
+     "lane": "interactive",
+     "text": "I\u2019ll check the current feature wording so I can give you an accurate one-sentence summary.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg"
+     },
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "invocation_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "text_truncated": false,
+     "elapsed_seconds": 17.9,
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:18.032778Z",
+    "data": {
+     "seq": 2,
+     "lane": "interactive",
+     "text": "I\u2019m checking whether \u201cwhole queue\u201d refers to the car\u2019s \u201cHold cue\u201d feature.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg"
+     },
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "invocation_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "text_truncated": false,
+     "elapsed_seconds": 23.6,
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:25.415356Z",
+    "data": {
+     "seq": 3,
+     "lane": "interactive",
+     "text": "The search tool is unavailable, so I\u2019m checking the tracked files directly.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg"
+     },
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "invocation_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "text_truncated": false,
+     "elapsed_seconds": 31.0,
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "completed": [
+   {
+    "time": "2026-10-23T02:07:31.764297Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg"
+     },
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "invocation_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:31.764334Z",
+    "data": {
+     "lane": "interactive",
+     "outcome": "completed",
+     "turn_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "thread_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "72a9517c-87a4-5844-8c4c-ed06d3e45a34",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T02:07:36Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "followup": null,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 23873,
+     "occurred_at": "2026-10-23T02:07:36.215Z",
+     "spoken_text": "Holocene PM. Holocene\u2019s \u201cHold cue\u201d feature fills silent waits in the car with brief spoken updates like \u201cOne",
+     "tts_seconds": 4.02,
+     "chunk_s3_key": "replies/2026/10/23/020732Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020732Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b.ogg",
+     "spoken_chars": 108,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 4.03,
+     "since_agent_done_seconds": 4.09
+    }
+   },
+   {
+    "time": "2026-10-23T02:07:39Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "followup": null,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 18524,
+     "occurred_at": "2026-10-23T02:07:39.712Z",
+     "spoken_text": "sec\u201d or \u201cStill thinking,\u201d so you know your request is still being processed.",
+     "tts_seconds": 3.5,
+     "chunk_s3_key": "replies/2026/10/23/020732Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/020732Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b.ogg",
+     "spoken_chars": 76,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 7.52,
+     "since_agent_done_seconds": 7.59
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T02:07:56Z",
+    "data": {
+     "conv": {
+      "sid": "4fd72026",
+      "path": "fallback",
+      "turn": 2,
+      "action": "direct",
+      "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a"
+     },
+     "late": false,
+     "model": "automaticai/personal/sol-6.1",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020639Z.ogg",
+     "memo_id": "4e8c1c0d-159e-58dc-b659-6684286ff29b",
+     "profile": "holocene-pm",
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": "729e0530-3c05-463d-ab63-ec4aebaadf68",
+     "reply_text": "Holocene\u2019s \u201cHold cue\u201d feature fills silent waits in the car with brief spoken updates like \u201cOne sec\u201d or \u201cStill thinking,\u201d so you know your request is still being processed.",
+     "session_id": "20261022_220654_0119439a",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 52115,
+     "earshot_key": "phone/2026/10/23/020732189Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b.ogg",
+     "occurred_at": "2026-10-23T02:07:56.779Z",
+     "reply_chars": 172,
+     "reply_up_at": "2026-10-23T02:07:39.973Z",
+     "tts_seconds": 7.78,
+     "full_seconds": 24.59,
+     "prompt_match": true,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/020732Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b.ogg",
+     "spoken_chars": 185,
+     "agent_seconds": 38.26,
+     "earshot_reason": "no_car_claim",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 59.42,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/020732189Z-holocene-pm-4e8c1c0d-159e-58dc-b659-6684286ff29b.txt",
+     "last_chunk_seconds": 7.52,
+     "first_chunk_seconds": 4.03,
+     "earshot_wait_seconds": 16.81,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "started": 2,
+  "routed": 1,
+  "dispatched": 1,
+  "progressed": 3,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ }
+}

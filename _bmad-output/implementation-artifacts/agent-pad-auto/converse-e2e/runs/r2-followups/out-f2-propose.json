@@ -1,0 +1,318 @@
+{
+ "name": "f2-propose",
+ "text": "Have Holocene PM say in one sentence what the Hold cue feature does and report back",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+ "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+ "put_t": 1792721314.5321352,
+ "elapsed_s": 49.9,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T02:08:35Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "size_bytes": 25915,
+     "detected_at": "2026-10-23T02:08:35.344Z",
+     "occurred_at": "2026-10-23T02:08:35.344Z",
+     "uploaded_at": "2026-10-23T02:08:34.963Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 381,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T02:08:36Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "language": "en",
+     "word_count": 16,
+     "occurred_at": "2026-10-23T02:08:36.110Z",
+     "audio_max_dbfs": -5.1,
+     "audio_mean_dbfs": -23.5,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Have Holocene PM say in one sentence what the hold cue feature does and report back.",
+     "transcript_chars": 84,
+     "processing_seconds": 0.54,
+     "audio_duration_seconds": 6.88
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T02:08:39Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 2706,
+     "occurred_at": "2026-10-23T02:08:39.229Z",
+     "spoken_text": "Hold on.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/5b2f0094-d550-57b7-8b10-5acbb3927ec1-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T02:08:45Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T02:08:45.225Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/5b2f0094-d550-57b7-8b10-5acbb3927ec1-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T02:08:48Z",
+    "data": {
+     "say": "Per Holocene PM\u2019s report: the hold cue replaces silent waits in the car with short spoken acknowledgments like \u201cOne sec\u201d or \u201cStill thinking,\u201d played after about three and nine seconds and dropped if you record or the answer arrives.",
+     "sid": "4fd72026",
+     "path": "fast",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": "r1",
+     "title": null,
+     "usage": {
+      "total_tokens": 5004,
+      "prompt_tokens": 4467,
+      "completion_tokens": 537,
+      "prompt_tokens_details": {
+       "cached_tokens": 3264
+      },
+      "completion_tokens_details": {
+       "reasoning_tokens": 448
+      }
+     },
+     "action": "reply",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "target": null,
+     "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a",
+     "lexicon": false,
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 3,
+     "decide_ms": 12008,
+     "say_chars": 232,
+     "card_age_s": 12.7,
+     "latency_ms": 11992,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 11992,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "ok",
+       "http_status": 200,
+       "served_route": "automaticai/personal/glm-5.3",
+       "finish_reason": "stop",
+       "answered_model": "glm-5.3",
+       "reasoning_tokens": 448,
+       "completion_tokens": 537
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T02:08:48.141Z",
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "served_route": "automaticai/personal/glm-5.3",
+     "cached_tokens": 3264,
+     "decided_action": "reply",
+     "model_answered": "glm-5.3",
+     "fallback_reason": null,
+     "requested_model": "automaticai/auto/fast",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T02:08:49Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 4,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 8470,
+     "occurred_at": "2026-10-23T02:08:49.660Z",
+     "spoken_text": "Per Holocene PM\u2019s report:",
+     "tts_seconds": 1.49,
+     "chunk_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1-c01of04.opus",
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "spoken_chars": 25,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 1.5,
+     "since_agent_done_seconds": 1.52
+    }
+   },
+   {
+    "time": "2026-10-23T02:08:52Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 4,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 15622,
+     "occurred_at": "2026-10-23T02:08:51.897Z",
+     "spoken_text": "the hold cue replaces silent waits in the car with short spoken",
+     "tts_seconds": 2.24,
+     "chunk_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1-c02of04.opus",
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "spoken_chars": 63,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 3.73,
+     "since_agent_done_seconds": 3.76
+    }
+   },
+   {
+    "time": "2026-10-23T02:08:54Z",
+    "data": {
+     "late": false,
+     "chunk": 3,
+     "voice": "rick",
+     "chunks": 4,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 18369,
+     "occurred_at": "2026-10-23T02:08:54.336Z",
+     "spoken_text": "acknowledgments like \u201cOne sec\u201d or \u201cStill thinking,\u201d played after about three and nine seconds",
+     "tts_seconds": 2.44,
+     "chunk_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1-c03of04.opus",
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "spoken_chars": 93,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 6.17,
+     "since_agent_done_seconds": 6.19
+    }
+   },
+   {
+    "time": "2026-10-23T02:08:56Z",
+    "data": {
+     "late": false,
+     "chunk": 4,
+     "voice": "rick",
+     "chunks": 4,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 11836,
+     "occurred_at": "2026-10-23T02:08:56.284Z",
+     "spoken_text": "and dropped if you record or the answer arrives.",
+     "tts_seconds": 1.95,
+     "chunk_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1-c04of04.opus",
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "spoken_chars": 48,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 8.12,
+     "since_agent_done_seconds": 8.14
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T02:09:10Z",
+    "data": {
+     "conv": {
+      "sid": "4fd72026",
+      "path": "fast",
+      "turn": 3,
+      "action": "reply",
+      "conv_id": "4fd72026-b9de-4d92-814e-78d64453646a"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T020834Z.ogg",
+     "memo_id": "5b2f0094-d550-57b7-8b10-5acbb3927ec1",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "Per Holocene PM\u2019s report: the hold cue replaces silent waits in the car with short spoken acknowledgments like \u201cOne sec\u201d or \u201cStill thinking,\u201d played after about three and nine seconds and dropped if you record or the answer arrives.",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 66884,
+     "earshot_key": "phone/2026/10/23/020848140Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "occurred_at": "2026-10-23T02:09:10.021Z",
+     "reply_chars": 232,
+     "reply_up_at": "2026-10-23T02:08:56.587Z",
+     "tts_seconds": 8.42,
+     "full_seconds": 21.86,
+     "prompt_match": null,
+     "reply_chunks": 4,
+     "reply_s3_key": "replies/2026/10/23/020848Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.ogg",
+     "spoken_chars": 232,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 21.24,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/020848140Z-holocene-pm-5b2f0094-d550-57b7-8b10-5acbb3927ec1.txt",
+     "last_chunk_seconds": 8.12,
+     "first_chunk_seconds": 1.5,
+     "earshot_wait_seconds": 13.43,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 2,
+  "routed": 1,
+  "voiced": 4,
+  "replied": 1
+ }
+}

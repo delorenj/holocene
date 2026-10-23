@@ -317,7 +317,9 @@ Totals over the whole run: **1 dispatched, 1 delegated, 1 journal row, 1 Hermes 
 desk (two lexicon-only confirms, one cancel, one propose, one fast reply). Exactly-once on the final build: PROVEN (steps 2 and 3).
 
 Timings (put -> routed / put -> replied): s0 0.8 / 21.8 s, s1 10.1 / 33.1 s, s2 1.5 / 23.5 s, s3 1.0 / 24.0 s, s4 10.2 / 33.2 s. The `replied` fact lags
-`routed` by about 20 s on the lexicon paths because the reply voicing runs (vox TTS under load); the first audio chunk of s2 was up at +3.6 s.
+`routed` by about 20 s on the lexicon paths because the car sent nothing to claim the reply and the **Earshot phone-mirror grace** ran
+(`earshot_wait_seconds` 19-21 s, `phone_copy_decision`, `EARSHOT_CAR_GRACE_S` 20 s, inbox_watcher.py step_mirror); vox TTS was not the lag (the first audio chunk
+of s2 was up at +3.6 s). *Corrected in "R2 follow-ups" below (F1).*
 
 Notes and defects:
 1. **Phone playback happened.** No car claimed anything, so after the grace the phone mirror played every desk reply and the follow-up on the
@@ -334,3 +336,60 @@ Notes and defects:
 
 Files: `runs/r2-injected/` (`inject.py`, `out-i0-cancel.json` ... `out-i4-found.json`, `candystore-facts-all.json`, `journal-before.txt`,
 `journal-after-step2.txt`, `journal-before-step4.txt`, `journal-final.txt`, `earshot-phone-playback.txt`, `run.txt`).
+
+## R2 follow-ups (2026-10-22 22:00-22:12 EDT; code commit fba9083, watcher restarted idle at 22:03:42)
+
+The independent check of the PROVEN R2 run found five things. All five are fixed, tested and deployed; F2 and F3 and F4 are proven live below.
+
+| # | finding | fix |
+|---|---|---|
+| F1 doc | the section above blamed the `routed` -> `replied` lag on TTS | it is the Earshot phone-mirror grace; text corrected in place |
+| F2 latency | a confirmed delegation was dispatched only after the read-back's `replied` fact, which waits out the 20 s phone grace when no car claims the line: agent started 22.6 s after "Send it." | `phone_copy_decision(no_wait=True)` for the `Sending to ...` read-back (a memo that carries `delegate`): the offer still goes to the proxy, a car that already started it keeps the verdict, a browser sender is still mirrored, anything else leaves the line to the car (`earshot_skipped=delegation_readback`), nothing is waited for (no grace, no live hold, no unreachable proxy). The command then goes right after the read-back is rendered and uploaded. The delegated RESULT is its own reply and is mirrored the usual way. |
+| F2 exactly-once / cancel | publish is now seconds after "Send it.", so a "cancel that" after hearing the read-back is usually late | unchanged: uuid5 command id, draft `sending` -> `sent` under the lock, cancel before publish stops it (`Okay, cancelled before it left`). New: with a delegation sending or running, "cancel that" is a lexicon answer (no LLM) `It's already on its way to X, so I can't cancel it. I'll call you back with the result.`; before, with the draft already spent it fell to the model or "Okay. Nothing was waiting to send.", which would have been false. |
+| F3 | a second "Send it." while the first is still `sending` had no pipeline test | `test_a_second_send_it_while_the_first_is_still_sending_publishes_nothing` (read-back held in the voice render, second confirm gets `Already sent`, 1 command total) + guard unit test; also `test_cancel_after_the_brief_was_published_says_it_is_already_on_its_way`, `test_the_delegation_is_dispatched_right_after_the_read_back_not_after_the_phone_grace`, `no_wait` cases in the `phone_copy_decision` tests |
+| F4 | the delegated prompt's "driver's own words" carried the last 12 driver turns, withdrawn and failed asks included | a draft now records `built_by` (memo ids of the proposal and each edit; an edit of a proposed draft continues the chain, a new draft starts one). The prompt carries only those turns + the confirmation. A draft from before the deploy (no `built_by`) uses the turns since the last cancel/confirm/end. The stored brief is verbatim, unchanged. `test_the_delegated_prompt_carries_only_the_drivers_words_that_built_this_draft`, `test_draft_turns_are_only_the_ones_that_built_this_draft` |
+| F5 | `runs/r2-injected/inject.py` printed `heard: null` (read `text`) | reads `transcript_text`; also new `--put-at <epoch>` to hold the upload for timed back-to-back memos |
+
+### Live proof (injected memos, `runs/r2-followups/` with `out-f0..f5-*.json` facts per memo, 6 memos)
+
+| memo | heard | result |
+|---|---|---|
+| f0 5ade3616 | "Have the PM look into why the garage door opener is making a grinding noise ..." | **desk r1 timed out (12.0 s) at load 130-164 -> `direct` / `fallback`**: the known fall-through. It ran as a plain agent turn (interactive 112aff66, completed) plus a BACKGROUND batch follow-up (50701f3a). I cancelled the memo (`memo:cancel`) so nothing more is spoken; the batch command was already published and cannot be recalled. It is still an "earlier failed ask" in the conversation, which is exactly what F4 needs. |
+| f1 4e8c1c0d | "Have Holocene PM say in one sentence what the whole queue feature does ..." | same fall-through (12.05 s), a second plain agent turn (interactive, trivial, read-only wording). |
+| f2 5b2f0094 | same request again | `reply`/`fast` (glm-5.3, 12.0 s): answered from the board with the earlier stored result, no draft. 0 dispatched. |
+| f3 517dcec3 | "Please draft a task for Holocene PM, ask it to look up which port the Holocene API service listens on and report back." | `propose`/`fast` (6.8 s): "Draft for Holocene PM: Which port the Holocene API uses. Read-only. ..." 0 dispatched, 0 delegated. |
+| f4 08e6c726 | "Send it" | `confirm_only` (28 ms): "Sending to Holocene PM: Which port the Holocene API uses. I'll call you back." **exactly 1 dispatched + 1 delegated**, command `537e470c-a3f9-5ef3-aa47-be3da51b1c2c` = uuid5 of brief b49bc880. `replied` carried `earshot_skipped=delegation_readback`, `earshot_wait_seconds` 0.15. |
+| f5 5f0574e9 | "Send it!" put 2.0 s after f4 | `confirm_only` (13 ms): "Already sent to Holocene PM: Which port the Holocene API uses. I'll call you back with the result." **0 dispatched, 0 delegated**, no publish. |
+
+**F2 timing** (watcher journal, `watcher-timeline-f4.txt`): confirm decided 02:10:50.235 -> read-back voiced 02:10:52/54.5 -> phone decision
+02:10:54.866 (`earshot_skipped delegation_readback`, no wait) -> `replied` 02:10:55.493 -> `followup_started` 02:10:55.494 -> **`dispatched` 02:10:55.936**.
+Confirm to dispatched **5.7 s** (put to dispatched 6.5 s), against **22.6 s** before. The 5.7 s is the read-back's two TTS chunks under load; the
+phone grace is no longer in the path. (f5, a plain `Already sent` line that is not a delegation read-back, still waits its grace: `replied` 17.4 s, as before and by design.)
+
+**F4 prompt check.** The conversation held 3 earlier driver turns (the garage door ask f0, the "one sentence" ask f1, its reply f2). The delegated prompt
+(`delegated-prompt-from-watcher-state.txt`, sha256 equal to the dispatched fact's `prompt_sha256`) has "The driver's own words" =
+`22:09:46 "Please draft a task for Holocene PM, ask it to look up which port ..."` and `22:10:50 "Send it"` only; no garage door, no
+hold cue. The stored brief is above it, verbatim.
+
+**Gateway outcome: NOT reached within the window.** Exactly-once is proven on the publish side: 1 `dispatched`, 1 `delegated`, 1 emit of command
+537e470c, and the duplicate "Send it!" published nothing (no `dispatched`/`delegated` fact and no command emit for f5; the watcher's `delegation_sent` fired once). But the
+gateway had written **no `executions` row** for 537e470c by 02:40 UTC (30 min after the 02:10:55 publish), so no Hermes turn has run and there is no first
+user message in the holocene-pm `state.db` to compare. The batch lane was occupied the whole time by other profiles' runs
+(`green-in-between-pm`, a new `started` batch row every few minutes, none for holocene-pm; the stray f0 follow-up 50701f3a published 02:05:51 is queued
+the same way). The F4 check therefore uses the prompt the watcher pinned and published: `delegated-prompt-from-watcher-state.txt`, its sha256 equals the
+`dispatched` fact's `prompt_sha256` (the watcher refuses to send a prompt that differs from the pinned one, `_prompt_for_send`). If the gateway
+later runs the command, its first user message is that file; verify with
+`sqlite3 ~/.hermes/profiles/holocene-pm/state.db` / `sqlite3 -readonly ~/.hermes/bloodbank-hermes-gateway-state.sqlite3 "select * from executions where command_id='537e470c-a3f9-5ef3-aa47-be3da51b1c2c'"`.
+Not retried and not worked around (no gateway restart, no second publish).
+
+### Notes
+1. **The desk fall-through is real under this load and cost two stray agent turns** (f0, f1; r1 12 s budget, load 130-164 from other
+   processes: qemu, uvicorn, a scoring job). It is the open risk already noted in "Two new observations"; the propose/confirm gate is bypassed when the
+   desk times out. Not changed here (config left as found). Stray work: f0's batch follow-up 50701f3a is queued in the gateway behind another profile's
+   long batch run and may still run; its result is not spoken (memo cancelled). f1 was a read-only one-sentence question.
+2. The batch lane was backed up behind other profiles' batch runs, so the delegated agent has not started (see "Gateway outcome"): that is the
+   gateway queue, not the watcher; the metric for F2 is confirm -> `dispatched`. Worth its own look: a voice delegation waits in the same FIFO as
+   overnight batch work.
+3. Live config at the end: flag `mode on`, agents `*`, devices any car, handoff named, no routes override, tiles `{}`. hermes-gateway, proxy and
+   emulator not touched; only the watcher was restarted, at idle.
+

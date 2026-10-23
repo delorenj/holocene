@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inject one synthesized speech memo into holocene-auto inbox/ the way the car upload proxy stores it, then wait for the desk.
-usage: inject.py <name> "<text>" [--wait-dispatch]
+usage: inject.py <name> "<text>" [--wait-dispatch] [--put-at <epoch>]   (--put-at: synthesize now, hold the upload until that time)
 Key layout inbox/<agent>/<yyyy>/<mm>/<dd>/<yyyymmddTHHMMSSZ>.ogg ; object metadata X-Amz-Meta-Holocene-Device / -Host (mc cp --attr),
 content-type audio/ogg. Output: out-<name>.json with every Candystore fact for the memo id."""
 import datetime as dt, json, subprocess, sys, time, urllib.request, uuid, os
@@ -17,6 +17,8 @@ ogg = f"/tmp/ttfa2/{name}.ogg"
 # 0.4 s lead-in silence like a recorder, 48 kHz mono Opus
 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-af", "adelay=400,apad=pad_dur=0.4", "-ar", "48000", "-ac", "1",
                 "-c:a", "libopus", "-b:a", "32k", ogg], check=True)
+if "--put-at" in sys.argv:
+    time.sleep(max(0.0, float(sys.argv[sys.argv.index("--put-at") + 1]) - time.time()))
 now = dt.datetime.now(dt.timezone.utc)
 key = f"inbox/{AGENT}/{now:%Y}/{now:%m}/{now:%d}/{now:%Y%m%dT%H%M%S}Z.ogg"
 memo_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "s3://holocene-auto/" + key))
