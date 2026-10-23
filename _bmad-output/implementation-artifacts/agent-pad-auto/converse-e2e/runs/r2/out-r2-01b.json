@@ -1,0 +1,205 @@
+{
+ "name": "r2-01b",
+ "text": "Have Holocene PM write a one paragraph summary of the hold cue feature and report back.",
+ "offset_s": 0.06921935081481934,
+ "start_pressed": 1792716586.6020565,
+ "mic_recording_seen": 1792716594.2124631,
+ "paplay": [
+  1792716594.6183662,
+  1792716602.3133087,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792716603.3133771,
+ "mic_idle_seen": 1792716605.9074407,
+ "memo_id": "ae87f1a1-63c5-5964-8e38-0385dd714707",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T004947Z.ogg",
+ "discovered": 1792716610.521,
+ "first_kind": "reply",
+ "first_start": 1792716627.4477806,
+ "first_audible": null,
+ "stop_to_first_start_s": 24.13,
+ "stop_to_upload_discover_s": 7.21,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 10796,
+   "cached_tokens": 3200,
+   "conv_turn": 2,
+   "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Understood. Anything else you want Holocene on?",
+   "say_chars": 47,
+   "lexicon": false,
+   "card_age_s": 11.4,
+   "decide_ms": 10890,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 10795,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 436,
+    "completion_tokens": 475
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "83bbebf2",
+     "path": "fast",
+     "turn": 2,
+     "action": "reply",
+     "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 1,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   14.54,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   14.57,
+   "start",
+   "progress",
+   "waited_ms=87"
+  ],
+  [
+   15.13,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   24.11,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   24.13,
+   "start",
+   "reply",
+   "waited_ms=27"
+  ],
+  [
+   24.49,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   26.33,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   26.41,
+   "start",
+   "reply",
+   "waited_ms=92"
+  ],
+  [
+   27.11,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   29.71,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   29.74,
+   "start",
+   "reply",
+   "waited_ms=31"
+  ],
+  [
+   30.59,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   34.19,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   34.25,
+   "start",
+   "reply",
+   "waited_ms=61"
+  ],
+  [
+   35.29,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   41.34,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   41.41,
+   "start",
+   "reply",
+   "waited_ms=70"
+  ]
+ ]
+}

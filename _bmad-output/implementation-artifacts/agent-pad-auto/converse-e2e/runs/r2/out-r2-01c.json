@@ -1,0 +1,38 @@
+{
+ "name": "r2-01c",
+ "text": "Have Holocene PM write a one paragraph summary of the hold cue feature and report back.",
+ "offset_s": -0.05038332939147949,
+ "start_pressed": 1792716679.4577813,
+ "mic_recording_seen": 1792716691.9484968,
+ "paplay": [
+  1792716692.3533435,
+  1792716703.1337435,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792716704.1367564,
+ "mic_idle_seen": 1792716707.959641,
+ "memo_id": "1024680a-f00b-5c09-890c-5052c32eb7dd",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T005120Z.ogg",
+ "discovered": 1792716712.012,
+ "first_start": null,
+ "first_audible": null,
+ "stop_to_upload_discover_s": 7.88,
+ "facts": {
+  "routed": null,
+  "attempt_log": null,
+  "n_routed": 0,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "audio.memo.failed",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.uploaded"
+  ]
+ },
+ "speech": []
+}

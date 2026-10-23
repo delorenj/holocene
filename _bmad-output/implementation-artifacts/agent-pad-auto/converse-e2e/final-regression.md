@@ -251,3 +251,44 @@ lines), `speaker-tap.jsonl.gz`, `overlap-*.txt`, `record_failed.jsonl`, `analyze
 
 Rerun the audit: `zcat runs/final/speaker-tap.jsonl.gz > /tmp/tap.jsonl; zcat runs/final/speech-logcat.txt.gz > /tmp/l.txt;
 python3 apps/auto/tools/speech_overlap.py --logcat /tmp/l.txt --tap /tmp/tap.jsonl --offset-ms=-160 --tol-ms 60 --from 1792710100 --to 1792711400`.
+
+## R2 delegation (final build): **NOT PROVEN** (2026-10-22 20:37-20:58, 6 of 6 memos used, step 1 reached once)
+
+Harness: `tools/final_driver.py` via `runs/r2/memo.sh` (load gate: wait while 1-min load > 40, 600 s total budget; lead-in 2.5 s).
+**The load never dropped below 40** (105 at start, 75 after the 600 s wait, 72-77 for the rest), so the gate's 10-minute wait was spent
+on memo 1 and every later memo ran at load 72-78 (`runs/r2/load.log`). Time used about 21 of 25 minutes. One delegation was allowed
+to reach an agent turn; **zero delegations happened** (no `audio.memo.delegated`, no `Send it.` was ever spoken), but one memo did
+reach a full agent turn by accident (r2-01, below).
+
+| memo | id | heard | routed | facts / timing |
+|---|---|---|---|---|
+| r2-01 | 9bc4a882 | "Have Holocene write a one-paragraph summary **of the future** and report back." (PM and "hold cue feature" misheard) | `direct`, path `fallback`, `fallback_reason all_routes_failed` (r1 `timeout` at 12.0 s, load 76) | **full agent turn**: 1 `audio.memo.dispatched` (interactive lane, no followup, command 1759ebdf, holocene-pm); gateway journal row `completed/success/interactive`. Echo/progress cues `focus_denied` on the sim. I cancelled with `memo:cancel` (agent had already started; trace: CANCELLED after dispatch, reply not spoken). This consumed the agent-turn allowance without proving anything about R2. |
+| r2-01b | ae87f1a1 | "Right." (7.6 s utterance, 2.2 s heard: first words clipped) | `reply` fast, glm-5.3, 10.8 s | "Understood. Anything else you want Holocene on?" (reply to a fragment, nothing dispatched). Re-record of the same step. |
+| r2-01c | 1024680a | (nothing) | none | `audio.memo.failed[transcribe] silent_audio`: the sim mic delivered no sound (lead-in 6 s). Re-record attempt. |
+| r2-01d | - | - | - | the mic never reached `recording` within 25 s after the Record tap (no HoloceneSpeech mic lines at all for the tap); **no memo created**. `auto:sim:mic-check` said INCONCLUSIVE (probe reported nothing). Screen showed READY. |
+| r2-01e | - | - | - | same: tap delivered (IME restarted for the app), no mic arming, **no memo created**. |
+| r2-01f | 7e263bcf | "Have Holocene PM write a one-paragraph summary **of the whole queue back**." | **`propose`**, fast, glm-5.3 r1, 10.9 s, `conv_turn 3`, tile holocene-pm, perm read_only | desk said "Draft for Holocene PM: Summarize the car work queue. Read-only. Say send it, or tell me what to change." (deterministic read-back format, correct). **dispatched 0, delegated 0** (Candystore types: received uploaded transcribed routed voiced replied played narrated notified). Reply started at +17.2 s, COMPLETE 17.0 s. The conv has `pending draft: 'Summarize the car work queue' for Holocene PM (read_only), brief de1a672b`. |
+
+### What this shows
+
+- **Step 1 (propose, read-back, nothing dispatched): observed once** (r2-01f), with a transcript that was not the requested sentence ("hold
+  cue feature" came back as "whole queue back"), so the draft is a different task than the one I asked for. Format and the
+  no-dispatch property held.
+- **Steps 2, 3, 4 (`Send it.`, `Send it.` again, `What did it find?`): NOT RUN.** The 6-memo limit was gone: three memos were
+  spent re-recording step 1 (r2-01, r2-01b, r2-01c), and r2-01d/e made no memo but the sim mic stopped arming, which would have
+  blocked them anyway. Exactly-once (1 dispatched, 1 delegated, 1 journal row, the "Already sent" repeat) is still unproven on the final
+  build; the last proof remains `evidence.md` S3/S4.
+- **Two new observations, not fixed (not product-code work for this pass):**
+  1. Under load 72-105 the desk's r1 call timed out once (r2-01: 12.0 s budget 14 s, `all_routes_failed` -> `direct`) and the
+     work request went to a full agent turn instead of being proposed. The same sentence proposed fine at load 72 in r2-01f (10.9 s).
+     A timed-out desk call on a work request therefore bypasses the propose/confirm gate: that agent turn was a plain interactive dispatch.
+  2. The sim mic stopped arming after the silent capture (r2-01c): the Record tap was delivered but no `HoloceneSpeech: mic` line
+     followed for ~2 minutes. It came back by itself for r2-01f. Cause not investigated.
+- **Left behind:** a pending draft (brief de1a672b, "Summarize the car work queue", read_only) on conversation 83bbebf2 for holocene-pm. It was
+  not sent and nothing about it was dispatched; it expires or is replaced by the next turn. The r2-01 agent turn completed in the
+  gateway (`completed/success`) after I cancelled it; its reply was not spoken.
+- Live config at the end: flag file `mode on`, agents `*`, devices any car, routes `r1=automaticai/auto/fast`, tiles none, no override.
+  hermes-gateway, watcher and proxy not restarted. Emulator only.
+
+Next attempt needs: load under 40 (or a desk budget that survives it), a 6-memo budget with the memos spent on steps 2-4 only, and a
+checked mic (`auto:sim:mic-check` OK) first. Files: `runs/r2/` (`load.log`, `memo.sh`, `out-r2-01*.json`, `r2-01*.line`, `speech-logcat.txt.gz`).

@@ -1,0 +1,245 @@
+{
+ "name": "r2-01",
+ "text": "Have Holocene PM write a one paragraph summary of the hold cue feature and report back.",
+ "offset_s": -0.16505193710327148,
+ "start_pressed": 1792716490.8765643,
+ "mic_recording_seen": 1792716496.0355024,
+ "paplay": [
+  1792716496.4363422,
+  1792716503.6425762,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792716504.6426847,
+ "mic_idle_seen": 1792716506.3823576,
+ "memo_id": "9bc4a882-757e-5b2b-b882-7d85f11e370a",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T004811Z.ogg",
+ "discovered": 1792716512.024,
+ "first_kind": "echo",
+ "first_start": 1792716525.8500519,
+ "first_audible": null,
+ "stop_to_first_start_s": 21.21,
+ "stop_to_upload_discover_s": 7.38,
+ "facts": {
+  "routed": {
+   "action": "direct",
+   "decided_action": "direct",
+   "path": "fallback",
+   "model_answered": null,
+   "route": null,
+   "attempts": 1,
+   "latency_ms": 12012,
+   "cached_tokens": null,
+   "conv_turn": 1,
+   "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+   "guard": null,
+   "fallback_reason": "all_routes_failed",
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": null,
+   "say_chars": null,
+   "lexicon": false,
+   "card_age_s": 12.3,
+   "decide_ms": 12078,
+   "requested_model": null,
+   "served_route": null,
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 12011,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "timeout"
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "1759ebdf-4d7e-4759-a00e-f042954d4e43",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   12.29,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   12.31,
+   "start",
+   "progress",
+   "waited_ms=11"
+  ],
+  [
+   12.71,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   18.83,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   18.84,
+   "start",
+   "progress",
+   "waited_ms=17"
+  ],
+  [
+   19.41,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   21.2,
+   "queued",
+   "echo",
+   ""
+  ],
+  [
+   21.21,
+   "start",
+   "echo",
+   "waited_ms=8"
+  ],
+  [
+   22.0,
+   "end",
+   "echo",
+   "error:focus_denied"
+  ],
+  [
+   22.01,
+   "deferred",
+   "echo",
+   "focus_retry"
+  ],
+  [
+   24.58,
+   "start",
+   "echo",
+   "waited_ms=2534"
+  ],
+  [
+   25.2,
+   "end",
+   "echo",
+   "error:focus_denied"
+  ],
+  [
+   25.21,
+   "deferred",
+   "echo",
+   "focus_retry"
+  ],
+  [
+   27.26,
+   "start",
+   "echo",
+   "waited_ms=5218"
+  ],
+  [
+   27.77,
+   "end",
+   "echo",
+   "error:focus_denied"
+  ],
+  [
+   27.77,
+   "deferred",
+   "echo",
+   "focus_retry"
+  ],
+  [
+   29.8,
+   "start",
+   "echo",
+   "waited_ms=7780"
+  ],
+  [
+   30.56,
+   "queued",
+   "progress",
+   "behind_echo"
+  ],
+  [
+   30.56,
+   "end",
+   "echo",
+   "error:focus_denied"
+  ],
+  [
+   30.56,
+   "drop",
+   "echo",
+   "superseded"
+  ],
+  [
+   30.56,
+   "start",
+   "progress",
+   "waited_ms=3"
+  ],
+  [
+   37.9,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   40.79,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   40.88,
+   "start",
+   "progress",
+   "waited_ms=81"
+  ],
+  [
+   41.43,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ]
+ ]
+}

@@ -1,0 +1,176 @@
+{
+ "name": "r2-01f",
+ "text": "Have Holocene PM write a one paragraph summary of the hold cue feature and report back.",
+ "offset_s": -0.15693926811218262,
+ "start_pressed": 1792717011.2954335,
+ "mic_recording_seen": 1792717019.2465901,
+ "paplay": [
+  1792717019.6574461,
+  1792717026.5844805,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792717027.5845857,
+ "mic_idle_seen": 1792717028.7325208,
+ "memo_id": "7e263bcf-d8a8-5312-a1a7-27d96b272acc",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T005651Z.ogg",
+ "discovered": 1792717029.898,
+ "first_kind": "reply",
+ "first_start": 1792717044.7609394,
+ "first_audible": null,
+ "stop_to_first_start_s": 17.18,
+ "stop_to_upload_discover_s": 2.31,
+ "facts": {
+  "routed": {
+   "action": "propose",
+   "decided_action": "propose",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 10940,
+   "cached_tokens": 3200,
+   "conv_turn": 3,
+   "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+   "guard": null,
+   "fallback_reason": null,
+   "title": "Summarize the car work queue",
+   "target": "holocene-pm",
+   "perm": "read_only",
+   "delegate_to": null,
+   "say": "Draft for Holocene PM: Summarize the car work queue. Read-only. Say send it, or tell me what to change.",
+   "say_chars": 103,
+   "lexicon": false,
+   "card_age_s": 11.9,
+   "decide_ms": 10970,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 10940,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 383,
+    "completion_tokens": 688
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "83bbebf2",
+     "path": "fast",
+     "turn": 3,
+     "action": "propose",
+     "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 2,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   6.87,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   6.87,
+   "start",
+   "progress",
+   "waited_ms=1"
+  ],
+  [
+   10.59,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   13.7,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   13.7,
+   "start",
+   "progress",
+   "waited_ms=8"
+  ],
+  [
+   15.36,
+   "halt",
+   "progress",
+   "memo_final"
+  ],
+  [
+   17.18,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   17.18,
+   "start",
+   "reply",
+   "waited_ms=4"
+  ],
+  [
+   17.19,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   18.95,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   28.02,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   34.21,
+   "end",
+   "reply",
+   "chunks=2"
+  ]
+ ]
+}
