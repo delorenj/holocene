@@ -1215,6 +1215,27 @@ def driver_turns(sess: dict) -> list[dict]:
     return [t for t in (sess or {}).get("turns") or [] if t.get("kind", "driver") == "driver"]
 
 
+# a turn that ends whatever came before it: the draft was dropped, sent, or the conversation ended
+DRAFT_BOUNDARY_ACTIONS = ("cancel", "confirm", "end")
+
+
+def draft_turns(sess: dict, draft: dict, skip_memo: str | None = None, limit: int = 12) -> list[dict]:
+    """The driver turns that built THIS draft (oldest first), for the delegated prompt's "driver's own words": the
+    proposal and each edit of it, never an earlier cancelled or failed ask, a sent delegation's request, or small talk.
+    A draft minted by the guard names its turns (`built_by`: memo ids). An older draft (state.json from before) has
+    none: the turns since the last cancel, confirm or end."""
+    turns = [t for t in driver_turns(sess) if t.get("memo_id") != skip_memo]
+    ids = (draft or {}).get("built_by")
+    if isinstance(ids, list):
+        return [t for t in turns if t.get("memo_id") in ids][-limit:]
+    out: list[dict] = []
+    for t in reversed(turns):
+        if t.get("action") in DRAFT_BOUNDARY_ACTIONS:
+            break
+        out.append(t)
+    return out[::-1][-limit:]
+
+
 def pending_draft(sess: dict | None, now: float, ttl_s: float) -> dict | None:
     """The draft waiting for a yes: proposed (or being sent), not older than ttl_s since it was proposed or restored."""
     d = (sess or {}).get("pending")
@@ -1235,6 +1256,13 @@ def recent_delegation(sess: dict | None, now: float, within_s: float, sha: str |
         if (sha is None or d.get("brief_sha256") == sha) and (target is None or d.get("target") == target):
             return d
     return None
+
+
+def delegation_in_flight(sess: dict | None, now: float, within_s: float) -> dict | None:
+    """The newest confirmed delegation that is on its way (being sent, or running) and recent: "cancel that" about it is
+    too late, and says so."""
+    d = recent_delegation(sess, now, within_s)
+    return d if d is not None and d.get("state") in ("sending", "running") else None
 
 
 def upsert_turn(sess: dict, turn: dict, keep: int = 60) -> int:
@@ -1351,8 +1379,13 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         body_sha = sha256(body)
         bid = brief_id_for(sess["conv_id"], body_sha, target, now)
         name = tile_name if target == tile else (names_fn.display(target) if hasattr(names_fn, "display") else target)
+        # the turns that built this draft: an edit of a proposed draft continues its chain, anything else starts one
+        chain = list(pend.get("built_by") or []) if (pend is not None and pend.get("state") == "proposed") else []
+        if memo_id and memo_id not in chain:
+            chain.append(memo_id)
         draft = {"brief_id": bid, "brief_sha256": body_sha, "title": title, "target": target, "target_name": name,
-                 "perm": perm, "brief": brief, "body": body, "memo_id": memo_id, "at": now, "state": "proposed"}
+                 "perm": perm, "brief": brief, "body": body, "memo_id": memo_id, "at": now, "state": "proposed",
+                 "built_by": chain}
         out.update(action="propose", draft=draft, say=readback(draft))
 
     def busy() -> None:
@@ -1421,7 +1454,14 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("cancel_while_sending")
             out.update(say=SENDING_CANCELLED_LINE, cancel_sending=pend)
         else:
-            out.update(say=NOTHING_TO_CANCEL_LINE)
+            run = delegation_in_flight(sess, now, dedupe_s)
+            if run is not None:
+                # the confirmed brief is already published (it goes right after the read-back, not after the phone's
+                # grace window): "cancel that" is too late, and the driver is told so, never "nothing was waiting"
+                reasons.append("cancel_too_late")
+                out.update(say=SENDING_TOO_LATE_LINE.format(target=run.get("target_name") or run.get("target")))
+            else:
+                out.update(say=NOTHING_TO_CANCEL_LINE)
         return out, reasons
     if action == "end":
         say, hit = filter_sent_claims(out["say"] or END_LINE, about)
@@ -2391,8 +2431,8 @@ class Desk:
             lex = ("confirm_only", {"action": "confirm"})
         elif bare_yes(transcript) and pend is not None and readback_just_heard(sess, pend):
             lex = ("confirm_only", {"action": "confirm"})  # "yes" right after the read-back
-        elif cancel_only(transcript) and pend is not None:
-            lex = ("cancel_only", {"action": "cancel"})
+        elif cancel_only(transcript) and (pend is not None or delegation_in_flight(sess, now, self.dedupe_s) is not None):
+            lex = ("cancel_only", {"action": "cancel"})  # with a brief already on its way: answered "too late", no LLM
         elif end_only(transcript):
             lex = ("end_only", {"action": "end", "say": END_LINE})
         elif force_direct(transcript):

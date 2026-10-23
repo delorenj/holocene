@@ -35,6 +35,12 @@ PROPOSE = decision(action="propose", say="I can have the PM look into that.", ti
                           "context": ["The driver noticed it in the car."], "done_when": ["The cause is named."]})
 
 
+def m2_done(h):
+    """The newest memo of a test is finished (a fast turn spoken, or at the agent)."""
+    m = h.state.memos[h.keys[-1]]
+    return m["status"] in ("done", "failed") or m["stage"] == "await_agent"
+
+
 class ConverseHarness(MemoHarness):
     @classmethod
     def setUpClass(cls):
@@ -375,6 +381,90 @@ class Delegation(ConverseHarness, unittest.TestCase):
         key4, m4 = self.say("What did it find?")
         self.assertIn("the spool flag is unset", self.hyper.calls[-1]["body"]["messages"][-1]["content"])
         self.assertEqual(self.cmds(key4), [])
+
+    def test_the_delegation_is_dispatched_right_after_the_read_back_not_after_the_phone_grace(self):
+        # F2: no car claims the read-back; the phone-mirror grace (20 s live) must not hold the publish
+        self.propose()
+        idle = {"car": None, "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car"}
+        t0 = time.time()
+        with unittest.mock.patch.object(iw, "EARSHOT_SKIP_CAR", True), \
+                unittest.mock.patch.object(iw, "EARSHOT_CAR_GRACE_S", 120.0), \
+                unittest.mock.patch.object(iw, "claim_call", side_effect=lambda *a, **k: dict(idle)):
+            key, m = self.say("Send it.")
+        took = time.time() - t0
+        self.assertEqual(m["stage"], "await_agent")
+        self.assertLess(took, 30.0, "a 120 s grace was not waited for")
+        self.assertEqual(self.last_said, "Sending to Holocene PM: Why the audio spool is disabled. I'll call you back.")
+        self.assertEqual(len(self.cmds(key)), 1)
+        rep, = self.of_type("replied", key)
+        self.assertEqual((rep["earshot_skipped"], rep["earshot_reason"]), ("delegation_readback", "delegation_readback"))
+        self.assertEqual(len(self.of_type("dispatched", key)), 1)
+        self.assertEqual(len(self.of_type("delegated", key)), 1)
+        self.finish_delegation(m, "Because the flag is unset.")
+        self.assertEqual(len(self.cmds(key)), 1)
+
+    def test_cancel_after_the_brief_was_published_says_it_is_already_on_its_way(self):
+        self.propose()
+        key, m = self.say("Send it.")
+        self.assertEqual(m["stage"], "await_agent")
+        key2, m2 = self.say("Cancel that.")
+        self.assertEqual(self.last_said, "It's already on its way to Holocene PM, so I can't cancel it. I'll call you back with the result.")
+        self.assertEqual(self.cmds(key2), [])
+        self.assertEqual(len(self.cmds(key)), 1)
+        self.assertEqual(self.sess()["delegations"][-1]["state"], "running")
+
+    def test_a_second_send_it_while_the_first_is_still_sending_publishes_nothing(self):
+        # F3: the first read-back is held in the voice render, so the draft is 'sending' when the second "Send it" lands
+        self.propose()
+        real = iw.synthesize
+        gate, reached = threading.Event(), threading.Event()
+
+        def hold(text, tmp, **kw):
+            if text.startswith("Sending to"):
+                reached.set()
+                gate.wait(30)
+            return real(text, tmp, **kw)
+        with unittest.mock.patch.object(iw, "synthesize", side_effect=hold):
+            key1, m1 = self.start("Send it.")
+            self.tick_until(lambda: reached.is_set())
+            self.assertEqual(self.sess()["pending"]["state"], "sending")
+            key2, m2 = self.say("Send it.", until=lambda: m2_done(self))
+            self.assertTrue(self.last_said.startswith("Already sent to Holocene PM: Why the audio spool is disabled."), self.last_said)
+            self.assertEqual(self.cmds(key2), [])
+            self.assertEqual(self.cmds(key1), [], "the first one has not left yet")
+            gate.set()
+            self.tick_until(lambda: m1["stage"] == "await_agent")
+        self.assertEqual(len(self.cmds(key1)), 1)
+        self.assertEqual(self.cmds(key2), [])
+        self.assertEqual(len([1 for t, r in facts() if t.startswith("bloodbank.cmd.")]), 1)
+        self.assertEqual(len(self.of_type("delegated", key1)) + len(self.of_type("delegated", key2)), 1)
+        self.assertEqual(len(self.sess()["delegations"]), 1)
+
+    def test_the_delegated_prompt_carries_only_the_drivers_words_that_built_this_draft(self):
+        # F4: a withdrawn request and an earlier ask never reach the delegated agent; the brief stays verbatim
+        self.hyper.decision = decision(action="propose", say="x", title="Withdrawn topic about the garage door",
+                                       brief={"goal": "Look into the garage door opener.", "context": [], "done_when": ["Named."]})
+        self.say("Have the PM look into the garage door opener noise")
+        self.say("Cancel that.")
+        self.hyper.decision = decision(say="It is two o'clock.")
+        self.say("What time is it right now")
+        self.hyper.decision = PROPOSE
+        self.say("Have the PM look into why the audio spool is disabled")
+        self.hyper.decision = {**PROPOSE, "perm": "changes_ok"}
+        self.say("Also let it change the code")
+        draft = self.sess()["pending"]
+        self.assertEqual(len(draft["built_by"]), 2)
+        key, m = self.say("Send it.")
+        (t, cmd), = self.cmds(key)
+        prompt = cmd["data"]["prompt"]
+        self.assertIn(draft["body"], prompt)
+        self.assertIn('"Have the PM look into why the audio spool is disabled"', prompt)
+        self.assertIn('"Also let it change the code"', prompt)
+        self.assertIn('"Send it."', prompt)
+        for gone in ("garage door", "Cancel that", "What time is it"):
+            self.assertNotIn(gone, prompt)
+        words = prompt.split("## The driver's own words")[1].split("## Trace")[0]
+        self.assertEqual(words.count("\n- "), 3)
 
     def test_a_named_handoff_goes_to_that_agent_and_its_result_is_named(self):
         dec = {**PROPOSE, "target": "flume-pm"}

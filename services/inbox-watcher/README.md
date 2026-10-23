@@ -688,14 +688,19 @@ it", "no") is `cancel`; "that's all" / "thanks, bye" is `end`; "ask <agent> dire
 deploy, restart, push or other change to a live system unless the Permission section allows it**, end with a spoken
 summary, no `BACKGROUND:` line) + the stored brief (`# title`, goal, `## Context`, `## Done when`, `## Permission`) + the
 driver's own words, oldest first, with times (the confirmation included) + a trace line (conversation, memo, brief id,
-tile). It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
+tile). The words are only the turns that built THIS draft (the draft's `built_by` memo ids: the proposal and each edit of
+it), never a withdrawn request, an earlier failed ask or small talk; the stored brief stays verbatim. It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
 `uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the **voice model** (`MEMO_CONVERSE_DELEGATE_MODEL`, default `MEMO_VOICE_MODEL` = sol-6.1; the PMs' own default is
 `automaticai/auto`, a pool with Claude routes, so it is never the default here; `profile` opts back in; a forbidden one is
 ignored), `thread_id` = the memo id, `context.reason =
 voice-delegation` with `conv_id`, `brief_id`, `brief_sha256`, `tile_agent_id`, `perm`. `MEMO_FOLLOWUP_MAX=0` does not
 stop it, and a delegated agent's own `BACKGROUND:` line is refused (spoken as not finished). Its result is spoken as
 `<Target>, follow-up on <title>. <summary>` (the car, or the phone after the 20 s grace, as any follow-up) and written
-back into the conversation (the delegation's `result`, a `result` turn). A read-back that never went out (vox down past
+back into the conversation (the delegation's `result`, a `result` turn). **The publish does not wait for who plays the
+read-back**: the `Sending to ...` line's phone decision is made at once (`phone_copy_decision(no_wait=True)`: the car is
+offered the line, a car that already started it keeps it, a browser sender is mirrored, anything else leaves it to the car,
+`earshot_skipped=delegation_readback`), so the command goes right after the read-back is rendered and uploaded (seconds),
+not after the 20 s phone grace. A read-back that never went out (vox down past
 its budget, `memo:cancel`) puts the draft back to proposed and marks the delegation `not_sent`.
 
 **Speech.** A fast turn's reply: the agent's name on the conversation's first turn only (a read-back names its target
@@ -1218,6 +1223,9 @@ An independent review of the desk found the following, all fixed and covered by 
   names resolve to roster ids; ordinary words that are also id stems (`monitoring`, `infra`) name nobody.
 - **Cancel / redirect while the read-back is still spoken**: cancel stops the delegation if it has not been published
   (`Okay, cancelled before it left`), or says it is already on its way; a redirect or edit says it is already being sent.
+  The publish follows the read-back within seconds, so "cancel that" after hearing it is usually too late: it is answered
+  `It's already on its way to X, so I can't cancel it` (lexicon, no LLM) for as long as the delegation is sending or running,
+  never "nothing was waiting". A second `send it` while the first is sending says `Already sent` and publishes nothing.
   Brief ids now carry the target and the proposal time, so a redirect never shares an id with the draft it replaces.
 - **A delegation that cannot be dispatched** (unroutable target, bus down past the budget) fails its follow-up, restores the
   draft, and the driver hears `I couldn't send that to X, so nothing was sent`; a draft stuck in `sending` for 30 min is

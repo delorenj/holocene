@@ -199,6 +199,8 @@ EARSHOT_SKIPPED = {
     "car_live": "the car that sent the memo was connected and spoke the reply itself",
     "no_answer": ("the upload proxy could not be asked who speaks it for minutes: left to the car, which speaks a reply "
                   "only with the proxy's yes (look for the car's played hop)"),
+    "delegation_readback": ("the \"Sending to ...\" read-back of a confirmed delegation is the car's: the delegation does "
+                            "not wait for the phone decision, and the result is mirrored on its own"),
     "car_released": ("the phone took it, but its Earshot drop failed on every try, so the take was given back: the car may "
                      "play it (look for the car's played hop)"),
 }

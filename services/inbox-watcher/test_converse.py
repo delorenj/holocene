@@ -678,6 +678,69 @@ class Guard(unittest.TestCase):
         self.assertTrue(final["close"])
 
 
+    def test_cancel_after_the_brief_left_says_it_is_already_on_its_way(self):
+        # the delegation is published right after the read-back: a "cancel that" a few seconds later is too late, and
+        # the driver hears that, never "nothing was waiting to send"
+        sess = session()
+        sess["delegations"] = [{"brief_id": "b1", "brief_sha256": "x", "title": "Why the spool is off", "target": "holocene-pm",
+                                "target_name": "Holocene PM", "state": "running", "at": 1005.0}]
+        final, reasons = g({"action": "cancel"}, sess, "cancel that")
+        self.assertIn("cancel_too_late", reasons)
+        self.assertEqual(final["say"], cv.SENDING_TOO_LATE_LINE.format(target="Holocene PM"))
+        self.assertIsNone(final["cancel_sending"])
+        # a delegation that already came back (or never left) is not "on its way"
+        sess["delegations"][0]["state"] = "done"
+        final, reasons = g({"action": "cancel"}, sess, "cancel that")
+        self.assertEqual(final["say"], cv.NOTHING_TO_CANCEL_LINE)
+        sess["delegations"][0]["state"] = "not_sent"
+        self.assertEqual(g({"action": "cancel"}, sess, "cancel that")[0]["say"], cv.NOTHING_TO_CANCEL_LINE)
+
+    def test_a_second_send_it_while_the_first_is_sending_publishes_nothing(self):
+        sess = session()
+        sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]
+        first, _ = g({"action": "confirm"}, sess, "send it")
+        first["send"]["state"] = "sending"  # what the watcher does under the lock
+        sess["delegations"] = [{"brief_id": first["send"]["brief_id"], "brief_sha256": first["send"]["brief_sha256"],
+                                "title": first["send"]["title"], "target": "holocene-pm", "target_name": "Holocene PM",
+                                "state": "sending", "at": 1010.0}]
+        for said in ("send it", "Send it.", "yes"):
+            final, reasons = g({"action": "confirm"}, sess, said, now=1011.0)
+            self.assertIsNone(final["send"], said)
+            self.assertIn("already_sent", reasons)
+            self.assertTrue(final["say"].startswith("Already sent to Holocene PM"), final["say"])
+
+    def test_a_draft_names_the_turns_that_built_it_and_an_edit_continues_the_chain(self):
+        sess = session()
+        d1 = g(PROPOSE, sess, "look into the spool")[0]["draft"]
+        self.assertEqual(d1["built_by"], ["m-1"])
+        sess["pending"] = d1
+        d2 = cv.guard(cv.normalize_decision({**PROPOSE, "title": "Spool, again"}), sess, "make it about the spool flag",
+                      tile="holocene-pm", tile_name="Holocene PM", handoff="named", route_fn=route_fn, names_fn=Names(),
+                      now=1011.0, memo_id="m-2")[0]["draft"]
+        self.assertEqual(d2["built_by"], ["m-1", "m-2"])
+        # a draft that replaces nothing (the pending one was dropped) starts its own chain
+        d3 = cv.guard(cv.normalize_decision(PROPOSE), session(), "something else", tile="holocene-pm",
+                      tile_name="Holocene PM", handoff="named", route_fn=route_fn, names_fn=Names(), now=1012.0,
+                      memo_id="m-3")[0]["draft"]
+        self.assertEqual(d3["built_by"], ["m-3"])
+
+    def test_draft_turns_are_only_the_ones_that_built_this_draft(self):
+        sess = session()
+        for i, (mid, action, text) in enumerate([("a", "propose", "old request"), ("b", "cancel", "cancel that"),
+                                                 ("c", "reply", "what time is it"), ("d", "propose", "new request"),
+                                                 ("e", "propose", "edit the new request"), ("f", "confirm", "send it")]):
+            cv.upsert_turn(sess, {"memo_id": mid, "at": 1000.0 + i, "user": text, "action": action})
+        draft = {"built_by": ["d", "e"]}
+        self.assertEqual([t["user"] for t in cv.draft_turns(sess, draft, skip_memo="f")], ["new request", "edit the new request"])
+        # an older draft with no chain: the turns since the last cancel, confirm or end (small talk included)
+        self.assertEqual([t["user"] for t in cv.draft_turns(sess, {}, skip_memo="f")],
+                         ["what time is it", "new request", "edit the new request"])
+        # a sent delegation's own turns are not the next draft's
+        cv.upsert_turn(sess, {"memo_id": "g", "at": 1100.0, "user": "another thing", "action": "propose"})
+        self.assertEqual([t["user"] for t in cv.draft_turns(sess, {}, skip_memo="h")], ["another thing"])
+        self.assertEqual(len(cv.draft_turns(sess, {"built_by": [c for c in "abcdefg"]}, limit=3)), 3)
+
+
 class Briefs(unittest.TestCase):
     def test_the_brief_carries_the_verbatim_transcripts_and_the_no_live_change_rule(self):
         sess = session()

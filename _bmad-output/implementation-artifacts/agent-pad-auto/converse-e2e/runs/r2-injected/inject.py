@@ -55,7 +55,7 @@ json.dump(res, open(os.path.join(HERE, f"out-{name}.json"), "w"), indent=1, defa
 def g(t):
     return (by.get(t) or [{}])[0].get("data", {})
 tr, ro, rp = g("transcribed"), g("routed"), g("replied")
-print(json.dumps({"name": name, "memo": memo_id[:8], "heard": tr.get("text"), "action": ro.get("action"), "path": ro.get("path"),
+print(json.dumps({"name": name, "memo": memo_id[:8], "heard": tr.get("transcript_text"), "action": ro.get("action"), "path": ro.get("path"),
                   "model": ro.get("model_answered"), "lat_ms": ro.get("latency_ms"), "say": (ro.get("say") or "")[:400],
                   "dispatched": len(by.get("dispatched", [])), "delegated": len(by.get("delegated", [])), "failed": len(by.get("failed", [])),
                   "types": res["types"], "elapsed_s": res["elapsed_s"]}, indent=1))

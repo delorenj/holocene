@@ -2961,7 +2961,7 @@ class EarshotMirror(unittest.TestCase):
             return Answer(script(body))
         return seen, mock.patch.object(iw.urllib.request, "urlopen", side_effect=urlopen)
 
-    def decide(self, script, t_up=1000.0, chunked=True, clock_start=1000.0, cancelled=None, skip_car=True):
+    def decide(self, script, t_up=1000.0, chunked=True, clock_start=1000.0, cancelled=None, skip_car=True, no_wait=False):
         clock = [clock_start]
         sleep = lambda s: clock.__setitem__(0, clock[0] + s)
         seen, patch = self._claims(script)
@@ -2969,8 +2969,36 @@ class EarshotMirror(unittest.TestCase):
         with patch, mock.patch.object(iw, "EARSHOT_SKIP_CAR", skip_car):
             out = iw.phone_copy_decision("f753985b-d3fb-5836-9db4-f9fb8e7dbe6b", "inbox/a/2026/10/20/x.ogg",
                                          "replies/2026/10/20/101500Z-a-f753985b-d3fb-5836-9db4-f9fb8e7dbe6b.ogg",
-                                         t_up, chunked, cancelled, clock=lambda: clock[0], sleep=sleep)
+                                         t_up, chunked, cancelled, clock=lambda: clock[0], sleep=sleep, no_wait=no_wait)
         return out, seen, clock[0] - t_up
+
+    def test_a_delegation_read_back_is_decided_at_once_and_never_waits_for_the_phone_grace(self):
+        # F2 (2026-10-22): "Sending to ..." held the dispatch 20 s behind the phone-mirror grace when no car claimed it
+        took = []
+
+        def idle(b):
+            if b and b["action"] == "take":
+                took.append(1)
+            return {"car": None, "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car"}
+        out, seen, waited = self.decide(idle, no_wait=True)
+        self.assertEqual((out, waited, took), (("delegation_readback", "delegation_readback"), 0, []))
+        self.assertEqual(seen[0]["action"], "offer", "the car is still offered (pushed) the line")
+        # a car that is recording and holds it, still no wait
+        out, _, waited = self.decide(lambda b: {"car": "held", "car_holds": True, "held_ever": True, "sender_host": "car"}, no_wait=True)
+        self.assertEqual((out, waited), (("delegation_readback", "delegation_readback"), 0))
+        # a car that already started it keeps its own verdict
+        self.assertEqual(self.decide(lambda b: {"car": "started", "sender_host": "car"}, no_wait=True)[0], ("car_spoke", "car_started"))
+        # a browser sender has no car: the phone copy is kept
+        self.assertEqual(self.decide(lambda b: {"car": None, "sender_host": "browser"}, no_wait=True)[0], (None, "browser_sender"))
+        # a proxy that cannot be asked is not waited for either
+        def down(b):
+            raise OSError("proxy down")
+        out, _, waited = self.decide(down, no_wait=True)
+        self.assertEqual((out, waited), (("delegation_readback", "delegation_readback"), 0))
+        # and the default still waits the grace
+        out, _, waited = self.decide(idle)
+        self.assertEqual(out, (None, "no_car_claim"))
+        self.assertGreaterEqual(waited, iw.EARSHOT_CAR_GRACE_S)
 
     def test_a_car_that_started_the_reply_keeps_the_phone_copy_out(self):
         (out, seen, waited) = self.decide(lambda b: {"car": "started", "owner": "car", "sender_host": "car"})
