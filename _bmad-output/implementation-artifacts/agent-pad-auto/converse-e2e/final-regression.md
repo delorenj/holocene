@@ -392,4 +392,5 @@ Not retried and not worked around (no gateway restart, no second publish).
    overnight batch work.
 3. Live config at the end: flag `mode on`, agents `*`, devices any car, handoff named, no routes override, tiles `{}`. hermes-gateway, proxy and
    emulator not touched; only the watcher was restarted, at idle.
-
+4. Tests: full suite 448 tests (`cd services && python3 -B -m unittest discover -s inbox-watcher -p 'test_*.py'`) at load 170: 441 pass, 7 timing failures
+   (6 in `test_hold_cue` DeskWait/FallThrough, `Pipeline.test_26`), all of which pass when re-run alone (`test_hold_cue` 22/22 in 36 s, test_26 in 2 s): load flakes, not the change.
