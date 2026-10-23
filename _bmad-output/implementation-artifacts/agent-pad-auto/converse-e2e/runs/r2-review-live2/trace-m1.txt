@@ -1,0 +1,74 @@
+[memo:trace] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' trace fbac52d7-e0f7-5476-bfb4-48d0f63c8277
+memo_id  fbac52d7-e0f7-5476-bfb4-48d0f63c8277
+key      inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg
+agent    holocene-pm
+command  0cbd3c72-60bf-40ef-9b48-0c9281a91540
+lane     interactive   queues: interactive: pulling, 0/4 in flight, 0 queued | batch: pulling, 1/4 in flight, 0 queued
+query    curl -s 'http://127.0.0.1:8683/events?correlationid=fbac52d7-e0f7-5476-bfb4-48d0f63c8277&limit=100'
+
+  OK      s3_object                  2026-10-23T03:36:24.000Z           inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg  19888 bytes
+  MISSING upload_proxy_log           -                                  no line mentioning the key in `docker logs agent-pad-upload` (older than the proxy's structured logging, or logs rotated) (optional)
+  MISSING fact:uploaded              -                                  no bloodbank.audio.memo.uploaded with correlationid=fbac52d7-e0f7-5476-bfb4-48d0f63c8277 (optional)
+  OK      fact:received              2026-10-23T03:36:24.887Z  +0.9s    watcher saw it, lag 59ms
+  OK      fact:transcribed           2026-10-23T03:36:25.496Z  +0.6s    82 chars in 0.45s (large-v3-turbo, gpu server, cuda), audio max -5 dBFS, mean -24 dBFS over 5.4 s: 'Have Holocene PM count the Python test files in the Inbox Watcher and report bac'
+  OK      fast:routed                2026-10-23T03:36:47.539Z  +22.0s   direct failed: r1 timeout -> today's agent path (all_routes_failed) conv 569611a8 turn 1 tile voice rick model default ladder
+  OK      audio_level                2026-10-23T03:36:25.496Z  +0.0s    max -5 dBFS, mean -24 dBFS over 5.4 s  -> audible
+  OK      fact:dispatched            2026-10-23T03:36:47.737Z  +22.2s   command 0cbd3c72-60bf-40ef-9b48-0c9281a91540 -> bloodbank.cmd.agent.invocation.invoke lane=interactive model=automaticai/personal/sol-6.1
+  OK      gateway_journal            2026-10-23T03:36:47.769Z  +0.0s    lane=interactive profile=holocene-pm state=completed outcome=success created=2026-10-23T03:36:47.769760Z updated=2026-10-23T03:38:30.939264Z
+  OK      agent:invocation.started   2026-10-23T03:36:47.769Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      car:hold-cue#1             2026-10-23T03:36:28.566Z  +0.0s    said 'Thinking.' (hold_cue, 3.0s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-1h.ogg
+  OK      car:hold-cue#2             2026-10-23T03:36:34.577Z  +6.0s    said 'Still on it.' (hold_cue2, 9.1s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-2h.ogg
+  OK      car:hold-cue#3             2026-10-23T03:36:55.150Z  +20.6s   said 'Still on it.' (hold_keepalive, 7.4s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-3h.ogg
+  OK      car:hold-cue#4             2026-10-23T03:37:04.159Z  +9.0s    said 'Still thinking.' (hold_keepalive, 16.4s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-4h.ogg
+  OK      agent:progress#1           2026-10-23T03:37:06.694Z  +2.5s    18.4s into the turn: 'I’ll locate Inbox Watcher and check its Python test files.'
+  OK      car:narrated#5             2026-10-23T03:37:09.936Z  +3.2s    spoke progress #1 -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-5.ogg (tts 2.85s voxcpm, 22.2s after dispatch)
+  OK      agent:progress#2           2026-10-23T03:37:28.169Z  +18.2s   39.9s into the turn: 'The file-search tool is unavailable, so I’ll inspect the checkout directly.'
+  OK      car:narrated#6             2026-10-23T03:37:42.773Z  +14.6s   spoke progress #2 -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-6.ogg (tts 2.71s voxcpm, 55.0s after dispatch)
+  OK      agent:progress#3           2026-10-23T03:37:59.331Z  +16.6s   71.0s into the turn: 'Inbox Watcher isn’t in the Holocene file list; I’ll check the linked project directories and count matching te'
+  OK      car:narrated#7             2026-10-23T03:38:17.084Z  +17.8s   spoke progress #3 -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-7.ogg (tts 3.96s voxcpm, 89.3s after dispatch)
+  OK      agent:invocation.done      2026-10-23T03:38:30.938Z  +13.9s   invocation.completed model automaticai/personal/sol-6.1: applied
+  OK      hermes_session             2026-10-23T03:36:47.769Z  +0.0s    agent was given exactly what the watcher sent (973 chars): '[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiti'
+  OK      car:chunk#1of1             2026-10-23T03:38:36.977Z  +109.2s  141 chars, tts 5.55s, 5.62s after the agent finished -> replies/2026/10/23/033831Z-holocene-pm-fbac52d7-e0f7-5476-bfb4-48d0f63c8277.ogg
+  OK      fact:replied               2026-10-23T03:38:58.240Z  +21.3s   128 chars, tts 5.55s (voxcpm) -> replies/2026/10/23/033831Z-holocene-pm-fbac52d7-e0f7-5476-bfb4-48d0f63c8277.ogg; QUICK ANSWER, background plan: 'Locate the Inbox Watcher repository using project registry or systemd service co'
+  OK      reply_object               2026-10-23T03:38:36.000Z  +0.0s    replies/2026/10/23/033831Z-holocene-pm-fbac52d7-e0f7-5476-bfb4-48d0f63c8277.ogg  31130 bytes
+  UNKNOWN pad_playback_log           -                                  no playback beacon line in `docker logs agent-pad-upload` (optional)
+  UNKNOWN played_on_pad              -                                  no playback report from the pad yet (replies reach it over the push channel /upload/events, with a 6 s poll behind it while that is live, else 2 s for 10 min after a send and 15 s after that; only the pad that sent the memo plays it; a parked car reports nothing) (optional)
+  OK      phone_decision             -                                  mirrored to the phone: no car claimed it within the grace window after its first audio was up (switched off, or out of reach)
+  OK      phone_text                 2026-10-23T03:38:58.000Z  +22.0s   s3://earshot/phone/2026/10/23/033831423Z-holocene-pm-fbac52d7-e0f7-5476-bfb4-48d0f63c8277.txt  132 bytes (the full reply text)
+  OK      phone_object               2026-10-23T03:38:58.000Z  +0.0s    s3://earshot/phone/2026/10/23/033831423Z-holocene-pm-fbac52d7-e0f7-5476-bfb4-48d0f63c8277.ogg  31130 bytes
+  OK      phone_detected             2026-10-23T03:38:59.004Z  +1.0s    SM-S948U app 0.1.3
+  OK      phone_started              2026-10-23T03:38:59.286Z  +0.3s    SM-S948U app 0.1.3
+  OK      phone_finished             2026-10-23T03:39:07.425Z  +8.1s    SM-S948U app 0.1.3
+  OK      followup#1:dispatched      2026-10-23T03:38:58.866Z  +0.0s    command 4b32b47a-7424-46e3-9851-708b751425db -> bloodbank.cmd.agent.invocation.start lane=batch FOLLOW-UP 1 of command 0cbd3c72-60bf-40ef-9b48-0c9281a91540: 'Locate the Inbox Watcher repository using project registry or systemd service configuratio'
+  OK      followup#1:gateway_journal 2026-10-23T03:38:58.891Z  +0.0s    lane=batch profile=holocene-pm state=started outcome=None created=2026-10-23T03:38:58.891008Z updated=2026-10-23T03:38:59.026033Z
+  OK      followup#1:agent:invocation.started 2026-10-23T03:38:58.890Z  +0.0s    producer=hermes-agent:holocene-pm
+  OK      followup#1:car:hold-cue#1  2026-10-23T03:36:28.566Z  +0.0s    said 'Thinking.' (hold_cue, 3.0s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-1h.ogg
+  OK      followup#1:car:hold-cue#2  2026-10-23T03:36:34.577Z  +6.0s    said 'Still on it.' (hold_cue2, 9.1s in, tts 0.0s phrasebank) -> progress/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277-2h.ogg
+  OK      followup#1:agent:progress#1 2026-10-23T03:40:02.502Z  +207.9s  63.4s into the turn: 'The expected service file isn’t present. I’ll check the project registry and the command runner before trying '
+  MISSING followup#1:agent:invocation.done -                                  no invocation.completed/failed for this command
+  UNKNOWN followup#1:replied         -                                  not spoken yet (watcher: cancelled) (optional)
+  OK      car_status_object          2026-10-23T03:39:24.908Z  +0.0s    status/2026/10/23/fbac52d7-e0f7-5476-bfb4-48d0f63c8277.json: stage=failed progress_seq=0 narrations=7 elapsed=180.1s error=cancelled
+  FAILED  fact:failed[cancelled]     2026-10-23T03:39:24.719Z           cancelled: cancelled at await_agent by memo:cancel after the command was published: the agent may still run, its reply is not spoken (retryable=False, attempt=1, after_dispatch=True)
+
+timing   since upload (server clock): transcribed +1.5s | routed +23.5s | first progress +42.7s | first hold cue +4.6s | first narration +45.9s | first audio up +133.0s | phone decided +154.2s
+         after the agent finished: first audio up +6.0s
+
+VERDICT  CANCELLED after dispatch; reply not spoken
+
+watcher log (40 lines, journalctl --user -u holocene-inbox-watcher.service):
+  {"ts":"2026-10-23T03:38:31.384Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"reply_text","next":"speak","ms"
+  {"ts":"2026-10-23T03:38:36.968Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"tts","ms":5545,"engine":"voxcpm
+  {"ts":"2026-10-23T03:38:36.977Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"tts","next":"mirror","ms":7,"re
+  {"ts":"2026-10-23T03:38:37.197Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"voiced","fact":"audio.memo.
+  {"ts":"2026-10-23T03:38:58.186Z","svc":"inbox-watcher","level":"info","event":"earshot_mirror_decided","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","why":"no_car_claim","waited_s":21.2,"note":"no ca
+  {"ts":"2026-10-23T03:38:58.213Z","svc":"inbox-watcher","level":"info","event":"earshot_text_mirrored","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","earshot_key":"phone/2026/10/23/033831423Z-holocene
+  {"ts":"2026-10-23T03:38:58.231Z","svc":"inbox-watcher","level":"info","event":"earshot_mirrored","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","earshot_key":"phone/2026/10/23/033831423Z-holocene-pm-f
+  {"ts":"2026-10-23T03:38:58.461Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"replied","fact":"audio.memo
+  {"ts":"2026-10-23T03:38:58.462Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"replied","next":"dispatch","ms"
+  {"ts":"2026-10-23T03:38:58.462Z","svc":"inbox-watcher","level":"info","event":"followup_started","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"dispatch","n":1,"kind":"b
+  {"ts":"2026-10-23T03:38:59.104Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"dispatched","fact":"audio.m
+  {"ts":"2026-10-23T03:38:59.104Z","svc":"inbox-watcher","level":"info","event":"stage_done","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"dispatched","next":"await_agent
+  {"ts":"2026-10-23T03:38:59.119Z","svc":"inbox-watcher","level":"info","event":"agent_waiting","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"agent","command_id":"4b32b47
+  {"ts":"2026-10-23T03:39:24.906Z","svc":"inbox-watcher","level":"info","event":"fact_published","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"failed","fact":"audio.memo.
+  {"ts":"2026-10-23T03:39:24.908Z","svc":"inbox-watcher","level":"warn","event":"memo_cancelled","memo_id":"fbac52d7-e0f7-5476-bfb4-48d0f63c8277","key":"inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg","agent":"holocene-pm","stage":"await_agent","after_dispatc
+[memo:trace] ERROR task failed

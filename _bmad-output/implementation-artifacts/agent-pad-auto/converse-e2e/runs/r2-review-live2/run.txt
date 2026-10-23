@@ -1,0 +1,8 @@
+start 23:36:21 load 10.54 18.00 59.82
+pre: pending draft none (verified memo:conv holocene-pm 23:35), so the opening 'Cancel that.' was not needed and was skipped (memo budget kept at 5 of 7)
+23:36:21 load 10.54 18.00 59.82 (gate passed: 1-min < 40; was 9.25 at 23:35:54)
+23:36:24 memo 1 "Have Holocene PM count the Python test files in the inbox watcher and report back." uploaded (memo fbac52d7), 1-min load 33.1 about 4 s later
+23:36:47 desk r1 timeout at 22.005 s -> direct/fallback (all_routes_failed), attempts 1, fresh conversation 569611a8 (turn 1). Plain interactive agent turn 0cbd3c72 + batch follow-up 4b32b47a. STOPPED (hard limit: stop on a fall-through).
+23:39:24 memo:cancel fbac52d7 issued (batch follow-up already dispatched 23:38:59; reply not spoken)
+1-min load after the run: 54.12 at 23:39 (agent turns), see out-m1.stdout.txt
+gateway executions rows 1119 -> 1121 (the two fall-through turns); 0 delegations. Memos used: 1 of 7. Opening "Cancel that." skipped (no pending draft).

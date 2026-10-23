@@ -1,0 +1,2 @@
+[memo:cancel] $ /usr/bin/python3 -B '/home/delorenj/code/33GOD/holocene/services/inbox-watcher/memo_trace.py' cancel fbac52d7
+cancel requested for fbac52d7-e0f7-5476-bfb4-48d0f63c8277 (after dispatch: the command is already out, so the agent may still run, but its reply will not be spoken); watch it with: mise run memo:trace fbac52d7-e0f7-5476-bfb4-48d0f63c8277

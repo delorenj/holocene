@@ -436,3 +436,29 @@ slow call drops a work request into the ungated agent path. Suggested follow-up 
 *propose-shaped* request retry once or answer a short "one moment" instead of dispatching to the agent; and re-run these five steps when the desk answers in under 6 s.
 
 Live config at the end: mode on, agents `*`, devices any car, handoff named, routes `r1=automaticai/auto/fast` (no override), tiles none. Emulator, hermes-gateway, watcher and proxy not touched; no product code changed.
+
+## R2 follow-ups, live proof after the headroom fix (2026-10-22 23:36-23:40 EDT; code commit 519ce7f: r1 22 s, budget 26 s, cue 3 at 16 s): **STILL NOT PROVEN LIVE**, 1 of 7 memos used, 0 delegations
+
+Load gate passed (1-min load 9.25 at 23:35:54, 10.54 at 23:36:21; it jumped to 33 within 4 s of the first memo and to 54 by 23:39). Injected memos (`runs/r2-injected/inject.py`, sim device
+e1c40830, holocene-pm); evidence in `runs/r2-review-live2/` (`run.txt`, `out-m1-pytests.json.txt`, `out-m1.stdout.txt`, `trace-m1.txt`, `watcher-log-m1.txt`, `conv-final.txt`, `journal-*.txt`, `cancel-m1.txt`).
+The opening "Cancel that." was skipped: `memo:conv holocene-pm` showed `pending draft: none` (the Node-version draft was gone), so there was nothing to drop.
+
+| memo | heard | result |
+|---|---|---|
+| m1 fbac52d7 | "Have Holocene PM count the Python test files in the Inbox Watcher and report back." | **desk r1 `timeout` at 22.005 s -> `direct`/`fallback` (`all_routes_failed`, attempts 1)**, on a FRESH conversation (569611a8, turn 1, no history): a plain interactive agent turn (command 0cbd3c72, completed 23:38:31) plus a batch follow-up (4b32b47a, dispatched 23:38:59). Stopped there (hard limit: stop on a fall-through). `memo:cancel fbac52d7` at 23:39:24: the follow-up is not spoken; the batch command was already published. Gateway journal 1119 -> 1121 (the two fall-through turns), 0 delegations. |
+
+Hold cues on m1 (upload 03:36:24.9Z): cue 1 "Thinking." at 3.0 s (PhraseBank, 0 ms render), cue 2 "Still on it." at 9.1 s (PhraseBank), **cue 3 at 16 s was DROPPED**: `hold_cue_dropped reason=too_long`
+for "Almost done." (clip 1.29 s > `HOLD_MAX_CLIP_S` 1.2 s). Silence from cue 2 to the timeout was therefore 13 s, not 7 s. Not run: "Send it.", "Cancel that.", the 25 s phone-copy wait, so the
+read-back phone copy (`phone_retry.before=delegation_readback`, `audio.memo.mirrored`), "already on its way" and the fresh `built_by` chain are still proven only by the pipeline tests.
+
+Two findings:
+
+1. **22 s did not hold.** A short ask on an empty conversation (no history, no draft) took the whole 22 s. The 12-call bench in `runs/r2-headroom/` (3 of 12 fell through, one a 22.1 s stall with no model served) already
+   said the tail is a gateway stall, not length. Host load was 10 at the call and 33 right after, so this is the stall mode, not a load-driven slow answer. 22/26 improves the odds (8 of 12 -> 3 of 12 in the bench; 1 of 1 here) but does
+   not remove the ungated path. The options still on the table: a longer timeout (32 s / budget 40 s + a fourth cue), a full timeout for the re-ask, or changing the fall-through so a work-request-shaped memo the desk could not
+   decide is held for the gate instead of becoming an agent turn. This needs the operator's choice; no code changed here.
+2. **Cue 3 line "Almost done." is too long for the cap on the live voice.** The 0.97 s measured in 519ce7f was on the default vox voice; the unit speaks `rick`, where the banked clips are "Almost there." 0.97 s and "Almost done." 1.29 s.
+   The watcher now has "Almost done." in `hold_long` (not used again until restart), so cue 3 is "Almost there." from the next memo on, but a restart brings the bad line back. Fix (not applied, no product code in this run): replace
+   "Almost done." in `HOLD_CUE3_LINES` with a line measured <= 1.1 s on rick, or remove it.
+
+Live config at the end: mode on, agents `*`, devices any car, handoff named, routes `r1=automaticai/auto/fast` (no override), tiles none, budget 26 s. Emulator, hermes-gateway, proxy and the watcher not touched; no product code changed.

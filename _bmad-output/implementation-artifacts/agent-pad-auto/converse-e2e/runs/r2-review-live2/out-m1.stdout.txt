@@ -1,0 +1,32 @@
+`/tmp/ttfa2/m1-pytests.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 19.42 KiB │ 19.42 KiB   │ 00m00s   │ 64.38 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "m1-pytests", "key": "inbox/holocene-pm/2026/10/23/20261023T033624Z.ogg", "memo_id": "fbac52d7-e0f7-5476-bfb4-48d0f63c8277", "put_at": "2026-10-23T03:36:24.858464+00:00", "synth_s": 3.0}
+{
+ "name": "m1-pytests",
+ "memo": "fbac52d7",
+ "heard": "Have Holocene PM count the Python test files in the Inbox Watcher and report back.",
+ "action": "direct",
+ "path": "fallback",
+ "model": null,
+ "lat_ms": 22005,
+ "say": "",
+ "dispatched": 2,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 7,
+  "started": 4,
+  "routed": 1,
+  "dispatched": 2,
+  "progressed": 3,
+  "completed": 2,
+  "voiced": 1,
+  "replied": 1
+ },
+ "elapsed_s": 169.7
+}
