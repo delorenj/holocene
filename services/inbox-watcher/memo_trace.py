@@ -1461,6 +1461,13 @@ def cmd_voice(args) -> int:
         return _setting_result(args, False, {**base, "ok": False, "error": f"no voice called {args.value!r}",
                                              "valid": [x["name"] for x in catalog],
                                              "message": f"refused: no voice called {args.value!r} (vox has: {names})"}, 3)
+    if v == default:
+        # "use rick voice" while rick is the default: the tile follows the default again (tiles {} for an all-default
+        # tile), the same as --clear, instead of pinning a copy of today's default
+        tile = cv.update_tile(path, args.agent, voice=None, by=args.by)
+        return _setting_result(args, True, {**base, "ok": True, "voice": default, "cleared": True, "tile": tile,
+                                            "spoken": cv.voice_spoken(v),
+                                            "message": f"{args.agent}: car voice back to the default ({default})"})
     tile = cv.update_tile(path, args.agent, voice=v, by=args.by)
     disp = next((x.get("display_name") for x in catalog if x["name"] == v), v)
     return _setting_result(args, True, {**base, "ok": True, "voice": v, "display_name": disp, "spoken": cv.voice_spoken(v),

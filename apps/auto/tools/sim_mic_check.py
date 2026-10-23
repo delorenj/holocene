@@ -169,6 +169,26 @@ def dismiss_honda_dialog():
     time.sleep(1)
 
 
+# The app runs the diagnostic probe only while the car host is unrestricted (parked): a driving car (sim_car.py drive) makes
+# it log this and never record, which used to run out the 45 s wait and print INCONCLUSIVE.
+REFUSED_LINE = "Diagnostic intent refused"
+REFUSED_TEXT = ("REFUSED: the car is driving (host restricted) and the app runs its mic probe only parked -> "
+                "python3 apps/auto/tools/sim_car.py park, run this again, then sim_car.py drive. "
+                "(A driving run's mic is proven by a memo's transcript instead.)")
+
+
+def probe_blocked(logs):
+    """Why the probe will not record, from its HoloceneProbe lines: "focus" (the guest denied audio focus), "covered"
+    (something paused the app), "refused" (host restricted: driving), or None."""
+    if "source=focus-denied" in logs:
+        return "focus"
+    if "source=pause" in logs:
+        return "covered"
+    if REFUSED_LINE in logs or ("event=diagnostic_intent" in logs and "unrestricted=false" in logs):
+        return "refused"
+    return None
+
+
 def probe_once(log=print):
     """Run the in-app mic probe; returns (mic_result or None, qemu streams sampled while it records, refused).
 
@@ -208,11 +228,8 @@ def probe_once(log=print):
         result = parse_mic_result(logs)
         if result:
             break
-        if "source=focus-denied" in logs:
-            blocked = "focus"
-            break
-        if "source=pause" in logs:
-            blocked = "covered"
+        blocked = probe_blocked(logs)
+        if blocked:
             break
     # leave the app in its normal state rather than on the probe screen
     adb("shell", "am", "force-stop", "--user", user, APP_ID)
@@ -232,7 +249,7 @@ def main(argv=None):
         return 2
     result, streams, blocked = probe_once()
     for _ in range(3):  # the car audio service may still be settling, or the Honda dialog covers the app
-        if not blocked:
+        if not blocked or blocked == "refused":
             break
         if blocked == "covered":
             print("something covers the app (Honda 'Connect the Device' dialog?); tapping Cancel and retrying...")
@@ -241,6 +258,9 @@ def main(argv=None):
             print("guest denied audio focus (still booting?); retrying in 4 s...")
             time.sleep(4)
         result, streams, blocked = probe_once()
+    if blocked == "refused" and result is None:
+        print(REFUSED_TEXT)
+        return 2  # not SILENT: nothing to recover
     problem = emulator_audio_problem()
     code, text = verdict(result, streams, host_source_muted(), problem)
     if code == 1 and streams == [] and not args.no_fix and not problem:

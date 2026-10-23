@@ -693,6 +693,13 @@ def _envelope(action: str, memo_id: str, data: dict) -> dict:
     }
 
 
+def deliberate_skip(beacon: dict) -> bool:
+    """The pad dropped a reply because the driver started a note over the fast desk's answer (beacon skipped, error
+    barged_in). That is the driver's own choice, not a failure: no audio.memo.failed (ntfy-router pages the phone for
+    every failed fact, and memo:trace would print FAILED). The car's speech fact (audio.memo.notified, halt) records it."""
+    return beacon.get("phase") == "skipped" and str(beacon.get("error") or "").strip() == "barged_in"
+
+
 def build_playback_envelope(beacon: dict, user_agent: str):
     """Bloodbank envelope for a pad playback beacon, or None when the beacon cannot be tied to a memo."""
     key = beacon.get("reply_key")
@@ -1567,6 +1574,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         log("playback", key=beacon["reply_key"], memo_id=env["correlationid"], phase=beacon["phase"], status=200,
             error=beacon.get("error"), remote=self.client_address[0], ua=ua)
+        if deliberate_skip(beacon):
+            log("playback_fact_skipped", key=beacon["reply_key"], memo_id=env["correlationid"], reason="barged_in",
+                note="the driver spoke over the reply on purpose: no audio.memo.failed (no phone push)")
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         phase = {"started": "start", "ended": "end"}.get(beacon["phase"])
         if phase and not CLAIMS.played(env["correlationid"], phase, reply_key=beacon["reply_key"]):
             log("claim_conflict", memo_id=env["correlationid"], by="car", action=phase, source="playback",

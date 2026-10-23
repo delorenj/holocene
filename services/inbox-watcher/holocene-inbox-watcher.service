@@ -70,6 +70,12 @@ Environment=MEMO_CONVERSE_CHUNK_MIN_CHARS=60
 # (deepseek-flash, deepseek-pro; mise run memo:model <agent> <alias>) and go in front of this route for that tile only.
 Environment=MEMO_CONVERSE_SCOPED_KEY_REFS=op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse
 Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/auto/fast","timeout_s":12,"temperature":1}]'
+# auto/fast serves this token glm-5.3 at effort max whatever the request says (an explicit reasoning_effort medium was
+# logged as requested xhigh, 2026-10-22), so a long-answer request can spend the whole max_tokens (700) on reasoning and
+# come back empty / cut (finish_reason length, outcome "truncated"). The last rung is then re-asked ONCE for the short
+# version when at least this much of MEMO_CONVERSE_BUDGET_S is left (0 = off); measured re-asks took 2.9-5.1 s. A larger
+# max_tokens is no fix: the cut then lands at 12-16 s, past the budget (converse-e2e/final-regression.md, "Fixes").
+Environment=MEMO_CONVERSE_REASK_MIN_S=2.5
 # The car desk's tools: the Skillex scope with the car-desk pack (car-set-voice, car-set-model), read at start-up and on change
 Environment=MEMO_CONVERSE_TOOLS_DIR=%h/.local/state/holocene-auto/car-desk-scope
 # All state is under ~/.local/state/holocene-auto/inbox-watcher/ (state.json, heartbeat.json)

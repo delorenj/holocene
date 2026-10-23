@@ -106,5 +106,19 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(M.verdict(None, [])[0], 2)
 
 
+class BlockedTests(unittest.TestCase):
+    def test_a_driving_car_refuses_the_probe(self):
+        log = ("10-22 19:00:01.1 I HoloceneProbe: event=diagnostic_intent t=1 gen=1 mic=true asr=false unrestricted=false attempt=12\n"
+               "10-22 19:00:01.2 I HoloceneProbe: Diagnostic intent refused: host restricted or unknown\n")
+        self.assertEqual(M.probe_blocked(log), "refused")
+        self.assertIn("sim_car.py park", M.REFUSED_TEXT)
+
+    def test_focus_and_cover_and_nothing(self):
+        self.assertEqual(M.probe_blocked("I HoloceneProbe: event=mic_blocked source=focus-denied"), "focus")
+        self.assertEqual(M.probe_blocked("I HoloceneProbe: event=mic_blocked source=pause"), "covered")
+        self.assertIsNone(M.probe_blocked("I HoloceneProbe: event=diagnostic_intent t=1 mic=true unrestricted=true attempt=2"))
+        self.assertIsNone(M.probe_blocked(""))
+
+
 if __name__ == "__main__":
     unittest.main()

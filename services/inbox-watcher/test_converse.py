@@ -66,6 +66,14 @@ class FakeLLM(BaseHTTPRequestHandler):
             out["model"] = "claude-haiku-4.5"
         elif mode == "empty":
             out["choices"][0]["message"]["content"] = ""
+        elif mode == "length":  # the gateway's glm-5.3 at max effort: the whole max_tokens went on reasoning
+            out["choices"][0]["message"]["content"] = ""
+            out["choices"][0]["finish_reason"] = "length"
+            out["usage"].update(completion_tokens=body.get("max_tokens"),
+                                completion_tokens_details={"reasoning_tokens": (body.get("max_tokens") or 2) - 2})
+        elif mode == "length_cut_json":
+            out["choices"][0]["message"]["content"] = '{"say": "First, the holocene-web service'
+            out["choices"][0]["finish_reason"] = "length"
         blob = raw if raw is not None else json.dumps(out).encode()
         try:
             self.send_response(status)
@@ -212,6 +220,74 @@ class Ladder(unittest.TestCase):
                 self.assertEqual(res["attempts"][0]["outcome"], {"500": "http_500", "402": "http_402", "429": "http_429",
                                                                  "badjson": "bad_json", "truncated": "bad_json",
                                                                  "empty": "empty"}[mode])
+
+    def test_a_length_cut_is_truncated_and_falls_to_the_next_rung_without_a_reask(self):
+        for mode in ("length", "length_cut_json"):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.srvs[0].default = mode
+                res = self.call()
+                self.assertEqual((res["ok"], res["route"]), (True, "r2"))
+                self.assertEqual([a["outcome"] for a in res["attempts"]], ["truncated", "ok"])
+                self.assertEqual(res["attempts"][0]["finish_reason"], "length")
+                self.assertNotIn("reask", res["attempts"][1])
+                self.assertEqual(len(self.srvs[0].calls), 1)
+
+    def single(self, budget=8.0, reask_min_s=cv.REASK_MIN_S):
+        """The live shape: one route (automaticai/auto/fast), nothing behind it but the full agent."""
+        return cv.Ladder(self.routes()[:1], self.keys, self.breaker, budget_s=budget, reask_min_s=reask_min_s,
+                         log=lambda event, level="info", **f: self.logs.append({"event": event, **f}))
+
+    def test_the_last_rung_is_reasked_once_for_the_short_version(self):
+        for first, outcome in (("length", "truncated"), ("empty", "empty"), ("badjson", "bad_json")):
+            with self.subTest(first=first):
+                self.setUp()
+                self.srvs[0].modes = [first]
+                res = self.single().call([{"role": "user", "content": "walk me through the serving path in detail"}])
+                self.assertTrue(res["ok"], res)
+                self.assertEqual(res["route"], "r1")
+                self.assertEqual([a["outcome"] for a in res["attempts"]], [outcome, "ok"])
+                self.assertTrue(res["attempts"][1]["reask"])
+                first_call, again = self.srvs[0].calls
+                self.assertEqual(again["body"]["messages"][:-1], first_call["body"]["messages"])
+                self.assertEqual(again["body"]["messages"][-1], {"role": "user", "content": cv.REASK_TEXT})
+                self.assertEqual(again["body"]["model"], first_call["body"]["model"])  # the same route, no pinned model
+                ev = [l["event"] for l in self.logs]
+                self.assertIn("converse_reask", ev)
+                if first == "length":
+                    a = res["attempts"][0]
+                    self.assertEqual((a["completion_tokens"], a["reasoning_tokens"]), (700, 698))
+                    self.assertEqual(self.breaker.recent_fails("r1"), 0)  # a length cut says nothing about the route
+                else:
+                    self.assertEqual(self.breaker.recent_fails("r1"), 0)  # the re-ask's success resets it
+
+    def test_one_reask_only_then_the_full_agent(self):
+        self.srvs[0].default = "length"
+        res = self.single().call([{"role": "user", "content": "x"}])
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["fallback_reason"], "all_routes_failed")
+        self.assertEqual([a["outcome"] for a in res["attempts"]], ["truncated", "truncated"])
+        self.assertEqual(len(self.srvs[0].calls), 2)
+
+    def test_no_reask_without_the_budget_for_one(self):
+        self.srvs[0].modes = ["length"]
+        res = self.single(budget=8.0, reask_min_s=8.5).call([{"role": "user", "content": "x"}])
+        self.assertFalse(res["ok"])
+        self.assertEqual([a["outcome"] for a in res["attempts"]], ["truncated"])
+        self.srvs[0].calls.clear()
+        self.srvs[0].modes = ["length"]
+        res = self.single(reask_min_s=0).call([{"role": "user", "content": "x"}])  # MEMO_CONVERSE_REASK_MIN_S=0: off
+        self.assertEqual(len(self.srvs[0].calls), 1)
+
+    def test_a_timeout_or_http_error_is_not_reasked(self):
+        for mode in ("500", "timeout"):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.srvs[0].sleep = 1.5
+                self.srvs[0].default = mode
+                res = self.single(budget=3.0).call([{"role": "user", "content": "x"}])
+                self.assertFalse(res["ok"])
+                self.assertEqual(len(res["attempts"]), 1)
 
     def test_a_timeout_falls_through_and_r3_answers_when_r1_and_r2_fail(self):
         self.srvs[0].default = "timeout"

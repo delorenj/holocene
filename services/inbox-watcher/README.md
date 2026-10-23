@@ -724,6 +724,17 @@ runtime override of the route set lives in the flag file (`mise run memo:convers
 `mise run memo:converse off`. The Hindsight item (`tflaecgcrdgxrh2ovgi5ysjkzq`) is no longer used anywhere in the desk,
 and a route naming it is refused (`key_retired`), so an old routes override from the evidence (`runs/s11*.json`) cannot
 bring it back.
+**Long answers and the one re-ask (2026-10-22 final-regression fix D1).** auto/fast serves this token glm-5.3 at effort
+`max` whatever the request asks (an explicit `reasoning_effort: medium` is logged by the gateway as requested `xhigh`), so
+a "walk me through it in detail" request could spend all 700 `max_tokens` on reasoning and return empty or cut JSON at
+9-11 s, and the turn fell to the full agent (first answer at 62-80 s). Two fixes, measured through `Desk.decide` with the
+unit's own route (`converse-e2e/tools/d1_bench.py`): the rules now say a long-answer request gets the short version and
+not to deliberate (6 of 6 long-answer calls answered, 4.1-8.4 s, reasoning 189-506 tokens, against 3 of 6 cut at 700 with
+the old rules); and a cut, empty or broken answer from the LAST rung (`truncated` when `finish_reason` is `length`,
+`empty`, `bad_json`) is re-asked once on the same route for the short version when `MEMO_CONVERSE_REASK_MIN_S` (2.5 s) of
+the budget is left (the re-asks took 2.9-5.1 s, 7 of 7 answered). A length cut does not count against the breaker. Each
+attempt row carries `finish_reason`, `completion_tokens` and `reasoning_tokens`; the re-ask is the attempt with
+`reask: true` and a `converse_reask` log line. A bigger `max_tokens` is no fix: the cut then lands past the 12 s timeout.
 Costs of the single route, known: the car hears nothing while the desk waits (3-7 s typical, 12 s at worst, then the
 full-agent path; spoken progress only starts 15 s into a dispatched agent turn), and three failed calls in 120 s (an `empty`
 answer counts) open r1's breaker for 60 s, so every memo in that minute goes straight to the full agent. A fresh watcher

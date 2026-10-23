@@ -630,6 +630,12 @@ class TileTurns(ConverseHarness, unittest.TestCase):
         r, = self.of_type("routed", key)
         self.assertEqual((r["tool"]["via"], r["tool"]["ok"]), ("builtin", True))
         self.assertEqual(VOX_VOICES[-1], "morgan")
+        # the default voice by name clears the tile (no pinned copy of the default)
+        key, m = self.say("Use Rick voice.")
+        self.assertEqual(self.tile().get("voice"), None)
+        r, = self.of_type("routed", key)
+        self.assertTrue(r["tool"]["ok"])
+        self.assertEqual(self.last_said, "Holocene PM is back to the default voice.")
 
     def test_an_unknown_tile_voice_falls_back_at_once_and_says_which_voice_was_used(self):
         cv.update_tile(self.flagpath, "holocene-pm", voice="ghost")
@@ -698,6 +704,12 @@ class CliVerbs(unittest.TestCase):
         rc, out = self.run_cli("model", "holocene-pm", "--clear", "--json", state=state)
         self.assertEqual((rc, out["model"], out["cleared"]), (0, None, True))
         rc, out = self.run_cli("voice", "holocene-pm", "--clear", "--json", state=state)
+        self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"], {})
+        # "use rick voice" while rick is the default: the tile is cleared (tiles {}), not pinned to a copy of the default
+        rc, out = self.run_cli("voice", "holocene-pm", "walken", "--json", state=state)
+        self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"]["holocene-pm"]["voice"], "walken")
+        rc, out = self.run_cli("voice", "holocene-pm", "Rick", "--json", state=state)
+        self.assertEqual((rc, out["ok"], out["voice"], out["cleared"]), (0, True, "rick", True))
         self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"], {})
 
 

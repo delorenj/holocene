@@ -133,6 +133,13 @@ class PlaybackBeacon(unittest.TestCase):
         self.assertIsNone(up.build_playback_envelope({"reply_key": "replies/x.ogg", "phase": "started"}, "ua"))
         self.assertIsNone(up.build_playback_envelope({"reply_key": REPLY, "phase": "dancing"}, "ua"))
 
+    def test_a_barge_in_is_the_drivers_choice_not_a_failure(self):
+        # the pad drops the fast desk's answer the driver spoke over: no audio.memo.failed (it pages the phone)
+        self.assertTrue(up.deliberate_skip({"reply_key": REPLY, "phase": "skipped", "error": "barged_in"}))
+        for beacon in ({"phase": "skipped", "error": "stale: rendered 12 min before the pad saw it"}, {"phase": "skipped"},
+                       {"phase": "error", "error": "barged_in"}, {"phase": "blocked"}):
+            self.assertFalse(up.deliberate_skip({"reply_key": REPLY, **beacon}), beacon)
+
     def test_envelopes_pass_the_bloodbank_contract(self):
         if not BB_HOOKS.is_dir():
             self.skipTest("bloodbank repo not available")

@@ -1594,7 +1594,11 @@ function App() {
           return
         }
         if (!b64) {
+          setPhase('error')
           setStatus('no audio captured')
+          // The car already said "Got it" at the stop: it must also say the note was lost. 'silent' is the answer to that
+          // "stopped" ("Nothing heard, not sent." with the ERROR tone), the same as a held-back silent note.
+          emitHost({ t: 'silent', id: agent.id, name: agent.name })
           clientEvent({ event: 'record_failed', key, error: 'native recorder returned no audio', code: 'empty_capture', duration_ms: ms, retryable: false, capture: normCapture(cap, 'native') })
           return
         }

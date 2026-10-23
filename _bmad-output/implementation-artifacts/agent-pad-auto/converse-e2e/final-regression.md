@@ -38,7 +38,7 @@ All in seconds after stop. `desk` = the fast route's call, ms. Raw: [`runs/final
 | r1-04 | c7ba14fd | What does a fast-ass do compared to the full agent? | direct / force_direct | - | 70.50 | 71.11 | 71.63 | "Still thinking." +10.3, "Still on it." +19.4 |
 | r1-05 | 3a970507 | Does Holocene publish domain events, or does it only collect them? | reply / fast / glm-5.3 | 2953 | 7.29 | 7.63 | 8.04 | none |
 | r1-06 | 67e62dbe | What is the production first rule for Holocene? | reply / fast / glm-5.3 | 2802 | 7.49 | 7.87 | 8.27 | none |
-| r3-a | fdbc2311 | Walk me through the Holocene serving path and the change workflow step by step | direct / fallback `all_routes_failed` (outcome `empty`) | 9871 | 79.99 | 80.84 | 80.02 | 5 uploaded (desk cues +5.1, +11.1, keep-alives to +38.0), 4 played |
+| r3-a | fdbc2311 | Walk me through the Holocene serving path and the change workflow step by step | direct / fallback `all_routes_failed` (outcome `empty`) | 9871 | 79.99 | 80.84 | 80.02\* | 5 uploaded (desk cues +5.1, +11.1, keep-alives to +38.0), 5 played\* |
 | r3-b | df7ab335 | What is the operating model of Holocene? | reply / fast / glm-5.3 | 2999 | 37.22 | 37.48 | 37.95 | dropped `answer_ready` (+5.8) |
 | r3a-a | baa574e1 | Explain in detail, in a few sentences, what the Fast Desk does ... | direct / fallback `all_routes_failed` (outcome `bad_json`) | 11190 | 62.23 | 63.32 | 64.21 | 4 uploaded, 4 played |
 | r3a-b | 09c921f4 | What was the first agent you listed earlier? | reply / fast / glm-5.3 | 3626 | 32.77 | 32.90 | 33.36 | "Thinking." +5.3, queued behind a reply, dropped `memo_final`, never played |
@@ -50,10 +50,16 @@ All in seconds after stop. `desk` = the fast route's call, ms. Raw: [`runs/final
 | r5-d | 7f65678d | Use Rick Voice. | tool `car_set_voice` (setting_phrase) | tool 571 | 3.12 | 3.27 | 3.65 | none |
 
 Plus two recordings that are not memos of interest: the first `r1-03` attempt (56 s capture that came back `empty_capture`, D2) and the
-silent 112 s recording it triggered (`38d910f1`, `empty_transcript`, FAILED@transcribe, nothing spoken). 18 recorded memos in all.
+silent recording it triggered (`38d910f1`, 101.4 s of audio, `silent_audio`, FAILED@transcribe, nothing spoken\*). 18 recorded memos in all.
 
-Reading the latency column: logcat `start reply` and the pad's beacon agree within 0.1-0.7 s (the beacon trails by the push/HTTP
-round trip); audible trails `start reply` by 0.4-0.5 s. Fast-desk answers that were not queued behind anything (r1-01, r1-02, r1-05,
+\* Corrected after the blind review: r3-a's `audible 80.02` is the `ack:sent` tail sounding 117 ms into the reply (overlap check 6
+info), not the reply; r3-a played all 5 of its hold cues (the analyzer cut `progress_started` at 4); `38d910f1` failed `silent_audio`
+over 101.4 s, not `empty_transcript` over 112 s. r4-a's answer itself had a content slip: it said "still twenty-nine" agents but
+its list added up to 32 ("...and about nineteen more").
+
+Reading the latency column: logcat `start reply` and the pad's beacon agree within 0.1-1.5 s (the beacon trails by the push/HTTP
+round trip; r1-02 1.47 s); audible trails `start reply` by 0.5-2.0 s (r1-01 1.85, r1-02 1.93, r3b-b 1.36; corrected after review,
+the first draft said 0.1-0.7 and 0.4-0.5). Fast-desk answers that were not queued behind anything (r1-01, r1-02, r1-05,
 r1-06, r3b-a, r3b-b, r5-c; n=7): stop -> `start reply` 6.8 / 7.3 / 7.5 / 9.4 / 11.7 / 12.4 / 12.9 s (p50 9.4, max 12.9); stop ->
 beacon p50 10.0 / max 14.2; stop -> audible p50 10.4 / max 14.8. The sub-3 s desk calls land at 7-8 s audible, the 6-7 s desk calls at
 13.5-13.6 s. r1-01 is the slow outlier of the set (host load 52-64, `stop -> upload` 6.3 s against 1.2-2.4 s for the rest). Voice
@@ -126,16 +132,21 @@ So: zero true overlaps; one 24 ms flag at 60 ms tolerance, none at 100 ms.
 agent.** r3-a ("Walk me through the Holocene serving path and the change workflow, step by step, in some detail"): one attempt, 9 871 ms,
 HTTP 200 served by glm-5.3, outcome `empty` -> `all_routes_failed`. r3a-a ("Explain in detail, in a few sentences, what the Fast Desk
 does, how drafts work, and how sending to an agent works. Take your time."): one attempt, 11 190 ms, HTTP 200, outcome `bad_json`.
-That second prompt is the s10-a prompt that took **1.1 s and 258 chars** earlier today (`runs/turns.jsonl`, s10-a), so it is not
-the wording alone: the long generation either hit an output cap or ran out the 14 s budget with truncated JSON. A single attempt is
+~~That second prompt is the s10-a prompt that took 1.1 s and 258 chars earlier today~~ (invalid comparison: s10-a ran on
+`automaticai/mistral-allowance/ministral-14b` via the old ladder's r3m, not glm-5.3). **Cause (found in review, confirmed by the
+gateway token log): both calls stopped at exactly 700 completion tokens, the watcher's own default `max_tokens`, with ~698 of
+them reasoning; auto/fast serves this token glm-5.3 at rung 3 / tier strong / effort xhigh -> effective `max`.** Not a gateway
+output cap and not the 14 s budget. Fixed below ("Fixes"). A single attempt is
 made (`attempts:1`); there is no retry inside the budget. Cost: a card-answerable conversational question became a full agent turn,
 first answer at 62-80 s instead of 8-13 s, plus 4-5 hold/keep-alive cues. Suspects: `services/inbox-watcher/converse.py` (budget
 and retry on `empty`/`bad_json`, the reply-length instruction) and the gateway route's output cap. Evidence: `runs/final/turns.jsonl`
 (`attempt_log`), `runs/final/out/out-r3.txt`, `out-r3a.txt`.
 
 **D2 (minor, load-related): a lost stop tap, then a 56 s capture with audible levels returned `empty_capture`.** `r1-03` (first
-attempt): the stop tap 3 s after the utterance did not register (no `mic=idle` for 51 s; 1 158 `AudioRecord reported overrun`
-warnings in that logcat, host load ~50). The next tap stopped it and the pad reported `record_failed code:"empty_capture" error:"native
+attempt): the stop tap 1 s after the utterance (paplay ended 282.85, tap 283.85; the first draft said 3 s) left the app at
+`mic=recording` for 51 s, but the OS capture ended 0.45 s after the tap (284.296): the native MediaRecorder most likely stopped or
+died without the app noticing (no `OnErrorListener`), and `stop()` on it threw and handed back nothing (review finding; the
+"1 158 overrun warnings" of the first draft are not in the committed logcat, 0 lines). The next tap stopped it and the pad reported `record_failed code:"empty_capture" error:"native
 recorder returned no audio" duration_ms:55990 peak_dbfs:-3.5 rms_dbfs:-21.1`: the capture had signal but the native recorder handed
 back no audio. The car said nothing about the failure (only `ack:stopped`), so a driver would believe the note was sent. Evidence:
 `runs/final/record_failed.jsonl`. I cannot tell a lost stop tap from an `adb input tap` dropped under host load, so only the second

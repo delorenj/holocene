@@ -586,6 +586,16 @@ def parse_decision(text: str) -> dict:
 
 # ---------------------------------------------------------------- the ladder
 
+# The one re-ask of the last rung: what came back was unusable (a length cut: the max_tokens went on reasoning; or empty /
+# broken JSON). The gateway's auto/fast router sets the effort itself (glm-5.3 at max for this token, whatever the request
+# says), so a long-answer request can spend the whole max_tokens thinking. The re-ask asks for the short version.
+REASK_OUTCOMES = ("truncated", "empty", "bad_json")
+REASK_MIN_S = 2.5
+REASK_TEXT = ("[DESK] Your last answer ran out of room before the JSON object was complete. Answer again now, briefly and "
+              "without deliberating: the JSON object only, with a \"say\" of at most 30 words. If the driver asked for a "
+              "long or detailed explanation, say the short version in one or two sentences.")
+
+
 def _domain(r: dict) -> str:
     """Where a timeout is blamed: the host for a bare model name (Hyper), the upstream channel behind a gateway
     (`automaticai/<channel>/<model>`): ministral timing out says nothing about gemini on the same gateway."""
@@ -601,10 +611,13 @@ class Ladder:
     `model` in the answer throws it away (never-Anthropic). Never raises for an LLM reason."""
 
     def __init__(self, routes: list[dict], keys: KeyCache, breaker: Breaker, http_: Http | None = None,
-                 budget_s: float = 8.0, clock=time.monotonic, log=None, gate=None, served_ok=None):
+                 budget_s: float = 8.0, clock=time.monotonic, log=None, gate=None, served_ok=None,
+                 reask_min_s: float = REASK_MIN_S):
         self.routes, self.keys, self.breaker = routes, keys, breaker
         self.http = http_ or Http()
         self.budget_s, self.clock, self.log = budget_s, clock, log or _log_default
+        # the one re-ask of the last rung (truncated / empty / bad JSON) is made only with at least this much budget left
+        self.reask_min_s = reask_min_s
         # gate(route) -> None (use it) or the outcome it is skipped with (a scoped auto rung without a fresh scope proof)
         self.gate = gate
         # served_ok(route, served) -> bool: the route a router rung's answer names is inside its token's proven scope
@@ -618,6 +631,7 @@ class Ladder:
             return {"ok": False, "attempts": attempts, "fallback_reason": "no_routes", "latency_ms": 0}
         reason = "all_routes_failed"
         weak = None
+        reasked = False
         for r in self.routes:
             left = self.budget_s - (self.clock() - t0)
             if left < 0.3:
@@ -640,6 +654,20 @@ class Ladder:
                 continue
             res = self._one(r, key, messages, min(r["timeout_s"], left))
             attempts.append(res["attempt"])
+            if (res.get("decision") is None and res["attempt"]["outcome"] in REASK_OUTCOMES and not reasked
+                    and r is self.routes[-1] and self.reask_min_s > 0):
+                # the last rung answered but nothing usable came back (a length cut: max_tokens spent on reasoning, or
+                # empty / broken JSON): ask the same route once more for the short version, inside what is left of the
+                # budget, before the turn falls through to the full agent (60-80 s later)
+                left = self.budget_s - (self.clock() - t0)
+                if left >= self.reask_min_s:
+                    reasked = True
+                    self._failed(r, res, dead_hosts, breaker=res["attempt"]["outcome"] != "truncated")
+                    self.log("converse_reask", route=r["id"], model=r["model"], after=res["attempt"]["outcome"],
+                             left_ms=int(left * 1000))
+                    res = self._one(r, key, messages + [{"role": "user", "content": REASK_TEXT}], min(r["timeout_s"], left))
+                    res["attempt"]["reask"] = True
+                    attempts.append(res["attempt"])
             if res.get("decision") is not None and incomplete_propose(res["decision"]) and r is not self.routes[-1]:
                 # a small model that proposes with no title and no brief: ask the next rung, keep this one as the last resort
                 res["attempt"]["outcome"] = "incomplete_propose"
@@ -652,17 +680,7 @@ class Ladder:
                         "requested_model": r["model"], "served_route": res.get("served_route"), "attempts": attempts,
                         "usage": res.get("usage"), "cached_tokens": res.get("cached_tokens"),
                         "latency_ms": int((self.clock() - t0) * 1000), "fallback_reason": None}
-            opened = self.breaker.fail(r["id"])
-            if res["attempt"].get("http_status") == 402:
-                self.breaker.trip(r["id"], BILLING_OPEN_S)
-                opened = True
-            self.log("converse_attempt_failed", "warn", route=r["id"], model=r["model"], outcome=res["attempt"]["outcome"],
-                     ms=res["attempt"]["ms"], http_status=res["attempt"].get("http_status"),
-                     breaker_opened=opened or None)
-            if res["attempt"]["outcome"].startswith("connect"):
-                dead_hosts.add(r["host"])  # nothing answers there
-            elif res["attempt"]["outcome"] == "timeout":
-                dead_hosts.add(_domain(r))  # that upstream is slow; another channel behind the same gateway may not be
+            self._failed(r, res, dead_hosts, breaker=res["attempt"]["outcome"] != "truncated")
         if weak is not None:  # no rung did better than the incomplete proposal: the guard builds the brief from the driver's words
             r, res = weak
             return {"ok": True, "decision": res["decision"], "model": res["model"], "route": r["id"], "requested_model": r["model"],
@@ -672,6 +690,23 @@ class Ladder:
         if attempts and all(a["outcome"] == "key_unreadable" for a in attempts):
             reason = "key_unreadable"
         return {"ok": False, "attempts": attempts, "fallback_reason": reason, "latency_ms": int((self.clock() - t0) * 1000)}
+
+    def _failed(self, r: dict, res: dict, dead_hosts: set, breaker: bool = True) -> None:
+        """One failed attempt: the breaker (a length cut is the request's size, not the route's health: not counted),
+        the log line, and the hosts / channels the rest of this call skips."""
+        a = res["attempt"]
+        opened = self.breaker.fail(r["id"]) if breaker else False
+        if a.get("http_status") == 402:
+            self.breaker.trip(r["id"], BILLING_OPEN_S)
+            opened = True
+        self.log("converse_attempt_failed", "warn", route=r["id"], model=r["model"], outcome=a["outcome"],
+                 ms=a["ms"], http_status=a.get("http_status"), finish_reason=a.get("finish_reason"),
+                 completion_tokens=a.get("completion_tokens"), reasoning_tokens=a.get("reasoning_tokens"),
+                 reask=a.get("reask"), breaker_opened=opened or None)
+        if a["outcome"].startswith("connect"):
+            dead_hosts.add(r["host"])  # nothing answers there
+        elif a["outcome"] == "timeout":
+            dead_hosts.add(_domain(r))  # that upstream is slow; another channel behind the same gateway may not be
 
     def _one(self, r: dict, key: str, messages: list[dict], timeout: float) -> dict:
         body = {"model": r["model"], "messages": messages, "response_format": {"type": "json_object"},
@@ -726,13 +761,26 @@ class Ladder:
             content = data["choices"][0]["message"].get("content") or ""
         except (KeyError, IndexError, TypeError, AttributeError):
             content = ""
+        try:
+            finish = data["choices"][0].get("finish_reason")
+        except (KeyError, IndexError, TypeError, AttributeError):
+            finish = None
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+        if isinstance(finish, str) and finish:
+            att["finish_reason"] = finish[:40]
+        if usage and isinstance(usage.get("completion_tokens"), (int, float)):
+            att["completion_tokens"] = int(usage["completion_tokens"])
+            det = usage.get("completion_tokens_details")
+            if isinstance(det, dict) and isinstance(det.get("reasoning_tokens"), (int, float)):
+                att["reasoning_tokens"] = int(det["reasoning_tokens"])
+        # a length cut (max_tokens spent, mostly on reasoning) is "truncated", not a bad model answer: the ladder re-asks
+        cut = finish == "length"
         if not content.strip():
-            return {"attempt": {**att, "outcome": "empty", "answered_model": model, "http_status": status}}
+            return {"attempt": {**att, "outcome": "truncated" if cut else "empty", "answered_model": model, "http_status": status}}
         try:
             decision = parse_decision(content)
         except BadDecision:
-            return {"attempt": {**att, "outcome": "bad_json", "answered_model": model, "http_status": status}}
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+            return {"attempt": {**att, "outcome": "truncated" if cut else "bad_json", "answered_model": model, "http_status": status}}
         cached = None
         if usage:
             det = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
@@ -1579,6 +1627,7 @@ SYSTEM_RULES = """You are the fast conversation desk in the driver's car, answer
 
 RULES
 - Answer in one to three short spoken sentences (at most about 45 words). No markdown, lists, URLs or code.
+- A request for a long or detailed answer ("walk me through", "step by step", "in detail") still gets the short version in at most 45 words: the car cannot read out more. Decide quickly; do not deliberate at length.
 - Only state facts that are in the AGENT CARD, the DESK STATE or this conversation. You have no live data, and no tools except the desk's own settings listed under TOOLS (when there is such a section). When the driver asks about live state the card does not cover (the board, a ticket's status, a build, logs, files, anything that needs fresh data), set action "direct" so the full agent answers.
 - You never do work yourself. When the driver asks for work (investigate, check, fix, write, run, report back), set action "propose" with a self-contained brief: a title of at most eight words, the goal, the context the agent needs (it never sees this conversation) and when it is done. The desk reads the draft back; it is sent only when the driver confirms aloud.
 - Never say you sent, started or did anything.
@@ -2058,6 +2107,7 @@ class Desk:
         self.http = http_ or Http()
         self.cards = cards or CardCache()
         self.budget_s = _env_float(env, "MEMO_CONVERSE_BUDGET_S", 8.0)
+        self.reask_min_s = _env_float(env, "MEMO_CONVERSE_REASK_MIN_S", REASK_MIN_S)
         self.idle_s = _env_float(env, "MEMO_CONVERSE_IDLE_S", 900.0)
         self.draft_ttl_s = _env_float(env, "MEMO_CONVERSE_DRAFT_TTL_S", 600.0)
         self.dedupe_s = _env_float(env, "MEMO_CONVERSE_DEDUPE_S", 1800.0)
@@ -2325,7 +2375,7 @@ class Desk:
     def ladder(self, s: dict, agent: str | None = None) -> Ladder:
         routes, info = self.routes_for(s, agent) if agent else (s["routes"], {})
         return Ladder(routes, self.keys, self.breaker, self.http, info.get("budget_s") or self.budget_s, log=self.log,
-                      gate=self.scope_gate, served_ok=self.served_in_scope)
+                      gate=self.scope_gate, served_ok=self.served_in_scope, reask_min_s=self.reask_min_s)
 
     def decide(self, s: dict, *, agent: str, name: str, transcript: str, sess: dict | None, card: dict, board: str = "",
                recent: str = "", now: float | None = None) -> dict:
@@ -2402,8 +2452,10 @@ class Desk:
                 v = resolve_voice(args["voice"], self.voices.get())
                 if v is None:
                     return {"ok": False, "exit": 3, "out": None, "error": f"no voice called {args['voice']!r}", "ms": 0}
-                tile = update_tile(path, agent, voice=None if v == "default" else v, by=by)
-                out = {"ok": True, "agent": agent, "voice": tile.get("voice"), "cleared": v == "default"}
+                # the watcher's default voice by name ("use rick voice") clears the tile, like "default voice"
+                clear = v in ("default", str(self.env.get("MEMO_VOX_VOICE") or "rick"))
+                tile = update_tile(path, agent, voice=None if clear else v, by=by)
+                out = {"ok": True, "agent": agent, "voice": tile.get("voice"), "cleared": clear}
             else:
                 a = resolve_alias(args["model"], self.aliases())
                 if a is None:
