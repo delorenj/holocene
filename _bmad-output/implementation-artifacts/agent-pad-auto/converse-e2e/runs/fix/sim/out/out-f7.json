@@ -1,0 +1,182 @@
+{
+ "name": "f7-long",
+ "text": "Walk me through the Holocene serving path and the change workflow, step by step, in some detail.",
+ "offset_s": -0.043260812759399414,
+ "start_pressed": 1792715258.4070203,
+ "mic_recording_seen": 1792715266.0959437,
+ "paplay": [
+  1792715266.4963367,
+  1792715274.4883926,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792715275.4918745,
+ "mic_idle_seen": 1792715277.2549448,
+ "memo_id": "f3e3e305-ce35-5da1-b64b-3a34014a7222",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002739Z.ogg",
+ "discovered": 1792715278.406,
+ "first_kind": "reply",
+ "first_start": 1792715296.7732608,
+ "first_audible": null,
+ "stop_to_first_start_s": 21.28,
+ "stop_to_upload_discover_s": 2.91,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 7785,
+   "cached_tokens": 3392,
+   "conv_turn": 7,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "The path: the holocene-web container in the 33god-platform compose file serves holocene.delo.sh through Traefik; the API is the holocene-api systemd service on port 4000. Workflow: smallest scoped change, run the repo checks, deploy to production, verify it's served.",
+   "say_chars": 267,
+   "lexicon": false,
+   "card_age_s": 8.8,
+   "decide_ms": 7807,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 7785,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 535,
+    "completion_tokens": 606
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "c7c679a2",
+     "path": "fast",
+     "turn": 7,
+     "action": "reply",
+     "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 4,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   11.69,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   11.71,
+   "start",
+   "progress",
+   "waited_ms=25"
+  ],
+  [
+   19.94,
+   "halt",
+   "progress",
+   "memo_final"
+  ],
+  [
+   21.28,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   21.28,
+   "start",
+   "reply",
+   "waited_ms=0"
+  ],
+  [
+   21.28,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   22.49,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   24.53,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   26.96,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   27.66,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   34.43,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   45.85,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   53.61,
+   "end",
+   "reply",
+   "chunks=4"
+  ]
+ ]
+}

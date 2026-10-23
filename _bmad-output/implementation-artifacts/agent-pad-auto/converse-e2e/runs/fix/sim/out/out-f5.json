@@ -1,0 +1,170 @@
+{
+ "name": "f5-work",
+ "text": "Please have the PM count the unit tests in the inbox watcher and report back.",
+ "offset_s": -0.15912556648254395,
+ "start_pressed": 1792715069.2829025,
+ "mic_recording_seen": 1792715075.71193,
+ "paplay": [
+  1792715076.117388,
+  1792715083.134038,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792715084.1346574,
+ "mic_idle_seen": 1792715086.852132,
+ "memo_id": "3fb68ef8-f3f6-5dab-89ea-6ee46d3cada2",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002430Z.ogg",
+ "discovered": 1792715088.465,
+ "first_kind": "reply",
+ "first_start": 1792715103.0121255,
+ "first_audible": null,
+ "stop_to_first_start_s": 18.88,
+ "stop_to_upload_discover_s": 4.33,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 9304,
+   "cached_tokens": 3264,
+   "conv_turn": 5,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Did you mean: have the PM run the tests in the inbox-watcher and report back?",
+   "say_chars": 77,
+   "lexicon": false,
+   "card_age_s": 10.1,
+   "decide_ms": 9325,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 9304,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 637,
+    "completion_tokens": 666
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "c7c679a2",
+     "path": "fast",
+     "turn": 5,
+     "action": "reply",
+     "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 1,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   8.6,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   8.61,
+   "start",
+   "progress",
+   "waited_ms=0"
+  ],
+  [
+   12.48,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   14.72,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   14.72,
+   "start",
+   "progress",
+   "waited_ms=1"
+  ],
+  [
+   15.32,
+   "halt",
+   "progress",
+   "memo_final"
+  ],
+  [
+   18.79,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   18.88,
+   "start",
+   "reply",
+   "waited_ms=101"
+  ],
+  [
+   19.29,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   20.28,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   20.3,
+   "start",
+   "reply",
+   "waited_ms=20"
+  ]
+ ]
+}

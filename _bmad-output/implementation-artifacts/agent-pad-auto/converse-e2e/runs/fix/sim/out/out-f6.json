@@ -1,0 +1,192 @@
+{
+ "name": "f6-yes",
+ "text": "Yes, that's right.",
+ "offset_s": -0.17989730834960938,
+ "start_pressed": 1792715145.703627,
+ "mic_recording_seen": 1792715155.4975915,
+ "paplay": [
+  1792715155.8976803,
+  1792715160.1989973,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792715161.1991472,
+ "mic_idle_seen": 1792715164.692694,
+ "memo_id": "7a0dc108-4426-52fb-a495-ab07e00b278e",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002546Z.ogg",
+ "discovered": 1792715166.535,
+ "first_kind": "echo",
+ "first_start": 1792715177.1948974,
+ "first_audible": null,
+ "stop_to_first_start_s": 16.0,
+ "stop_to_upload_discover_s": 5.34,
+ "facts": {
+  "routed": {
+   "action": "direct",
+   "decided_action": "direct",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 6419,
+   "cached_tokens": 3328,
+   "conv_turn": 6,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": null,
+   "say_chars": null,
+   "lexicon": false,
+   "card_age_s": 7.4,
+   "decide_ms": 6441,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 6419,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 307,
+    "completion_tokens": 361
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "ee7f6a01-0cc4-4363-b17d-9091774db0a8",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.progressed",
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   10.17,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   10.18,
+   "start",
+   "progress",
+   "waited_ms=7"
+  ],
+  [
+   14.82,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   15.99,
+   "queued",
+   "echo",
+   ""
+  ],
+  [
+   16.0,
+   "start",
+   "echo",
+   "waited_ms=7"
+  ],
+  [
+   25.84,
+   "queued",
+   "progress",
+   "behind_echo"
+  ],
+  [
+   27.03,
+   "end",
+   "echo",
+   ""
+  ],
+  [
+   27.03,
+   "start",
+   "progress",
+   "waited_ms=1185"
+  ],
+  [
+   31.23,
+   "queued",
+   "progress",
+   "behind_progress"
+  ],
+  [
+   32.12,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   32.13,
+   "start",
+   "progress",
+   "waited_ms=899"
+  ],
+  [
+   36.51,
+   "end",
+   "progress",
+   ""
+  ],
+  [
+   37.44,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   37.45,
+   "start",
+   "progress",
+   "waited_ms=4"
+  ],
+  [
+   44.65,
+   "end",
+   "progress",
+   ""
+  ]
+ ]
+}

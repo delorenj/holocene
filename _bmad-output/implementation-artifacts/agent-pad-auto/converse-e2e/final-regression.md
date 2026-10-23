@@ -4,7 +4,7 @@ Date: 2026-10-22, 18:59-19:25 EDT (22:59-23:25 UTC), 26 minutes wall clock. Live
 route `automaticai/auto/fast` (glm-5.3 served), hold cue 3 s / 9 s, PhraseBank, wake hint. Emulator `emulator-5554` only. No code was
 changed except the test harness. hermes-gateway, watcher and agent-pad-upload were not restarted.
 
-**Verdict: partial.** R3, R4, R5 pass; R1 passes on latency and cue behaviour but exposed a real defect (long-answer questions fall
+**Verdict: partial** (see "Fixes and re-run" for the follow-up pass: D1, D4, the barge-in push, D3 fixed; R6 PASS; R2 still not run). R3, R4, R5 pass; R1 passes on latency and cue behaviour but exposed a real defect (long-answer questions fall
 through to the full agent); **R2 (delegation exactly-once) and R6 (kill switch) were NOT RUN** because the full-agent budget was spent
 before them (see "Limits, said plainly"). The speaker tap ran, so `speech_overlap.py` ran all 6 checks.
 
@@ -165,6 +165,67 @@ cases the new note's reply had its TTS ready (`stage tts` done at +16.4 / +11.7 
 and the reply played 37.2 / 32.8 / 25.1 s after stop (r3-b, r3a-b, r4-b). That looks like the per-conversation order (the older memo's
 reply or keep-alive plays first, and `r4-a`'s reply is 20 s long), which is by design, but it means a voice command spoken just
 after a slow question is confirmed 25 s later.
+
+## Fixes and re-run (2026-10-22, 20:00-20:35 EDT; commit `e98d65d`)
+
+The blind review's findings, each with what was done. Code: watcher (`converse.py`, `memo_trace.py`, unit), upload proxy, agent
+pad, `sim_mic_check.py`. No Kotlin (those items are listed for v14). Tests: watcher 439 OK, proxy 114 OK, pad tsc + 75 tests +
+vite build OK, mic-check 14 OK. Deployed at idle: watcher restarted 20:17:18 EDT (daemon-reload; `MEMO_CONVERSE_REASK_MIN_S=2.5`
+in the unit), `agent-pad-upload` recreated 20:17, pad bundle `index-CSkfGx9F.js` served at agent-pad.delo.sh (live bind mount).
+hermes-gateway not touched.
+
+| finding | verdict | what changed / why not |
+|---|---|---|
+| D1 (major) long answers fall to the full agent | **fixed** | Cause confirmed (review): 700 completion tokens = the watcher's default `max_tokens`, ~698 of them reasoning; auto/fast serves this token glm-5.3 at effort `max`. The review's proposed fix does **not** work, measured: an explicit `reasoning_effort: medium` is logged by the gateway as requested `xhigh` / effective `max` (auto overrides it), and `max_tokens` 1200 only moves the failure to a 12 s timeout or a cut at 1200 (3 of 12 failed, [`runs/fix/d1-bench/2-*`](runs/fix/d1-bench/)). What works, measured through the watcher's own `Desk.decide` on the live route ([`tools/d1_bench.py`](tools/d1_bench.py)): (1) a rule that a long/detailed request gets the short version and no long deliberation: 6 of 6 long-answer calls answered, 4.1-8.4 s, reasoning 189-506 tokens, against 3 of 6 cut at 700 with the old rules; (2) one bounded re-ask of the last rung on the same route (no pinned model) when the answer is `truncated` (`finish_reason` length) / `empty` / `bad_json` and at least 2.5 s of the 14 s budget is left: 7 of 7 re-asks answered in 2.9-5.1 s (total 7.9-14.0 s). A length cut no longer counts against the breaker; attempts now log `finish_reason`, `completion_tokens`, `reasoning_tokens`, `reask`. |
+| Barge-in pages the phone (review, major) | **fixed** | The proxy no longer turns the pad's `skipped`/`barged_in` beacon into `audio.memo.failed` (it logs `playback_fact_skipped`); the car's `notified` halt fact records the halt. ntfy-router (bloodbank) left as is: nothing reaches it now. |
+| D2 empty capture said nothing | **fixed (pad part)**; root cause **left for v14** | Pad: the `!b64` branch now emits host `silent` ("Nothing heard, not sent.", ERROR tone; it answers the open `stopped` note) and leaves the recording phase. The review's cause (MediaRecorder died without an `OnErrorListener`, `stop()` threw) is Kotlin (`NativeRecorder.kt`): v14. A watcher failure after the SENT tone (`stage=failed`, e.g. `silent_audio`) is still not spoken: the existing host events either lie ("can't be reached") or consume the next note's token (`noteAnswered`), so it needs a new host event: v14. |
+| D3 mic-check INCONCLUSIVE | **fixed, verified** | A probe the app refuses while driving now prints `REFUSED ... sim_car.py park` at once. Live 20:32: `REFUSED: the car is driving (host restricted) ...` (was INCONCLUSIVE after 45 s). |
+| D4 "use rick voice" pins the default | **fixed** | `memo:voice` (the skill's verb) and the built-in tool clear the tile when the resolved voice is the watcher's default. |
+| O1 reply held 25-37 s behind an older reply | **left** (decision) | The review is right that it is the pad's reply queue (sorted by reply key), not the watcher. Whether a voice-command confirmation may jump an older memo's reply is a product decision; not changed. |
+| ACK lost to `focus_denied` (3 of 16) | **left: Kotlin, v14** | `SpeechArbiter.kt` retries focus only for ECHO; add one retry for ACK and capture `HoloceneWheel`. Seen again in the re-run (f2-b's hold cue and first reply attempt ended `error:focus_denied`; the reply was re-queued and played). |
+| Dead air between reply chunks | **left: Kotlin, v14** | `ReplyPlayer.kt` prepares each chunk only when the previous ends; prepare ahead + `setNextMediaPlayer`. Seen again (f7: 6.8 s and 11.4 s between `chunk next` lines at load 91). |
+| Factual slips (7) | **fixed** | Corrected in place above (marked \*). |
+| hermes title generator 400 (effort below medium) | **left** | Outside Holocene (hermes-gateway profile); no gateway restart allowed in this pass. |
+
+### Re-run on the sim (8 memos, 20:18:20-20:31 EDT, `runs/fix/sim/`)
+
+Host load **88-100** for the whole re-run (other agents' builds), against 18-55 in the run above; 6 of 8 transcripts were
+garbled ("Use Morgan voice." -> "Boots.", "Use Rick voice." -> "Use your voice!", "...count how many test files..." -> "test
+boxers", "Please have the PM count the unit tests..." -> "Flip, PM, pump the S in the inbox, walk back."). The first memo had no
+lead-in (`LEAD_IN_S` unset; 1.76 s of audio); the rest used 2.5 s.
+
+| id | memo | heard | result |
+|---|---|---|---|
+| f1 | f2ec92d9 | "Boots." | fast clarifying question (wasted; no lead-in) |
+| f2-a | 0903722e | the Holocene one-sentence question | fast reply in **morgan** (tile set with `memo:voice` first), desk 2.9 s, reply started +9.5 s; **halted** at +12.69 s by f2-b's recording (+12.43 s), **not replayed** |
+| f2-b | 78866e3f | "Use your voice!" | tool `car_set_voice` (model, args `default`) -> "Holocene PM is back to the default voice.", flag file `tiles {}` |
+| f3 | 588732fc | "...test boxers..." | fast clarifying question |
+| f4 | a02c6f9f | (kill switch off) | **old path**: no converse stage, **no routed fact**, interactive dispatch, agent 25 s, COMPLETE 30 s |
+| f5 | 3fb68ef8 | "Flip, PM, pump the S..." | (switch back on) **routed**, path fast, clarifying question |
+| f6 | 7a0dc108 | "Yes, that's right." | desk chose `direct` (it tied the yes to the agent's earlier "Did you mean what is Holocene working on?"): full agent, quick answer + its own BACKGROUND follow-up (runs the watcher tests; batch lane) |
+| f7 | f3e3e305 | "Walk the path and the change workflow step by step in some..." | **fast reply**, desk 7.8 s (606 tokens, 535 reasoning, `finish_reason` stop, no re-ask needed), reply started +21.3 s (TTS 13.6 s at load 91), 4 chunks |
+
+- **D1 / R1: PASS.** The final run's r3-a prompt now gets a card answer from the desk (7.8 s) instead of falling to the agent
+  (first answer 80 s before).
+- **R3 (barge-in) after the proxy fix: PASS.** f2-a's beacon `skipped`/`barged_in` at 00:20:14.944Z was logged
+  `playback_fact_skipped`; f2-a has no `audio.memo.failed` (types: received, uploaded, transcribed, routed, voiced, replied,
+  played, notified); `memo:trace` says **COMPLETE** (it said FAILED `fact:failed[playback]` before); `bloodbank-ntfy-router` routed
+  no `audio.memo.*` event in the whole window.
+- **D4 / R5: PASS with a caveat.** The spoken "Use Rick voice." was heard as "Use your voice!", so the model passed `default` and
+  the tile was cleared that way. The rick-by-name path was then run on the live flag file through the real skill script
+  (`car-set-voice/scripts/set_voice.py --voice Rick`, the same entrypoint the desk runs): morgan -> `tiles {}`. Unit tests cover
+  both the skill verb and the built-in tool.
+- **R6 (kill switch): PASS.** `memo:converse off` -> f4 took today's path (no converse stage, no routed fact, dispatched on the
+  interactive lane); `memo:converse on --agents '*' --devices ''` -> the next memo (f5) was routed by the desk.
+- **R2 (delegation exactly-once): NOT RUN to the end.** No draft was ever read back: two work requests were misheard (f3, f5,
+  each answered with a correct clarifying question), and the "yes" (f6) was routed `direct` by the desk, which spent the second
+  of the two allowed full-agent turns (f4 was the first). Nothing was delegated (no `audio.memo.delegated`); f6's agent started
+  its own answer-then-background follow-up instead. That follow-up finished and was spoken 323.5 s after the quick answer (`memo:trace` COMPLETE); all 8 memos
+  trace COMPLETE, nothing stuck. Exactly-once therefore still rests on the unit tests and the earlier live
+  proofs (`evidence.md` S3/S4: 5 briefs, 1 journal row each, 6 repeats published nothing; h-01..h-05).
+- R4 not re-run (no fix touched it). D3 verified with `auto:sim:mic-check` (REFUSED), not a memo.
+- Live config at the end: flag file `{mode: on, agents: "*", devices: [], tiles: {}}`, no routes override, `memo:converse status`
+  routes r1=automaticai/auto/fast, budget 14 s. hermes-gateway not restarted.
 
 ## Limits, said plainly
 

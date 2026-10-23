@@ -1,0 +1,140 @@
+{
+ "name": "f3-work",
+ "text": "Please ask the PM to count how many test files the inbox watcher has, and report back.",
+ "offset_s": -0.01429128646850586,
+ "start_pressed": 1792714904.026633,
+ "mic_recording_seen": 1792714913.8594773,
+ "paplay": [
+  1792714914.2595565,
+  1792714921.1792417,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792714922.185841,
+ "mic_idle_seen": 1792714928.4603539,
+ "memo_id": "588732fc-47db-53c1-95d9-057ba3b8bece",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002145Z.ogg",
+ "discovered": 1792714931.32,
+ "first_kind": "reply",
+ "first_start": 1792714939.9952912,
+ "first_audible": null,
+ "stop_to_first_start_s": 17.81,
+ "stop_to_upload_discover_s": 9.13,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 5082,
+   "cached_tokens": 3264,
+   "conv_turn": 4,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "I didn't catch 'test boxers' \u2014 did you mean test folders, test files, or something else like test boxes?",
+   "say_chars": 104,
+   "lexicon": false,
+   "card_age_s": 6.0,
+   "decide_ms": 5116,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 5081,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 248,
+    "completion_tokens": 284
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "c7c679a2",
+     "path": "fast",
+     "turn": 4,
+     "action": "reply",
+     "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 2,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   17.8,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   17.81,
+   "start",
+   "reply",
+   "waited_ms=16"
+  ],
+  [
+   17.81,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   23.44,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   26.02,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   30.73,
+   "end",
+   "reply",
+   "chunks=2"
+  ]
+ ]
+}

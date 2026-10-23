@@ -1,0 +1,172 @@
+A memo 0903722e-c340-54a6-81f9-a75bd6408b82
+A first start 1792714811.4087358
+{
+ "name": "f2-b",
+ "text": "Use Rick voice.",
+ "offset_s": -0.08973574638366699,
+ "barge_pressed": 1792714814.3413365,
+ "start_pressed": 1792714814.3413625,
+ "mic_recording_seen": 1792714820.4834647,
+ "paplay": [
+  1792714822.740791,
+  1792714826.590174,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792714827.59688,
+ "mic_idle_seen": 1792714829.99364,
+ "memo_id": "78866e3f-aef8-5407-a5d1-f673a7273524",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002014Z.ogg",
+ "discovered": 1792714831.243,
+ "first_kind": "reply",
+ "first_start": 1792714841.1677358,
+ "first_audible": null,
+ "stop_to_first_start_s": 13.57,
+ "stop_to_upload_discover_s": 3.65,
+ "facts": {
+  "routed": {
+   "action": "tool",
+   "decided_action": "tool",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 5822,
+   "cached_tokens": 3200,
+   "conv_turn": 3,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "Holocene PM is back to the default voice.",
+   "say_chars": 41,
+   "lexicon": false,
+   "card_age_s": 33.6,
+   "decide_ms": 5989,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": {
+    "ms": 149,
+    "ok": true,
+    "via": "skill",
+    "args": {
+     "voice": "default"
+    },
+    "exit": 0,
+    "tool": "car_set_voice",
+    "error": null
+   }
+  },
+  "attempt_log": [
+   {
+    "ms": 5822,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 340,
+    "completion_tokens": 362
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "c7c679a2",
+     "path": "fast",
+     "turn": 3,
+     "action": "tool",
+     "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 1,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   8.15,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   8.16,
+   "start",
+   "progress",
+   "waited_ms=10"
+  ],
+  [
+   8.44,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   13.56,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   13.57,
+   "start",
+   "reply",
+   "waited_ms=12"
+  ],
+  [
+   15.36,
+   "end",
+   "reply",
+   "error:focus_denied"
+  ],
+  [
+   16.9,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   16.91,
+   "start",
+   "reply",
+   "waited_ms=6"
+  ],
+  [
+   22.41,
+   "end",
+   "reply",
+   ""
+  ]
+ ]
+}
+{"A_memo": "0903722e-c340-54a6-81f9-a75bd6408b82", "A_speech": [[9.5, "queued", "reply", ""], [9.5, "start", "reply", "waited_ms=1"], [9.5, "chunk", "reply", "first"], [11.26, "chunk", "reply", "buffered"], [12.69, "halt", "reply", "stopped"]], "A_routed": "fast", "A_types": ["audio.memo.notified", "audio.memo.played", "audio.memo.received", "audio.memo.replied", "audio.memo.routed", "audio.memo.transcribed", "audio.memo.uploaded", "audio.memo.voiced"], "B_barge_at": 1792714814.3413365}

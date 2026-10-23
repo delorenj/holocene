@@ -1,0 +1,170 @@
+{
+ "name": "f1-morgan",
+ "text": "Use Morgan voice.",
+ "offset_s": -0.013134241104125977,
+ "start_pressed": 1792714700.933975,
+ "mic_recording_seen": 1792714712.1974938,
+ "paplay": [
+  1792714712.59758,
+  1792714713.9150221,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792714714.9151177,
+ "mic_idle_seen": 1792714716.7305303,
+ "memo_id": "f2ec92d9-a023-52d5-8ec2-7dfb61f19e07",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T001823Z.ogg",
+ "discovered": 1792714718.87,
+ "first_kind": "reply",
+ "first_start": 1792714725.9381342,
+ "first_audible": null,
+ "stop_to_first_start_s": 11.02,
+ "stop_to_upload_discover_s": 3.95,
+ "facts": {
+  "routed": {
+   "action": "reply",
+   "decided_action": "reply",
+   "path": "fast",
+   "model_answered": "glm-5.3",
+   "route": "r1",
+   "attempts": 1,
+   "latency_ms": 4007,
+   "cached_tokens": 3200,
+   "conv_turn": 1,
+   "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4",
+   "guard": null,
+   "fallback_reason": null,
+   "title": null,
+   "target": null,
+   "perm": null,
+   "delegate_to": null,
+   "say": "I didn't catch that. Did you mean to ask about boots, or something else like the roster or a memo?",
+   "say_chars": 98,
+   "lexicon": false,
+   "card_age_s": 4.3,
+   "decide_ms": 4028,
+   "requested_model": "automaticai/auto/fast",
+   "served_route": "automaticai/personal/glm-5.3",
+   "tile_model": null,
+   "tile_voice": "rick",
+   "tool": null
+  },
+  "attempt_log": [
+   {
+    "ms": 4006,
+    "model": "automaticai/auto/fast",
+    "route": "r1",
+    "outcome": "ok",
+    "http_status": 200,
+    "served_route": "automaticai/personal/glm-5.3",
+    "finish_reason": "stop",
+    "answered_model": "glm-5.3",
+    "reasoning_tokens": 137,
+    "completion_tokens": 189
+   }
+  ],
+  "n_routed": 1,
+  "dispatched": [],
+  "delegated": [],
+  "replied": [
+   {
+    "followup": null,
+    "command_id": null,
+    "conv": {
+     "sid": "c7c679a2",
+     "path": "fast",
+     "turn": 1,
+     "action": "reply",
+     "conv_id": "c7c679a2-93fe-4ba8-878c-0c69abd2dda4"
+    },
+    "chars": null,
+    "voice": "rick",
+    "voice_requested": null,
+    "voice_fallback": null
+   }
+  ],
+  "voiced": 3,
+  "voiced_voices": [
+   "rick"
+  ],
+  "types": [
+   "audio.memo.narrated",
+   "audio.memo.notified",
+   "audio.memo.played",
+   "audio.memo.received",
+   "audio.memo.replied",
+   "audio.memo.routed",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "audio.memo.voiced"
+  ]
+ },
+ "speech": [
+  [
+   7.99,
+   "queued",
+   "progress",
+   ""
+  ],
+  [
+   8.0,
+   "start",
+   "progress",
+   "waited_ms=6"
+  ],
+  [
+   9.77,
+   "end",
+   "progress",
+   "error:focus_denied"
+  ],
+  [
+   11.02,
+   "queued",
+   "reply",
+   ""
+  ],
+  [
+   11.02,
+   "start",
+   "reply",
+   "waited_ms=0"
+  ],
+  [
+   11.02,
+   "chunk",
+   "reply",
+   "first"
+  ],
+  [
+   11.95,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   17.29,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   17.75,
+   "chunk",
+   "reply",
+   "buffered"
+  ],
+  [
+   21.33,
+   "chunk",
+   "reply",
+   "next"
+  ],
+  [
+   27.64,
+   "end",
+   "reply",
+   "chunks=3"
+  ]
+ ]
+}

@@ -1,0 +1,77 @@
+{
+ "name": "f4-off",
+ "text": "What is the Holocene project, in one sentence?",
+ "offset_s": 0.03835177421569824,
+ "start_pressed": 1792714994.0319946,
+ "mic_recording_seen": 1792715004.0702443,
+ "paplay": [
+  1792715004.4703448,
+  1792715009.9435217,
+  0,
+  ""
+ ],
+ "stop_pressed": 1792715010.9436195,
+ "mic_idle_seen": 1792715016.8258054,
+ "memo_id": "a02c6f9f-91ec-58bc-b68a-0cf418636b89",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T002315Z.ogg",
+ "discovered": 1792715019.595,
+ "first_kind": "echo",
+ "first_start": 1792715021.0156481,
+ "first_audible": null,
+ "stop_to_first_start_s": 10.07,
+ "stop_to_upload_discover_s": 8.65,
+ "facts": {
+  "routed": null,
+  "attempt_log": null,
+  "n_routed": 0,
+  "dispatched": [
+   {
+    "followup": null,
+    "lane": "interactive",
+    "lane_reason": null,
+    "command_id": "c8ae1e53-ac2b-473b-a835-f517d333920f",
+    "target_agent_id": "holocene-pm",
+    "tile_agent_id": null,
+    "model": "automaticai/personal/sol-6.1",
+    "brief_id": null,
+    "brief_title": null,
+    "perm": null,
+    "conv_id": null,
+    "delegated_to": null
+   }
+  ],
+  "delegated": [],
+  "replied": [],
+  "voiced": 0,
+  "voiced_voices": [],
+  "types": [
+   "agent.invocation.started",
+   "audio.memo.dispatched",
+   "audio.memo.notified",
+   "audio.memo.received",
+   "audio.memo.transcribed",
+   "audio.memo.uploaded",
+   "conversation.turn.started"
+  ]
+ },
+ "speech": [
+  [
+   10.07,
+   "queued",
+   "echo",
+   ""
+  ],
+  [
+   10.07,
+   "start",
+   "echo",
+   "waited_ms=1"
+  ],
+  [
+   20.73,
+   "end",
+   "echo",
+   ""
+  ]
+ ]
+}
