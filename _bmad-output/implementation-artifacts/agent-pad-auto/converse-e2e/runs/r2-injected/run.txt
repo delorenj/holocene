@@ -1,0 +1,145 @@
+start 21:06:29 load 111.19
+`/tmp/ttfa2/i0-cancel.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T010632Z.ogg`
+┌──────────┬─────────────┬──────────┬─────────────┐
+│ Total    │ Transferred │ Duration │ Speed       │
+│ 4.45 KiB │ 4.45 KiB    │ 00m00s   │ 10.37 KiB/s │
+└──────────┴─────────────┴──────────┴─────────────┘
+{"name": "i0-cancel", "key": "inbox/holocene-pm/2026/10/23/20261023T010632Z.ogg", "memo_id": "92d78b0e-33b9-5217-8f26-e194e9a80614", "put_at": "2026-10-23T01:06:32.682414+00:00", "synth_s": 2.1}
+{
+ "name": "i0-cancel",
+ "memo": "92d78b0e",
+ "heard": null,
+ "action": "cancel",
+ "path": "cancel_only",
+ "model": null,
+ "lat_ms": null,
+ "say": "Dropped. Nothing was sent.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 1,
+  "replied": 1
+ },
+ "elapsed_s": 38.9
+}
+step1 21:07:18 load 113.34
+`/tmp/ttfa2/i1-propose.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T010722Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 21.17 KiB │ 21.17 KiB   │ 00m00s   │ 49.22 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "i1-propose", "key": "inbox/holocene-pm/2026/10/23/20261023T010722Z.ogg", "memo_id": "66b71187-00e8-5703-8de7-61ce2eecf09e", "put_at": "2026-10-23T01:07:23.486474+00:00", "synth_s": 4.3}
+{
+ "name": "i1-propose",
+ "memo": "66b71187",
+ "heard": null,
+ "action": "propose",
+ "path": "fast",
+ "model": "glm-5.3",
+ "lat_ms": 8961,
+ "say": "Draft for Holocene PM: Summarize the Hold Queue feature. Read-only. Say send it, or tell me what to change.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 49.8
+}
+step2 21:08:22 load 112.28
+`/tmp/ttfa2/i2-send.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg`
+┌──────────┬─────────────┬──────────┬────────────┐
+│ Total    │ Transferred │ Duration │ Speed      │
+│ 3.72 KiB │ 3.72 KiB    │ 00m00s   │ 7.34 KiB/s │
+└──────────┴─────────────┴──────────┴────────────┘
+{"name": "i2-send", "key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg", "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13", "put_at": "2026-10-23T01:08:29.067188+00:00", "synth_s": 2.0}
+{
+ "name": "i2-send",
+ "memo": "e38fbecd",
+ "heard": null,
+ "action": "confirm",
+ "path": "confirm_only",
+ "model": null,
+ "lat_ms": null,
+ "say": "Sending to Holocene PM: Summarize the Hold Queue feature. I'll call you back.",
+ "dispatched": 1,
+ "delegated": 1,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1,
+  "started": 2,
+  "dispatched": 1,
+  "delegated": 1
+ },
+ "elapsed_s": 38.8
+}
+step3 21:09:16 load 116.14
+`/tmp/ttfa2/i3-resend.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T010918Z.ogg`
+┌──────────┬─────────────┬──────────┬────────────┐
+│ Total    │ Transferred │ Duration │ Speed      │
+│ 3.33 KiB │ 3.33 KiB    │ 00m00s   │ 8.64 KiB/s │
+└──────────┴─────────────┴──────────┴────────────┘
+{"name": "i3-resend", "key": "inbox/holocene-pm/2026/10/23/20261023T010918Z.ogg", "memo_id": "401826e4-f1d1-52c0-9e54-120bbbdba183", "put_at": "2026-10-23T01:09:18.457894+00:00", "synth_s": 1.9}
+{
+ "name": "i3-resend",
+ "memo": "401826e4",
+ "heard": null,
+ "action": "confirm",
+ "path": "confirm_only",
+ "model": null,
+ "lat_ms": null,
+ "say": "Already sent to Holocene PM: Summarize the Hold Queue feature. I'll call you back with the result.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 38.5
+}
+step4 21:10:33 load 127.93
+`/tmp/ttfa2/i4-found.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T011035Z.ogg`
+┌──────────┬─────────────┬──────────┬─────────────┐
+│ Total    │ Transferred │ Duration │ Speed       │
+│ 5.96 KiB │ 5.96 KiB    │ 00m00s   │ 14.50 KiB/s │
+└──────────┴─────────────┴──────────┴─────────────┘
+{"name": "i4-found", "key": "inbox/holocene-pm/2026/10/23/20261023T011035Z.ogg", "memo_id": "1ef40f78-80ad-55bd-acea-2395cfb2c8b3", "put_at": "2026-10-23T01:10:36.228375+00:00", "synth_s": 2.5}
+{
+ "name": "i4-found",
+ "memo": "1ef40f78",
+ "heard": null,
+ "action": "reply",
+ "path": "fast",
+ "model": "glm-5.3",
+ "lat_ms": 8909,
+ "say": "The feature is actually called Hold cue. It fills silent waits with short spoken acknowledgments like \"One sec\" or \"Still thinking,\" played after about three and nine seconds, in the agent's voice, and dropped if you record or the answer arrives.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 1,
+  "routed": 1,
+  "voiced": 4,
+  "replied": 1
+ },
+ "elapsed_s": 45.1
+}

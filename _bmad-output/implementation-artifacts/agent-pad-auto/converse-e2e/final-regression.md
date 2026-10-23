@@ -292,3 +292,45 @@ reach a full agent turn by accident (r2-01, below).
 
 Next attempt needs: load under 40 (or a desk budget that survives it), a 6-memo budget with the memos spent on steps 2-4 only, and a
 checked mic (`auto:sim:mic-check` OK) first. Files: `runs/r2/` (`load.log`, `memo.sh`, `out-r2-01*.json`, `r2-01*.line`, `speech-logcat.txt.gz`).
+
+## R2 delegation, injected memos: **PROVEN** (2026-10-22 21:06-21:11 EDT, 5 of 7 memos, load 110-126 throughout)
+
+Method: the emulator mic was bypassed. Each utterance was synthesized with vox (`ttfa/round2/tools/synth.py`, voice rick), encoded to
+Ogg/Opus 48 kHz mono (0.4 s lead-in and tail), and written straight into MinIO as the car's upload proxy stores it: key
+`inbox/holocene-pm/<yyyy>/<mm>/<dd>/<yyyymmddTHHMMSS>Z.ogg`, content-type `audio/ogg`, object metadata
+`X-Amz-Meta-Holocene-Device: e1c40830-9802-420f-98b9-d06be3f51b74` and `X-Amz-Meta-Holocene-Host: car` (same shape as the sim memo 7e263bcf,
+written with `mc cp --attr` exactly as `upload_proxy.py` does). Tool: `runs/r2-injected/inject.py`. The desk treated every memo as a car
+memo for holocene-pm on conversation 83bbebf2. Only inbox objects were written: no emulator contact, no restart of
+hermes-gateway / watcher / proxy. Wall time about 5 min of the 30 allowed; load stayed 110-126 and the desk (glm-5.3 on r1) answered both LLM turns in 8.9-9.0 s,
+so the load did not cause a fall-through this time. Memos went one at a time, each after the previous one's `replied` fact.
+
+| step | memo | heard (transcript) | routed | facts |
+|---|---|---|---|---|
+| 0 | 92d78b0e | "Cancel that." | `cancel`, `cancel_only` (lexicon, no LLM, decide 32 ms), conv turn 4 | "Dropped. Nothing was sent." Pending draft (brief de1a672b) gone: `memo:conv` says `pending draft: none`. 0 dispatched, 0 delegated. |
+| 1 | 66b71187 | "Have Holocene PM write a one-paragraph summary of the **Hold Queue** feature and report back." | `propose`, `fast`, glm-5.3 on r1, 8961 ms, turn 5, perm read_only | read-back "Draft for Holocene PM: Summarize the Hold Queue feature. Read-only. Say send it, or tell me what to change." Brief 4bd48069. **0 dispatched, 0 delegated**; types received transcribed narrated routed voiced replied. |
+| 2 | e38fbecd | "Send it." | `confirm`, `confirm_only` (no LLM call, decide 18 ms), turn 6 | "Sending to Holocene PM: Summarize the Hold Queue feature. I'll call you back." **Exactly 1 `audio.memo.dispatched`** (followup 1, lane `batch`, lane_reason `voice_delegation`, model sol-6.1, command 251cdf53-01ec-5b18-88bf-6e77fa8fc8fc, prompt 1783 chars, dispatch 199 ms), **exactly 1 `audio.memo.delegated`** (same command id, brief 4bd48069), **exactly 1 gateway journal row** for that command id (profile holocene-pm, lane batch; `started` at +0.1 s, `completed/success` at 01:09:57). The command id equals `uuid5(urn:33god:holocene:converse, "delegation:4bd48069-...")` (recomputed). Journal total 1093 before -> 1094 after: the one new row. |
+| 3 | 401826e4 | "Send it" | `confirm`, `confirm_only` (no LLM), guard `already_sent`, turn 7 | "Already sent to Holocene PM: Summarize the Hold Queue feature. I'll call you back with the result." **0 dispatched, 0 delegated**, journal still 1 row for the command id, total still 1094. |
+| wait | e38fbecd followup 1 | (agent turn) | - | agent invocation started 01:08:53, completed 01:09:57 (64.9 s, `completed/success`); follow-up `replied` (late, followup 1, 633 chars, reply chunks 3) at 01:10:21.8, 102 s after the dispatch; `memo:trace` VERDICT COMPLETE, "follow-up 1 spoken 108.8s after the quick answer". Result: "The matching feature in the repo is called "Hold cue," rather than "Hold Queue": it replaces silent waits in the car with short spoken acknowledgments ..." (the agent corrected the mis-transcribed name). |
+| 4 | 1ef40f78 | "What did it find?" | `reply`, `fast`, glm-5.3 on r1, 8909 ms, turn 8 | fast reply from the stored result: "The feature is actually called Hold cue. It fills silent waits with short spoken acknowledgments like "One sec" or "Still thinking," played after about three and nine seconds ..." **0 dispatched, 0 delegated, no new journal row (1094 before and after)**: no agent turn. |
+
+Totals over the whole run: **1 dispatched, 1 delegated, 1 journal row, 1 Hermes agent turn** (the delegation); every other memo stayed on the
+desk (two lexicon-only confirms, one cancel, one propose, one fast reply). Exactly-once on the final build: PROVEN (steps 2 and 3).
+
+Timings (put -> routed / put -> replied): s0 0.8 / 21.8 s, s1 10.1 / 33.1 s, s2 1.5 / 23.5 s, s3 1.0 / 24.0 s, s4 10.2 / 33.2 s. The `replied` fact lags
+`routed` by about 20 s on the lexicon paths because the reply voicing runs (vox TTS under load); the first audio chunk of s2 was up at +3.6 s.
+
+Notes and defects:
+1. **Phone playback happened.** No car claimed anything, so after the grace the phone mirror played every desk reply and the follow-up on the
+   S26 through Earshot (agent-pad-upload `heard` phase started/finished for all 6 reply objects, `runs/r2-injected/earshot-phone-playback.txt`;
+   `memo:trace`: `phone_decision` mirrored, `earshot_reason no_car_claim`).
+2. **Transcript drift, not a desk defect:** whisper heard "hold cue" as "Hold Queue" from the synthesized voice (the homophone), so the draft
+   was "Summarize the Hold Queue feature". The delegated agent noticed and answered with the real feature name. Step 4 carried the right name back.
+3. The injected memos have no `audio.memo.uploaded` fact and no proxy log line (`memo:trace` marks both optional/MISSING) because they bypass the
+   upload proxy; the watcher picked them up by its inbox poll (lag 0.27 s on s2).
+4. The emulator-mic fall-through seen earlier (a timed-out desk call on a work request becoming a plain agent turn) did not recur: both desk
+   LLM calls succeeded at load 110-126 in 9 s. Still an open risk under worse load; not retested.
+5. No product code changed. Live config as found at the end: flag `mode on`, agents `*`, devices any car, handoff named, routes `r1=automaticai/auto/fast`,
+   tiles none, no override; the conversation has no pending draft and one finished delegation (251cdf53).
+
+Files: `runs/r2-injected/` (`inject.py`, `out-i0-cancel.json` ... `out-i4-found.json`, `candystore-facts-all.json`, `journal-before.txt`,
+`journal-after-step2.txt`, `journal-before-step4.txt`, `journal-final.txt`, `earshot-phone-playback.txt`, `run.txt`).

@@ -1,0 +1,302 @@
+{
+ "name": "i2-send",
+ "text": "Send it.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+ "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+ "put_t": 1792717708.5020158,
+ "elapsed_s": 38.8,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T01:08:29Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "size_bytes": 3811,
+     "detected_at": "2026-10-23T01:08:29.261Z",
+     "occurred_at": "2026-10-23T01:08:29.262Z",
+     "uploaded_at": "2026-10-23T01:08:28.992Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 269,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T01:08:30Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "language": "en",
+     "word_count": 2,
+     "occurred_at": "2026-10-23T01:08:30.013Z",
+     "audio_max_dbfs": -4.8,
+     "audio_mean_dbfs": -26.2,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Send it.",
+     "transcript_chars": 8,
+     "processing_seconds": 0.44,
+     "audio_duration_seconds": 1.6
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T01:08:30Z",
+    "data": {
+     "say": "Sending to Holocene PM: Summarize the Hold Queue feature. I'll call you back.",
+     "sid": "83bbebf2",
+     "path": "confirm_only",
+     "perm": "read_only",
+     "tool": null,
+     "guard": null,
+     "route": null,
+     "title": "Summarize the Hold Queue feature",
+     "usage": null,
+     "action": "confirm",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "target": "holocene-pm",
+     "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+     "lexicon": true,
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "attempts": 0,
+     "brief_id": "4bd48069-9d93-59c2-a61c-4703dc2e85a6",
+     "conv_turn": 6,
+     "decide_ms": 18,
+     "say_chars": 77,
+     "card_age_s": 0.7,
+     "latency_ms": null,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": null,
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": "holocene-pm",
+     "occurred_at": "2026-10-23T01:08:30.054Z",
+     "reply_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.ogg",
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "confirm",
+     "model_answered": null,
+     "fallback_reason": null,
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T01:08:31Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 7011,
+     "occurred_at": "2026-10-23T01:08:31.555Z",
+     "spoken_text": "Sending to Holocene PM:",
+     "tts_seconds": 1.47,
+     "chunk_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.ogg",
+     "spoken_chars": 23,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 1.48,
+     "since_agent_done_seconds": 1.5
+    }
+   },
+   {
+    "time": "2026-10-23T01:08:33Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 12379,
+     "occurred_at": "2026-10-23T01:08:33.519Z",
+     "spoken_text": "Summarize the Hold Queue feature. I'll call you back.",
+     "tts_seconds": 1.96,
+     "chunk_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.ogg",
+     "spoken_chars": 53,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 3.44,
+     "since_agent_done_seconds": 3.46
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T01:08:52Z",
+    "data": {
+     "conv": {
+      "sid": "83bbebf2",
+      "path": "confirm_only",
+      "turn": 6,
+      "action": "confirm",
+      "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "Sending to Holocene PM: Summarize the Hold Queue feature. I'll call you back.",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 23673,
+     "earshot_key": "phone/2026/10/23/010830054Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.ogg",
+     "occurred_at": "2026-10-23T01:08:52.742Z",
+     "reply_chars": 77,
+     "reply_up_at": "2026-10-23T01:08:33.717Z",
+     "tts_seconds": 3.62,
+     "full_seconds": 22.66,
+     "prompt_match": null,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/010830Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.ogg",
+     "spoken_chars": 77,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 4.46,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/010830054Z-holocene-pm-e38fbecd-fc81-5361-83f3-44e744454f13.txt",
+     "last_chunk_seconds": 3.44,
+     "first_chunk_seconds": 1.48,
+     "earshot_wait_seconds": 19.03,
+     "followup_of_command_id": null
+    }
+   }
+  ],
+  "started": [
+   {
+    "time": "2026-10-23T01:08:53.272743Z",
+    "data": {
+     "lane": "batch",
+     "turn_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "thread_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "command_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "prompt_text": "[Delegated from the driver's car conversation with the fast desk. The driver heard the brief below read back and confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. Do it yourself: never delegate to a subagent (delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, restart, push or other change to a live system unless the Permission section below allows it; the driver's words came through speech-to-text, so where anything is unclear do only the read-only part and say what you left undone. Your final message is spoken to the driver as a follow-up: end it with a spoken summary of the result in two to four sentences, and do not write a BACKGROUND: line.]\n\n# Summarize the Hold Queue feature\n\nWrite a one-paragraph summary of the Hold Queue feature and report it back to the driver.\n\n## Context\n- The driver requested this by voice from the car.\n- The Hold Queue feature is in the holocene repo.\n\n## Done when\n- A single-paragraph summary of the Hold Queue feature has been reported back.\n\n## Permission\nRead-only: inspect, read and report. Make no code change, commit, push, deploy, restart or other change to a live system.\n\n## The driver's own words (speech-to-text, oldest first)\n- 20:48:44 \"Have Holocene write a one-paragraph summary of the future and report back.\"\n- 20:50:22 \"Right.\"\n- 20:57:21 \"Have Holocene PM write a one-paragraph summary of the whole queue back.\"\n- 21:06:33 \"Cancel that.\"\n- 21:07:33 \"Have Holocene PM write a one-paragraph summary of the Hold Queue feature and report back.\"\n- 21:08:30 \"Send it.\"\n\n## Trace\nconversation 83bbebf2-c4c5-44f1-a1b0-2371aa3f8234 \u00b7 memo e38fbecd-fc81-5361-83f3-44e744454f13 \u00b7 brief 4bd48069-9d93-59c2-a61c-4703dc2e85a6 \u00b7 asked via holocene-pm",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "b0fd3293-1995-5db5-8684-6a6f88c86857",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T01:08:53.272769Z",
+    "data": {
+     "lane": "batch",
+     "context": {
+      "perm": "read_only",
+      "repo": "holocene",
+      "reason": "voice-delegation",
+      "source": "holocene-auto:inbox-watcher",
+      "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+      "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+      "brief_id": "4bd48069-9d93-59c2-a61c-4703dc2e85a6",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+      "brief_sha256": "b95465a72c17676d91928435c712feff8fe6ab08b2c5d4f26eaf6ebaa5303e8e",
+      "tile_agent_id": "holocene-pm",
+      "followup_depth": 1
+     },
+     "turn_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "thread_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "command_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "idempotency_key": "b0fd3293-1995-5db5-8684-6a6f88c86857",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   }
+  ],
+  "dispatched": [
+   {
+    "time": "2026-10-23T01:08:53Z",
+    "data": {
+     "lane": "batch",
+     "perm": "read_only",
+     "model": "automaticai/personal/sol-6.1",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "brief_id": "4bd48069-9d93-59c2-a61c-4703dc2e85a6",
+     "followup": 1,
+     "thread_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "command_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "brief_title": "Summarize the Hold Queue feature",
+     "dispatch_ms": 199,
+     "lane_reason": "voice_delegation",
+     "occurred_at": "2026-10-23T01:08:53.232Z",
+     "delegated_to": "holocene-pm",
+     "prompt_chars": 1783,
+     "voice_prefix": true,
+     "followup_plan": "Summarize the Hold Queue feature",
+     "prompt_sha256": "d908e2657c0ea23d6691600954957cee349b8c4a85185dd1396239fe5b35446f",
+     "tile_agent_id": "holocene-pm",
+     "command_subject": "bloodbank.cmd.agent.invocation.start",
+     "idempotency_key": "b0fd3293-1995-5db5-8684-6a6f88c86857",
+     "target_agent_id": "holocene-pm",
+     "followup_of_command_id": null
+    }
+   }
+  ],
+  "delegated": [
+   {
+    "time": "2026-10-23T01:08:53Z",
+    "data": {
+     "lane": "batch",
+     "perm": "read_only",
+     "title": "Summarize the Hold Queue feature",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T010828Z.ogg",
+     "conv_id": "83bbebf2-c4c5-44f1-a1b0-2371aa3f8234",
+     "memo_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "brief_id": "4bd48069-9d93-59c2-a61c-4703dc2e85a6",
+     "followup": 1,
+     "thread_id": "e38fbecd-fc81-5361-83f3-44e744454f13",
+     "command_id": "251cdf53-01ec-5b18-88bf-6e77fa8fc8fc",
+     "occurred_at": "2026-10-23T01:08:53.392Z",
+     "brief_sha256": "b95465a72c17676d91928435c712feff8fe6ab08b2c5d4f26eaf6ebaa5303e8e",
+     "prompt_sha256": "d908e2657c0ea23d6691600954957cee349b8c4a85185dd1396239fe5b35446f",
+     "tile_agent_id": "holocene-pm",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1,
+  "started": 2,
+  "dispatched": 1,
+  "delegated": 1
+ }
+}
