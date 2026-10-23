@@ -1,0 +1,294 @@
+{
+ "name": "l1-port",
+ "text": "Have Holocene PM check which port the Holocene API listens on and report back.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+ "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+ "put_t": 1792725527.2164629,
+ "elapsed_s": 46.4,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T03:18:48Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "size_bytes": 19756,
+     "detected_at": "2026-10-23T03:18:47.949Z",
+     "occurred_at": "2026-10-23T03:18:47.949Z",
+     "uploaded_at": "2026-10-23T03:18:47.597Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 352,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T03:18:48Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "language": "en",
+     "word_count": 14,
+     "occurred_at": "2026-10-23T03:18:48.512Z",
+     "audio_max_dbfs": -5.3,
+     "audio_mean_dbfs": -22.3,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Have Holocene PM check which port the Holocene API listens on and report back.",
+     "transcript_chars": 78,
+     "processing_seconds": 0.41,
+     "audio_duration_seconds": 4.96
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T03:18:51Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 2211,
+     "occurred_at": "2026-10-23T03:18:51.594Z",
+     "spoken_text": "Thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/dd4f9722-db6d-59ea-bbdb-af6cebd8570f-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:18:57Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T03:18:57.576Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/dd4f9722-db6d-59ea-bbdb-af6cebd8570f-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T03:18:58Z",
+    "data": {
+     "say": "That one's already done: Holocene PM reported back at 22:10 that the Holocene API listens on port 4000, verified in the user service file holocene-api.service. Want me to send it again anyway?",
+     "sid": "4f41261d",
+     "path": "fast",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": "r1",
+     "title": null,
+     "usage": {
+      "total_tokens": 4996,
+      "prompt_tokens": 4660,
+      "completion_tokens": 336,
+      "prompt_tokens_details": {
+       "cached_tokens": 3328
+      },
+      "completion_tokens_details": {
+       "reasoning_tokens": 261
+      }
+     },
+     "action": "reply",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "target": null,
+     "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311",
+     "lexicon": false,
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 3,
+     "decide_ms": 10005,
+     "say_chars": 192,
+     "card_age_s": 10.3,
+     "latency_ms": 9995,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 9995,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "ok",
+       "http_status": 200,
+       "served_route": "automaticai/personal/glm-5.3",
+       "finish_reason": "stop",
+       "answered_model": "glm-5.3",
+       "reasoning_tokens": 261,
+       "completion_tokens": 336
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T03:18:58.528Z",
+     "reply_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "served_route": "automaticai/personal/glm-5.3",
+     "cached_tokens": 3328,
+     "decided_action": "reply",
+     "model_answered": "glm-5.3",
+     "fallback_reason": null,
+     "requested_model": "automaticai/auto/fast",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T03:18:59Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 6466,
+     "occurred_at": "2026-10-23T03:18:59.724Z",
+     "spoken_text": "That one's already done:",
+     "tts_seconds": 1.18,
+     "chunk_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f-c01of03.opus",
+     "reply_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "spoken_chars": 24,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 1.18,
+     "since_agent_done_seconds": 1.2
+    }
+   },
+   {
+    "time": "2026-10-23T03:19:02Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 18481,
+     "occurred_at": "2026-10-23T03:19:01.993Z",
+     "spoken_text": "Holocene PM reported back at 22:10 that the Holocene API listens",
+     "tts_seconds": 2.27,
+     "chunk_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f-c02of03.opus",
+     "reply_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "spoken_chars": 64,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 3.45,
+     "since_agent_done_seconds": 3.46
+    }
+   },
+   {
+    "time": "2026-10-23T03:19:05Z",
+    "data": {
+     "late": false,
+     "chunk": 3,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 27097,
+     "occurred_at": "2026-10-23T03:19:05.108Z",
+     "spoken_text": "on port 4000, verified in the user service file holocene-api.service. Want me to send it again anyway?",
+     "tts_seconds": 3.11,
+     "chunk_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f-c03of03.opus",
+     "reply_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "spoken_chars": 102,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 6.57,
+     "since_agent_done_seconds": 6.58
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T03:19:20Z",
+    "data": {
+     "conv": {
+      "sid": "4f41261d",
+      "path": "fast",
+      "turn": 3,
+      "action": "reply",
+      "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg",
+     "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "That one's already done: Holocene PM reported back at 22:10 that the Holocene API listens on port 4000, verified in the user service file holocene-api.service. Want me to send it again anyway?",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 63991,
+     "earshot_key": "phone/2026/10/23/031858528Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "occurred_at": "2026-10-23T03:19:20.852Z",
+     "reply_chars": 192,
+     "reply_up_at": "2026-10-23T03:19:05.352Z",
+     "tts_seconds": 6.79,
+     "full_seconds": 22.31,
+     "prompt_match": null,
+     "reply_chunks": 3,
+     "reply_s3_key": "replies/2026/10/23/031858Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.ogg",
+     "spoken_chars": 192,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 17.39,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/031858528Z-holocene-pm-dd4f9722-db6d-59ea-bbdb-af6cebd8570f.txt",
+     "last_chunk_seconds": 6.57,
+     "first_chunk_seconds": 1.18,
+     "earshot_wait_seconds": 15.51,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 2,
+  "routed": 1,
+  "voiced": 3,
+  "replied": 1
+ }
+}

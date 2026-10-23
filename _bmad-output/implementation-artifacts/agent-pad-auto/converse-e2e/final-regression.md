@@ -411,3 +411,28 @@ open fall-through risk as before (config left as found).
 
 Live config at the end: mode on, agents `*`, devices any car, no routes override, tiles `{}`. Emulator, hermes-gateway and proxy not touched.
 Tests: full suite 452 at load 175: 451 pass; the one failure (`test_hold_cue.FallThrough`, desk-wait cue timing) passes alone (`test_hold_cue` 22/22 twice).
+
+## R2 follow-ups, review round 2, live (2026-10-22 23:15-23:23 EDT; code commit d0e5174): **STILL NOT PROVEN LIVE**, 3 of 6 memos used, 0 delegations
+
+Load gate passed: 1-min load 114.96 at 23:15:19 (the leaked busy-loop shells are gone) -> 35.83 at 23:18:19 -> about 30 when memo 1 went in -> 8.6 at the end
+(5-min average still about 100 during the run, it lags). Injected memos (`runs/r2-injected/inject.py`, sim device e1c40830, holocene-pm); evidence in `runs/r2-review-live/`
+(`out-l1-port.json.txt`, `out-l1b-node.json.txt`, `out-l2-withdraw.json.txt`, `trace-l2-withdraw.txt`, `conv-final.txt`, `journal-*.txt`, `run.txt`).
+
+| memo | heard | result |
+|---|---|---|
+| l1 dd4f9722 | "Have Holocene PM check which port the Holocene API listens on and report back." | `reply`/`fast` (glm-5.3, 10.0 s), not a propose: the desk answered from the board, "already done ... port 4000 ... Want me to send it again anyway?" (the 22:10 follow-up proof run's delegation is still in the conversation memory). 0 dispatched. Memo spent, no draft. |
+| l1b b690e37f | "Have Holocene PM find out which node version the Holocene API is built with and report back." (substituted a fresh ask so the desk would draft) | `propose`/`fast` (glm-5.3, 9.6 s): "Draft for Holocene PM: Which Node version builds the Holocene API ..." brief a54ac002, 0 dispatched, 0 delegated. |
+| l2 f4b3db5e | "Actually, forget that. Instead, have Holocene PM list the open Holocene tickets and report back." | **desk r1 timed out at 12.011 s -> `direct`/`fallback` (`all_routes_failed`)**: a plain interactive agent turn (command 4bb1e585, completed/success after 60 s) and a BACKGROUND batch follow-up (542f9bc7). Stopped here as instructed. I ran `memo:cancel f4b3db5e` so the follow-up is not spoken; the batch command was already published. |
+
+Not run: "Send it.", "Cancel that.", the 25 s phone-copy wait. So (a) read-back phone copy / `phone_retry.before=delegation_readback` / `audio.memo.mirrored`, (b) "already on its way"
+and (c) the fresh `built_by` chain for a "forget that" propose are **not proven live**; they remain proven by the pipeline tests only. The gateway journal went 1117 -> 1119 rows
+(the two fall-through turns); no delegation row. One side effect: a stray agent turn plus batch follow-up (a read-only ticket listing), and the conversation still holds the
+unsent Node-version draft as pending (`conv-final.txt`).
+
+What this changes in the picture: the fall-through is **not only host load**. At a 1-min load of about 30 (down from 190) the first two desk calls took 10.0 s and 9.6 s, and the third, a propose
+over a longer conversation (withdraw phrasing, about 5 earlier turns), took the whole 12 s budget (`llm_ms` 12011, `fallback_reason all_routes_failed`). The r1 route
+(`automaticai/auto/fast` -> glm-5.3) answers the desk prompt in about 9-10 s even at moderate load, so the 12 s per-call timeout has only about 2 s of headroom and any
+slow call drops a work request into the ungated agent path. Suggested follow-up (not done, config left as found): raise the desk call timeout, or make a timed-out
+*propose-shaped* request retry once or answer a short "one moment" instead of dispatching to the agent; and re-run these five steps when the desk answers in under 6 s.
+
+Live config at the end: mode on, agents `*`, devices any car, handoff named, routes `r1=automaticai/auto/fast` (no override), tiles none. Emulator, hermes-gateway, watcher and proxy not touched; no product code changed.

@@ -1,0 +1,22 @@
+      driver: 'Have Holocene PM find out which node version the Holocene API is built with and report back.'
+      desk:   'Draft for Holocene PM: Which Node version builds the Holocene API. Read-only. Say send it, or tell me what to change.'
+  23:20:48  direct   fallback                                     memo f4b3db5e
+      driver: 'Actually, forget that. Instead, have Holocene PM list the open Holocene tickets and report back.'
+      agent:   'The live board lookup timed out, so I don’t have a verified ticket list yet. I’ll finish the read-only lookup and report back with ticket numbers, titles, and c'
+
+pending draft: 'Which Node version builds the Holocene API' for Holocene PM (read_only), proposed, proposed 23:19:54, brief a54ac002
+      | # Which Node version builds the Holocene API
+      | 
+      | Find out which Node.js version the Holocene API is built and run with, and report back.
+      | 
+      | ## Context
+      | - The driver asked from the car. The Holocene API runs as the user systemd service holocene-api.service on apps/api/dist/server.js, port 4000, on the host at /home/delorenj/code/33GOD/holocene.
+      | - Check whatever pins the version: .nvmrc, mise config, package.json engines, Dockerfile, and the node binary the service actually runs.
+      | 
+      | ## Done when
+      | - The exact Node version is named, with the file or runtime evidence it came from.
+      | 
+      | ## Permission
+
+delegations:
+  none

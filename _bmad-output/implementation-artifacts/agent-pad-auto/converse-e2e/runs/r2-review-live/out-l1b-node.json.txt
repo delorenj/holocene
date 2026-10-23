@@ -1,0 +1,270 @@
+{
+ "name": "l1b-node",
+ "text": "Have Holocene PM find out which Node version the Holocene API is built with and report back.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+ "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+ "put_t": 1792725583.3804903,
+ "elapsed_s": 45.7,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T03:19:44Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "size_bytes": 24097,
+     "detected_at": "2026-10-23T03:19:43.971Z",
+     "occurred_at": "2026-10-23T03:19:43.971Z",
+     "uploaded_at": "2026-10-23T03:19:43.730Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 241,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T03:19:44Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "language": "en",
+     "word_count": 17,
+     "occurred_at": "2026-10-23T03:19:44.531Z",
+     "audio_max_dbfs": -5.6,
+     "audio_mean_dbfs": -25.4,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Have Holocene PM find out which node version the Holocene API is built with and report back.",
+     "transcript_chars": 92,
+     "processing_seconds": 0.44,
+     "audio_duration_seconds": 6.4
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T03:19:47Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 3579,
+     "occurred_at": "2026-10-23T03:19:47.606Z",
+     "spoken_text": "One sec.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/b690e37f-f7cb-59b2-a657-f9aa41e70891-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:19:53Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T03:19:53.602Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/b690e37f-f7cb-59b2-a657-f9aa41e70891-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T03:19:54Z",
+    "data": {
+     "say": "Draft for Holocene PM: Which Node version builds the Holocene API. Read-only. Say send it, or tell me what to change.",
+     "sid": "4f41261d",
+     "path": "fast",
+     "perm": "read_only",
+     "tool": null,
+     "guard": null,
+     "route": "r1",
+     "title": "Which Node version builds the Holocene API",
+     "usage": {
+      "total_tokens": 5089,
+      "prompt_tokens": 4739,
+      "completion_tokens": 350,
+      "prompt_tokens_details": {
+       "cached_tokens": 3456
+      },
+      "completion_tokens_details": {
+       "reasoning_tokens": 155
+      }
+     },
+     "action": "propose",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "target": "holocene-pm",
+     "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311",
+     "lexicon": false,
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "attempts": 1,
+     "brief_id": "a54ac002-b46c-508c-b979-858ccb67cce8",
+     "conv_turn": 4,
+     "decide_ms": 9641,
+     "say_chars": 117,
+     "card_age_s": 66.0,
+     "latency_ms": 9628,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 9628,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "ok",
+       "http_status": 200,
+       "served_route": "automaticai/personal/glm-5.3",
+       "finish_reason": "stop",
+       "answered_model": "glm-5.3",
+       "reasoning_tokens": 155,
+       "completion_tokens": 350
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T03:19:54.187Z",
+     "reply_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.ogg",
+     "served_route": "automaticai/personal/glm-5.3",
+     "cached_tokens": 3456,
+     "decided_action": "propose",
+     "model_answered": "glm-5.3",
+     "fallback_reason": null,
+     "requested_model": "automaticai/auto/fast",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T03:19:56Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 12777,
+     "occurred_at": "2026-10-23T03:19:55.982Z",
+     "spoken_text": "Draft for Holocene PM: Which Node version builds the",
+     "tts_seconds": 1.78,
+     "chunk_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.ogg",
+     "spoken_chars": 52,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 1.78,
+     "since_agent_done_seconds": 1.8
+    }
+   },
+   {
+    "time": "2026-10-23T03:19:58Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "followup": null,
+     "command_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 19400,
+     "occurred_at": "2026-10-23T03:19:58.320Z",
+     "spoken_text": "Holocene API. Read-only. Say send it, or tell me what to change.",
+     "tts_seconds": 2.34,
+     "chunk_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.ogg",
+     "spoken_chars": 64,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 4.12,
+     "since_agent_done_seconds": 4.13
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T03:20:16Z",
+    "data": {
+     "conv": {
+      "sid": "4f41261d",
+      "path": "fast",
+      "turn": 4,
+      "action": "propose",
+      "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311"
+     },
+     "late": false,
+     "model": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg",
+     "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891",
+     "profile": null,
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": null,
+     "reply_text": "Draft for Holocene PM: Which Node version builds the Holocene API. Read-only. Say send it, or tell me what to change.",
+     "session_id": null,
+     "tts_engine": "voxcpm",
+     "audio_bytes": 39542,
+     "earshot_key": "phone/2026/10/23/031954187Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.ogg",
+     "occurred_at": "2026-10-23T03:20:16.193Z",
+     "reply_chars": 117,
+     "reply_up_at": "2026-10-23T03:19:58.480Z",
+     "tts_seconds": 4.27,
+     "full_seconds": 21.99,
+     "prompt_match": null,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/031954Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.ogg",
+     "spoken_chars": 117,
+     "agent_seconds": null,
+     "earshot_reason": "no_car_claim",
+     "model_override": null,
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 14.51,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/031954187Z-holocene-pm-b690e37f-f7cb-59b2-a657-f9aa41e70891.txt",
+     "last_chunk_seconds": 4.12,
+     "first_chunk_seconds": 1.78,
+     "earshot_wait_seconds": 17.71,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 2,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ }
+}

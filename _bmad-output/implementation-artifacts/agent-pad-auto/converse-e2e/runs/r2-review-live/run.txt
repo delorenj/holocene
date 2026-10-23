@@ -1,0 +1,95 @@
+load gate: 1-min load 32.40 98.44 145.10 at 23:18:44 (was 114.96 at 23:15:19, <40 at 23:18:19: 35.83)
+step1 23:18:44 load 32.40 98.44 145.10
+`/tmp/ttfa2/l1-port.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 19.29 KiB │ 19.29 KiB   │ 00m00s   │ 49.67 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "l1-port", "key": "inbox/holocene-pm/2026/10/23/20261023T031847Z.ogg", "memo_id": "dd4f9722-db6d-59ea-bbdb-af6cebd8570f", "put_at": "2026-10-23T03:18:47.619795+00:00", "synth_s": 2.8}
+{
+ "name": "l1-port",
+ "memo": "dd4f9722",
+ "heard": "Have Holocene PM check which port the Holocene API listens on and report back.",
+ "action": "reply",
+ "path": "fast",
+ "model": "glm-5.3",
+ "lat_ms": 9995,
+ "say": "That one's already done: Holocene PM reported back at 22:10 that the Holocene API listens on port 4000, verified in the user service file holocene-api.service. Want me to send it again anyway?",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 2,
+  "routed": 1,
+  "voiced": 3,
+  "replied": 1
+ },
+ "elapsed_s": 46.4
+}
+step1 desk answered from the board (reply, 'already done'), no draft; memo 1 of 6 spent. step1b 23:19:39 load 20.05 83.90 137.44
+`/tmp/ttfa2/l1b-node.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 23.53 KiB │ 23.53 KiB   │ 00m00s   │ 66.07 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "l1b-node", "key": "inbox/holocene-pm/2026/10/23/20261023T031943Z.ogg", "memo_id": "b690e37f-f7cb-59b2-a657-f9aa41e70891", "put_at": "2026-10-23T03:19:43.749265+00:00", "synth_s": 3.4}
+{
+ "name": "l1b-node",
+ "memo": "b690e37f",
+ "heard": "Have Holocene PM find out which node version the Holocene API is built with and report back.",
+ "action": "propose",
+ "path": "fast",
+ "model": "glm-5.3",
+ "lat_ms": 9628,
+ "say": "Draft for Holocene PM: Which Node version builds the Holocene API. Read-only. Say send it, or tell me what to change.",
+ "dispatched": 0,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 2,
+  "routed": 1,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 45.7
+}
+step1b propose OK (Node version draft), memo 2 of 6. step2 23:20:32 load 14.75 71.78 130.22
+`/tmp/ttfa2/l2-withdraw.ogg` -> `delo/holocene-auto/inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg`
+┌───────────┬─────────────┬──────────┬─────────────┐
+│ Total     │ Transferred │ Duration │ Speed       │
+│ 20.56 KiB │ 20.56 KiB   │ 00m00s   │ 66.89 KiB/s │
+└───────────┴─────────────┴──────────┴─────────────┘
+{"name": "l2-withdraw", "key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg", "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea", "put_at": "2026-10-23T03:20:36.371612+00:00", "synth_s": 3.0}
+{
+ "name": "l2-withdraw",
+ "memo": "f4b3db5e",
+ "heard": "Actually, forget that. Instead, have Holocene PM list the open Holocene tickets and report back.",
+ "action": "direct",
+ "path": "fallback",
+ "model": null,
+ "lat_ms": 12011,
+ "say": "",
+ "dispatched": 2,
+ "delegated": 0,
+ "failed": 0,
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "started": 4,
+  "routed": 1,
+  "dispatched": 2,
+  "progressed": 3,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ },
+ "elapsed_s": 108.6
+}
+step2 withdraw memo f4b3db5e: desk r1 timed out at 12.011 s at 1-min load ~30 -> direct/fallback (plain interactive agent turn 4bb1e585 + batch follow-up 542f9bc7). STOPPED per hard limit. 3 of 6 memos spent. memo:cancel f4b3db5e issued (follow-up not spoken).
+gateway executions rows 1117 -> 1119 (the two fall-through turns); 0 delegations.
+final load 8.58 49.67 114.43

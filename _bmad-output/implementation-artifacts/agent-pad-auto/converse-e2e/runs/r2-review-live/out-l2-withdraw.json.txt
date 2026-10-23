@@ -1,0 +1,551 @@
+{
+ "name": "l2-withdraw",
+ "text": "Actually forget that, instead have Holocene PM list the open Holocene tickets and report back.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+ "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+ "put_t": 1792725636.0491784,
+ "elapsed_s": 108.6,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T03:20:36Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "size_bytes": 21051,
+     "detected_at": "2026-10-23T03:20:36.382Z",
+     "occurred_at": "2026-10-23T03:20:36.382Z",
+     "uploaded_at": "2026-10-23T03:20:36.346Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 36,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T03:20:37Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "language": "en",
+     "word_count": 15,
+     "occurred_at": "2026-10-23T03:20:36.903Z",
+     "audio_max_dbfs": -4.2,
+     "audio_mean_dbfs": -24.0,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Actually, forget that. Instead, have Holocene PM list the open Holocene tickets and report back.",
+     "transcript_chars": 96,
+     "processing_seconds": 0.41,
+     "audio_duration_seconds": 5.6
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T03:20:40Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 2211,
+     "occurred_at": "2026-10-23T03:20:39.990Z",
+     "spoken_text": "Thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/f4b3db5e-7718-5c77-927a-6154914f92ea-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:20:46Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T03:20:45.987Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/f4b3db5e-7718-5c77-927a-6154914f92ea-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:20:56Z",
+    "data": {
+     "seq": 3,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "narration": 3,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4004,
+     "occurred_at": "2026-10-23T03:20:56.425Z",
+     "spoken_text": "Still on it.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 7.3,
+     "progress_s3_key": "progress/2026/10/23/f4b3db5e-7718-5c77-927a-6154914f92ea-3h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:08Z",
+    "data": {
+     "seq": 2,
+     "kind": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "narration": 4,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 22355,
+     "occurred_at": "2026-10-23T03:21:08.105Z",
+     "spoken_text": "Holocene PM: I\u2019ll confirm the project binding and the board\u2019s read-only listing command.",
+     "tts_seconds": 2.73,
+     "elapsed_seconds": 19.0,
+     "progress_s3_key": "progress/2026/10/23/f4b3db5e-7718-5c77-927a-6154914f92ea-4.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:41Z",
+    "data": {
+     "seq": 3,
+     "kind": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "narration": 5,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 22101,
+     "occurred_at": "2026-10-23T03:21:41.035Z",
+     "spoken_text": "Holocene PM: I\u2019ll fetch the current ticket list and report anything not completed or cancelled.",
+     "tts_seconds": 2.66,
+     "elapsed_seconds": 51.9,
+     "progress_s3_key": "progress/2026/10/23/f4b3db5e-7718-5c77-927a-6154914f92ea-5.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "started": [
+   {
+    "time": "2026-10-23T03:20:49.258131Z",
+    "data": {
+     "lane": "interactive",
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "prompt_text": "[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiting to hear your answer aloud, whatever else says no human is present: answer within about a minute and at most 3 tool calls. The driver hears your progress aloud while you work: before each tool call, write one short sentence saying what you are about to do. Never run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long command unless asked. If the ask needs longer work, do not start it now: tell the driver in one or two sentences what you will do, then end your reply with a line that starts with BACKGROUND: followed by complete instructions for yourself. That work starts right after, on this same conversation, and its result is spoken to the driver as a follow-up.] [Earlier in this car conversation (speech-to-text): Driver: Please, draft a task for Holocene PM. Ask it to look up which System-D unit runs the Holocene Inbox Watcher and report back. / Desk: Task draft: Identify the Holocene Inbox Watcher\u2019s systemd unit Assigned to: Holocene PM Inspect the current host configuration to determine which systemd unit runs the Holocene Inbox Watcher. Verify against live configuration, not historical documentation. Report back with: - Exact unit name and whether it is a user or system service. - Unit-file path and startup command. - Current running status. - Evidence connecting that unit to the Inbox Watcher. Read-only investigation: Do not restart services or change configuration. | Driver: Have Holocene PM check which port the Holocene API listens on and report back. / Desk: That one's already done: Holocene PM reported back at 22:10 that the Holocene API listens on port 4000, verified in the user service file holocene-api.service. Want me to send it again anyway? | Driver: Have Holocene PM find out which node version the Holocene API is built with and report back. / Desk: Draft for Holocene PM: Which Node version builds the Holocene API. Read-only. Say send it, or tell me what to change.] Actually, forget that. Instead, have Holocene PM list the open Holocene tickets and report back.",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:20:49.258161Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg"
+     },
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   },
+   {
+    "time": "2026-10-23T03:22:13.549619Z",
+    "data": {
+     "lane": "batch",
+     "turn_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "prompt_text": "[Background continuation of the voice memo above: the driver already heard your short answer. Do the work below now, in full, without asking questions; the one-minute budget does not apply here. Do it yourself: never delegate to a subagent (delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, restart, push or other change to a live system unless the driver's own words asked for it; the ask came through speech-to-text, so if it is unclear, do only the read-only part and say what you left undone. Your final message is spoken to the driver as a follow-up: end it with a spoken summary of the result in two to four sentences, and do not write a BACKGROUND: line.] Retrieve the current Holocene tickets from Plane workspace 33god, board 727a2b17-a1dd-46f6-b583-afa5a2d2cdae, bound by ~/code/33GOD/holocene/.project.json. Retry `px task list --json`; if blocked, diagnose the read-only access path and use the project-lifecycle fallback. Report all tickets excluding completed and cancelled state groups, with ticket IDs, titles, states, and a total count. Make no ticket, code, or service changes.",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "d4f53b67-9d1e-5212-942f-73aaeefa7f4b",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:22:13.549642Z",
+    "data": {
+     "lane": "batch",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-followup",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+      "followup_of": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+      "followup_depth": 1
+     },
+     "turn_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "profile_name": "holocene-pm",
+     "invocation_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "idempotency_key": "d4f53b67-9d1e-5212-942f-73aaeefa7f4b",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T03:20:49Z",
+    "data": {
+     "say": null,
+     "sid": "4f41261d",
+     "path": "fallback",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": null,
+     "title": null,
+     "usage": null,
+     "action": "direct",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "target": null,
+     "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311",
+     "lexicon": false,
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 5,
+     "decide_ms": 12026,
+     "say_chars": null,
+     "card_age_s": 12.5,
+     "latency_ms": 12011,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 12011,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "timeout"
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": false,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T03:20:48.941Z",
+     "reply_s3_key": null,
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "direct",
+     "model_answered": null,
+     "fallback_reason": "all_routes_failed",
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "dispatched": [
+   {
+    "time": "2026-10-23T03:20:49Z",
+    "data": {
+     "lane": "interactive",
+     "model": "automaticai/personal/sol-6.1",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "dispatch_ms": 109,
+     "lane_reason": null,
+     "occurred_at": "2026-10-23T03:20:49.097Z",
+     "prompt_chars": 2229,
+     "voice_prefix": true,
+     "prompt_sha256": "53a233c1ccd71027617ba61da5f07fee2864849b39e0fb2ef98eb9645c3d70eb",
+     "command_subject": "bloodbank.cmd.agent.invocation.invoke",
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:22:13Z",
+    "data": {
+     "lane": "batch",
+     "model": null,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "followup": 1,
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "542f9bc7-63f6-4a71-9b7e-5823da75c4a6",
+     "dispatch_ms": 97,
+     "lane_reason": "voice_followup",
+     "occurred_at": "2026-10-23T03:22:13.527Z",
+     "prompt_chars": 1128,
+     "voice_prefix": true,
+     "followup_plan": "Retrieve the current Holocene tickets from Plane workspace 33god, board 727a2b17-a1dd-46f6-b583-afa5a2d2cdae, bound by ~/code/33GOD/holocene/.project.json. Retry `px task list --json`; if blocked, diagnose the read-only access path and use the project-lifecycle fallback. Report all tickets excluding completed and cancelled state groups, with ticket IDs, titles, states, and a total count. Make no ticket, code, or service changes.",
+     "prompt_sha256": "c517714f85487d0c1978f30b75c5657f2fa8241e361300bccf84efdebe5e0bb8",
+     "command_subject": "bloodbank.cmd.agent.invocation.start",
+     "idempotency_key": "d4f53b67-9d1e-5212-942f-73aaeefa7f4b",
+     "target_agent_id": "holocene-pm",
+     "followup_of_command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc"
+    }
+   }
+  ],
+  "progressed": [
+   {
+    "time": "2026-10-23T03:20:57.252872Z",
+    "data": {
+     "seq": 1,
+     "lane": "interactive",
+     "text": "I\u2019ll check the live Holocene board for open tickets.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg"
+     },
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "text_truncated": false,
+     "elapsed_seconds": 7.6,
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:03.107453Z",
+    "data": {
+     "seq": 2,
+     "lane": "interactive",
+     "text": "I\u2019ll confirm the project binding and the board\u2019s read-only listing command.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg"
+     },
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "text_truncated": false,
+     "elapsed_seconds": 13.4,
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:09.261803Z",
+    "data": {
+     "seq": 3,
+     "lane": "interactive",
+     "text": "I\u2019ll fetch the current ticket list and report anything not completed or cancelled.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg"
+     },
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "text_truncated": false,
+     "elapsed_seconds": 19.6,
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "completed": [
+   {
+    "time": "2026-10-23T03:21:49.897166Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg"
+     },
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "invocation_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:49.897191Z",
+    "data": {
+     "lane": "interactive",
+     "outcome": "completed",
+     "turn_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "thread_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "9af22b1f-5bb5-5d5f-b086-b0cc74439700",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T03:21:52Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "followup": null,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 18399,
+     "occurred_at": "2026-10-23T03:21:52.814Z",
+     "spoken_text": "Holocene PM. The live board lookup timed out, so I don\u2019t have a verified ticket list yet.",
+     "tts_seconds": 2.61,
+     "chunk_s3_key": "replies/2026/10/23/032150Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea-c01of02.opus",
+     "reply_s3_key": "replies/2026/10/23/032150Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea.ogg",
+     "spoken_chars": 89,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 2.62,
+     "since_agent_done_seconds": 2.65
+    }
+   },
+   {
+    "time": "2026-10-23T03:21:55Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 2,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "followup": null,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 18744,
+     "occurred_at": "2026-10-23T03:21:55.512Z",
+     "spoken_text": "I\u2019ll finish the read-only lookup and report back with ticket numbers, titles, and current states.",
+     "tts_seconds": 2.69,
+     "chunk_s3_key": "replies/2026/10/23/032150Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea-c02of02.opus",
+     "reply_s3_key": "replies/2026/10/23/032150Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea.ogg",
+     "spoken_chars": 97,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 5.32,
+     "since_agent_done_seconds": 5.35
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T03:22:13Z",
+    "data": {
+     "conv": {
+      "sid": "4f41261d",
+      "path": "fallback",
+      "turn": 5,
+      "action": "direct",
+      "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311"
+     },
+     "late": false,
+     "model": "automaticai/personal/sol-6.1",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T032036Z.ogg",
+     "memo_id": "f4b3db5e-7718-5c77-927a-6154914f92ea",
+     "profile": "holocene-pm",
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": true,
+     "command_id": "4bb1e585-7b7f-4278-8b04-90e2b96fcfbc",
+     "reply_text": "The live board lookup timed out, so I don\u2019t have a verified ticket list yet. I\u2019ll finish the read-only lookup and report back with ticket numbers, titles, and current states.",
+     "session_id": "20261022_232049_2f28cbd4",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 45096,
+     "earshot_key": "phone/2026/10/23/032150195Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea.ogg",
+     "occurred_at": "2026-10-23T03:22:13.274Z",
+     "reply_chars": 174,
+     "reply_up_at": "2026-10-23T03:21:55.671Z",
+     "tts_seconds": 5.47,
+     "full_seconds": 23.08,
+     "prompt_match": true,
+     "reply_chunks": 2,
+     "reply_s3_key": "replies/2026/10/23/032150Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea.ogg",
+     "spoken_chars": 187,
+     "agent_seconds": 61.07,
+     "earshot_reason": "no_car_claim",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "background_plan": "Retrieve the current Holocene tickets from Plane workspace 33god, board 727a2b17-a1dd-46f6-b583-afa5a2d2cdae, bound by ~/code/33GOD/holocene/.project.json. Retry `px task list --json`; if blocked, diagnose the read-only access path and use the project-lifecycle fallback. Report all tickets excluding completed and cancelled state groups, with ticket IDs, titles, states, and a total count. Make no ticket, code, or service changes.",
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 79.29,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/032150195Z-holocene-pm-f4b3db5e-7718-5c77-927a-6154914f92ea.txt",
+     "last_chunk_seconds": 5.32,
+     "first_chunk_seconds": 2.62,
+     "earshot_wait_seconds": 17.6,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 5,
+  "started": 4,
+  "routed": 1,
+  "dispatched": 2,
+  "progressed": 3,
+  "completed": 2,
+  "voiced": 2,
+  "replied": 1
+ }
+}
