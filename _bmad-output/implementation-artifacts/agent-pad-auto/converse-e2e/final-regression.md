@@ -391,3 +391,23 @@ its "driver's own words" are the 22:09:46 proposal and "Send it" only, no garage
    emulator not touched; only the watcher was restarted, at idle.
 4. Tests: full suite 448 tests (`cd services && python3 -B -m unittest discover -s inbox-watcher -p 'test_*.py'`) at load 170: 441 pass, 7 timing failures
    (6 in `test_hold_cue` DeskWait/FallThrough, `Pipeline.test_26`), all of which pass when re-run alone (`test_hold_cue` 22/22 in 36 s, test_26 in 2 s): load flakes, not the change.
+
+## R2 follow-ups, review round 2 (2026-10-22 23:00-23:12 EDT; code commit d0e5174, watcher restarted idle at 23:08:06)
+
+An independent review of the follow-ups found one major and three minor issues.
+
+| severity | finding | outcome |
+|---|---|---|
+| major | with `no_wait` the "Sending to ..." read-back could be heard nowhere: an unclaimed line (or an offer the proxy could not take) returned `skip=delegation_readback` and the phone copy was never made | **fixed.** `no_wait` still never holds the dispatch, but the undecided phone copy is now handed to the phone retry (`arm_readback_phone_copy`, `phone_retry.before=delegation_readback`): first round when the car's grace window ends, an offer the proxy missed is re-made (why `delegation_unasked`), a car that holds or starts the line keeps it (`car_heard`), otherwise the phone takes it and gets the Earshot copy (`audio.memo.mirrored`, `earshot_skipped_before=delegation_readback`). Tests: `test_the_read_back_is_still_mirrored_to_the_phone_when_no_car_claims_it`, `test_a_car_that_starts_the_read_back_keeps_it_from_the_phone_retry`, the proxy-down `no_wait` case now expects `delegation_unasked`. |
+| minor | "cancel that" / "Already sent" lied once a delegation had been in flight longer than the 30 min dedupe window (batch lane queued the proof run 36 min) | **fixed.** `recent_delegation` keeps a `sending`/`running` delegation recent for up to `IN_FLIGHT_MAX_S` (6 h); finished ones still age out at 30 min. Test: `test_a_delegation_still_running_past_the_dedupe_window_is_still_on_its_way`. |
+| minor | F4 chain kept a withdrawn ask when the driver took the draft back by proposing over it ("actually forget that, instead ...") | **fixed for explicit withdrawals.** A propose whose words open with a withdrawal (`withdraws_draft`: forget that, scrap/scratch that, never mind, disregard/ignore/drop that, instead of that, new request/topic) starts a fresh `built_by` chain. **Left:** a silent topic change with no withdrawal phrase still continues the chain (cannot be told from an edit without the model), and a clarifying reply turn that fed a proposal is not carried (privacy over completeness; its substance reaches the agent through the brief). |
+| minor | the cancel-before-publish window is only the read-back's render, so docs must not promise a cancel window | **doc fixed** (README now says so). No code change: the "Sending ..." line does not promise a cancel, and "cancel that" afterwards gets the honest "already on its way". |
+
+### Live re-verification: blocked by the desk fall-through, 2 of 3 memos used, 0 delegations
+Load was 170-176 throughout. Both propose memos (`v0-propose`, `v1-propose`, `runs/r2-review/out-*.json`) hit the r1 12 s desk timeout (12.01 s, 12.06 s) and ran as plain
+read-only agent turns (`direct` / `fallback`, systemd-unit question, done, no follow-up, nothing pending), so there was no draft to confirm and the third memo
+was not spent. No delegation was published. The fixes are therefore proven by the pipeline tests above (fake proxy and bucket), not live. This is the same
+open fall-through risk as before (config left as found).
+
+Live config at the end: mode on, agents `*`, devices any car, no routes override, tiles `{}`. Emulator, hermes-gateway and proxy not touched.
+Tests: full suite 452 at load 175: 451 pass; the one failure (`test_hold_cue.FallThrough`, desk-wait cue timing) passes alone (`test_hold_cue` 22/22 twice).

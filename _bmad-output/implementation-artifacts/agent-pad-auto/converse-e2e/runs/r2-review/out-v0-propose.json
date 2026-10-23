@@ -1,0 +1,448 @@
+{
+ "name": "v0-propose",
+ "text": "Please draft a task for Holocene PM, ask it to look up which systemd unit runs the Holocene inbox watcher and report back.",
+ "key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+ "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+ "put_t": 1792724897.4659219,
+ "elapsed_s": 78.5,
+ "facts": {
+  "received": [
+   {
+    "time": "2026-10-23T03:08:18Z",
+    "data": {
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "size_bytes": 25962,
+     "detected_at": "2026-10-23T03:08:18.054Z",
+     "occurred_at": "2026-10-23T03:08:18.055Z",
+     "uploaded_at": "2026-10-23T03:08:17.899Z",
+     "content_type": "audio/ogg",
+     "detect_lag_ms": 155,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "transcribed": [
+   {
+    "time": "2026-10-23T03:08:19Z",
+    "data": {
+     "model": "large-v3-turbo",
+     "device": "cuda",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "backend": "faster-whisper-server",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "language": "en",
+     "word_count": 23,
+     "occurred_at": "2026-10-23T03:08:19.325Z",
+     "audio_max_dbfs": -4.3,
+     "audio_mean_dbfs": -21.0,
+     "fallback_reason": null,
+     "target_agent_id": "holocene-pm",
+     "transcript_text": "Please draft a task for Holocene PM. Ask it to look up which SystemD unit runs the Holocene Inbox Watcher and report back.",
+     "transcript_chars": 122,
+     "processing_seconds": 0.73,
+     "audio_duration_seconds": 6.88
+    }
+   }
+  ],
+  "narrated": [
+   {
+    "time": "2026-10-23T03:08:22Z",
+    "data": {
+     "seq": 1,
+     "kind": "hold_cue",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "narration": 1,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 2211,
+     "occurred_at": "2026-10-23T03:08:22.434Z",
+     "spoken_text": "Thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 3.1,
+     "progress_s3_key": "progress/2026/10/23/57d07583-66e0-5eaa-a3b8-5124716c1329-1h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:08:28Z",
+    "data": {
+     "seq": 2,
+     "kind": "hold_cue2",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "narration": 2,
+     "command_id": null,
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4457,
+     "occurred_at": "2026-10-23T03:08:28.439Z",
+     "spoken_text": "Still thinking.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 9.1,
+     "progress_s3_key": "progress/2026/10/23/57d07583-66e0-5eaa-a3b8-5124716c1329-2h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:08:39Z",
+    "data": {
+     "seq": 3,
+     "kind": "hold_keepalive",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "narration": 3,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "tts_engine": "phrasebank",
+     "audio_bytes": 4004,
+     "occurred_at": "2026-10-23T03:08:39.528Z",
+     "spoken_text": "Still on it.",
+     "tts_seconds": 0.0,
+     "elapsed_seconds": 7.8,
+     "progress_s3_key": "progress/2026/10/23/57d07583-66e0-5eaa-a3b8-5124716c1329-3h.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:08:49Z",
+    "data": {
+     "seq": 1,
+     "kind": null,
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "narration": 4,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 19888,
+     "occurred_at": "2026-10-23T03:08:49.400Z",
+     "spoken_text": "Holocene PM: I\u2019ll draft a read-only lookup task for Holocene PM.",
+     "tts_seconds": 2.61,
+     "elapsed_seconds": 17.7,
+     "progress_s3_key": "progress/2026/10/23/57d07583-66e0-5eaa-a3b8-5124716c1329-4.ogg",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "started": [
+   {
+    "time": "2026-10-23T03:08:31.776180Z",
+    "data": {
+     "lane": "interactive",
+     "turn_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "prompt_text": "[Voice memo transcript - speech-to-text, may contain recognition errors. A driver is waiting to hear your answer aloud, whatever else says no human is present: answer within about a minute and at most 3 tool calls. The driver hears your progress aloud while you work: before each tool call, write one short sentence saying what you are about to do. Never run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long command unless asked. If the ask needs longer work, do not start it now: tell the driver in one or two sentences what you will do, then end your reply with a line that starts with BACKGROUND: followed by complete instructions for yourself. That work starts right after, on this same conversation, and its result is spoken to the driver as a follow-up.] Please draft a task for Holocene PM. Ask it to look up which SystemD unit runs the Holocene Inbox Watcher and report back.",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:08:31.776209Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg"
+     },
+     "turn_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "profile_name": "holocene-pm",
+     "invocation_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm",
+     "parent_invocation_id": null
+    }
+   }
+  ],
+  "routed": [
+   {
+    "time": "2026-10-23T03:08:31Z",
+    "data": {
+     "say": null,
+     "sid": "4f41261d",
+     "path": "fallback",
+     "perm": null,
+     "tool": null,
+     "guard": null,
+     "route": null,
+     "title": null,
+     "usage": null,
+     "action": "direct",
+     "device": "e1c40830-9802-420f-98b9-d06be3f51b74",
+     "recall": true,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "target": null,
+     "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311",
+     "lexicon": false,
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "attempts": 1,
+     "brief_id": null,
+     "conv_turn": 1,
+     "decide_ms": 12037,
+     "say_chars": null,
+     "card_age_s": 12.9,
+     "latency_ms": 12012,
+     "tile_model": null,
+     "tile_voice": "rick",
+     "attempt_log": [
+      {
+       "ms": 12012,
+       "model": "automaticai/auto/fast",
+       "route": "r1",
+       "outcome": "timeout"
+      }
+     ],
+     "card_sha256": "fe9af780de05116fca1f4a9719386afc4bce12acb0b2d3763200cad22736ca11",
+     "conv_opened": true,
+     "delegate_to": null,
+     "occurred_at": "2026-10-23T03:08:31.377Z",
+     "reply_s3_key": null,
+     "served_route": null,
+     "cached_tokens": null,
+     "decided_action": "direct",
+     "model_answered": null,
+     "fallback_reason": "all_routes_failed",
+     "requested_model": null,
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "dispatched": [
+   {
+    "time": "2026-10-23T03:08:31Z",
+    "data": {
+     "lane": "interactive",
+     "model": "automaticai/personal/sol-6.1",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "dispatch_ms": 208,
+     "lane_reason": null,
+     "occurred_at": "2026-10-23T03:08:31.736Z",
+     "prompt_chars": 1013,
+     "voice_prefix": true,
+     "prompt_sha256": "e5ed231c63625ef2e393f0b7eba67c497f79cf40f53705f9e87c173f4a77de0f",
+     "command_subject": "bloodbank.cmd.agent.invocation.invoke",
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "progressed": [
+   {
+    "time": "2026-10-23T03:08:44.238018Z",
+    "data": {
+     "seq": 1,
+     "lane": "interactive",
+     "text": "I\u2019ll draft a read-only lookup task for Holocene PM.",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg"
+     },
+     "turn_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "profile_name": "holocene-pm",
+     "invocation_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "text_truncated": false,
+     "elapsed_seconds": 11.8,
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "completed": [
+   {
+    "time": "2026-10-23T03:08:54.815267Z",
+    "data": {
+     "lane": "interactive",
+     "context": {
+      "repo": "holocene",
+      "reason": "voice-inbox",
+      "source": "holocene-auto:inbox-watcher",
+      "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+      "memo_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg"
+     },
+     "turn_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "profile_name": "holocene-pm",
+     "invocation_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm"
+    }
+   },
+   {
+    "time": "2026-10-23T03:08:54.815293Z",
+    "data": {
+     "lane": "interactive",
+     "outcome": "completed",
+     "turn_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "thread_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "profile_name": "holocene-pm",
+     "idempotency_key": "2f45c5e9-a167-5893-938a-18bb24fd5bc9",
+     "target_agent_id": "holocene-pm"
+    }
+   }
+  ],
+  "voiced": [
+   {
+    "time": "2026-10-23T03:08:58Z",
+    "data": {
+     "late": false,
+     "chunk": 1,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "followup": null,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 22756,
+     "occurred_at": "2026-10-23T03:08:58.807Z",
+     "spoken_text": "Holocene PM. Task draft: Identify the Holocene Inbox Watcher\u2019s systemd unit Assigned to:",
+     "tts_seconds": 3.69,
+     "chunk_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329-c01of03.opus",
+     "reply_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.ogg",
+     "spoken_chars": 88,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 3.7,
+     "since_agent_done_seconds": 3.75
+    }
+   },
+   {
+    "time": "2026-10-23T03:09:04Z",
+    "data": {
+     "late": false,
+     "chunk": 2,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "followup": null,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 37414,
+     "occurred_at": "2026-10-23T03:09:04.240Z",
+     "spoken_text": "Holocene PM Look up which systemd unit runs the Holocene Inbox Watcher. Verify against the current host configuration rather than relying on old documentation.",
+     "tts_seconds": 5.43,
+     "chunk_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329-c02of03.opus",
+     "reply_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.ogg",
+     "spoken_chars": 159,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 9.14,
+     "since_agent_done_seconds": 9.19
+    }
+   },
+   {
+    "time": "2026-10-23T03:09:10Z",
+    "data": {
+     "late": false,
+     "chunk": 3,
+     "voice": "rick",
+     "chunks": 3,
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "followup": null,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 40246,
+     "occurred_at": "2026-10-23T03:09:10.145Z",
+     "spoken_text": "Report back with: - Exact unit name and whether it\u2019s a user or system service. - Unit-file path and startup command. - Current running status and the evidence connecting it to the Inbox Watcher.",
+     "tts_seconds": 5.91,
+     "chunk_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329-c03of03.opus",
+     "reply_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.ogg",
+     "spoken_chars": 194,
+     "target_agent_id": "holocene-pm",
+     "since_reply_seconds": 15.04,
+     "since_agent_done_seconds": 15.09
+    }
+   }
+  ],
+  "replied": [
+   {
+    "time": "2026-10-23T03:09:19Z",
+    "data": {
+     "conv": {
+      "sid": "4f41261d",
+      "path": "fallback",
+      "turn": 1,
+      "action": "direct",
+      "conv_id": "4f41261d-72f4-4445-aa3b-3935b2714311"
+     },
+     "late": false,
+     "model": "automaticai/personal/sol-6.1",
+     "voice": "rick",
+     "s3_key": "inbox/holocene-pm/2026/10/23/20261023T030817Z.ogg",
+     "memo_id": "57d07583-66e0-5eaa-a3b8-5124716c1329",
+     "profile": "holocene-pm",
+     "detached": false,
+     "followup": null,
+     "escalated": false,
+     "background": false,
+     "command_id": "ff8cea0f-8f2f-42c7-a84d-177906bb3085",
+     "reply_text": "**Task draft: Identify the Holocene Inbox Watcher\u2019s systemd unit**\n\n**Assigned to:** Holocene PM\n\nLook up which systemd unit runs the Holocene Inbox Watcher. Verify against the current host configuration rather than relying on old documentation.\n\nReport back with:\n- Exact unit name and whether it\u2019s a user or system service.\n- Unit-file path and startup command.\n- Current running status and the evidence connecting it to the Inbox Watcher.\n\nRead-only investigation\u2014do not restart services or change configuration.",
+     "session_id": "20261022_230832_9c3283f0",
+     "tts_engine": "voxcpm",
+     "audio_bytes": 123118,
+     "earshot_key": "phone/2026/10/23/030855103Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.ogg",
+     "occurred_at": "2026-10-23T03:09:19.810Z",
+     "reply_chars": 515,
+     "reply_up_at": "2026-10-23T03:09:10.538Z",
+     "tts_seconds": 15.43,
+     "full_seconds": 24.71,
+     "prompt_match": true,
+     "reply_chunks": 3,
+     "reply_s3_key": "replies/2026/10/23/030855Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.ogg",
+     "spoken_chars": 443,
+     "agent_seconds": 23.32,
+     "earshot_reason": "no_car_claim",
+     "model_override": {
+      "applied": true,
+      "requested": "automaticai/personal/sol-6.1"
+     },
+     "background_plan": null,
+     "earshot_skipped": null,
+     "followup_failed": null,
+     "journey_seconds": 52.48,
+     "target_agent_id": "holocene-pm",
+     "earshot_text_key": "phone/2026/10/23/030855103Z-holocene-pm-57d07583-66e0-5eaa-a3b8-5124716c1329.txt",
+     "last_chunk_seconds": 15.04,
+     "first_chunk_seconds": 3.7,
+     "earshot_wait_seconds": 9.27,
+     "followup_of_command_id": null
+    }
+   }
+  ]
+ },
+ "types": {
+  "received": 1,
+  "transcribed": 1,
+  "narrated": 4,
+  "started": 2,
+  "routed": 1,
+  "dispatched": 1,
+  "progressed": 1,
+  "completed": 2,
+  "voiced": 3,
+  "replied": 1
+ }
+}
