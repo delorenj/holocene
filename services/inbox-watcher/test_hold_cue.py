@@ -18,6 +18,7 @@ import converse as cv  # noqa: E402
 
 CUES = set(cv.HOLD_CUE_LINES)
 CUES2 = set(cv.HOLD_CUE2_LINES)
+CUES3 = set(cv.HOLD_CUE3_LINES)
 
 
 class HoldHarness(ConverseHarness):
@@ -32,6 +33,7 @@ class HoldHarness(ConverseHarness):
         for p in (unittest.mock.patch.object(iw, "log", side_effect=spy),
                   unittest.mock.patch.object(iw, "HOLD_CUE_S", 0.4),
                   unittest.mock.patch.object(iw, "HOLD_CUE2_S", 1.0),
+                  unittest.mock.patch.object(iw, "HOLD_CUE3_S", 0),   # off unless a test turns it on (the shipped default is 16 s)
                   unittest.mock.patch.object(iw, "HOLD_MAX_CLIP_S", 60.0),   # the fake vox's clip is 9 s long
                   unittest.mock.patch.object(mc_, "progress_events", side_effect=lambda mid, limit=200: list(self.events))):
             p.start()
@@ -98,6 +100,29 @@ class DeskWait(HoldHarness, unittest.TestCase):
         # the status object's narration block names the hold clip with its own text and kind, never the previous real line
         self.assertEqual((doc["narration"]["kind"], doc["narration"]["text"], doc["narration"]["seq"]),
                          ("hold_cue2", c2["spoken_text"], None))
+
+    def test_a_very_slow_desk_gets_a_third_cue_after_the_second_then_the_answer(self):
+        with unittest.mock.patch.object(iw, "HOLD_CUE3_S", 1.8):
+            self.slow(2.4)
+            key, m = self.say("What's Holocene working on?")
+            self.assertEqual(m["status"], "done")
+            self.wait_for(lambda: len(self.holds(key)) == 3, "three cues")
+        c1, c2, c3 = sorted(self.holds(key), key=lambda d: d["narration"])
+        self.assertEqual([c["kind"] for c in (c1, c2, c3)], ["hold_cue", "hold_cue2", "hold_cue3"])
+        self.assertEqual([c["narration"] for c in (c1, c2, c3)], [1, 2, 3])
+        self.assertIn(c3["spoken_text"], CUES3)
+        self.assertEqual(len({c1["spoken_text"], c2["spoken_text"], c3["spoken_text"]}), 3)
+        self.assertEqual(c3["progress_s3_key"], f"progress/2026/10/19/{m['memo_id']}-3h.ogg")
+        self.assertGreaterEqual(c3["elapsed_seconds"], 1.75)
+        self.assertEqual(VOX_TEXTS[-1] if VOX_TEXTS else None, "Holocene PM. The watcher stage is next.")
+
+    def test_a_desk_that_answers_before_the_third_mark_never_says_the_third_cue(self):
+        with unittest.mock.patch.object(iw, "HOLD_CUE3_S", 5.0):
+            self.slow(1.5)
+            key, m = self.say("What's Holocene working on?")
+            self.wait_for(lambda: len(self.holds(key)) == 2, "two cues")
+            time.sleep(0.2)
+        self.assertEqual([d["kind"] for d in sorted(self.holds(key), key=lambda d: d["narration"])], ["hold_cue", "hold_cue2"])
 
     def test_a_desk_that_answers_before_the_first_mark_says_nothing(self):
         with unittest.mock.patch.object(iw, "HOLD_CUE_S", 1.5), unittest.mock.patch.object(iw, "HOLD_CUE2_S", 3.0):
@@ -182,7 +207,7 @@ class DeskWait(HoldHarness, unittest.TestCase):
 
     def test_every_cue_line_is_short_and_in_the_phrasebank(self):
         bank = iw.fixed_lines()
-        for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES):
+        for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES, *cv.HOLD_CUE3_LINES):
             self.assertIn(line, bank)
             self.assertLessEqual(len(line), 24)                   # well under a second of speech
 
@@ -202,7 +227,7 @@ class DeskWait(HoldHarness, unittest.TestCase):
 
     def test_every_shipped_cue_line_fits_the_duration_cap_in_the_banked_renders_we_know(self):
         # the cap is enforced on the real clip at run time; here the line set itself stays short and few-worded
-        for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES):
+        for line in (*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES, *cv.HOLD_CUE3_LINES):
             self.assertLessEqual(len(line.split()), 3, line)
 
     def test_a_cue_uploaded_just_before_the_answer_is_removed_from_the_bucket(self):
@@ -363,6 +388,8 @@ class PadSources(unittest.TestCase):
         src = (Path(__file__).resolve().parent / "inbox_watcher.py").read_text()
         self.assertIn('"MEMO_CONVERSE_HOLD_CUE_S", "3"', src)
         self.assertIn('"MEMO_CONVERSE_HOLD_CUE2_S", "9"', src)
+        self.assertIn('"MEMO_CONVERSE_HOLD_CUE3_S", "16"', src)   # 3 / 9 / 16 under the desk route's 22 s timeout: silence <= ~7 s
+        self.assertEqual((iw.HOLD_CUE2_S, iw.HOLD_CUE3_S), (9.0, 16.0))
         self.assertEqual(mc_.progress_key_for("inbox/a/2026/10/19/x.ogg", 3, "m", hold=True), "progress/2026/10/19/m-3h.ogg")
         self.assertEqual(mc_.progress_key_for("inbox/a/2026/10/19/x.ogg", 3, "m"), "progress/2026/10/19/m-3.ogg")
 

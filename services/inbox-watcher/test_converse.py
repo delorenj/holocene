@@ -150,12 +150,14 @@ class Routes(unittest.TestCase):
         self.assertTrue(r1["scoped_auto"])
         self.assertEqual(r1["base_url"], "https://api.automaticai.io/v1")
         self.assertEqual(r1["key_ref"], "op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse")
-        self.assertEqual(r1["timeout_s"], 12.0)
+        self.assertEqual(r1["timeout_s"], 22.0)  # headroom over the 9.6-12+ s calls at host load ~30 (was 12 s: a propose timed out and skipped the confirm gate)
         self.assertEqual((r1["temperature"], r1["reasoning_effort"]), (1.0, None))  # kimi 400s any other temperature
         self.assertFalse(any(cv.forbidden(r["model"]) for r in routes if not r["scoped_auto"]))
         self.assertNotIn("tflaecgcrdgxrh2ovgi5ysjkzq", unit)  # the Hindsight item is no longer the car desk's key
         budget = float(next(ln for ln in unit.splitlines() if ln.startswith("Environment=MEMO_CONVERSE_BUDGET_S=")).split("=")[-1])
         self.assertGreaterEqual(budget, sum(r["timeout_s"] for r in routes))  # the budget covers the route's whole timeout
+        self.assertEqual((r1["timeout_s"], budget), (22.0, 26.0))
+        self.assertGreaterEqual(budget - r1["timeout_s"], 2.5)  # room for the bounded same-route re-ask (MEMO_CONVERSE_REASK_MIN_S)
         self.assertNotRegex(line, r"hyper\.charm\.land|api\.deepseek\.com")  # no pinned model in the default
         self.assertNotRegex(unit, r"\bsk-[A-Za-z0-9_-]{12,}")  # no pasted key ("car-desk-scope" is a path)
 

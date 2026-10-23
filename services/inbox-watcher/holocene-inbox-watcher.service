@@ -32,11 +32,15 @@ Environment=MEMO_CONVERSE_DEVICES=
 Environment=MEMO_CONVERSE_HANDOFF=named
 Environment=MEMO_CONVERSE_IDLE_S=900
 Environment=MEMO_CONVERSE_DRAFT_TTL_S=600
-# One route, so the budget is that route's timeout plus slack (never below it). A healthy turn ends at the first answer
-# (aai/auto/fast measured 7-9 s on 2026-10-22; the 12 s timeout is its tail). When it fails the watcher falls through to
-# the full-agent path; that is the only fallback the default has. A tile alias (car_desk_aliases.json) puts its own routes
-# in front and carries its own budget_s.
-Environment=MEMO_CONVERSE_BUDGET_S=14
+# One route, so the budget is that route's timeout plus room for the one bounded same-route re-ask (never below the timeout).
+# A healthy turn ends at the first answer; aai/auto/fast serves glm-5.3 at max effort and measured 7-9 s on 2026-10-22 and
+# 9.6-12+ s at host load ~30 that night, where the old 12 s timeout / 14 s budget cut a propose over a longer conversation
+# off (all_routes_failed) and the work request fell through to a plain agent turn that skips the propose/confirm gate. So
+# the route has headroom instead: timeout 22 s, budget 26 s (the re-ask still only runs with MEMO_CONVERSE_REASK_MIN_S left).
+# The hold cues cover the longer wait (3 s / 9 s / 16 s, README "Hold cue"). When it still fails the watcher falls through
+# to the full-agent path; that is the only fallback the default has. A tile alias (car_desk_aliases.json) puts its own routes
+# in front and carries its own budget_s (its rungs plus this route's 22 s).
+Environment=MEMO_CONVERSE_BUDGET_S=26
 Environment=MEMO_CONVERSE_TTS_STEPS=6
 # ---- latency levers (HOLOC-23 phase 2; README "Latency levers"). Each one falls back to the old behaviour on its own.
 # S3 over the local MinIO port (the mc alias `delodrive`, same buckets as `delo` = s3.delo.sh through Cloudflare): mc cp up
@@ -69,12 +73,12 @@ Environment=MEMO_CONVERSE_CHUNK_MIN_CHARS=60
 # A pinned model is an opt-in per tile, never the default: the Hyper and DeepSeek routes live in car_desk_aliases.json
 # (deepseek-flash, deepseek-pro; mise run memo:model <agent> <alias>) and go in front of this route for that tile only.
 Environment=MEMO_CONVERSE_SCOPED_KEY_REFS=op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse
-Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/auto/fast","timeout_s":12,"temperature":1}]'
+Environment='MEMO_CONVERSE_ROUTES=[{"id":"r1","base_url":"https://api.automaticai.io/v1","key_ref":"op://DeLoSecrets/yeurk5dpqkaarspvsn3cjtmkki/holocene-converse","model":"automaticai/auto/fast","timeout_s":22,"temperature":1}]'
 # auto/fast serves this token glm-5.3 at effort max whatever the request says (an explicit reasoning_effort medium was
 # logged as requested xhigh, 2026-10-22), so a long-answer request can spend the whole max_tokens (700) on reasoning and
 # come back empty / cut (finish_reason length, outcome "truncated"). The last rung is then re-asked ONCE for the short
 # version when at least this much of MEMO_CONVERSE_BUDGET_S is left (0 = off); measured re-asks took 2.9-5.1 s. A larger
-# max_tokens is no fix: the cut then lands at 12-16 s, past the budget (converse-e2e/final-regression.md, "Fixes").
+# max_tokens is no fix: the cut then lands at 12-16 s (converse-e2e/final-regression.md, "Fixes").
 Environment=MEMO_CONVERSE_REASK_MIN_S=2.5
 # The car desk's tools: the Skillex scope with the car-desk pack (car-set-voice, car-set-model), read at start-up and on change
 Environment=MEMO_CONVERSE_TOOLS_DIR=%h/.local/state/holocene-auto/car-desk-scope

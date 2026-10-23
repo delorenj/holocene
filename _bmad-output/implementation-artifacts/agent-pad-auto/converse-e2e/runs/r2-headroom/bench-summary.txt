@@ -1,0 +1,18 @@
+HOLOC-23 headroom bench, 2026-10-23 03:30-03:34Z, host load 19 -> 12 (1 min avg), unit route as in the file: r1 automaticai/auto/fast timeout 22 s, budget 26 s, reask min 2.5 s
+12 live Desk.decide calls (6 asks x 2 rounds); 8 are proposes/work requests, 5 of those over a 10-turn conversation
+wall ms sorted: [4369, 7465, 8662, 11504, 12757, 13452, 14409, 16765, 20222, 22100, 26034, 26047]
+answered by the desk: 9/12; fell through (all_routes_failed): 3/12
+answered calls: min 4369 p50 12757 max 20222 ms
+calls over the OLD 12 s timeout: 8/12 (all of them would have fallen through at 12 s / 14 s)
+0 q-fresh        turns= 0 fast      20222 ms action=reply     [('ok', 20221)]
+0 propose-fresh  turns= 0 fast      14409 ms action=propose   [('ok', 14408)]
+0 q-10           turns=10 fallback  22100 ms action=direct   all_routes_failed [('timeout', 22100)]
+0 propose-10a    turns=10 fallback  26034 ms action=direct   all_routes_failed [('truncated', 19320), ('timeout', 6713)]
+0 propose-10b    turns=10 fast       7465 ms action=propose   [('ok', 7465)]
+0 propose-10c    turns=10 fast      12757 ms action=propose   [('ok', 12756)]
+1 q-fresh        turns= 0 fast       4369 ms action=reply     [('ok', 4369)]
+1 propose-fresh  turns= 0 fast      13452 ms action=propose   [('ok', 13452)]
+1 q-10           turns=10 fast      11504 ms action=direct    [('ok', 11503)]
+1 propose-10a    turns=10 fallback  26047 ms action=direct   all_routes_failed [('truncated', 16682), ('timeout', 9364)]
+1 propose-10b    turns=10 fast       8662 ms action=propose   [('ok', 8661)]
+1 propose-10c    turns=10 fast      16765 ms action=propose   [('ok', 16764)]

@@ -721,13 +721,17 @@ record, so the pad tells a barged fast-turn reply (not replayed) from a follow-u
 existing fallback chain, as requested. No pinned model or gateway rebuild." `MEMO_CONVERSE_ROUTES` (JSON, in the unit) is
 **one route**, `automaticai/auto/fast` on `api.automaticai.io`; the gateway's own auto chain (fast tier, then strong tier,
 then the free last resort, each intersected with the token's scope) is the fallback, so the desk pins no model and a gateway
-change needs no watcher change. The budget `MEMO_CONVERSE_BUDGET_S` is **14 s** (the route's 12 s timeout plus slack; keep it
-at least the sum of the route timeouts). It replaced a three-rung ladder (Hyper flash, DeepSeek flash, then this route);
+change needs no watcher change. The route's timeout is **22 s** and the budget `MEMO_CONVERSE_BUDGET_S` is **26 s** (the timeout
+plus room for the one bounded same-route re-ask, which still needs `MEMO_CONVERSE_REASK_MIN_S` = 2.5 s left; keep the budget at least the
+sum of the route timeouts). Both were 12 s / 14 s until 2026-10-23: at host load ~30 `auto/fast` (glm-5.3 at max effort) took
+9.6-12+ s, a propose over a longer conversation timed out (`all_routes_failed`) and the work request fell through to a plain agent
+turn that skips the propose/confirm gate (2 of 3 live memos, `runs/r2-review-live/`). The default decision was headroom for the
+route, not a change to the fall-through semantics; the hold cues (below) cover the longer wait. It replaced a three-rung ladder (Hyper flash, DeepSeek flash, then this route);
 those two upstreams are now opt-in tile aliases only (below).
 
 | route | model | key (op:// item-UUID ref) | timeout | measured 2026-10-22 |
 | --- | --- | --- | --- | --- |
-| r1 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 12 s | the card-sized prompt, 12 calls: p50 5.4 s, p90 6.6 s, max 10.7 s, all served by `automaticai/personal/glm-5.3`; 11 of 12 a valid decision, one `empty` content went to the full agent. The lead's earlier run on a larger prompt: 7.1-8.8 s |
+| r1 | gateway `automaticai/auto/fast` (temperature 1, no effort: auto sets the rung's) | token holocene-converse `yeurk5dpqkaarspvsn3cjtmkki/holocene-converse` (id 88) | 22 s (12 s until 2026-10-23) | the card-sized prompt, 12 calls: p50 5.4 s, p90 6.6 s, max 10.7 s, all served by `automaticai/personal/glm-5.3`; 11 of 12 a valid decision, one `empty` content went to the full agent. The lead's earlier run on a larger prompt: 7.1-8.8 s |
 
 then today's full-agent path (`fallback_reason=all_routes_failed`): that, not a second model, is what backs the route up. A
 runtime override of the route set lives in the flag file (`mise run memo:converse on --routes-file f.json`, drop it with
@@ -745,8 +749,8 @@ the old rules); and a cut, empty or broken answer from the LAST rung (`truncated
 `empty`, `bad_json`) is re-asked once on the same route for the short version when `MEMO_CONVERSE_REASK_MIN_S` (2.5 s) of
 the budget is left (the re-asks took 2.9-5.1 s, 7 of 7 answered). A length cut does not count against the breaker. Each
 attempt row carries `finish_reason`, `completion_tokens` and `reasoning_tokens`; the re-ask is the attempt with
-`reask: true` and a `converse_reask` log line. A bigger `max_tokens` is no fix: the cut then lands past the 12 s timeout.
-Costs of the single route, known: the car hears nothing while the desk waits (3-7 s typical, 12 s at worst, then the
+`reask: true` and a `converse_reask` log line. A bigger `max_tokens` is no fix: the cut then lands at 12-16 s.
+Costs of the single route, known: the car hears hold cues while the desk waits (3-7 s typical, 22 s at worst, then the
 full-agent path; spoken progress only starts 15 s into a dispatched agent turn), and three failed calls in 120 s (an `empty`
 answer counts) open r1's breaker for 60 s, so every memo in that minute goes straight to the full agent. A fresh watcher
 answers `scope_unproven` (full agent) until its background scope proof finishes. A hold cue after about 3 s of desk wait is
@@ -822,14 +826,14 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
   untouched): `tiles[agent].model` names an alias in **`car_desk_aliases.json`** (version 1, shared by the watcher, the CLI
   and the car-set-model skill). The alias's routes go in FRONT of the default route (auto/fast); a `(base_url, model)` already in the
   default keeps its id (one breaker per upstream) and appears once; the default route still backs the alias up, so an
-  alias's `budget_s` covers its own timeouts plus the default's 12 s.
+  alias's `budget_s` covers its own timeouts plus the default's 22 s.
 
   | alias | phrases | routes in front | measured 2026-10-22 |
   | --- | --- | --- | --- |
-  | `deepseek-flash` | deepseek flash, flash | `flash-h` Hyper flash-1017 (4 s), `flash-d` DeepSeek `deepseek-flash` (5 s), budget 21 s | flash-d 1.3-2.8 s (opt-in: it was the old default) |
-  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 30 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
-  | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s), budget 20 s | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
-  | `auto` | auto, autorouter | r1 gateway `automaticai/auto/fast` (12 s) = the default | 3.5-10.7 s (glm-5.3) |
+  | `deepseek-flash` | deepseek flash, flash | `flash-h` Hyper flash-1017 (4 s), `flash-d` DeepSeek `deepseek-flash` (5 s), budget 31 s | flash-d 1.3-2.8 s (opt-in: it was the old default) |
+  | `deepseek-pro` | deepseek pro, pro | `pro-h` Hyper `deepseek-v4-pro-0813` (6 s), `pro-d` DeepSeek `deepseek-v4-pro` (12 s, max_tokens 2000), budget 40 s | pro-h 402; pro-d 1.96-3.6 s, once 8.98 s on a loaded host (hence 12 s, was 9 s) |
+  | `free` | free, free model | `free` gateway `automaticai/free` on the holocene-converse token (8 s), budget 30 s | 1.4-2.7 s, one 8 s timeout (OpenRouter nemotron :free) |
+  | `auto` | auto, autorouter | r1 gateway `automaticai/auto/fast` (22 s) = the default | 3.5-10.7 s (glm-5.3) |
   | `default` | default model, reset the model | none (clears the tile's model) | |
 
 **Switching from the car.** Two ways, one effect:
@@ -948,29 +952,30 @@ Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess of
 
 ## Hold cue: no silent wait (HOLOC-23)
 
-The car desk calls ONE route (`automaticai/auto/fast`, 3-7 s typical, 12 s at its timeout) and, when that fails, hands the turn
+The car desk calls ONE route (`automaticai/auto/fast`, 3-7 s typical, 9.6-12+ s at host load ~30, 22 s at its timeout) and, when that fails, hands the turn
 to the full agent, whose spoken progress starts `MEMO_NARRATE_FIRST_S` (15 s) after dispatch. Before the hold cue the driver
-heard the stop tone and then nothing for up to ~27 s. Now:
+heard the stop tone and then nothing for up to ~27 s. Now (cues at 3 / 9 / 16 s keep the silence under ~7 s up to the route's 22 s timeout; after it the full-agent path has its own keep-alive):
 
 | when | what the car hears | knob (default) |
 |---|---|---|
 | the desk's decision is not in 3 s after the desk call started | one of "One sec." / "Thinking." / "Hold on." / "Hang on." | `MEMO_CONVERSE_HOLD_CUE_S=3` (**0 turns every hold cue off**) |
 | still waiting at 9 s | one of "Still on it." / "Still thinking." | `MEMO_CONVERSE_HOLD_CUE2_S=9` (0 = no second cue) |
+| still waiting at 16 s | one of "Almost there." / "Almost done." (0.97 s each, measured on the default voice) | `MEMO_CONVERSE_HOLD_CUE3_S=16` (0 = no third cue) |
 | the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | the same second-cue lines (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
 
-- **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES`, warmed per tile voice at
+- **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES` / `HOLD_CUE3_LINES`, warmed per tile voice at
   start-up), spoken in the tile's own voice (`tiles[agent].voice`; a voice vox lacks falls back to the default), so a cue is a
   file copy (~1 ms, engine `phrasebank`), never a vox render on the critical path. The same line is never heard twice in a row
   per tile. Every line is about a second of speech or less, and that is **measured, not assumed**: the watcher probes the clip it
   is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s; `hold_cue_dropped` reason `too_long`,
   and the line is not used again until a restart). Measured on `rick` (the default voice): One sec. 0.97 s, Thinking. 0.65 s,
-  Hold on. 0.65 s, Hang on. 0.65 s, Still on it. 0.97 s, Still thinking. 0.97 s (the candidates "Still here." and "Working on it." rendered 1.29 s, so they are not shipped). On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
+  Hold on. 0.65 s, Hang on. 0.65 s, Still on it. 0.97 s, Still thinking. 0.97 s, Almost there. 0.97 s, Almost done. 0.97 s (the candidates "Nearly there." 1.13 s and "Nearly done." 1.29 s were too long, and "Still here." and "Working on it." rendered 1.29 s, so they are not shipped). On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
   hand-off, so keep the lines short: a longer line delays the echo behind it. While the cue waits for its mark the watcher
   also renders and banks the chosen line if the tile voice has no banked copy (a voice changed at run time), so the cue is a
   file copy at the mark rather than a 1.5-3.5 s live render.
 - **Wire.** A cue is a progress clip: `progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>h.ogg` (the `h` suffix marks a hold cue; it shares
   the `<n>` numbering with the agent's narration, so a later narration never overwrites a cue) announced as
-  `audio.memo.narrated` with `kind` `hold_cue` | `hold_cue2` | `hold_keepalive` (`command_id` null while the desk is still
+  `audio.memo.narrated` with `kind` `hold_cue` | `hold_cue2` | `hold_cue3` | `hold_keepalive` (`command_id` null while the desk is still
   deciding; `seq` = `narration` = the clip number; no new Bloodbank type, valid under `bb-emit --check`), pushed to the pad
   with the early-push hint. A pad from before this does not match the `-<n>h.ogg` name and never plays it.
 - **Invariants.** A cue is checked before the render, after it and after the upload: if the desk's decision (or the agent turn)
@@ -987,7 +992,7 @@ heard the stop tone and then nothing for up to ~27 s. Now:
 - **Not covered (on purpose).** After the agent's first real narration the keep-alives stop and `MEMO_NARRATE_GAP_S` (30 s)
   applies again. The reply's own TTS render (about 2-3 s once the decision is in) has no cue. The cue ranks as `progress` on the
   pad (below the echo), not as `cue`: a JS-driven clip at the cue rank would need a Kotlin change. A watcher restart or
-  `memo:retry` during the desk call restarts the 3 s / 9 s timers.
+  `memo:retry` during the desk call restarts the 3 s / 9 s / 16 s timers.
 
 
 ## Latency levers in the watcher (HOLOC-23 phase 2)

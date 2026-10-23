@@ -334,12 +334,14 @@ CONVERSE_CARD_WAIT_S = float(os.environ.get("MEMO_CONVERSE_CARD_WAIT_S", "0.6"))
 CONVERSE_SWEEP_S = 60.0
 CONVERSE_SLOW_S = float(os.environ.get("MEMO_CONVERSE_SLOW_S", "15"))
 # Hold cue (HOLOC-23): the car hears a very short line when the desk's decision has not arrived this many seconds after the desk
-# call started (0 turns every hold cue off), a second one at HOLD_CUE2_S (0 = no second), and a memo that fell through to the
+# call started (0 turns every hold cue off), a second one at HOLD_CUE2_S (0 = no second), a third at HOLD_CUE3_S (0 = no
+# third; the desk route's timeout is 22 s, so 3 / 9 / 16 keeps the silence under ~7 s), and a memo that fell through to the
 # full agent gets a keep-alive line when it has been quiet HOLD_FALL_FIRST_S after dispatch and every HOLD_FALL_GAP_S after
 # that, at most HOLD_FALL_MAX, until the agent's own first narration (NARRATE_FIRST_S) takes over. Lines are PhraseBank clips
 # in the tile's voice, uploaded as progress/<day>/<memo>-<n>h.ogg: the pad plays them, and drops them while the driver records.
 HOLD_CUE_S = float(os.environ.get("MEMO_CONVERSE_HOLD_CUE_S", "3"))
 HOLD_CUE2_S = float(os.environ.get("MEMO_CONVERSE_HOLD_CUE2_S", "9"))
+HOLD_CUE3_S = float(os.environ.get("MEMO_CONVERSE_HOLD_CUE3_S", "16"))
 HOLD_FALL_FIRST_S = float(os.environ.get("MEMO_CONVERSE_HOLD_FALL_FIRST_S", "7"))
 HOLD_FALL_GAP_S = float(os.environ.get("MEMO_CONVERSE_HOLD_FALL_GAP_S", "8"))
 HOLD_FALL_MAX = int(os.environ.get("MEMO_CONVERSE_HOLD_FALL_MAX", "3"))
@@ -3906,11 +3908,11 @@ class Watcher:
 
     # ---- hold cue: a very short spoken line while the driver waits and nothing else is being said (HOLOC-23) ----------
     #
-    # Two gaps used to be silent. (1) The desk's decision: ack:stopped, then nothing until the answer (3-7 s typical, 12 s at
+    # Two gaps used to be silent. (1) The desk's decision: ack:stopped, then nothing until the answer (3-7 s typical, 22 s at
     # the timeout). (2) A turn the desk handed to the full agent: the "heard" echo, then nothing until the first narration,
     # NARRATE_FIRST_S after dispatch. The hold cue fills both with a <1 s line ("One sec.", "Still on it.") in the tile's voice,
     # rendered once per voice (PhraseBank) and played by the pad as a progress clip named <memo>-<n>h.ogg.
-    #   - desk wait: a thread per desk call says line 1 at HOLD_CUE_S and line 2 at HOLD_CUE2_S unless the decision is in. A
+    #   - desk wait: a thread per desk call says line 1 at HOLD_CUE_S, line 2 at HOLD_CUE2_S and line 3 at HOLD_CUE3_S unless the decision is in. A
     #     cue is checked three times (before the render, after it, after the upload) and dropped if the decision arrived: the
     #     answer never waits behind a stale cue.
     #   - fall-through: poll_progress asks maybe_keepalive for every converse "direct" turn that is waiting on its agent.
@@ -3962,7 +3964,8 @@ class Watcher:
 
         def work():
             try:
-                for tag, at, lines in (("hold_cue", HOLD_CUE_S, cv.HOLD_CUE_LINES), ("hold_cue2", HOLD_CUE2_S, cv.HOLD_CUE2_LINES)):
+                for tag, at, lines in (("hold_cue", HOLD_CUE_S, cv.HOLD_CUE_LINES), ("hold_cue2", HOLD_CUE2_S, cv.HOLD_CUE2_LINES),
+                                       ("hold_cue3", HOLD_CUE3_S, cv.HOLD_CUE3_LINES)):
                     if at <= 0:
                         continue
                     line = self.hold_line(m["agent"], lines)
@@ -4555,7 +4558,7 @@ def fixed_lines() -> list[str]:
     names = ("NOTHING_PENDING_LINE", "DROPPED_LINE", "NOTHING_TO_CANCEL_LINE", "END_LINE", "EXPIRED_LINE",
              "SENDING_CANCELLED_LINE", "DRAFT_CHANGED_LINE", "DIDNT_CATCH_LINE")
     lines = [v for v in (getattr(cv, n, None) for n in names) if isinstance(v, str) and v and "{" not in v]
-    lines += [*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES]  # the hold cues (also pre-rendered per voice)
+    lines += [*cv.HOLD_CUE_LINES, *cv.HOLD_CUE2_LINES, *cv.HOLD_CUE3_LINES]  # the hold cues (also pre-rendered per voice)
     out: list[str] = []
     for line in lines:  # a long line is voiced in chunks: each chunk is what the bank is asked for
         for part in split_for_speech(clean_for_speech(line, SPEAK_CHARS), CONVERSE_CHUNK_CHARS, CONVERSE_CHUNK_MIN_CHARS):
