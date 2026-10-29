@@ -194,7 +194,7 @@ export function HubApp() {
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
-        <HubTabs current={view} />
+        <HubTabs current={view} onSelect={(id) => (id === "agents" || id === "projects" ? (go(id), true) : false)} />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />

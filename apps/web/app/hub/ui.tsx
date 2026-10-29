@@ -137,12 +137,25 @@ const HUB_TABS: Array<{ id: string; label: string; href: string }> = [
   { id: "mini", label: "Mini", href: "/mini" }
 ];
 
-/** The shared Holocene tab strip. `current` marks one tab aria-current="page". */
-export function HubTabs({ current }: { current?: string }) {
+/**
+ * The shared Holocene tab strip. `current` marks one tab aria-current="page".
+ * `onSelect` lets the hub switch Agents/Projects in place: return true to
+ * handle the click (the href is not followed).
+ */
+export function HubTabs({ current, onSelect }: { current?: string; onSelect?: (id: string) => boolean }) {
   return (
     <nav className="hub-tabs" aria-label="Views">
       {HUB_TABS.map((tab) => (
-        <a key={tab.id} className="hub-tab" href={tab.href} aria-current={current === tab.id ? "page" : undefined}>
+        <a
+          key={tab.id}
+          className="hub-tab"
+          href={tab.href}
+          aria-current={current === tab.id ? "page" : undefined}
+          onClick={onSelect ? (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            if (onSelect(tab.id)) e.preventDefault();
+          } : undefined}
+        >
           {tab.label}
         </a>
       ))}
