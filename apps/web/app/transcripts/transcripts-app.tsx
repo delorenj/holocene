@@ -310,7 +310,8 @@ function Panel({ row, detail, id }: { row: TranscriptRow; detail?: DetailState; 
           ))}
         </p>
       ) : null}
-      <HarvestSection row={row} detail={detail} />
+      {/* The detail call is fresher than the 15 s list poll: a harvest linked since then must not read "not harvested". */}
+      <HarvestSection row={d?.row ?? row} detail={detail} />
     </div>
   );
 }
