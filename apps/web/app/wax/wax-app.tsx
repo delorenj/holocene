@@ -1,7 +1,7 @@
 "use client";
 
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, SourceStrip, sinceSeconds, formatDuration } from "../hub/ui";
+import { CopyRef, HubTabs, SourceStrip, sinceSeconds, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { PipelineGraph } from "./pipeline-graph";
 import type { WaxPass, WaxPayload, WaxPipeline, WaxPipelineNode, WaxWorkerStatus } from "./types";
@@ -247,14 +247,7 @@ export function WaxApp() {
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
-        <nav className="hub-tabs" aria-label="Views">
-          <a className="hub-tab" href="/?view=agents">Agents</a>
-          <a className="hub-tab" href="/?view=projects">Projects</a>
-          <a className="hub-tab" href="/voice">Voice</a>
-          <a className="hub-tab" href="/wax" aria-current="page">Wax</a>
-          <a className="hub-tab" href="/settings">Settings</a>
-          <a className="hub-tab" href="/mini">Mini</a>
-        </nav>
+        <HubTabs current="wax" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />

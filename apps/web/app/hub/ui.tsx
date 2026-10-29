@@ -5,6 +5,8 @@ import type { Signal, Source, Ticket } from "./types";
 
 // Small atoms from the 33GOD kit, ported for the Next app: the seven signal glyphs,
 // durations, the source strip, copyable machine words and the Plane band track.
+// HubTabs is the one nav strip every surface shares — a tab added here appears
+// everywhere; a surface marks itself with `current`.
 
 // Deckard's marks (docs/visual-language.md): amber ! needs you, red x failed, green pulsing > working,
 // solid green check finished a turn and ready for the next message, dark dot nothing known.
@@ -122,6 +124,29 @@ export function BoxIcon({ size = 12 }: { size?: number }) {
       <path d="m3.3 7 8.7 5 8.7-5" />
       <path d="M12 22V12" />
     </svg>
+  );
+}
+
+const HUB_TABS: Array<{ id: string; label: string; href: string }> = [
+  { id: "agents", label: "Agents", href: "/?view=agents" },
+  { id: "projects", label: "Projects", href: "/?view=projects" },
+  { id: "voice", label: "Voice", href: "/voice" },
+  { id: "wax", label: "Wax", href: "/wax" },
+  { id: "transcripts", label: "Transcripts", href: "/transcripts" },
+  { id: "settings", label: "Settings", href: "/settings" },
+  { id: "mini", label: "Mini", href: "/mini" }
+];
+
+/** The shared Holocene tab strip. `current` marks one tab aria-current="page". */
+export function HubTabs({ current }: { current?: string }) {
+  return (
+    <nav className="hub-tabs" aria-label="Views">
+      {HUB_TABS.map((tab) => (
+        <a key={tab.id} className="hub-tab" href={tab.href} aria-current={current === tab.id ? "page" : undefined}>
+          {tab.label}
+        </a>
+      ))}
+    </nav>
   );
 }
 

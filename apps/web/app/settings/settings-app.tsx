@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { formatDuration, sinceSeconds } from "../hub/ui";
+import { formatDuration, HubTabs, sinceSeconds } from "../hub/ui";
 
 // Holocene settings. First setting: agent avatars. One avatar per agent, stored by the Holocene API
 // (apps/api/src/avatars.ts) and mirrored both ways with each agent's gateways (Telegram today): upload one here
@@ -260,14 +260,7 @@ export function SettingsApp() {
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
-        <nav className="hub-tabs" aria-label="Views">
-          <a className="hub-tab" href="/?view=agents">Agents</a>
-          <a className="hub-tab" href="/?view=projects">Projects</a>
-          <a className="hub-tab" href="/voice">Voice</a>
-          <a className="hub-tab" href="/wax">Wax</a>
-          <a className="hub-tab" href="/settings" aria-current="page">Settings</a>
-          <a className="hub-tab" href="/mini">Mini</a>
-        </nav>
+        <HubTabs current="settings" />
         <div className="hub-header-end">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>

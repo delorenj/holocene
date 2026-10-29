@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AgentsView } from "./agents-view";
 import { ProjectsView } from "./projects-view";
-import { SourceStrip } from "./ui";
+import { SourceStrip, HubTabs } from "./ui";
 import type { AgentsPayload, ProjectsPayload } from "./types";
 
 // The hub shell: one SPA, two views over the same agent→project join. View and
@@ -194,14 +194,7 @@ export function HubApp() {
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
-        <nav className="hub-tabs" aria-label="Views">
-          <button type="button" className="hub-tab" aria-current={view === "agents" ? "page" : undefined} onClick={() => go("agents")}>Agents</button>
-          <button type="button" className="hub-tab" aria-current={view === "projects" ? "page" : undefined} onClick={() => go("projects")}>Projects</button>
-          <a className="hub-tab" href="/voice">Voice</a>
-          <a className="hub-tab" href="/wax">Wax</a>
-          <a className="hub-tab" href="/settings">Settings</a>
-          <a className="hub-tab" href="/mini">Mini</a>
-        </nav>
+        <HubTabs current={view} />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />

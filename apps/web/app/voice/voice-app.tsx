@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
+import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration } from "../hub/ui";
 import type { Source } from "../hub/types";
 import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, attemptText, audioChip, captureChip, clockTime, convLabel, dayTime, delegationLabel, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, modelAtRoute, permText, phoneCopyText, statement } from "./model";
 import type { ConvChip, FollowUp, Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
@@ -57,14 +57,7 @@ export function VoiceApp() {
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
-        <nav className="hub-tabs" aria-label="Views">
-          <a className="hub-tab" href="/?view=agents">Agents</a>
-          <a className="hub-tab" href="/?view=projects">Projects</a>
-          <a className="hub-tab" href="/voice" aria-current="page">Voice</a>
-          <a className="hub-tab" href="/wax">Wax</a>
-          <a className="hub-tab" href="/settings">Settings</a>
-          <a className="hub-tab" href="/mini">Mini</a>
-        </nav>
+        <HubTabs current="voice" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
