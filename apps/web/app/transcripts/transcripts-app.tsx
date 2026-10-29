@@ -210,6 +210,25 @@ function TicketLine({ t }: { t: TranscriptTicket }) {
   );
 }
 
+/** The detail call lists every complete run's items, newest run first. The panel shows the newest run and folds the rest. */
+function runs(tickets: TranscriptTicket[]): TranscriptTicket[][] {
+  const out: TranscriptTicket[][] = [];
+  for (const t of tickets) {
+    const last = out[out.length - 1];
+    if (last && last[0].harvest_id === t.harvest_id) last.push(t);
+    else out.push([t]);
+  }
+  return out;
+}
+
+function TicketList({ tickets }: { tickets: TranscriptTicket[] }) {
+  return (
+    <ul className="tr-tickets">
+      {tickets.map((t) => <TicketLine key={`${t.harvest_id}-${t.item_id}-${t.provider ?? ""}-${t.board_id ?? ""}`} t={t} />)}
+    </ul>
+  );
+}
+
 function HarvestSection({ row, detail }: { row: TranscriptRow; detail?: DetailState }) {
   const h = row.harvest;
   const showCmd = `wax transcripts show ${row.transcript_id}`;
@@ -230,9 +249,20 @@ function HarvestSection({ row, detail }: { row: TranscriptRow; detail?: DetailSt
       ) : null}
       {h.state === "no_items" ? <p className="tr-note">Harvested — no action items found.</p> : null}
       {detail?.status === "ok" && detail.data && detail.data.tickets.length ? (
-        <ul className="tr-tickets">
-          {detail.data.tickets.map((t) => <TicketLine key={`${t.harvest_id}-${t.item_id}-${t.board_id ?? ""}`} t={t} />)}
-        </ul>
+        <>
+          <TicketList tickets={runs(detail.data.tickets)[0]} />
+          {runs(detail.data.tickets).length > 1 ? (
+            <details className="tr-quote tr-earlier">
+              <summary>Earlier harvests ({runs(detail.data.tickets).length - 1})</summary>
+              {runs(detail.data.tickets).slice(1).map((run) => (
+                <div key={run[0].harvest_id}>
+                  <p className="tr-note">Harvested {when(run[0].harvested_at)}</p>
+                  <TicketList tickets={run} />
+                </div>
+              ))}
+            </details>
+          ) : null}
+        </>
       ) : null}
       {detail?.status === "ok" && detail.data && !detail.data.tickets.length && (h.state === "harvested" || h.state === "unfiled") ? (
         <p className="tr-note">The harvest run is recorded but its items are not readable yet.</p>
