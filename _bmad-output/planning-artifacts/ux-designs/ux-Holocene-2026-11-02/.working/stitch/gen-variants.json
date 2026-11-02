@@ -1,0 +1,917 @@
+{
+  "success": true,
+  "data": {
+    "resource": "variants",
+    "project": "14104283770497705087",
+    "sourceScreenIds": [
+      "f0e15896827e4fbbafd377eb5d0e7acf"
+    ],
+    "count": 3,
+    "variants": [
+      {
+        "designSystem": {
+          "designSystem": {
+            "displayName": "Spruce Holocene Now",
+            "styleGuidelines": "## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+            "theme": {
+              "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+              "bodyFontFamily": "Atkinson Hyperlegible Next",
+              "colorMode": "DARK",
+              "colorVariant": "FIDELITY",
+              "customColor": "#d8b36e",
+              "designMd": "---\nname: Spruce Holocene Now\ncolors:\n  surface: '#111411'\n  surface-dim: '#111411'\n  surface-bright: '#373a36'\n  surface-container-lowest: '#0c0f0c'\n  surface-container-low: '#191c19'\n  surface-container: '#1d201d'\n  surface-container-high: '#282b27'\n  surface-container-highest: '#333632'\n  on-surface: '#e1e3de'\n  on-surface-variant: '#d1c5b4'\n  inverse-surface: '#e1e3de'\n  inverse-on-surface: '#2e312e'\n  outline: '#9a8f80'\n  outline-variant: '#4e4639'\n  surface-tint: '#e7c17b'\n  primary: '#f6ce87'\n  on-primary: '#412d00'\n  primary-container: '#d8b36e'\n  on-primary-container: '#5e4408'\n  inverse-primary: '#765a1e'\n  secondary: '#a0cde5'\n  on-secondary: '#003548'\n  secondary-container: '#1f4e63'\n  on-secondary-container: '#92bed7'\n  tertiary: '#ffc6ba'\n  on-tertiary: '#561f13'\n  tertiary-container: '#f8a28f'\n  on-tertiary-container: '#743629'\n  error: '#ffb4ab'\n  on-error: '#690005'\n  error-container: '#93000a'\n  on-error-container: '#ffdad6'\n  primary-fixed: '#ffdea5'\n  primary-fixed-dim: '#e7c17b'\n  on-primary-fixed: '#261900'\n  on-primary-fixed-variant: '#5c4206'\n  secondary-fixed: '#c0e8ff'\n  secondary-fixed-dim: '#a0cde5'\n  on-secondary-fixed: '#001e2b'\n  on-secondary-fixed-variant: '#1c4c60'\n  tertiary-fixed: '#ffdad3'\n  tertiary-fixed-dim: '#ffb4a4'\n  on-tertiary-fixed: '#3a0a03'\n  on-tertiary-fixed-variant: '#723527'\n  background: '#111411'\n  on-background: '#e1e3de'\n  surface-variant: '#333632'\ntypography:\n  editorial-statement:\n    fontFamily: Newsreader\n    fontSize: 2rem\n    fontWeight: '400'\n    lineHeight: 2.5rem\n  editorial-statement-mobile:\n    fontFamily: Newsreader\n    fontSize: 1.5rem\n    fontWeight: '400'\n    lineHeight: 2rem\n  headline-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 1.25rem\n    fontWeight: '600'\n    lineHeight: 1.625rem\n  body-default:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.875rem\n    fontWeight: '400'\n    lineHeight: 1.25rem\n  body-compact:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.8125rem\n    fontWeight: '400'\n    lineHeight: 1.125rem\n  machine-header:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '600'\n    lineHeight: 0.875rem\n    letterSpacing: 0.08em\n  machine-data:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '400'\n    lineHeight: 1rem\n  machine-mono-bold:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '600'\n    lineHeight: 1rem\n  label-badge:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '500'\n    lineHeight: 0.875rem\nrounded:\n  sm: 0.125rem\n  DEFAULT: 0.25rem\n  md: 0.375rem\n  lg: 0.5rem\n  xl: 0.75rem\n  full: 9999px\nspacing:\n  gutter: 1px\n  margin: 1rem\n  space-xs: 0.25rem\n  space-sm: 0.375rem\n  space-md: 0.5rem\n  space-lg: 0.75rem\n  space-xl: 1rem\n---\n\n## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Colors\n\nThe palette operates under absolute chromatic restraint. Surfaces do not stack tinted cards; instead, space is governed by depth-recessed wells and hair-thin demarcation rules.\n\n### Structural Neutrals\n- **Ground (`#141714`):** The primary canvas bedrock. Panes sit directly on this ground without fill differentials.\n- **Hairline Border (`#282d29`):** 1px structural partitions defining all panes, grids, and boundaries.\n- **Sunken Wells & Inset Chips (`#0e110e`):** Depressed surfaces used for telemetry wells, input troughs, and nested code blocks.\n- **Floating Overlays (`#1b1e1b`):** Command palettes, flyout popovers, contextual drawers, and modal sheets.\n\n### Editorial & Interface Ink\n- **Primary Ink (`#e3e8e3`):** High-readability foreground for headlines, active names, and primary readouts.\n- **Secondary Ink (`#b6bcb7`):** Explanatory strings, balanced values, and body summaries.\n- **Metadata Ink (`#909590`):** Timestamps, column heads, keyboard shortcuts, and structural framing glyphs.\n- **Passive OK / Nominal Grey (`#606660`):** Routine ticks, healthy operations, and idle states. Absolute ban on green for routine health.\n\n### Strict Five-Hue Operational Signals\nColors must never be used for brand styling or generic accent flourishes. They indicate system state exclusively:\n1. **Ochre (`#d8b36e`):** Operator bottleneck. Needs YOU. Used for active focus indicators, pending approval rings, and unblocking requests.\n2. **Brick (`#de8c7a`):** Critical halt / Broken. Fatal crashes, process timeouts, hard verification fails.\n3. **Heather (`#b3a2ca`):** Stuck / Over Budget. Resource degradation, queue thrashing, quota locks.\n4. **Lake (`#89b5cd`):** Active Work. Background processing, agent runtime cycles, active execution streams.\n5. **Moss (`#92b98d`):** Cleared recently / Fresh settlement. Used exclusively for events completed in the immediate window, decaying into quiet grey over time.\n\n## Typography\n\nThe type system is tri-fold and strictly segmented:\n\n1. **Editorial Proclamation (`Newsreader`):** Exactly one single statement per view (e.g., *\"Two things need you.\"* or *\"All streams nominal across sub-planes.\"*). Set with standard italics or regular weight, serving as an authoritative status thesis. Never used for interactive elements, tables, or buttons.\n2. **Interface Plaintext (`Atkinson Hyperlegible Next`):** The primary UI workhorse. Optimized for instant disambiguation under low-light or fatigue conditions. Used for row titles, descriptive status messages, system notifications, and dialog text.\n3. **Machine Telemetry (`JetBrains Mono` / Monospace):** Applied to all computational artifacts: Ticket Keys (`HOLOC-8`), Commit SHAs, Agent UUIDs, memory addresses, latency metrics (`42ms`), currency counters, and column headers. Rendered with tabular figures (`tnum`) for consistent vertical alignment across dense rows.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Shapes\n\nShapes feature a near-orthogonal profile. Curves are limited to subtle corner breaks (2px to 4px) to retain an industrial, instrument-grade demeanor:\n\n- **Base Components (Buttons, Chips, Text Inputs):** `2px` border radius (`rounded-xs`). Crisp, exact, machine-like.\n- **Floating Sheets & Popovers:** `4px` border radius (`rounded-sm`).\n- **Data Cells & Seams:** `0px` radius. Interior grid boundaries remain completely rectangular with sharp corners.\n- **Status Glyphs:** Geometric vector primitives integrated inline:\n  - *Blocked on You:* Filled Diamond (`◆`) in Ochre `#d8b36e`.\n  - *Broken:* Filled Disc (`●`) in Brick `#de8c7a`.\n  - *Stuck / Budget:* Filled Triangle (`▲`) in Heather `#b3a2ca`.\n  - *Nudge:* Small dot (`•`) in Heather or Ochre.\n  - *Nominal / Routine:* Em-dash (`—`) in Quiet Grey `#606660`.\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+              "font": "NEWSREADER",
+              "headlineFont": "NEWSREADER",
+              "headlineFontFamily": "Newsreader",
+              "labelFont": "JETBRAINS_MONO",
+              "labelFontFamily": "JetBrains Mono",
+              "namedColors": {
+                "background": "#111411",
+                "error": "#ffb4ab",
+                "error_container": "#93000a",
+                "inverse_on_surface": "#2e312e",
+                "inverse_primary": "#765a1e",
+                "inverse_surface": "#e1e3de",
+                "on_background": "#e1e3de",
+                "on_error": "#690005",
+                "on_error_container": "#ffdad6",
+                "on_primary": "#412d00",
+                "on_primary_container": "#5e4408",
+                "on_primary_fixed": "#261900",
+                "on_primary_fixed_variant": "#5c4206",
+                "on_secondary": "#003548",
+                "on_secondary_container": "#92bed7",
+                "on_secondary_fixed": "#001e2b",
+                "on_secondary_fixed_variant": "#1c4c60",
+                "on_surface": "#e1e3de",
+                "on_surface_variant": "#d1c5b4",
+                "on_tertiary": "#561f13",
+                "on_tertiary_container": "#743629",
+                "on_tertiary_fixed": "#3a0a03",
+                "on_tertiary_fixed_variant": "#723527",
+                "outline": "#9a8f80",
+                "outline_variant": "#4e4639",
+                "primary": "#f6ce87",
+                "primary_container": "#d8b36e",
+                "primary_fixed": "#ffdea5",
+                "primary_fixed_dim": "#e7c17b",
+                "secondary": "#a0cde5",
+                "secondary_container": "#1f4e63",
+                "secondary_fixed": "#c0e8ff",
+                "secondary_fixed_dim": "#a0cde5",
+                "surface": "#111411",
+                "surface_bright": "#373a36",
+                "surface_container": "#1d201d",
+                "surface_container_high": "#282b27",
+                "surface_container_highest": "#333632",
+                "surface_container_low": "#191c19",
+                "surface_container_lowest": "#0c0f0c",
+                "surface_dim": "#111411",
+                "surface_tint": "#e7c17b",
+                "surface_variant": "#333632",
+                "tertiary": "#ffc6ba",
+                "tertiary_container": "#f8a28f",
+                "tertiary_fixed": "#ffdad3",
+                "tertiary_fixed_dim": "#ffb4a4"
+              },
+              "overrideNeutralColor": "#141714",
+              "overridePrimaryColor": "#d8b36e",
+              "overrideSecondaryColor": "#89b5cd",
+              "overrideTertiaryColor": "#de8c7a",
+              "roundness": "ROUND_FOUR",
+              "spacing": {
+                "gutter": "1px",
+                "margin": "1rem",
+                "space-lg": "0.75rem",
+                "space-md": "0.5rem",
+                "space-sm": "0.375rem",
+                "space-xl": "1rem",
+                "space-xs": "0.25rem"
+              },
+              "spacingScale": 2,
+              "typography": {
+                "body-compact": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.8125rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.125rem"
+                },
+                "body-default": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.875rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.25rem"
+                },
+                "editorial-statement": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "2rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2.5rem"
+                },
+                "editorial-statement-mobile": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "1.5rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2rem"
+                },
+                "headline-md": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "1.25rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1.625rem"
+                },
+                "label-badge": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "500",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-data": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1rem"
+                },
+                "machine-header": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "600",
+                  "letterSpacing": "0.08em",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-mono-bold": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1rem"
+                }
+              }
+            }
+          },
+          "name": "assets/24f996ed3ee746dfaa775b4bad9430aa",
+          "version": "1"
+        },
+        "deviceType": "DESKTOP",
+        "generatedBy": "HatterAgent",
+        "height": "2370",
+        "htmlCode": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/ac424fc2ac34456a81f7dd312e87024c:download",
+          "mimeType": "text/html",
+          "name": "projects/14104283770497705087/files/ac424fc2ac34456a81f7dd312e87024c"
+        },
+        "id": "b6dae386d90c480d8c16eaeb57174af7",
+        "name": "projects/14104283770497705087/screens/b6dae386d90c480d8c16eaeb57174af7",
+        "prompt": "Generate Variant 1 of 3: Single-column vertical flow layout.\nPreserve all content, typography (Newsreader serif + crisp monospace machine headers/data), status rules, and Spruce Holocene palette.\nTop navigation MUST read exactly: \"Now\", \"Trail\", \"Board\", \"Fleet\", \"Systems\", \"Hooks\", \"Truth\" (with Now active).\nTruth strip at very top: show exact system telemetry including 'sweeper DOWN' / degraded alerts; NEVER claim all systems are nominal while any source in truth strip is down. Bottom status bar also acknowledges active issues/degradation accurately.\nOchre (#d8b36e) ONLY on things the operator can act on (the action buttons like 'Approve push', 'Choose 1 PR', 'Choose 3 PRs', actionable Kill/Restart buttons).\nLAYOUT STRUCTURE:\n- Top bar with truth strip + exact nav: Now, Trail, Board, Fleet, Systems, Hooks, Truth.\n- Attention band full-width at top under header (\"Two things need you.\" with high-priority action cards).\n- Full-width Live Agent Board (64 configured nodes, filters: All (64), Stuck (1), Broken (1), Working (7), Quiet (55), interactive table of agents, statuses, scopes, actions).\n- FOLDED BELOW THE BOARD: Dual side-by-side lower deck containing:\n  Left sub-column: Wedge Rail // Scopes (long-running execution scopes currently exceeding budget, stuck scopes list, Drain 10 Stuck cta).\n  Right sub-column: What Just Happened? live audit/event timeline feed.\nKeep high-density, mission-critical terminal vibe.",
+        "screenMetadata": {
+          "agentType": "PRO_AGENT",
+          "status": "COMPLETE"
+        },
+        "screenType": "DESIGN",
+        "screenshot": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/b0879483c12a441ea9c278a6ba9b511f:download",
+          "name": "projects/14104283770497705087/files/b0879483c12a441ea9c278a6ba9b511f"
+        },
+        "theme": {
+          "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+          "bodyFontFamily": "Atkinson Hyperlegible Next",
+          "colorMode": "DARK",
+          "colorVariant": "FIDELITY",
+          "customColor": "#d8b36e",
+          "font": "NEWSREADER",
+          "headlineFont": "NEWSREADER",
+          "headlineFontFamily": "Newsreader",
+          "labelFont": "JETBRAINS_MONO",
+          "labelFontFamily": "JetBrains Mono",
+          "namedColors": {
+            "background": "#111411",
+            "error": "#ffb4ab",
+            "error_container": "#93000a",
+            "inverse_on_surface": "#2e312e",
+            "inverse_primary": "#765a1e",
+            "inverse_surface": "#e1e3de",
+            "on_background": "#e1e3de",
+            "on_error": "#690005",
+            "on_error_container": "#ffdad6",
+            "on_primary": "#412d00",
+            "on_primary_container": "#5e4408",
+            "on_primary_fixed": "#261900",
+            "on_primary_fixed_variant": "#5c4206",
+            "on_secondary": "#003548",
+            "on_secondary_container": "#92bed7",
+            "on_secondary_fixed": "#001e2b",
+            "on_secondary_fixed_variant": "#1c4c60",
+            "on_surface": "#e1e3de",
+            "on_surface_variant": "#d1c5b4",
+            "on_tertiary": "#561f13",
+            "on_tertiary_container": "#743629",
+            "on_tertiary_fixed": "#3a0a03",
+            "on_tertiary_fixed_variant": "#723527",
+            "outline": "#9a8f80",
+            "outline_variant": "#4e4639",
+            "primary": "#f6ce87",
+            "primary_container": "#d8b36e",
+            "primary_fixed": "#ffdea5",
+            "primary_fixed_dim": "#e7c17b",
+            "secondary": "#a0cde5",
+            "secondary_container": "#1f4e63",
+            "secondary_fixed": "#c0e8ff",
+            "secondary_fixed_dim": "#a0cde5",
+            "surface": "#111411",
+            "surface_bright": "#373a36",
+            "surface_container": "#1d201d",
+            "surface_container_high": "#282b27",
+            "surface_container_highest": "#333632",
+            "surface_container_low": "#191c19",
+            "surface_container_lowest": "#0c0f0c",
+            "surface_dim": "#111411",
+            "surface_tint": "#e7c17b",
+            "surface_variant": "#333632",
+            "tertiary": "#ffc6ba",
+            "tertiary_container": "#f8a28f",
+            "tertiary_fixed": "#ffdad3",
+            "tertiary_fixed_dim": "#ffb4a4"
+          },
+          "overrideNeutralColor": "#141714",
+          "overridePrimaryColor": "#d8b36e",
+          "overrideSecondaryColor": "#89b5cd",
+          "overrideTertiaryColor": "#de8c7a",
+          "roundness": "ROUND_FOUR",
+          "spacing": {
+            "gutter": "1px",
+            "margin": "1rem",
+            "space-lg": "0.75rem",
+            "space-md": "0.5rem",
+            "space-sm": "0.375rem",
+            "space-xl": "1rem",
+            "space-xs": "0.25rem"
+          },
+          "spacingScale": 2,
+          "typography": {
+            "body-compact": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.8125rem",
+              "fontWeight": "400",
+              "lineHeight": "1.125rem"
+            },
+            "body-default": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.875rem",
+              "fontWeight": "400",
+              "lineHeight": "1.25rem"
+            },
+            "editorial-statement": {
+              "fontFamily": "Newsreader",
+              "fontSize": "2rem",
+              "fontWeight": "400",
+              "lineHeight": "2.5rem"
+            },
+            "editorial-statement-mobile": {
+              "fontFamily": "Newsreader",
+              "fontSize": "1.5rem",
+              "fontWeight": "400",
+              "lineHeight": "2rem"
+            },
+            "headline-md": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "1.25rem",
+              "fontWeight": "600",
+              "lineHeight": "1.625rem"
+            },
+            "label-badge": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "500",
+              "lineHeight": "0.875rem"
+            },
+            "machine-data": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "400",
+              "lineHeight": "1rem"
+            },
+            "machine-header": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "600",
+              "letterSpacing": "0.08em",
+              "lineHeight": "0.875rem"
+            },
+            "machine-mono-bold": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "600",
+              "lineHeight": "1rem"
+            }
+          }
+        },
+        "title": "Holocene 33GOD — Variant 1 (Stacked Deck Layout)",
+        "width": "2560",
+        "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/b0879483c12a441ea9c278a6ba9b511f:download",
+        "projectId": "14104283770497705087"
+      },
+      {
+        "designSystem": {
+          "designSystem": {
+            "displayName": "Spruce Holocene Now",
+            "styleGuidelines": "## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+            "theme": {
+              "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+              "bodyFontFamily": "Atkinson Hyperlegible Next",
+              "colorMode": "DARK",
+              "colorVariant": "FIDELITY",
+              "customColor": "#d8b36e",
+              "designMd": "---\nname: Spruce Holocene Now\ncolors:\n  surface: '#111411'\n  surface-dim: '#111411'\n  surface-bright: '#373a36'\n  surface-container-lowest: '#0c0f0c'\n  surface-container-low: '#191c19'\n  surface-container: '#1d201d'\n  surface-container-high: '#282b27'\n  surface-container-highest: '#333632'\n  on-surface: '#e1e3de'\n  on-surface-variant: '#d1c5b4'\n  inverse-surface: '#e1e3de'\n  inverse-on-surface: '#2e312e'\n  outline: '#9a8f80'\n  outline-variant: '#4e4639'\n  surface-tint: '#e7c17b'\n  primary: '#f6ce87'\n  on-primary: '#412d00'\n  primary-container: '#d8b36e'\n  on-primary-container: '#5e4408'\n  inverse-primary: '#765a1e'\n  secondary: '#a0cde5'\n  on-secondary: '#003548'\n  secondary-container: '#1f4e63'\n  on-secondary-container: '#92bed7'\n  tertiary: '#ffc6ba'\n  on-tertiary: '#561f13'\n  tertiary-container: '#f8a28f'\n  on-tertiary-container: '#743629'\n  error: '#ffb4ab'\n  on-error: '#690005'\n  error-container: '#93000a'\n  on-error-container: '#ffdad6'\n  primary-fixed: '#ffdea5'\n  primary-fixed-dim: '#e7c17b'\n  on-primary-fixed: '#261900'\n  on-primary-fixed-variant: '#5c4206'\n  secondary-fixed: '#c0e8ff'\n  secondary-fixed-dim: '#a0cde5'\n  on-secondary-fixed: '#001e2b'\n  on-secondary-fixed-variant: '#1c4c60'\n  tertiary-fixed: '#ffdad3'\n  tertiary-fixed-dim: '#ffb4a4'\n  on-tertiary-fixed: '#3a0a03'\n  on-tertiary-fixed-variant: '#723527'\n  background: '#111411'\n  on-background: '#e1e3de'\n  surface-variant: '#333632'\ntypography:\n  editorial-statement:\n    fontFamily: Newsreader\n    fontSize: 2rem\n    fontWeight: '400'\n    lineHeight: 2.5rem\n  editorial-statement-mobile:\n    fontFamily: Newsreader\n    fontSize: 1.5rem\n    fontWeight: '400'\n    lineHeight: 2rem\n  headline-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 1.25rem\n    fontWeight: '600'\n    lineHeight: 1.625rem\n  body-default:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.875rem\n    fontWeight: '400'\n    lineHeight: 1.25rem\n  body-compact:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.8125rem\n    fontWeight: '400'\n    lineHeight: 1.125rem\n  machine-header:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '600'\n    lineHeight: 0.875rem\n    letterSpacing: 0.08em\n  machine-data:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '400'\n    lineHeight: 1rem\n  machine-mono-bold:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '600'\n    lineHeight: 1rem\n  label-badge:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '500'\n    lineHeight: 0.875rem\nrounded:\n  sm: 0.125rem\n  DEFAULT: 0.25rem\n  md: 0.375rem\n  lg: 0.5rem\n  xl: 0.75rem\n  full: 9999px\nspacing:\n  gutter: 1px\n  margin: 1rem\n  space-xs: 0.25rem\n  space-sm: 0.375rem\n  space-md: 0.5rem\n  space-lg: 0.75rem\n  space-xl: 1rem\n---\n\n## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Colors\n\nThe palette operates under absolute chromatic restraint. Surfaces do not stack tinted cards; instead, space is governed by depth-recessed wells and hair-thin demarcation rules.\n\n### Structural Neutrals\n- **Ground (`#141714`):** The primary canvas bedrock. Panes sit directly on this ground without fill differentials.\n- **Hairline Border (`#282d29`):** 1px structural partitions defining all panes, grids, and boundaries.\n- **Sunken Wells & Inset Chips (`#0e110e`):** Depressed surfaces used for telemetry wells, input troughs, and nested code blocks.\n- **Floating Overlays (`#1b1e1b`):** Command palettes, flyout popovers, contextual drawers, and modal sheets.\n\n### Editorial & Interface Ink\n- **Primary Ink (`#e3e8e3`):** High-readability foreground for headlines, active names, and primary readouts.\n- **Secondary Ink (`#b6bcb7`):** Explanatory strings, balanced values, and body summaries.\n- **Metadata Ink (`#909590`):** Timestamps, column heads, keyboard shortcuts, and structural framing glyphs.\n- **Passive OK / Nominal Grey (`#606660`):** Routine ticks, healthy operations, and idle states. Absolute ban on green for routine health.\n\n### Strict Five-Hue Operational Signals\nColors must never be used for brand styling or generic accent flourishes. They indicate system state exclusively:\n1. **Ochre (`#d8b36e`):** Operator bottleneck. Needs YOU. Used for active focus indicators, pending approval rings, and unblocking requests.\n2. **Brick (`#de8c7a`):** Critical halt / Broken. Fatal crashes, process timeouts, hard verification fails.\n3. **Heather (`#b3a2ca`):** Stuck / Over Budget. Resource degradation, queue thrashing, quota locks.\n4. **Lake (`#89b5cd`):** Active Work. Background processing, agent runtime cycles, active execution streams.\n5. **Moss (`#92b98d`):** Cleared recently / Fresh settlement. Used exclusively for events completed in the immediate window, decaying into quiet grey over time.\n\n## Typography\n\nThe type system is tri-fold and strictly segmented:\n\n1. **Editorial Proclamation (`Newsreader`):** Exactly one single statement per view (e.g., *\"Two things need you.\"* or *\"All streams nominal across sub-planes.\"*). Set with standard italics or regular weight, serving as an authoritative status thesis. Never used for interactive elements, tables, or buttons.\n2. **Interface Plaintext (`Atkinson Hyperlegible Next`):** The primary UI workhorse. Optimized for instant disambiguation under low-light or fatigue conditions. Used for row titles, descriptive status messages, system notifications, and dialog text.\n3. **Machine Telemetry (`JetBrains Mono` / Monospace):** Applied to all computational artifacts: Ticket Keys (`HOLOC-8`), Commit SHAs, Agent UUIDs, memory addresses, latency metrics (`42ms`), currency counters, and column headers. Rendered with tabular figures (`tnum`) for consistent vertical alignment across dense rows.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Shapes\n\nShapes feature a near-orthogonal profile. Curves are limited to subtle corner breaks (2px to 4px) to retain an industrial, instrument-grade demeanor:\n\n- **Base Components (Buttons, Chips, Text Inputs):** `2px` border radius (`rounded-xs`). Crisp, exact, machine-like.\n- **Floating Sheets & Popovers:** `4px` border radius (`rounded-sm`).\n- **Data Cells & Seams:** `0px` radius. Interior grid boundaries remain completely rectangular with sharp corners.\n- **Status Glyphs:** Geometric vector primitives integrated inline:\n  - *Blocked on You:* Filled Diamond (`◆`) in Ochre `#d8b36e`.\n  - *Broken:* Filled Disc (`●`) in Brick `#de8c7a`.\n  - *Stuck / Budget:* Filled Triangle (`▲`) in Heather `#b3a2ca`.\n  - *Nudge:* Small dot (`•`) in Heather or Ochre.\n  - *Nominal / Routine:* Em-dash (`—`) in Quiet Grey `#606660`.\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+              "font": "NEWSREADER",
+              "headlineFont": "NEWSREADER",
+              "headlineFontFamily": "Newsreader",
+              "labelFont": "JETBRAINS_MONO",
+              "labelFontFamily": "JetBrains Mono",
+              "namedColors": {
+                "background": "#111411",
+                "error": "#ffb4ab",
+                "error_container": "#93000a",
+                "inverse_on_surface": "#2e312e",
+                "inverse_primary": "#765a1e",
+                "inverse_surface": "#e1e3de",
+                "on_background": "#e1e3de",
+                "on_error": "#690005",
+                "on_error_container": "#ffdad6",
+                "on_primary": "#412d00",
+                "on_primary_container": "#5e4408",
+                "on_primary_fixed": "#261900",
+                "on_primary_fixed_variant": "#5c4206",
+                "on_secondary": "#003548",
+                "on_secondary_container": "#92bed7",
+                "on_secondary_fixed": "#001e2b",
+                "on_secondary_fixed_variant": "#1c4c60",
+                "on_surface": "#e1e3de",
+                "on_surface_variant": "#d1c5b4",
+                "on_tertiary": "#561f13",
+                "on_tertiary_container": "#743629",
+                "on_tertiary_fixed": "#3a0a03",
+                "on_tertiary_fixed_variant": "#723527",
+                "outline": "#9a8f80",
+                "outline_variant": "#4e4639",
+                "primary": "#f6ce87",
+                "primary_container": "#d8b36e",
+                "primary_fixed": "#ffdea5",
+                "primary_fixed_dim": "#e7c17b",
+                "secondary": "#a0cde5",
+                "secondary_container": "#1f4e63",
+                "secondary_fixed": "#c0e8ff",
+                "secondary_fixed_dim": "#a0cde5",
+                "surface": "#111411",
+                "surface_bright": "#373a36",
+                "surface_container": "#1d201d",
+                "surface_container_high": "#282b27",
+                "surface_container_highest": "#333632",
+                "surface_container_low": "#191c19",
+                "surface_container_lowest": "#0c0f0c",
+                "surface_dim": "#111411",
+                "surface_tint": "#e7c17b",
+                "surface_variant": "#333632",
+                "tertiary": "#ffc6ba",
+                "tertiary_container": "#f8a28f",
+                "tertiary_fixed": "#ffdad3",
+                "tertiary_fixed_dim": "#ffb4a4"
+              },
+              "overrideNeutralColor": "#141714",
+              "overridePrimaryColor": "#d8b36e",
+              "overrideSecondaryColor": "#89b5cd",
+              "overrideTertiaryColor": "#de8c7a",
+              "roundness": "ROUND_FOUR",
+              "spacing": {
+                "gutter": "1px",
+                "margin": "1rem",
+                "space-lg": "0.75rem",
+                "space-md": "0.5rem",
+                "space-sm": "0.375rem",
+                "space-xl": "1rem",
+                "space-xs": "0.25rem"
+              },
+              "spacingScale": 2,
+              "typography": {
+                "body-compact": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.8125rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.125rem"
+                },
+                "body-default": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.875rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.25rem"
+                },
+                "editorial-statement": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "2rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2.5rem"
+                },
+                "editorial-statement-mobile": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "1.5rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2rem"
+                },
+                "headline-md": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "1.25rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1.625rem"
+                },
+                "label-badge": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "500",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-data": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1rem"
+                },
+                "machine-header": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "600",
+                  "letterSpacing": "0.08em",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-mono-bold": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1rem"
+                }
+              }
+            }
+          },
+          "name": "assets/24f996ed3ee746dfaa775b4bad9430aa",
+          "version": "1"
+        },
+        "deviceType": "DESKTOP",
+        "generatedBy": "HatterAgent",
+        "height": "2048",
+        "htmlCode": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/badf97d1b5b34cf783763891da808792:download",
+          "mimeType": "text/html",
+          "name": "projects/14104283770497705087/files/badf97d1b5b34cf783763891da808792"
+        },
+        "id": "0b87f2093d584bf2bea47be6a1e33c9b",
+        "name": "projects/14104283770497705087/screens/0b87f2093d584bf2bea47be6a1e33c9b",
+        "prompt": "Generate Variant 2 of 3: Board-Dominant Wide Cockpit with Consolidated Narrow Right Rail.\nPreserve all content, typography (Newsreader serif headers + monospace machine tokens), status rules, and Spruce Holocene palette.\nTop navigation MUST read exactly: \"Now\", \"Trail\", \"Board\", \"Fleet\", \"Systems\", \"Hooks\", \"Truth\" (with Now active).\nTruth strip at top: maintain exact telemetry including 'sweeper DOWN' alert; never claim all systems nominal while any truth source is down.\nOchre (#d8b36e) strictly reserved ONLY for operator-actionable controls ('Approve push', 'Choose 1 PR', actionable operator buttons).\nLAYOUT STRUCTURE:\n- Left main pane (~72% width / board-dominant):\n  * \"Two things need you.\" attention band with the two actionable prompt cards (codex approval, holocene-pm PR decision).\n  * Prominent, dense, expansive Live Agent Board with agent table, glyphs, CLI/Agent, Repo/Scope, Pane, Tools/Activity, Actions.\n  * Bottom inventory fold (\"55 alive, never observed\").\n- Right pane (~28% width / ultra-compact unified rail):\n  * Top half: Wedge Rail // Scopes with collapsed stuck items, progress counters, \"DRAIN 10 STUCK\" action.\n  * Divider line / section header.\n  * Bottom half: \"What Just Happened?\" event stream with timestamped state changes (cleared, broken, stuck, spawned).\n- Footer daemon status bar: \"HOLOCENE DAEMON v3.8.4 // OPERATOR ACTIVE\", accurate status lights showing degraded/broken nodes, strictly no false 'all systems nominal'.",
+        "screenMetadata": {
+          "agentType": "PRO_AGENT",
+          "status": "COMPLETE"
+        },
+        "screenType": "DESIGN",
+        "screenshot": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/74d37be0597e4b0993ea1b7e99e74391:download",
+          "name": "projects/14104283770497705087/files/74d37be0597e4b0993ea1b7e99e74391"
+        },
+        "theme": {
+          "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+          "bodyFontFamily": "Atkinson Hyperlegible Next",
+          "colorMode": "DARK",
+          "colorVariant": "FIDELITY",
+          "customColor": "#d8b36e",
+          "font": "NEWSREADER",
+          "headlineFont": "NEWSREADER",
+          "headlineFontFamily": "Newsreader",
+          "labelFont": "JETBRAINS_MONO",
+          "labelFontFamily": "JetBrains Mono",
+          "namedColors": {
+            "background": "#111411",
+            "error": "#ffb4ab",
+            "error_container": "#93000a",
+            "inverse_on_surface": "#2e312e",
+            "inverse_primary": "#765a1e",
+            "inverse_surface": "#e1e3de",
+            "on_background": "#e1e3de",
+            "on_error": "#690005",
+            "on_error_container": "#ffdad6",
+            "on_primary": "#412d00",
+            "on_primary_container": "#5e4408",
+            "on_primary_fixed": "#261900",
+            "on_primary_fixed_variant": "#5c4206",
+            "on_secondary": "#003548",
+            "on_secondary_container": "#92bed7",
+            "on_secondary_fixed": "#001e2b",
+            "on_secondary_fixed_variant": "#1c4c60",
+            "on_surface": "#e1e3de",
+            "on_surface_variant": "#d1c5b4",
+            "on_tertiary": "#561f13",
+            "on_tertiary_container": "#743629",
+            "on_tertiary_fixed": "#3a0a03",
+            "on_tertiary_fixed_variant": "#723527",
+            "outline": "#9a8f80",
+            "outline_variant": "#4e4639",
+            "primary": "#f6ce87",
+            "primary_container": "#d8b36e",
+            "primary_fixed": "#ffdea5",
+            "primary_fixed_dim": "#e7c17b",
+            "secondary": "#a0cde5",
+            "secondary_container": "#1f4e63",
+            "secondary_fixed": "#c0e8ff",
+            "secondary_fixed_dim": "#a0cde5",
+            "surface": "#111411",
+            "surface_bright": "#373a36",
+            "surface_container": "#1d201d",
+            "surface_container_high": "#282b27",
+            "surface_container_highest": "#333632",
+            "surface_container_low": "#191c19",
+            "surface_container_lowest": "#0c0f0c",
+            "surface_dim": "#111411",
+            "surface_tint": "#e7c17b",
+            "surface_variant": "#333632",
+            "tertiary": "#ffc6ba",
+            "tertiary_container": "#f8a28f",
+            "tertiary_fixed": "#ffdad3",
+            "tertiary_fixed_dim": "#ffb4a4"
+          },
+          "overrideNeutralColor": "#141714",
+          "overridePrimaryColor": "#d8b36e",
+          "overrideSecondaryColor": "#89b5cd",
+          "overrideTertiaryColor": "#de8c7a",
+          "roundness": "ROUND_FOUR",
+          "spacing": {
+            "gutter": "1px",
+            "margin": "1rem",
+            "space-lg": "0.75rem",
+            "space-md": "0.5rem",
+            "space-sm": "0.375rem",
+            "space-xl": "1rem",
+            "space-xs": "0.25rem"
+          },
+          "spacingScale": 2,
+          "typography": {
+            "body-compact": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.8125rem",
+              "fontWeight": "400",
+              "lineHeight": "1.125rem"
+            },
+            "body-default": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.875rem",
+              "fontWeight": "400",
+              "lineHeight": "1.25rem"
+            },
+            "editorial-statement": {
+              "fontFamily": "Newsreader",
+              "fontSize": "2rem",
+              "fontWeight": "400",
+              "lineHeight": "2.5rem"
+            },
+            "editorial-statement-mobile": {
+              "fontFamily": "Newsreader",
+              "fontSize": "1.5rem",
+              "fontWeight": "400",
+              "lineHeight": "2rem"
+            },
+            "headline-md": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "1.25rem",
+              "fontWeight": "600",
+              "lineHeight": "1.625rem"
+            },
+            "label-badge": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "500",
+              "lineHeight": "0.875rem"
+            },
+            "machine-data": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "400",
+              "lineHeight": "1rem"
+            },
+            "machine-header": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "600",
+              "letterSpacing": "0.08em",
+              "lineHeight": "0.875rem"
+            },
+            "machine-mono-bold": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "600",
+              "lineHeight": "1rem"
+            }
+          }
+        },
+        "title": "Holocene 33GOD — Variant 2 (Board-Dominant Cockpit)",
+        "width": "2560",
+        "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/74d37be0597e4b0993ea1b7e99e74391:download",
+        "projectId": "14104283770497705087"
+      },
+      {
+        "designSystem": {
+          "designSystem": {
+            "displayName": "Spruce Holocene Now",
+            "styleGuidelines": "## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+            "theme": {
+              "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+              "bodyFontFamily": "Atkinson Hyperlegible Next",
+              "colorMode": "DARK",
+              "colorVariant": "FIDELITY",
+              "customColor": "#d8b36e",
+              "designMd": "---\nname: Spruce Holocene Now\ncolors:\n  surface: '#111411'\n  surface-dim: '#111411'\n  surface-bright: '#373a36'\n  surface-container-lowest: '#0c0f0c'\n  surface-container-low: '#191c19'\n  surface-container: '#1d201d'\n  surface-container-high: '#282b27'\n  surface-container-highest: '#333632'\n  on-surface: '#e1e3de'\n  on-surface-variant: '#d1c5b4'\n  inverse-surface: '#e1e3de'\n  inverse-on-surface: '#2e312e'\n  outline: '#9a8f80'\n  outline-variant: '#4e4639'\n  surface-tint: '#e7c17b'\n  primary: '#f6ce87'\n  on-primary: '#412d00'\n  primary-container: '#d8b36e'\n  on-primary-container: '#5e4408'\n  inverse-primary: '#765a1e'\n  secondary: '#a0cde5'\n  on-secondary: '#003548'\n  secondary-container: '#1f4e63'\n  on-secondary-container: '#92bed7'\n  tertiary: '#ffc6ba'\n  on-tertiary: '#561f13'\n  tertiary-container: '#f8a28f'\n  on-tertiary-container: '#743629'\n  error: '#ffb4ab'\n  on-error: '#690005'\n  error-container: '#93000a'\n  on-error-container: '#ffdad6'\n  primary-fixed: '#ffdea5'\n  primary-fixed-dim: '#e7c17b'\n  on-primary-fixed: '#261900'\n  on-primary-fixed-variant: '#5c4206'\n  secondary-fixed: '#c0e8ff'\n  secondary-fixed-dim: '#a0cde5'\n  on-secondary-fixed: '#001e2b'\n  on-secondary-fixed-variant: '#1c4c60'\n  tertiary-fixed: '#ffdad3'\n  tertiary-fixed-dim: '#ffb4a4'\n  on-tertiary-fixed: '#3a0a03'\n  on-tertiary-fixed-variant: '#723527'\n  background: '#111411'\n  on-background: '#e1e3de'\n  surface-variant: '#333632'\ntypography:\n  editorial-statement:\n    fontFamily: Newsreader\n    fontSize: 2rem\n    fontWeight: '400'\n    lineHeight: 2.5rem\n  editorial-statement-mobile:\n    fontFamily: Newsreader\n    fontSize: 1.5rem\n    fontWeight: '400'\n    lineHeight: 2rem\n  headline-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 1.25rem\n    fontWeight: '600'\n    lineHeight: 1.625rem\n  body-default:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.875rem\n    fontWeight: '400'\n    lineHeight: 1.25rem\n  body-compact:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 0.8125rem\n    fontWeight: '400'\n    lineHeight: 1.125rem\n  machine-header:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '600'\n    lineHeight: 0.875rem\n    letterSpacing: 0.08em\n  machine-data:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '400'\n    lineHeight: 1rem\n  machine-mono-bold:\n    fontFamily: JetBrains Mono\n    fontSize: 0.75rem\n    fontWeight: '600'\n    lineHeight: 1rem\n  label-badge:\n    fontFamily: JetBrains Mono\n    fontSize: 0.6875rem\n    fontWeight: '500'\n    lineHeight: 0.875rem\nrounded:\n  sm: 0.125rem\n  DEFAULT: 0.25rem\n  md: 0.375rem\n  lg: 0.5rem\n  xl: 0.75rem\n  full: 9999px\nspacing:\n  gutter: 1px\n  margin: 1rem\n  space-xs: 0.25rem\n  space-sm: 0.375rem\n  space-md: 0.5rem\n  space-lg: 0.75rem\n  space-xl: 1rem\n---\n\n## Brand & Style\n\nThis design system delivers a calm, authoritative mission-control plane built for high-stakes orchestration and real-time oversight. The atmosphere balances the tactical clarity of an industrial cockpit with the quiet editorial weight of an executive briefing ledger. \n\nThe emotional target is collected confidence: the screen must never panic, flicker with superfluous motion, or overwhelm the operator with a \"wall of green\" false alarms. Healthy and nominal states remain quiet and gray; color is reserved strictly as intentional signal syntax.\n\nThe visual style is **Tactical Brutalism meets High-Density Terminal Utility**:\n- Zero superfluous decorative paneling or heavy skeuomorphic chrome.\n- Layouts are carved entirely through crisp structural hairlines directly over the dark ground.\n- Micro-densities respect information throughput: standard operational rows maintain an unwavering 36px cadence.\n- Editorial elevation is introduced sparingly through a singular literary serif proclamation per view, anchoring the operator's context before plunging into tactical mono-spaced telemetry.\n\n## Colors\n\nThe palette operates under absolute chromatic restraint. Surfaces do not stack tinted cards; instead, space is governed by depth-recessed wells and hair-thin demarcation rules.\n\n### Structural Neutrals\n- **Ground (`#141714`):** The primary canvas bedrock. Panes sit directly on this ground without fill differentials.\n- **Hairline Border (`#282d29`):** 1px structural partitions defining all panes, grids, and boundaries.\n- **Sunken Wells & Inset Chips (`#0e110e`):** Depressed surfaces used for telemetry wells, input troughs, and nested code blocks.\n- **Floating Overlays (`#1b1e1b`):** Command palettes, flyout popovers, contextual drawers, and modal sheets.\n\n### Editorial & Interface Ink\n- **Primary Ink (`#e3e8e3`):** High-readability foreground for headlines, active names, and primary readouts.\n- **Secondary Ink (`#b6bcb7`):** Explanatory strings, balanced values, and body summaries.\n- **Metadata Ink (`#909590`):** Timestamps, column heads, keyboard shortcuts, and structural framing glyphs.\n- **Passive OK / Nominal Grey (`#606660`):** Routine ticks, healthy operations, and idle states. Absolute ban on green for routine health.\n\n### Strict Five-Hue Operational Signals\nColors must never be used for brand styling or generic accent flourishes. They indicate system state exclusively:\n1. **Ochre (`#d8b36e`):** Operator bottleneck. Needs YOU. Used for active focus indicators, pending approval rings, and unblocking requests.\n2. **Brick (`#de8c7a`):** Critical halt / Broken. Fatal crashes, process timeouts, hard verification fails.\n3. **Heather (`#b3a2ca`):** Stuck / Over Budget. Resource degradation, queue thrashing, quota locks.\n4. **Lake (`#89b5cd`):** Active Work. Background processing, agent runtime cycles, active execution streams.\n5. **Moss (`#92b98d`):** Cleared recently / Fresh settlement. Used exclusively for events completed in the immediate window, decaying into quiet grey over time.\n\n## Typography\n\nThe type system is tri-fold and strictly segmented:\n\n1. **Editorial Proclamation (`Newsreader`):** Exactly one single statement per view (e.g., *\"Two things need you.\"* or *\"All streams nominal across sub-planes.\"*). Set with standard italics or regular weight, serving as an authoritative status thesis. Never used for interactive elements, tables, or buttons.\n2. **Interface Plaintext (`Atkinson Hyperlegible Next`):** The primary UI workhorse. Optimized for instant disambiguation under low-light or fatigue conditions. Used for row titles, descriptive status messages, system notifications, and dialog text.\n3. **Machine Telemetry (`JetBrains Mono` / Monospace):** Applied to all computational artifacts: Ticket Keys (`HOLOC-8`), Commit SHAs, Agent UUIDs, memory addresses, latency metrics (`42ms`), currency counters, and column headers. Rendered with tabular figures (`tnum`) for consistent vertical alignment across dense rows.\n\n## Layout & Spacing\n\nThe control plane is laid out on a rigid, desktop-first 1440px viewport targeting route `/`. Space is managed as a monolithic terminal grid:\n\n- **Partition Architecture:** Panes do not float with padded outer gaps. Instead, panes butt against each other separated solely by 1px hairline rules (`#282d29`). The grid gutter token is `1px` representing this hairline seam.\n- **Cadence & Heights:** The primary metric of interaction is the **36px standard row height**. This constant unit anchors data tables, action checklists, audit streams, and breadcrumb headers. Sub-rows (compact logs) collapse to 28px.\n- **Padding Disciplines:** Micro-spacing uses tight multiples: `0.25rem` (4px) inside badges and key-value tags; `0.5rem` (8px) horizontal padding in cells; `0.75rem` (12px) pane edge margins.\n- **Reflow & Viewport Scaling:** Desktop (1440px) maintains a 3-pane command-board layout (Navigation / Main Orchestration / Telemetry Inspector). At tablet (<1024px), the Telemetry pane collapses into an expandable drawer. At mobile (<768px), views pivot to a single vertical column with fixed 36px tabs docked to the bottom viewport edge.\n\n## Elevation & Depth\n\nThis system intentionally rejects skeuomorphic extrusion and ambient drop shadows across the workspace canvas:\n\n- **Zero-Shadow Plane:** All panels, tables, grids, and inspection tiles reside on `#141714` with zero box-shadow. Structural hierarchy is communicated through fill contrasts and 1px hairline seams.\n- **Sunken Wells (`#0e110e`):** Information sinks (terminal logs, command input bars, filter wells) sit recessed into the surface via borderless `#0e110e` fills.\n- **Floating Overlays (`#1b1e1b`):** Restricted solely to transient utility elements (Command Palette `Cmd+K`, hover inspect popovers, and confirmation sheets). These floating elements take a high-density, sharp outline of `1px solid #282d29` accompanied by a controlled, dark, low-diffusion ambient shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.75)`.\n- **Focus Rings:** Non-offset, razor-sharp 1px border highlights using Ochre (`#d8b36e`).\n\n## Shapes\n\nShapes feature a near-orthogonal profile. Curves are limited to subtle corner breaks (2px to 4px) to retain an industrial, instrument-grade demeanor:\n\n- **Base Components (Buttons, Chips, Text Inputs):** `2px` border radius (`rounded-xs`). Crisp, exact, machine-like.\n- **Floating Sheets & Popovers:** `4px` border radius (`rounded-sm`).\n- **Data Cells & Seams:** `0px` radius. Interior grid boundaries remain completely rectangular with sharp corners.\n- **Status Glyphs:** Geometric vector primitives integrated inline:\n  - *Blocked on You:* Filled Diamond (`◆`) in Ochre `#d8b36e`.\n  - *Broken:* Filled Disc (`●`) in Brick `#de8c7a`.\n  - *Stuck / Budget:* Filled Triangle (`▲`) in Heather `#b3a2ca`.\n  - *Nudge:* Small dot (`•`) in Heather or Ochre.\n  - *Nominal / Routine:* Em-dash (`—`) in Quiet Grey `#606660`.\n\n## Components\n\n### 1. Rows (Core 36px Operational Block)\n- **Geometry:** Height exactly 36px, `border-bottom: 1px solid #282d29`, padding: `0 0.75rem`.\n- **States:** Default background is transparent (`#141714`). Hover shifts background to `#1b1e1b`. Focused/Selected displays a 2px left border accent in Ochre (`#d8b36e`).\n- **Layout:** Status glyph (left aligned) → Ticket Key (`HOLOC-X` in Mono) → Primary Title (Atkinson) → Assignee/Agent chip → Runtime metric (Mono) → Action button.\n\n### 2. Status Chips & Badges\n- **Geometry:** Height 20px, radius 2px, padding `0 0.375rem`.\n- **Style:** Background `#0e110e`, border `1px solid #282d29`.\n- **Typography:** `machine-header` (JetBrains Mono uppercase).\n- **Signal States:** Signal colors are rendered as text color and leading 4px dot icon, never full-bleed saturated fills.\n\n### 3. Buttons & Action Triggers\n- **Primary (Operator Action):** Background `#d8b36e`, text `#141714`, font `Atkinson Hyperlegible Next` (weight 600), radius 2px. No shadow.\n- **Secondary / Ghost:** Background transparent, text `#e3e8e3`, border `1px solid #282d29`. Hover: background `#1b1e1b`, border color `#b6bcb7`.\n- **Machine Micro-action (Inline CLI):** JetBrains Mono, 24px height, background `#0e110e`, text `#909590`, hover text `#e3e8e3`.\n\n### 4. Input Fields & Command Well\n- **Geometry:** Height 36px, background `#0e110e`, border `1px solid #282d29`, radius 2px.\n- **Typography:** JetBrains Mono 12px. Placeholder text `#606660`.\n- **Focus State:** Border transitions cleanly to `1px solid #d8b36e` without outer halo or drop shadow.\n\n### 5. Checkboxes & Toggles\n- **Box Dimensions:** 14px × 14px, radius 2px, background `#0e110e`, border `1px solid #909590`.\n- **Checked State:** Background `#d8b36e`, border `#d8b36e`, indicator icon rendered as a 1.5px solid dark glyph `#141714`.\n\n### 6. Editorial Proclamation Banner\n- **Geometry:** Placed at the masthead of `/`. Margin bottom `1.5rem`.\n- **Typography:** Newsreader Regular, `#e3e8e3`.\n- **Content Policy:** Restricted to a single declarative sentence describing system imperative (e.g., *\"Two things need you.\"*), paired with sub-line metadata in JetBrains Mono (`RUN-ID // SYNCED 4S AGO`).",
+              "font": "NEWSREADER",
+              "headlineFont": "NEWSREADER",
+              "headlineFontFamily": "Newsreader",
+              "labelFont": "JETBRAINS_MONO",
+              "labelFontFamily": "JetBrains Mono",
+              "namedColors": {
+                "background": "#111411",
+                "error": "#ffb4ab",
+                "error_container": "#93000a",
+                "inverse_on_surface": "#2e312e",
+                "inverse_primary": "#765a1e",
+                "inverse_surface": "#e1e3de",
+                "on_background": "#e1e3de",
+                "on_error": "#690005",
+                "on_error_container": "#ffdad6",
+                "on_primary": "#412d00",
+                "on_primary_container": "#5e4408",
+                "on_primary_fixed": "#261900",
+                "on_primary_fixed_variant": "#5c4206",
+                "on_secondary": "#003548",
+                "on_secondary_container": "#92bed7",
+                "on_secondary_fixed": "#001e2b",
+                "on_secondary_fixed_variant": "#1c4c60",
+                "on_surface": "#e1e3de",
+                "on_surface_variant": "#d1c5b4",
+                "on_tertiary": "#561f13",
+                "on_tertiary_container": "#743629",
+                "on_tertiary_fixed": "#3a0a03",
+                "on_tertiary_fixed_variant": "#723527",
+                "outline": "#9a8f80",
+                "outline_variant": "#4e4639",
+                "primary": "#f6ce87",
+                "primary_container": "#d8b36e",
+                "primary_fixed": "#ffdea5",
+                "primary_fixed_dim": "#e7c17b",
+                "secondary": "#a0cde5",
+                "secondary_container": "#1f4e63",
+                "secondary_fixed": "#c0e8ff",
+                "secondary_fixed_dim": "#a0cde5",
+                "surface": "#111411",
+                "surface_bright": "#373a36",
+                "surface_container": "#1d201d",
+                "surface_container_high": "#282b27",
+                "surface_container_highest": "#333632",
+                "surface_container_low": "#191c19",
+                "surface_container_lowest": "#0c0f0c",
+                "surface_dim": "#111411",
+                "surface_tint": "#e7c17b",
+                "surface_variant": "#333632",
+                "tertiary": "#ffc6ba",
+                "tertiary_container": "#f8a28f",
+                "tertiary_fixed": "#ffdad3",
+                "tertiary_fixed_dim": "#ffb4a4"
+              },
+              "overrideNeutralColor": "#141714",
+              "overridePrimaryColor": "#d8b36e",
+              "overrideSecondaryColor": "#89b5cd",
+              "overrideTertiaryColor": "#de8c7a",
+              "roundness": "ROUND_FOUR",
+              "spacing": {
+                "gutter": "1px",
+                "margin": "1rem",
+                "space-lg": "0.75rem",
+                "space-md": "0.5rem",
+                "space-sm": "0.375rem",
+                "space-xl": "1rem",
+                "space-xs": "0.25rem"
+              },
+              "spacingScale": 2,
+              "typography": {
+                "body-compact": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.8125rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.125rem"
+                },
+                "body-default": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "0.875rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1.25rem"
+                },
+                "editorial-statement": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "2rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2.5rem"
+                },
+                "editorial-statement-mobile": {
+                  "fontFamily": "Newsreader",
+                  "fontSize": "1.5rem",
+                  "fontWeight": "400",
+                  "lineHeight": "2rem"
+                },
+                "headline-md": {
+                  "fontFamily": "Atkinson Hyperlegible Next",
+                  "fontSize": "1.25rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1.625rem"
+                },
+                "label-badge": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "500",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-data": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "400",
+                  "lineHeight": "1rem"
+                },
+                "machine-header": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.6875rem",
+                  "fontWeight": "600",
+                  "letterSpacing": "0.08em",
+                  "lineHeight": "0.875rem"
+                },
+                "machine-mono-bold": {
+                  "fontFamily": "JetBrains Mono",
+                  "fontSize": "0.75rem",
+                  "fontWeight": "600",
+                  "lineHeight": "1rem"
+                }
+              }
+            }
+          },
+          "name": "assets/24f996ed3ee746dfaa775b4bad9430aa",
+          "version": "1"
+        },
+        "deviceType": "DESKTOP",
+        "generatedBy": "HatterAgent",
+        "height": "2048",
+        "htmlCode": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/44ae977d940a4ce29705635e00f5e5b9:download",
+          "mimeType": "text/html",
+          "name": "projects/14104283770497705087/files/44ae977d940a4ce29705635e00f5e5b9"
+        },
+        "id": "0049d941514f43018326cf9e2b83c144",
+        "name": "projects/14104283770497705087/screens/0049d941514f43018326cf9e2b83c144",
+        "prompt": "Generate Variant 3 of 3: Two-Column Split (50/50 balanced layout giving recent events & feed equal weight with the agent board).\nPreserve all content, typography (Newsreader serif headlines + crisp monospace telemetry), status rules, and Spruce Holocene palette.\nTop navigation MUST read exactly: \"Now\", \"Trail\", \"Board\", \"Fleet\", \"Systems\", \"Hooks\", \"Truth\" (with Now active).\nTruth strip: maintain exact metrics including 'sweeper DOWN' alert; never claim nominal when any source is down.\nOchre (#d8b36e) strictly and only applied to operator-executable actions ('Approve push', 'Choose 1 PR', etc.).\nLAYOUT STRUCTURE:\n- Full-width top attention bar: \"Two things need you.\" compact horizontal banner span across the full viewport width right below the header so critical triage decisions are immediately accessible.\n- Two-Column Balanced Body (50% / 50% split on 1440px desktop):\n  * Left Column (50%): Live Agent Board with filter pill controls, full node list table, and active process inspection triggers.\n  * Right Column (50%): Deep Real-time Telemetry & Stream:\n    - Upper section of right column: \"Wedge Rail // Scopes\" with execution status bars and scope drainage controls.\n    - Lower section of right column: Expanded, rich \"What Just Happened?\" event timeline feed with log diff snippets, timestamp badges, and event state colors (cleared, broken, stuck, spawned).\n- Footer telemetry strip displaying daemon version, node states, and honest system status reflecting broken sweeper.",
+        "screenMetadata": {
+          "agentType": "PRO_AGENT",
+          "status": "COMPLETE"
+        },
+        "screenType": "DESIGN",
+        "screenshot": {
+          "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/b0b99444eb524c6194f9629e6a20b464:download",
+          "name": "projects/14104283770497705087/files/b0b99444eb524c6194f9629e6a20b464"
+        },
+        "theme": {
+          "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+          "bodyFontFamily": "Atkinson Hyperlegible Next",
+          "colorMode": "DARK",
+          "colorVariant": "FIDELITY",
+          "customColor": "#d8b36e",
+          "font": "NEWSREADER",
+          "headlineFont": "NEWSREADER",
+          "headlineFontFamily": "Newsreader",
+          "labelFont": "JETBRAINS_MONO",
+          "labelFontFamily": "JetBrains Mono",
+          "namedColors": {
+            "background": "#111411",
+            "error": "#ffb4ab",
+            "error_container": "#93000a",
+            "inverse_on_surface": "#2e312e",
+            "inverse_primary": "#765a1e",
+            "inverse_surface": "#e1e3de",
+            "on_background": "#e1e3de",
+            "on_error": "#690005",
+            "on_error_container": "#ffdad6",
+            "on_primary": "#412d00",
+            "on_primary_container": "#5e4408",
+            "on_primary_fixed": "#261900",
+            "on_primary_fixed_variant": "#5c4206",
+            "on_secondary": "#003548",
+            "on_secondary_container": "#92bed7",
+            "on_secondary_fixed": "#001e2b",
+            "on_secondary_fixed_variant": "#1c4c60",
+            "on_surface": "#e1e3de",
+            "on_surface_variant": "#d1c5b4",
+            "on_tertiary": "#561f13",
+            "on_tertiary_container": "#743629",
+            "on_tertiary_fixed": "#3a0a03",
+            "on_tertiary_fixed_variant": "#723527",
+            "outline": "#9a8f80",
+            "outline_variant": "#4e4639",
+            "primary": "#f6ce87",
+            "primary_container": "#d8b36e",
+            "primary_fixed": "#ffdea5",
+            "primary_fixed_dim": "#e7c17b",
+            "secondary": "#a0cde5",
+            "secondary_container": "#1f4e63",
+            "secondary_fixed": "#c0e8ff",
+            "secondary_fixed_dim": "#a0cde5",
+            "surface": "#111411",
+            "surface_bright": "#373a36",
+            "surface_container": "#1d201d",
+            "surface_container_high": "#282b27",
+            "surface_container_highest": "#333632",
+            "surface_container_low": "#191c19",
+            "surface_container_lowest": "#0c0f0c",
+            "surface_dim": "#111411",
+            "surface_tint": "#e7c17b",
+            "surface_variant": "#333632",
+            "tertiary": "#ffc6ba",
+            "tertiary_container": "#f8a28f",
+            "tertiary_fixed": "#ffdad3",
+            "tertiary_fixed_dim": "#ffb4a4"
+          },
+          "overrideNeutralColor": "#141714",
+          "overridePrimaryColor": "#d8b36e",
+          "overrideSecondaryColor": "#89b5cd",
+          "overrideTertiaryColor": "#de8c7a",
+          "roundness": "ROUND_FOUR",
+          "spacing": {
+            "gutter": "1px",
+            "margin": "1rem",
+            "space-lg": "0.75rem",
+            "space-md": "0.5rem",
+            "space-sm": "0.375rem",
+            "space-xl": "1rem",
+            "space-xs": "0.25rem"
+          },
+          "spacingScale": 2,
+          "typography": {
+            "body-compact": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.8125rem",
+              "fontWeight": "400",
+              "lineHeight": "1.125rem"
+            },
+            "body-default": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "0.875rem",
+              "fontWeight": "400",
+              "lineHeight": "1.25rem"
+            },
+            "editorial-statement": {
+              "fontFamily": "Newsreader",
+              "fontSize": "2rem",
+              "fontWeight": "400",
+              "lineHeight": "2.5rem"
+            },
+            "editorial-statement-mobile": {
+              "fontFamily": "Newsreader",
+              "fontSize": "1.5rem",
+              "fontWeight": "400",
+              "lineHeight": "2rem"
+            },
+            "headline-md": {
+              "fontFamily": "Atkinson Hyperlegible Next",
+              "fontSize": "1.25rem",
+              "fontWeight": "600",
+              "lineHeight": "1.625rem"
+            },
+            "label-badge": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "500",
+              "lineHeight": "0.875rem"
+            },
+            "machine-data": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "400",
+              "lineHeight": "1rem"
+            },
+            "machine-header": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.6875rem",
+              "fontWeight": "600",
+              "letterSpacing": "0.08em",
+              "lineHeight": "0.875rem"
+            },
+            "machine-mono-bold": {
+              "fontFamily": "JetBrains Mono",
+              "fontSize": "0.75rem",
+              "fontWeight": "600",
+              "lineHeight": "1rem"
+            }
+          }
+        },
+        "title": "Holocene 33GOD — Variant 3 (Balanced Two-Column Split)",
+        "width": "2560",
+        "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/b0b99444eb524c6194f9629e6a20b464:download",
+        "projectId": "14104283770497705087"
+      }
+    ],
+    "canvasUrl": "https://stitch.google.com/projects/14104283770497705087"
+  }
+}

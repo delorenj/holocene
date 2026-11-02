@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>HOLOCENE // 33GOD - Control Plane</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,300..700;1,300..700&amp;family=JetBrains+Mono:wght@300;400;500;600;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error": "#690005",
+            "primary-fixed": "#ffdea5",
+            "surface-dim": "#111411",
+            "on-primary-fixed-variant": "#5c4206",
+            "on-primary": "#412d00",
+            "primary-container": "#d8b36e",
+            "on-tertiary": "#561f13",
+            "on-surface-variant": "#d1c5b4",
+            "inverse-primary": "#765a1e",
+            "secondary-fixed-dim": "#a0cde5",
+            "tertiary-container": "#f8a28f",
+            "surface-tint": "#e7c17b",
+            "tertiary": "#ffc6ba",
+            "on-tertiary-fixed": "#3a0a03",
+            "surface-container-highest": "#333632",
+            "surface-variant": "#333632",
+            "surface-container": "#1d201d",
+            "on-secondary": "#003548",
+            "error": "#ffb4ab",
+            "on-secondary-fixed": "#001e2b",
+            "surface": "#111411",
+            "inverse-on-surface": "#2e312e",
+            "on-secondary-fixed-variant": "#1c4c60",
+            "secondary": "#a0cde5",
+            "tertiary-fixed-dim": "#ffb4a4",
+            "secondary-fixed": "#c0e8ff",
+            "secondary-container": "#1f4e63",
+            "on-primary-container": "#5e4408",
+            "surface-bright": "#373a36",
+            "tertiary-fixed": "#ffdad3",
+            "on-surface": "#e1e3de",
+            "on-background": "#e1e3de",
+            "on-error-container": "#ffdad6",
+            "background": "#111411",
+            "outline-variant": "#4e4639",
+            "on-tertiary-fixed-variant": "#723527",
+            "surface-container-high": "#282b27",
+            "error-container": "#93000a",
+            "on-secondary-container": "#92bed7",
+            "surface-container-lowest": "#0c0f0c",
+            "outline": "#9a8f80",
+            "primary": "#f6ce87",
+            "inverse-surface": "#e1e3de",
+            "on-tertiary-container": "#743629",
+            "on-primary-fixed": "#261900",
+            "primary-fixed-dim": "#e7c17b",
+            "surface-container-low": "#191c19"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "0.5rem",
+            "space-sm": "0.375rem",
+            "space-lg": "0.75rem",
+            "margin": "1rem",
+            "gutter": "1px",
+            "space-xl": "1rem"
+          },
+          "fontFamily": {
+            "editorial-statement-mobile": ["Newsreader"],
+            "headline-md": ["Atkinson Hyperlegible Next"],
+            "body-compact": ["Atkinson Hyperlegible Next"],
+            "machine-mono-bold": ["JetBrains Mono"],
+            "machine-header": ["JetBrains Mono"],
+            "editorial-statement": ["Newsreader"],
+            "label-badge": ["JetBrains Mono"],
+            "body-default": ["Atkinson Hyperlegible Next"],
+            "machine-data": ["JetBrains Mono"]
+          },
+          "fontSize": {
+            "editorial-statement-mobile": ["1.5rem", { "lineHeight": "2rem", "fontWeight": "400" }],
+            "headline-md": ["1.25rem", { "lineHeight": "1.625rem", "fontWeight": "600" }],
+            "body-compact": ["0.8125rem", { "lineHeight": "1.125rem", "fontWeight": "400" }],
+            "machine-mono-bold": ["0.75rem", { "lineHeight": "1rem", "fontWeight": "600" }],
+            "machine-header": ["0.6875rem", { "lineHeight": "0.875rem", "letterSpacing": "0.08em", "fontWeight": "600" }],
+            "editorial-statement": ["2rem", { "lineHeight": "2.5rem", "fontWeight": "400" }],
+            "label-badge": ["0.6875rem", { "lineHeight": "0.875rem", "fontWeight": "500" }],
+            "body-default": ["0.875rem", { "lineHeight": "1.25rem", "fontWeight": "400" }],
+            "machine-data": ["0.75rem", { "lineHeight": "1rem", "fontWeight": "400" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 16px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Spruce Visual Tokens & Custom Utilities */
+    .bg-spruce-ground { background-color: #141714; }
+    .bg-spruce-sunken { background-color: #0e110e; }
+    .bg-spruce-floating { background-color: #1b1e1b; }
+    .border-spruce-hairline { border-color: #282d29; }
+    .text-spruce-ink { color: #e3e8e3; }
+    .text-spruce-sub { color: #b6bcb7; }
+    .text-spruce-meta { color: #909590; }
+    .text-spruce-quiet { color: #727772; }
+
+    /* Signal Hues & Tints */
+    .color-signal-ochre { color: #d8b36e; }
+    .bg-signal-ochre-tint { background-color: rgba(216, 179, 110, 0.12); }
+    .border-signal-ochre { border-color: rgba(216, 179, 110, 0.4); }
+
+    .color-signal-brick { color: #de8c7a; }
+    .bg-signal-brick-tint { background-color: rgba(222, 140, 122, 0.12); }
+
+    .color-signal-heather { color: #b3a2ca; }
+    .bg-signal-heather-tint { background-color: rgba(179, 162, 202, 0.12); }
+
+    .color-signal-lake { color: #89b5cd; }
+    .bg-signal-lake-tint { background-color: rgba(137, 181, 205, 0.12); }
+
+    .color-signal-moss { color: #92b98d; }
+    .bg-signal-moss-tint { background-color: rgba(146, 185, 141, 0.12); }
+
+    /* Diagonal hatch background */
+    .hatch-pattern {
+      background: repeating-linear-gradient(
+        -45deg,
+        #0e110e,
+        #0e110e 6px,
+        #151915 6px,
+        #151915 12px
+      );
+    }
+  </style>
+</head>
+<body class="bg-spruce-ground text-spruce-ink font-body-default text-body-default antialiased selection:bg-primary-container selection:text-surface-container-lowest min-h-screen">
+<!-- WRAPPER: EXACT 1440PX MONOLITHIC DESKTOP CONTAINER -->
+<div class="w-[1440px] mx-auto min-h-screen border-x border-spruce-hairline flex flex-col bg-spruce-ground">
+<!-- 1. TRUTH STRIP (Sticky 24px bar) -->
+<header class="h-[24px] bg-spruce-sunken border-b border-spruce-hairline px-4 flex items-center justify-between font-machine-header text-machine-header tracking-wider z-50 select-none">
+<div class="flex items-center space-x-3">
+<div class="flex items-center space-x-1.5 color-signal-brick bg-signal-brick-tint px-1.5 py-0.5 rounded-[2px]">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-[#de8c7a] animate-pulse"></span>
+<span>sweeper DOWN</span>
+</div>
+<span class="text-spruce-hairline">|</span>
+<span class="text-spruce-quiet">asm 68/13</span>
+<span class="text-spruce-hairline">|</span>
+<span class="color-signal-moss bg-signal-moss-tint px-1 py-0.5 rounded-[2px]">candystore 918,762 (12s)</span>
+<span class="text-spruce-hairline">|</span>
+<span class="color-signal-lake bg-signal-lake-tint px-1 py-0.5 rounded-[2px]">nats 143,633 (4s)</span>
+<span class="text-spruce-hairline">|</span>
+<span class="color-signal-heather bg-signal-heather-tint px-1 py-0.5 rounded-[2px]">probes 3m</span>
+<span class="text-spruce-hairline">|</span>
+<span class="text-spruce-quiet">fleet 41s</span>
+</div>
+<div class="flex items-center space-x-3 text-spruce-meta">
+<span>UTC 14:42:09</span>
+<span class="text-spruce-hairline">·</span>
+<span>rev a8f2d</span>
+<span class="text-spruce-hairline">·</span>
+<span class="text-spruce-sub font-machine-mono-bold text-machine-mono-bold">host holocene-primary-0</span>
+</div>
+</header>
+<!-- 2. NAV HEADER (Desktop Control Plane TopNavBar Anchor) -->
+<nav class="h-[38px] bg-surface-container-lowest border-b border-spruce-hairline px-space-lg flex items-center justify-between select-none">
+<!-- Left Brand & Nav Group -->
+<div class="flex items-center space-x-6">
+<div class="flex items-center space-x-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+<span class="font-machine-mono-bold text-machine-mono-bold tracking-widest text-primary uppercase">HOLOCENE // 33GOD</span>
+</div>
+<div class="h-3 w-[1px] bg-spruce-hairline"></div>
+<!-- Required Nav Links: Now, Trail, Board, Fleet, Systems, Hooks, Truth -->
+<div class="flex items-center space-x-4">
+<a class="border-b-2 border-primary text-primary font-machine-mono-bold text-machine-mono-bold pb-1 flex items-center space-x-1" href="#">
+<span>Now</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Trail</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Board</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Fleet</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Systems</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Hooks</span>
+</a>
+<a class="text-outline font-machine-mono-bold text-machine-mono-bold hover:text-on-surface transition-colors" href="#">
+<span>Truth</span>
+</a>
+</div>
+</div>
+<!-- Right Operator / Quick Actions -->
+<div class="flex items-center space-x-3">
+<div class="flex items-center space-x-1.5 bg-spruce-sunken border border-spruce-hairline px-2 py-0.5 rounded-[2px] text-spruce-meta font-machine-header text-machine-header">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span>operator: root-keller</span>
+</div>
+<button class="bg-spruce-sunken hover:bg-surface-container border border-spruce-hairline px-2 py-0.5 rounded-[2px] font-machine-header text-machine-header text-spruce-meta hover:text-spruce-ink transition-colors flex items-center space-x-1">
+<span class="material-symbols-outlined text-[13px]">terminal</span>
+<span>Cmd+K</span>
+</button>
+<button class="bg-[#281a17] hover:bg-[#38221e] border border-[#522923] text-error font-machine-header text-machine-header uppercase px-2 py-0.5 rounded-[2px] flex items-center space-x-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">pause_circle</span>
+<span>Pause Sweep</span>
+</button>
+<button class="bg-primary text-surface-dim font-headline-md text-machine-header uppercase font-semibold px-2 py-0.5 rounded-[2px] hover:bg-primary-container transition-colors flex items-center space-x-1">
+<span class="material-symbols-outlined text-[13px]">play_arrow</span>
+<span>Deploy Sweeper</span>
+</button>
+</div>
+</nav>
+<!-- 3. MAIN WORKSPACE (2-COLUMN BOARD-DOMINANT COCKPIT) -->
+<main class="flex flex-1 border-b border-spruce-hairline overflow-hidden">
+<!-- LEFT / MAIN COLUMN (Board-Dominant 72% width, 1036px) -->
+<section class="w-[1036px] border-r border-spruce-hairline p-6 flex flex-col space-y-6">
+<!-- SECTION A: PROCLAMATION & ATTENTION BAND -->
+<div>
+<!-- Single Editorial Serif Statement on Screen -->
+<h1 class="font-editorial-statement text-editorial-statement text-spruce-ink italic tracking-tight mb-3">
+            Two things need you.
+          </h1>
+<!-- The Attention Band (2 ranked ochre priority rows) -->
+<div class="space-y-2">
+<!-- Attention Item 1 -->
+<div class="h-[46px] bg-spruce-sunken border border-signal-ochre rounded-[3px] px-3.5 flex items-center justify-between hover:bg-spruce-floating transition-colors">
+<div class="flex items-center space-x-3 overflow-hidden">
+<span class="color-signal-ochre text-[13px] flex-shrink-0">◆</span>
+<span class="text-spruce-ink font-body-compact text-body-compact">
+                  codex wants approval to run <code class="font-machine-data text-machine-data text-primary px-1 py-0.5 bg-spruce-ground rounded-[2px] border border-spruce-hairline">git push --force-with-lease</code>
+</span>
+<!-- Machine chips -->
+<div class="flex items-center space-x-1.5 flex-shrink-0">
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-spruce-ground border border-spruce-hairline text-spruce-meta rounded-[2px]">scope:ci-rebase</span>
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-signal-ochre-tint text-primary font-medium rounded-[2px]">held 12m</span>
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-spruce-ground border border-spruce-hairline text-secondary rounded-[2px]">feat/parser</span>
+</div>
+</div>
+<!-- Verb Action Group: Ochre strictly reserved for operator actionable controls -->
+<div class="flex items-center space-x-2 flex-shrink-0">
+<button class="bg-[#d8b36e] text-surface-dim hover:bg-primary font-headline-md text-[12px] font-semibold px-3 py-1 rounded-[2px] transition-colors focus:ring-1 focus:ring-[#d8b36e] focus:outline-none">
+                  Approve push
+                </button>
+<button class="bg-transparent hover:bg-surface-container border border-spruce-hairline text-spruce-sub hover:text-spruce-ink font-headline-md text-[12px] px-2.5 py-1 rounded-[2px] transition-colors">
+                  Reject
+                </button>
+</div>
+</div>
+<!-- Attention Item 2 -->
+<div class="h-[46px] bg-spruce-sunken border border-signal-ochre rounded-[3px] px-3.5 flex items-center justify-between hover:bg-spruce-floating transition-colors">
+<div class="flex items-center space-x-3 overflow-hidden">
+<span class="color-signal-ochre text-[13px] flex-shrink-0">◆</span>
+<span class="text-spruce-ink font-body-compact text-body-compact">
+                  holocene-pm asks whether HOLOC-8 should land as one PR or three
+                </span>
+<!-- Machine chips -->
+<div class="flex items-center space-x-1.5 flex-shrink-0">
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-spruce-ground border border-spruce-hairline text-primary font-medium rounded-[2px]">HOLOC-8</span>
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-signal-ochre-tint text-primary font-medium rounded-[2px]">held 1h 06m</span>
+<span class="font-machine-data text-[11px] px-1.5 py-0.5 bg-spruce-ground border border-spruce-hairline text-spruce-meta rounded-[2px]">+1,420 -89</span>
+</div>
+</div>
+<!-- Verb Action Group: Ochre reserved for primary operator actionable choice -->
+<div class="flex items-center space-x-2 flex-shrink-0">
+<button class="bg-[#d8b36e] text-surface-dim hover:bg-primary font-headline-md text-[12px] font-semibold px-3 py-1 rounded-[2px] transition-colors focus:ring-1 focus:ring-[#d8b36e] focus:outline-none">
+                  Choose 1 PR
+                </button>
+<button class="bg-transparent hover:bg-surface-container border border-spruce-hairline text-spruce-sub hover:text-spruce-ink font-headline-md text-[12px] px-3 py-1 rounded-[2px] transition-colors">
+                  Choose 3 PRs
+                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- SECTION B: EXPANSIVE & PROMINENT LIVE AGENT BOARD -->
+<div class="flex flex-col space-y-2 flex-1">
+<!-- Table Masthead & Filter Well -->
+<div class="flex items-center justify-between border-b border-spruce-hairline pb-2">
+<div class="flex items-center space-x-3">
+<span class="font-machine-header text-machine-header text-spruce-meta tracking-wider uppercase">Live agent board</span>
+<span class="h-2.5 w-[1px] bg-spruce-hairline"></span>
+<span class="font-machine-data text-machine-data text-spruce-quiet">64 configured nodes</span>
+</div>
+<!-- Pill Filters -->
+<div class="flex items-center space-x-1 font-machine-header text-machine-header">
+<button class="px-2 py-0.5 rounded-[2px] bg-spruce-sunken text-spruce-ink border border-spruce-hairline hover:border-outline transition-colors">All (64)</button>
+<button class="px-2 py-0.5 rounded-[2px] bg-signal-heather-tint color-signal-heather border border-[#b3a2ca]/30">Stuck (1)</button>
+<button class="px-2 py-0.5 rounded-[2px] bg-signal-brick-tint color-signal-brick border border-[#de8c7a]/30">Broken (1)</button>
+<button class="px-2 py-0.5 rounded-[2px] bg-signal-lake-tint color-signal-lake border border-[#89b5cd]/30">Working (7)</button>
+<button class="px-2 py-0.5 rounded-[2px] bg-spruce-sunken text-spruce-quiet hover:text-spruce-meta transition-colors">Quiet (55)</button>
+</div>
+</div>
+<!-- Table Container -->
+<div class="border border-spruce-hairline bg-spruce-ground rounded-[3px] overflow-hidden flex flex-col">
+<!-- Header Row -->
+<div class="h-[28px] bg-spruce-sunken border-b border-spruce-hairline px-3 flex items-center font-machine-header text-machine-header text-spruce-meta uppercase select-none">
+<div class="w-8">GLYPH</div>
+<div class="w-20">HELD</div>
+<div class="w-44">CLI / AGENT</div>
+<div class="w-36">REPO / SCOPE</div>
+<div class="w-24">PANE</div>
+<div class="flex-1">TOOLS / ACTIVITY</div>
+<div class="w-32 text-right">ACTIONS</div>
+</div>
+<!-- Table Rows (Strict 36px Height Cadence) -->
+<!-- Row 1: Stuck Worker -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-heather text-[12px]">▲</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-heather">4d 02h</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">sweeper-d9</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">core-engine/v2</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:4.2</div>
+<div class="flex-1 font-machine-data text-machine-data color-signal-heather truncate">exec:rustc (deadlock)</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-signal-heather-tint color-signal-heather hover:bg-[#b3a2ca]/20 border border-[#b3a2ca]/30 px-2 py-0.5 rounded-[2px] transition-colors">
+                  Kill &amp; cycle
+                </button>
+</div>
+</div>
+<!-- Row 2: Broken Worker -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-brick text-[12px]">●</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-brick">18m</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">linter-worker-04</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">33god/front</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:1.8</div>
+<div class="flex-1 font-machine-data text-machine-data color-signal-brick truncate">oom:exit 137</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-signal-brick-tint color-signal-brick hover:bg-[#de8c7a]/20 border border-[#de8c7a]/30 px-2 py-0.5 rounded-[2px] transition-colors">
+                  Restart container
+                </button>
+</div>
+</div>
+<!-- Row 3: Working Worker 1 -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-lake text-[14px] leading-none">•</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-lake">08m</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">codex-orchestrator</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">holocene/runtime</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:2.0</div>
+<div class="flex-1 font-machine-data text-machine-data text-spruce-sub truncate">ast-eval, tree-sitter</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-spruce-sunken hover:bg-surface-container text-spruce-sub hover:text-spruce-ink border border-spruce-hairline px-2 py-0.5 rounded-[2px] transition-colors">
+                  Inspect pane
+                </button>
+</div>
+</div>
+<!-- Row 4: Working Worker 2 -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-lake text-[14px] leading-none">•</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-lake">02m</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">test-matrix-runner</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">holocene/e2e</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:3.4</div>
+<div class="flex-1 font-machine-data text-machine-data text-spruce-sub truncate">playwright (14/32 passed)</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-spruce-sunken hover:bg-surface-container text-spruce-sub hover:text-spruce-ink border border-spruce-hairline px-2 py-0.5 rounded-[2px] transition-colors">
+                  Go to pane
+                </button>
+</div>
+</div>
+<!-- Row 5: Working Worker 3 -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-lake text-[14px] leading-none">•</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-lake">45s</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">doc-indexer</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">docs/reference</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:5.1</div>
+<div class="flex-1 font-machine-data text-machine-data text-spruce-sub truncate">vector-embed</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-spruce-sunken hover:bg-surface-container text-spruce-sub hover:text-spruce-ink border border-spruce-hairline px-2 py-0.5 rounded-[2px] transition-colors">
+                  Inspect pane
+                </button>
+</div>
+</div>
+<!-- Row 6: Cleared Worker -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 color-signal-moss text-[14px] leading-none">•</div>
+<div class="w-20 font-machine-data text-machine-data color-signal-moss">12s</div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-ink">deps-updater</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-sub">infra/cargo-lock</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:0.3</div>
+<div class="flex-1 font-machine-data text-machine-data color-signal-moss truncate">clean build ok</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-signal-moss-tint color-signal-moss hover:bg-[#92b98d]/20 border border-[#92b98d]/30 px-2 py-0.5 rounded-[2px] transition-colors">
+                  Acknowledge
+                </button>
+</div>
+</div>
+<!-- Row 7: Quiet Healthy Worker -->
+<div class="h-[36px] border-b border-spruce-hairline px-3 flex items-center hover:bg-spruce-floating transition-colors group">
+<div class="w-8 text-spruce-quiet text-[12px]">—</div>
+<div class="w-20 font-machine-data text-machine-data text-spruce-quiet">
+<span class="opacity-50">~</span>1h 14m
+              </div>
+<div class="w-44 font-machine-mono-bold text-machine-mono-bold text-spruce-sub">watchdog-heartbeat</div>
+<div class="w-36 font-machine-data text-machine-data text-spruce-meta">daemons/health</div>
+<div class="w-24 font-machine-data text-machine-data text-spruce-meta">pane:0.1</div>
+<div class="flex-1 font-machine-data text-machine-data text-spruce-quiet truncate">idle poll</div>
+<div class="w-32 text-right">
+<button class="font-machine-header text-machine-header bg-spruce-sunken hover:bg-surface-container text-spruce-meta hover:text-spruce-ink border border-spruce-hairline px-2 py-0.5 rounded-[2px] transition-colors">
+                  Inspect
+                </button>
+</div>
+</div>
+<!-- Collapsed Bottom Inventory Fold (Diagonal Hatch Pattern) -->
+<div class="h-[36px] hatch-pattern px-3 flex items-center justify-between border-t border-spruce-hairline select-none">
+<div class="flex items-center space-x-3">
+<div class="flex items-center space-x-1 text-spruce-meta opacity-40 text-[10px]">
+<span>◇</span>
+<span>◇</span>
+<span>◇</span>
+</div>
+<span class="font-machine-data text-machine-data text-spruce-meta">
+                  55 alive, never observed <span class="text-spruce-quiet">(No signal in 98d)</span>
+</span>
+</div>
+<div>
+<button class="font-machine-header text-machine-header bg-spruce-sunken hover:bg-surface-container text-spruce-meta hover:text-spruce-ink border border-spruce-hairline px-2.5 py-0.5 rounded-[2px] transition-colors">
+                  Expand inventory
+                </button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- RIGHT COLUMN: ULTRA-COMPACT CONSOLIDATED NARROW RAIL (~28% width, 404px) -->
+<aside class="w-[404px] p-5 flex flex-col space-y-5 bg-spruce-ground select-none">
+<!-- TOP HALF: WEDGE RAIL // SCOPES -->
+<div class="space-y-2.5">
+<div class="flex items-center justify-between border-b border-spruce-hairline pb-2">
+<div class="flex items-center space-x-2">
+<span class="font-machine-header text-machine-header text-spruce-meta tracking-wider uppercase">Wedge Rail // Scopes</span>
+</div>
+<span class="font-machine-header text-[10px] color-signal-heather bg-signal-heather-tint px-1.5 py-0.5 rounded-[2px] border border-[#b3a2ca]/20">
+              10 STUCK / 12 RUNNING
+            </span>
+</div>
+<p class="font-body-compact text-[11px] text-spruce-meta leading-tight">
+            Long-running execution scopes currently exceeding allocated time budget.
+          </p>
+<!-- Wedge Queue Stack -->
+<div class="space-y-1.5 font-machine-data text-[11px]">
+<!-- Scope 1 -->
+<div class="bg-spruce-sunken border border-spruce-hairline rounded-[2px] p-2 flex flex-col space-y-1 hover:border-spruce-sub transition-colors">
+<div class="flex items-center justify-between">
+<span class="text-spruce-ink font-machine-mono-bold">scope:compiler-matrix</span>
+<span class="color-signal-heather font-medium">▲ +3d 18h</span>
+</div>
+<!-- Progress indicator halted -->
+<div class="w-full bg-[#1b1e1b] h-1 rounded-none overflow-hidden relative">
+<div class="bg-signal-heather h-full w-[78%]"></div>
+</div>
+<div class="flex items-center justify-between pt-0.5">
+<span class="text-spruce-meta text-[10px]">Halted at 78% · deadlock in llvm-opt</span>
+<button class="font-machine-header text-[10px] uppercase bg-spruce-floating hover:bg-surface-container text-spruce-ink border border-spruce-hairline px-1.5 py-0.5 rounded-[2px]">
+                  Release wedge
+                </button>
+</div>
+</div>
+<!-- Scope 2 -->
+<div class="h-[32px] bg-spruce-sunken border border-spruce-hairline rounded-[2px] px-2 flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">▲</span>
+<span class="text-spruce-sub truncate max-w-[170px]">scope:cargo-vendor-tree</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">+2d 04h</span>
+<button class="font-machine-header text-[10px] uppercase bg-spruce-floating hover:bg-surface-container text-spruce-sub hover:text-spruce-ink border border-spruce-hairline px-1.5 py-0.5 rounded-[2px]">
+                  Release
+                </button>
+</div>
+</div>
+<!-- Scope 3 -->
+<div class="h-[32px] bg-spruce-sunken border border-spruce-hairline rounded-[2px] px-2 flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">▲</span>
+<span class="text-spruce-sub truncate max-w-[170px]">scope:holoc-e2e-stress</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">+1d 12h</span>
+<button class="font-machine-header text-[10px] uppercase bg-spruce-floating hover:bg-surface-container text-spruce-sub hover:text-spruce-ink border border-spruce-hairline px-1.5 py-0.5 rounded-[2px]">
+                  Release
+                </button>
+</div>
+</div>
+<!-- Scope 4 -->
+<div class="h-[32px] bg-spruce-sunken border border-spruce-hairline rounded-[2px] px-2 flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">▲</span>
+<span class="text-spruce-sub truncate max-w-[170px]">scope:wasm-optimizer</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">+22h</span>
+<button class="font-machine-header text-[10px] uppercase bg-spruce-floating hover:bg-surface-container text-spruce-meta hover:text-spruce-ink border border-spruce-hairline px-1.5 py-0.5 rounded-[2px]">
+                  Inspect
+                </button>
+</div>
+</div>
+<!-- Scope 5 -->
+<div class="h-[32px] bg-spruce-sunken border border-spruce-hairline rounded-[2px] px-2 flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">▲</span>
+<span class="text-spruce-sub truncate max-w-[170px]">scope:db-migration-bench</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="color-signal-heather text-[10px]">+19h</span>
+<button class="font-machine-header text-[10px] uppercase bg-spruce-floating hover:bg-surface-container text-spruce-meta hover:text-spruce-ink border border-spruce-hairline px-1.5 py-0.5 rounded-[2px]">
+                  Inspect
+                </button>
+</div>
+</div>
+<!-- Collapsed Count -->
+<div class="h-[26px] hatch-pattern px-2 flex items-center justify-between text-spruce-meta text-[10px] border border-spruce-hairline rounded-[2px]">
+<span>+5 more stuck scopes collapsed</span>
+<button class="hover:text-spruce-ink underline font-machine-header">Show all</button>
+</div>
+<!-- Scopes 11 & 12 (Quiet Healthy) -->
+<div class="h-[26px] bg-spruce-sunken border border-spruce-hairline rounded-[2px] px-2 flex items-center justify-between text-spruce-quiet text-[10px]">
+<div class="flex items-center space-x-2">
+<span>—</span>
+<span>scope:telemetry-sink &amp; nats-drain</span>
+</div>
+<span>nominal</span>
+</div>
+</div>
+<!-- Batch Control Trigger: Drain 10 stuck wedges -->
+<div>
+<button class="w-full bg-spruce-sunken hover:bg-spruce-floating border border-spruce-hairline text-spruce-sub hover:text-spruce-ink font-machine-header text-machine-header uppercase py-1.5 rounded-[2px] transition-colors flex items-center justify-center space-x-1">
+<span class="material-symbols-outlined text-[13px]">clear_all</span>
+<span>Drain 10 stuck wedges</span>
+</button>
+</div>
+</div>
+<!-- DIVIDER LINE / SECTION HEADER -->
+<div class="h-[1px] bg-spruce-hairline"></div>
+<!-- BOTTOM HALF: "WHAT JUST HAPPENED?" AUDIT STREAM -->
+<div class="flex-1 flex flex-col space-y-2.5">
+<div class="flex items-center justify-between border-b border-spruce-hairline pb-2">
+<span class="font-machine-header text-machine-header text-spruce-meta tracking-wider uppercase">What just happened?</span>
+<span class="font-machine-data text-[10px] text-spruce-quiet">Live feed</span>
+</div>
+<div class="space-y-2 font-machine-data text-[11px]">
+<!-- Audit item 1: cleared -->
+<div class="border-l-2 border-[#92b98d] pl-2.5 py-0.5">
+<div class="flex items-center space-x-1.5 text-spruce-meta text-[10px]">
+<span>14:41:22</span>
+<span>·</span>
+<span class="color-signal-moss font-medium">cleared</span>
+</div>
+<p class="text-spruce-sub text-[11px] mt-0.5">
+<span class="text-spruce-ink font-machine-mono-bold">pr-check-bot</span> passed all checks on PR #412
+              </p>
+</div>
+<!-- Audit item 2: broken -->
+<div class="border-l-2 border-[#de8c7a] pl-2.5 py-0.5">
+<div class="flex items-center space-x-1.5 text-spruce-meta text-[10px]">
+<span>14:38:09</span>
+<span>·</span>
+<span class="color-signal-brick font-medium">broken</span>
+</div>
+<p class="text-spruce-sub text-[11px] mt-0.5">
+<span class="text-spruce-ink font-machine-mono-bold">sweeper-service</span> died (exit code 11 SIGSEGV)
+              </p>
+</div>
+<!-- Audit item 3: stuck -->
+<div class="border-l-2 border-[#b3a2ca] pl-2.5 py-0.5">
+<div class="flex items-center space-x-1.5 text-spruce-meta text-[10px]">
+<span>14:30:15</span>
+<span>·</span>
+<span class="color-signal-heather font-medium">stuck</span>
+</div>
+<p class="text-spruce-sub text-[11px] mt-0.5">
+<span class="text-spruce-ink font-machine-mono-bold">scope:compiler-matrix</span> marked wedged (&gt;96h)
+              </p>
+</div>
+<!-- Audit item 4: spawned -->
+<div class="border-l-2 border-[#89b5cd] pl-2.5 py-0.5">
+<div class="flex items-center space-x-1.5 text-spruce-meta text-[10px]">
+<span>14:24:50</span>
+<span>·</span>
+<span class="color-signal-lake font-medium">spawned</span>
+</div>
+<p class="text-spruce-sub text-[11px] mt-0.5">
+<span class="text-spruce-ink font-machine-mono-bold">codex-orchestrator</span> acquired <span class="text-spruce-meta">pane:2.0</span>
+</p>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<!-- 4. BOTTOM STATUS BAR (Accurate status lights showing degraded/broken nodes; never claim all nominal while sweeper is down) -->
+<footer class="h-7 bg-spruce-sunken border-t border-spruce-hairline px-4 flex items-center justify-between text-[11px] font-machine-header text-machine-header tracking-wider select-none">
+<div class="flex items-center space-x-2 text-spruce-meta">
+<span class="w-1.5 h-1.5 rounded-full bg-[#de8c7a] animate-pulse"></span>
+<span>HOLOCENE DAEMON v3.8.4 // OPERATOR ACTIVE</span>
+</div>
+<div class="flex items-center space-x-3 text-[10px]">
+<span class="color-signal-ochre">OCHRE (NEEDS YOU)</span>
+<span class="text-spruce-hairline">·</span>
+<span class="color-signal-brick">BRICK (BROKEN)</span>
+<span class="text-spruce-hairline">·</span>
+<span class="color-signal-heather">HEATHER (STUCK)</span>
+<span class="text-spruce-hairline">·</span>
+<span class="color-signal-lake">LAKE (WORKING)</span>
+<span class="text-spruce-hairline">·</span>
+<span class="color-signal-moss">MOSS (CLEARED)</span>
+</div>
+<div class="flex items-center space-x-2 text-spruce-meta">
+<span class="color-signal-brick bg-signal-brick-tint px-1 py-0.5 rounded-[2px]">DEGRADED: 1 BROKEN · 1 STUCK · SWEEPER DOWN</span>
+<span class="text-spruce-hairline">·</span>
+<span class="text-spruce-sub font-machine-data text-machine-data">LATENCY 14ms</span>
+</div>
+</footer>
+</div>
+</body></html>
