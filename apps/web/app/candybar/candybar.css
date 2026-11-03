@@ -1,0 +1,337 @@
+/* The Candybar tab, in the Ledger theme from ../hub/hub.css. Every rule is prefixed
+   .hub-root (to outrank the legacy globals) and cb- (to stay clear of tr- and wax-).
+   Only tokens hub.css really defines are used. Signals follow the hub glyphs: passed is
+   --cleared, failed --broken, running --working; an inactive candybar is drawn dashed
+   and dimmed, never hidden. */
+
+.hub-root[data-theme="ledger"] {
+  --cb-soft-fail: #f6e4ee;
+}
+.hub-root[data-theme="ledger-night"] {
+  --cb-soft-fail: #3b2231;
+}
+
+/* One grid for the column header and every row head, so the columns line up. */
+.hub-root .cb-columns,
+.hub-root .cb-row-head {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 150px 172px;
+  gap: 4px 14px;
+}
+
+/* ---- controls --------------------------------------------------------- */
+
+.hub-root .cb-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 14px;
+}
+.hub-root .cb-controls-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+.hub-root .cb-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  border: 2px solid var(--line-strong);
+}
+.hub-root .cb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  font: 600 12px/30px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hub-root .cb-tab:hover { color: var(--ink); background: var(--wash); }
+.hub-root .cb-tab[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--ground);
+  box-shadow: inset 0 -3px 0 var(--pop);
+}
+.hub-root .cb-tab-count { font-weight: 400; opacity: 0.85; letter-spacing: 0; }
+.hub-root .cb-tab.is-alarm .cb-tab-count { color: var(--broken); font-weight: 600; opacity: 1; }
+.hub-root .cb-tab.is-alarm[aria-selected="true"] .cb-tab-count { color: var(--ground); }
+
+.hub-root .cb-group { display: inline-flex; border: 2px solid var(--line-strong); }
+.hub-root .cb-seg {
+  height: 28px;
+  padding: 0 12px;
+  font: 600 11px/28px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.hub-root .cb-seg:hover { color: var(--ink); background: var(--wash); }
+.hub-root .cb-seg[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+
+.hub-root .cb-search {
+  height: 30px;
+  min-width: 0;
+  width: 230px;
+  max-width: 100%;
+  padding: 0 10px;
+  font: 400 13px var(--font-mono);
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  border-radius: 0;
+}
+.hub-root .cb-search::placeholder { color: var(--ink-3); }
+
+.hub-root .cb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.hub-root .cb-check input { accent-color: var(--pop); }
+.hub-root .cb-check-count { color: var(--ink-3); }
+
+.hub-root .cb-tab:focus-visible,
+.hub-root .cb-seg:focus-visible,
+.hub-root .cb-search:focus-visible,
+.hub-root .cb-row-head:focus-visible {
+  outline: 2px solid var(--pop);
+  outline-offset: 2px;
+}
+
+/* ---- sections and the column header --------------------------------- */
+
+.hub-root .cb-columns {
+  padding: 0 14px 6px;
+  font: 600 10px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.hub-root .cb-section + .cb-section { margin-top: 28px; }
+.hub-root .cb-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 8px;
+  font: 600 13px/18px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.hub-root .cb-heading-count { font-weight: 400; color: var(--ink-2); letter-spacing: 0; }
+.hub-root .cb-heading-note { font-weight: 400; color: var(--ink-3); letter-spacing: 0; text-transform: none; font-size: 12px; }
+
+/* ---- rows ------------------------------------------------------------- */
+
+.hub-root .cb-list { display: flex; flex-direction: column; gap: 6px; }
+
+.hub-root .cb-row {
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  box-shadow: 3px 3px 0 var(--shadow);
+  min-width: 0;
+}
+.hub-root .cb-row.is-open { box-shadow: 5px 5px 0 var(--shadow); }
+.hub-root .cb-row.is-inactive {
+  background: var(--sunken);
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.hub-root .cb-row-head {
+  align-items: start;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.hub-root .cb-row-head:hover { background: var(--wash); }
+
+.hub-root .cb-sig { display: flex; justify-content: center; padding-top: 4px; }
+
+.hub-root .cb-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hub-root .cb-name-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.hub-root .cb-name {
+  font: 600 14px/20px var(--font-mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.hub-root .cb-row.is-inactive .cb-name { color: var(--ink-2); }
+.hub-root .cb-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  font: 400 12.5px/18px var(--font-sans);
+  color: var(--ink-2);
+}
+.hub-root .cb-row.is-open .cb-desc { display: none; }
+.hub-root .cb-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+  margin-top: 2px;
+  font: 400 12px/18px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .cb-cron { display: inline-flex; align-items: baseline; gap: 6px; }
+.hub-root .cb-cron code {
+  padding: 0 4px;
+  font: 400 11.5px/16px var(--font-mono);
+  color: var(--ink);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+.hub-root .cb-row.is-inactive .cb-cron code { background: var(--surface); }
+.hub-root .cb-cron-words { color: var(--ink-2); }
+.hub-root .cb-tz { color: var(--ink-3); }
+
+.hub-root .cb-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.hub-root .cb-chip {
+  display: inline-block;
+  padding: 0 6px;
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+}
+.hub-root .cb-flag {
+  display: inline-block;
+  padding: 0 6px;
+  font: 400 11px/16px var(--font-mono);
+  color: var(--ink-2);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+.hub-root .cb-state {
+  display: inline-block;
+  padding: 0 7px;
+  font: 600 10.5px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-strong);
+}
+.hub-root .cb-state.is-inactive { color: var(--ink-2); border-style: dashed; }
+.hub-root .cb-state.is-active { color: var(--cleared); border-color: var(--cleared); }
+
+/* Next fire: the countdown carries the weight, the wall clock sits under it. */
+.hub-root .cb-when { padding-top: 1px; }
+.hub-root .cb-next { display: flex; flex-direction: column; font-family: var(--font-mono); }
+.hub-root .cb-next-in { font: 600 13px/20px var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.hub-root .cb-next-at { font: 400 11.5px/16px var(--font-mono); color: var(--ink-3); }
+.hub-root .cb-next.is-none { font: 400 12px/20px var(--font-mono); color: var(--ink-3); }
+
+.hub-root .cb-last { padding-top: 1px; min-width: 0; }
+.hub-root .cb-run {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  font: 400 12px/20px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .cb-run-word { font-weight: 600; }
+.hub-root .cb-run-age { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.hub-root .cb-run.is-success .cb-run-word { color: var(--cleared); }
+.hub-root .cb-run.is-fail .cb-run-word { color: var(--broken); }
+.hub-root .cb-run.is-running .cb-run-word { color: var(--working); }
+.hub-root .cb-run.is-never,
+.hub-root .cb-run.is-unknown { color: var(--ink-3); }
+
+/* ---- expansion panel -------------------------------------------------- */
+
+.hub-root .cb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px 42px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.hub-root .cb-full-desc {
+  margin: 0;
+  max-width: 72ch;
+  font: 400 13px/19px var(--font-sans);
+  color: var(--ink);
+}
+.hub-root .cb-error {
+  margin: 0;
+  padding: 6px 10px;
+  font: 400 12px/17px var(--font-mono);
+  color: var(--ink);
+  background: var(--cb-soft-fail);
+  border: 1px solid var(--broken);
+  overflow-wrap: anywhere;
+}
+.hub-root .cb-error .hub-label { color: var(--broken); margin-right: 8px; }
+.hub-root .cb-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px 18px;
+}
+.hub-root .cb-dl > div { min-width: 0; }
+.hub-root .cb-dl dt {
+  font: 600 10px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .cb-dl dd {
+  margin: 0;
+  font: 400 12px/17px var(--font-mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.hub-root .cb-dl code {
+  padding: 0 4px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 400 11.5px var(--font-mono);
+}
+.hub-root .cb-refs { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+
+/* ---- narrow screens --------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .hub-root .cb-columns { display: none; }
+  .hub-root .cb-row-head { grid-template-columns: 16px minmax(0, 1fr) auto; }
+  .hub-root .cb-when { grid-column: 2; grid-row: 2; }
+  .hub-root .cb-next { flex-direction: row; gap: 8px; align-items: baseline; }
+  .hub-root .cb-last { grid-column: 3; grid-row: 1; text-align: right; }
+}
+
+@media (max-width: 600px) {
+  .hub-root .cb-controls { align-items: stretch; }
+  .hub-root .cb-tabs { width: 100%; }
+  .hub-root .cb-tab { flex: 1 1 auto; justify-content: center; padding: 0 8px; }
+  .hub-root .cb-controls-end { width: 100%; }
+  .hub-root .cb-search { flex: 1 1 100%; width: 100%; }
+  .hub-root .cb-row-head { grid-template-columns: 16px minmax(0, 1fr); }
+  .hub-root .cb-last { grid-column: 2; grid-row: 3; text-align: left; }
+  .hub-root .cb-panel { padding-left: 12px; }
+  .hub-root .cb-dl { grid-template-columns: 1fr 1fr; }
+}

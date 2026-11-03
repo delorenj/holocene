@@ -133,6 +133,7 @@ const HUB_TABS: Array<{ id: string; label: string; href: string }> = [
   { id: "voice", label: "Voice", href: "/voice" },
   { id: "wax", label: "Wax", href: "/wax" },
   { id: "transcripts", label: "Transcripts", href: "/transcripts" },
+  { id: "candybar", label: "Candybar", href: "/candybar" },
   { id: "settings", label: "Settings", href: "/settings" },
   { id: "mini", label: "Mini", href: "/mini" }
 ];
