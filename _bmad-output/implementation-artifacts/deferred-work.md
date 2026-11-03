@@ -8,3 +8,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-surface.md`
   summary: Show a date for weekly and monthly candybars' next fire instead of "after 24h".
   evidence: Six live candybars fire less than daily; the 25 h window cannot reach them, and a longer window would need many more /schedule slices.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-live-schedule.md`
+  summary: Add the Schedule tab's write actions from the HOLOC-24 brief (skip one fire, skip rest of day, noise add/remove), which need a Holocene write path to Candybar.
+  evidence: The live view shipped read-only; Holocene has no write route to Candybar yet and every skip still goes through `candybar skip`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-live-schedule.md`
+  summary: Opening a candybar from a Schedule row should scroll its Definitions row into view.
+  evidence: The row opens, but in a long Active list it can sit below the fold.

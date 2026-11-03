@@ -5,13 +5,15 @@ import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
-import type { CandybarPayload, CandybarRow, LastRun, ViewId } from "./types";
+import { ScheduleView } from "./schedule-view";
+import type { CandybarPayload, CandybarRow, LastRun, TabId, ViewId } from "./types";
 
-// The Candybar tab: every recurring job Candybar (the host's single clock) knows, active
-// and inactive, with when it fires next and how its last run went. Read-only by design:
+// The Candybar tab. Schedule (the default) is today's fires, live; Definitions is every
+// recurring job Candybar (the host's single clock) knows, active and inactive, with when it
+// fires next and how its last run went. Read-only by design:
 // Holocene never registers, pauses, resumes or runs a candybar; the `candybar` CLI does.
 // Next fires come from Candybar's own /schedule, so DST and skips match the dispatcher.
-// State (view, sort, search, noise, open row) lives in the URL.
+// State (tab, view, sort, search, noise, open row) lives in the URL.
 
 const POLL_MS = 15_000;
 
@@ -23,15 +25,23 @@ const VIEWS: Array<{ id: ViewId; label: string }> = [
 ];
 
 type Sort = "next" | "name";
-type UrlState = { view: ViewId; sort: Sort; q: string; noise: boolean; open?: string };
-const DEFAULT_STATE: UrlState = { view: "all", sort: "next", q: "", noise: false };
+type UrlState = { tab: TabId; view: ViewId; sort: Sort; q: string; noise: boolean; showNoise: boolean; open?: string };
+const DEFAULT_STATE: UrlState = { tab: "schedule", view: "all", sort: "next", q: "", noise: false, showNoise: false };
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: "schedule", label: "Schedule" },
+  { id: "definitions", label: "Definitions" }
+];
 
 // ---------- URL state ----------
 
 function readUrl(): UrlState {
   const q = new URLSearchParams(window.location.search);
   const view = q.get("view");
+  // Links from before the Schedule tab carry Definitions' own params, so they still open Definitions.
+  const legacy = ["view", "sort", "noise", "open"].some((k) => q.has(k));
   return {
+    tab: q.get("tab") === "definitions" || (!q.has("tab") && legacy) ? "definitions" : "schedule",
+    showNoise: q.get("fires") === "all",
     view: VIEWS.some((v) => v.id === view) ? (view as ViewId) : "all",
     sort: q.get("sort") === "name" ? "name" : "next",
     q: q.get("q") ?? "",
@@ -42,13 +52,21 @@ function readUrl(): UrlState {
 
 function writeUrl(s: UrlState) {
   const q = new URLSearchParams();
-  if (s.view !== "all") q.set("view", s.view);
-  if (s.sort !== "next") q.set("sort", s.sort);
+  if (s.tab !== "schedule") q.set("tab", s.tab);
+  if (s.showNoise) q.set("fires", "all");
   if (s.q) q.set("q", s.q);
-  if (s.noise) q.set("noise", "1");
-  if (s.open) q.set("open", s.open);
+  // Definitions' own params would read as a legacy Definitions link on reload, so Schedule drops them from the URL
+  // (they stay in memory for the way back).
+  if (s.tab === "definitions") writeDefinitionParams(q, s);
   const qs = q.toString();
   window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+}
+
+function writeDefinitionParams(q: URLSearchParams, s: UrlState) {
+  if (s.view !== "all") q.set("view", s.view);
+  if (s.sort !== "next") q.set("sort", s.sort);
+  if (s.noise) q.set("noise", "1");
+  if (s.open) q.set("open", s.open);
 }
 
 const isNoise = (c: CandybarRow) => c.noise || isFrequent(c.schedule);
@@ -337,9 +355,12 @@ export function CandybarApp() {
   const rows = (items: CandybarRow[]) =>
     items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} />);
 
-  const sources: Source[] = data
-    ? [{ ...data.source, ageSeconds: (data.source.ageSeconds ?? 0) + (sinceSeconds(data.generated_at, now) ?? 0) }]
-    : [];
+  const [streamSource, setStreamSource] = useState<Source>();
+  const sources: Source[] = state.tab === "schedule"
+    ? (streamSource ? [streamSource] : [])
+    : data
+      ? [{ ...data.source, ageSeconds: (data.source.ageSeconds ?? 0) + (sinceSeconds(data.generated_at, now) ?? 0) }]
+      : [];
 
   const empty = (what: string) => (
     <div className="hub-placeholder">
@@ -387,76 +408,109 @@ export function CandybarApp() {
       </header>
 
       <div className="hub-body">
-        <div className="hub-lede">
-          <p className="hub-statement" aria-live="polite">
-            {data ? statement(data) : list.error ? "The Holocene API is not answering." : "Reading Candybar…"}
-          </p>
-          {data?.source.down && data.source.detail && data.candybars.length ? (
-            <p className="hub-error" role="status"><span className="hub-label">Candybar</span>{data.source.detail}</p>
-          ) : null}
-          {data?.warnings.map((w) => (
-            <p key={w} className="hub-error" role="status"><span className="hub-label">Partial</span>{w}</p>
+        <nav className="cb-modes" aria-label="Candybar views">
+          {TABS.map((t) => (
+            <a
+              key={t.id}
+              href={t.id === "schedule" ? "?" : "?tab=definitions"}
+              className="cb-mode"
+              aria-current={state.tab === t.id ? "page" : undefined}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                update({ tab: t.id });
+              }}
+            >
+              {t.label}
+            </a>
           ))}
-          {list.error && data ? (
-            <p className="hub-error" role="status"><span className="hub-label">API</span>Showing the last good read. {list.error}</p>
-          ) : null}
-        </div>
+        </nav>
 
-        <div className="cb-controls">
-          <div className="cb-tabs" role="tablist" aria-label="Which candybars" onKeyDown={onTabKey}>
-            {VIEWS.map((t) => (
-              <button
-                key={t.id}
-                ref={(el) => { tabRefs.current[t.id] = el; }}
-                type="button"
-                role="tab"
-                id={`cb-tab-${t.id}`}
-                aria-selected={state.view === t.id}
-                aria-controls="cb-results"
-                tabIndex={state.view === t.id ? 0 : -1}
-                className={`cb-tab${t.id === "failing" && counts.failing ? " is-alarm" : ""}`}
-                onClick={() => update({ view: t.id })}
-              >
-                {t.label}
-                {data ? <span className="cb-tab-count">{counts[t.id]}</span> : null}
-              </button>
-            ))}
-          </div>
+        {state.tab === "schedule" ? (
+          <ScheduleView
+            now={now}
+            q={state.q}
+            searchText={searchText}
+            onSearch={setSearchText}
+            showNoise={state.showNoise}
+            onShowNoise={(showNoise) => update({ showNoise })}
+            onSource={setStreamSource}
+            onOpenDefinition={(open) => update({ tab: "definitions", open })}
+          />
+        ) : (
+          <>
+            <div className="hub-lede">
+              <p className="hub-statement" aria-live="polite">
+                {data ? statement(data) : list.error ? "The Holocene API is not answering." : "Reading Candybar…"}
+              </p>
+              {data?.source.down && data.source.detail && data.candybars.length ? (
+                <p className="hub-error" role="status"><span className="hub-label">Candybar</span>{data.source.detail}</p>
+              ) : null}
+              {data?.warnings.map((w) => (
+                <p key={w} className="hub-error" role="status"><span className="hub-label">Partial</span>{w}</p>
+              ))}
+              {list.error && data ? (
+                <p className="hub-error" role="status"><span className="hub-label">API</span>Showing the last good read. {list.error}</p>
+              ) : null}
+            </div>
 
-          <div className="cb-controls-end">
-            {state.view !== "inactive" ? (
-              <div className="cb-group" role="group" aria-label="Sort active candybars">
-                {(["next", "name"] as const).map((s) => (
-                  <button key={s} type="button" className="cb-seg" aria-pressed={state.sort === s} onClick={() => update({ sort: s })}>
-                    {s === "next" ? "Next fire" : "Name"}
+            <div className="cb-controls">
+              <div className="cb-tabs" role="tablist" aria-label="Which candybars" onKeyDown={onTabKey}>
+                {VIEWS.map((t) => (
+                  <button
+                    key={t.id}
+                    ref={(el) => { tabRefs.current[t.id] = el; }}
+                    type="button"
+                    role="tab"
+                    id={`cb-tab-${t.id}`}
+                    aria-selected={state.view === t.id}
+                    aria-controls="cb-results"
+                    tabIndex={state.view === t.id ? 0 : -1}
+                    className={`cb-tab${t.id === "failing" && counts.failing ? " is-alarm" : ""}`}
+                    onClick={() => update({ view: t.id })}
+                  >
+                    {t.label}
+                    {data ? <span className="cb-tab-count">{counts[t.id]}</span> : null}
                   </button>
                 ))}
               </div>
-            ) : null}
-            <input
-              type="search"
-              className="cb-search"
-              placeholder="Filter by name, tag, cron"
-              aria-label="Filter candybars"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-            <label className="cb-check">
-              <input type="checkbox" checked={state.noise} onChange={(e) => update({ noise: e.target.checked })} />
-              Hide noise
-              {state.noise && hiddenNoise ? <span className="cb-check-count">{hiddenNoise} hidden</span> : null}
-            </label>
-          </div>
-        </div>
 
-        <div id="cb-results" role="tabpanel" aria-labelledby={`cb-tab-${state.view}`} className="cb-results">
-          {body}
-        </div>
+              <div className="cb-controls-end">
+                {state.view !== "inactive" ? (
+                  <div className="cb-group" role="group" aria-label="Sort active candybars">
+                    {(["next", "name"] as const).map((s) => (
+                      <button key={s} type="button" className="cb-seg" aria-pressed={state.sort === s} onClick={() => update({ sort: s })}>
+                        {s === "next" ? "Next fire" : "Name"}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <input
+                  type="search"
+                  className="cb-search"
+                  placeholder="Filter by name, tag, cron"
+                  aria-label="Filter candybars"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                />
+                <label className="cb-check">
+                  <input type="checkbox" checked={state.noise} onChange={(e) => update({ noise: e.target.checked })} />
+                  Hide noise
+                  {state.noise && hiddenNoise ? <span className="cb-check-count">{hiddenNoise} hidden</span> : null}
+                </label>
+              </div>
+            </div>
+
+            <div id="cb-results" role="tabpanel" aria-labelledby={`cb-tab-${state.view}`} className="cb-results">
+              {body}
+            </div>
+          </>
+        )}
 
         <footer className="hub-foot">
           <span>
-            Read-only. Candybar is the single clock; change a candybar with <code>candybar edit</code>, <code>pause</code> or <code>resume</code>.
-            Noise is the explicit collection plus anything firing more often than every {NOISE_MINUTES} min.
+            Read-only. Candybar is the single clock; change a candybar with <code>candybar edit</code>, <code>pause</code>, <code>resume</code> or <code>skip</code>.
+            {state.tab === "definitions" ? ` Noise is the explicit collection plus anything firing more often than every ${NOISE_MINUTES} min.` : null}
           </span>
         </footer>
       </div>

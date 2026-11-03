@@ -1,6 +1,8 @@
+import { PassThrough, Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
+import { streamHeaders } from "./event-stream.js";
 
-// Read-only projection of Candybar, the host's single clock for recurring work (HOLOC-24, Definitions slice).
+// Read-only projection of Candybar, the host's single clock for recurring work (HOLOC-24: Definitions and Schedule).
 // Upstream contract: candybar/_bmad-output/specs/spec-cron-framework/holocene-view-contract.md. The Candybar API
 // sends no CORS headers, so only this process talks to it, GET only; the browser reads the composed list.
 // Holocene never registers, edits, pauses or runs a candybar: that stays with the `candybar` CLI.
@@ -348,7 +350,139 @@ export async function readCandybars(opts: { fetchImpl?: Fetch; baseUrl?: string;
   });
 }
 
-export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?: Fetch; baseUrl?: string } = {}) {
+// ---------------------------------------------------------------------------------------------------------------------
+// The Schedule view: a day's fires as one compact snapshot, then Candybar's own SSE stream, piped through unchanged.
+
+// A local day is 23-25 h; anything longer is not a view this tab asks for (Candybar itself allows 31 days).
+const DAY_WINDOW_MAX_MS = 26 * 3_600_000;
+// Each /schedule read stays far under Candybar's 20,000-row refusal (a 5 h slice is ~2,400 rows today).
+const DAY_SLICE_MS = 5 * 3_600_000;
+const STREAM_CONNECT_TIMEOUT_MS = 10_000;
+// Candybar's own keepalive is once a minute, but the Next.js rewrite drops a proxied response after 30 s without
+// bytes, silently: the browser sees neither an error nor an end. A ping every 15 s keeps the path open and gives the
+// page something to watch.
+const STREAM_PING_MS = 15_000;
+const PING_FRAME = "event: ping\ndata: {}\n\n";
+
+/**
+ * Candybar's SSE frames, unchanged and whole, with a `ping` event between frames whenever the line has been quiet
+ * for `intervalMs`. A ping carries no id, so it never moves the browser's Last-Event-ID.
+ */
+export function withPings(source: Readable, intervalMs = STREAM_PING_MS): PassThrough {
+  const out = new PassThrough();
+  let partial = "";
+  let quietSince = Date.now();
+  source.setEncoding("utf8");
+  source.on("data", (chunk: string) => {
+    partial += chunk;
+    const end = partial.lastIndexOf("\n\n");
+    if (end < 0) return;
+    out.write(partial.slice(0, end + 2));
+    partial = partial.slice(end + 2);
+    quietSince = Date.now();
+  });
+  const timer = setInterval(() => {
+    // Only between frames: a ping inside a half-received frame would corrupt it.
+    if (partial || Date.now() - quietSince < intervalMs) return;
+    out.write(PING_FRAME);
+    quietSince = Date.now();
+  }, Math.max(10, Math.floor(intervalMs / 3)));
+  const stop = () => clearInterval(timer);
+  source.on("end", () => {
+    stop();
+    out.end(partial);
+  });
+  // An aborted upstream (viewer gone, shutdown) ends with an AbortError; the viewer then reconnects on its own.
+  source.on("error", () => {
+    stop();
+    out.end();
+  });
+  out.on("close", () => {
+    stop();
+    source.destroy();
+  });
+  return out;
+}
+
+export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean };
+/** [candybar index, fireTime as Candybar wrote it, state, lastResult, skipped]. */
+export type ScheduleTuple = [number, string, "past" | "current" | "upcoming", "success" | "fail" | null, 0 | 1];
+export type SchedulePayload = {
+  generated_at: string;
+  from: string;
+  to: string;
+  candybars: ScheduleCandybar[];
+  rows: ScheduleTuple[];
+};
+
+/** A UTC-offset ISO window no longer than a long local day, or an error message. */
+export function parseWindow(query: Record<string, unknown>): { from: string; to: string } | { error: string } {
+  const from = typeof query.from === "string" ? query.from : "";
+  const to = typeof query.to === "string" ? query.to : "";
+  const f = Date.parse(from);
+  const t = Date.parse(to);
+  if (!Number.isFinite(f) || !Number.isFinite(t)) return { error: "from and to must be ISO timestamps" };
+  if (t <= f) return { error: "to must be after from" };
+  if (t - f > DAY_WINDOW_MAX_MS) return { error: "the window is longer than a day" };
+  return { from: new Date(f).toISOString(), to: new Date(t).toISOString() };
+}
+
+const STATES = new Set(["past", "current", "upcoming"]);
+
+/** Allowlisted, deduplicated rows; fireTime stays verbatim, because the stream's patch keys use Candybar's spelling. */
+export function compactSchedule(raws: unknown[], window: { from: string; to: string }, now: number): SchedulePayload {
+  const index = new Map<string, number>();
+  const candybars: ScheduleCandybar[] = [];
+  const rows: ScheduleTuple[] = [];
+  const seen = new Set<string>();
+  for (const raw of raws) {
+    if (!isRecord(raw)) continue;
+    const id = str(raw.candybarId);
+    const fireTime = stamp(raw.fireTime);
+    const state = str(raw.state);
+    if (!id || !fireTime || !state || !STATES.has(state)) continue;
+    const key = `${id}@${fireTime}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let i = index.get(id);
+    if (i === undefined) {
+      i = candybars.length;
+      index.set(id, i);
+      candybars.push({ id, name: str(raw.name) ?? id, schedule: str(raw.schedule) ?? "", noise: raw.noise === true });
+    }
+    const result = raw.lastResult === "success" || raw.lastResult === "fail" ? raw.lastResult : null;
+    rows.push([i, fireTime, state as ScheduleTuple[2], result, raw.skipped === true ? 1 : 0]);
+  }
+  rows.sort((a, b) => Date.parse(a[1]) - Date.parse(b[1]) || candybars[a[0]].name.localeCompare(candybars[b[0]].name));
+  return { generated_at: new Date(now).toISOString(), ...window, candybars, rows };
+}
+
+export async function readDaySchedule(
+  window: { from: string; to: string },
+  opts: { fetchImpl?: Fetch; baseUrl?: string; now?: () => number } = {}
+): Promise<SchedulePayload | { error: string }> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const baseUrl = opts.baseUrl ?? CANDYBAR_API_URL;
+  const from = Date.parse(window.from);
+  const to = Date.parse(window.to);
+  const bounds: Array<[number, number]> = [];
+  for (let at = from; at < to; at += DAY_SLICE_MS) bounds.push([at, Math.min(at + DAY_SLICE_MS, to)]);
+  const reads = await Promise.all(
+    bounds.map(([a, b]) => {
+      const params = new URLSearchParams({ from: new Date(a).toISOString(), to: new Date(b).toISOString() });
+      return getJson(fetchImpl, baseUrl, `/schedule?${params}`, SCHEDULE_TIMEOUT_MS);
+    })
+  );
+  const failed = reads.find((r) => !r.ok || !Array.isArray(r.body));
+  if (failed) return { error: failed.ok ? "GET /schedule did not return a list" : failed.error };
+  return compactSchedule(reads.flatMap((r) => (r.ok ? (r.body as unknown[]) : [])), window, (opts.now ?? Date.now)());
+}
+
+export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?: Fetch; baseUrl?: string; pingMs?: number } = {}) {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const baseUrl = opts.baseUrl ?? CANDYBAR_API_URL;
+  const pingMs = opts.pingMs ?? STREAM_PING_MS;
+
   app.get("/api/modules/candybar/list", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
     // Concurrent callers share one upstream read.
@@ -356,5 +490,60 @@ export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?:
       inflight = undefined;
     });
     return inflight;
+  });
+
+  app.get("/api/modules/candybar/schedule", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const window = parseWindow(request.query as Record<string, unknown>);
+    if ("error" in window) return reply.status(400).send({ error: window.error });
+    const day = await readDaySchedule(window, opts);
+    if ("error" in day) return reply.status(502).send({ error: `${baseUrl}: ${day.error}` });
+    return day;
+  });
+
+  // Candybar's SSE, frame for frame: its ids (<boot>-<seq>), `retry`, keepalives and id-only out-of-window frames all
+  // reach the browser unchanged (plus id-less pings), so EventSource resume works end to end. One upstream
+  // connection per viewer.
+  const open = new Set<AbortController>();
+  app.addHook("preClose", async () => {
+    for (const ctl of open) ctl.abort();
+  });
+  app.get("/api/modules/candybar/schedule/stream", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const window = parseWindow(query);
+    if ("error" in window) return reply.status(400).send({ error: window.error });
+    const header = request.headers["last-event-id"];
+    // EventSource sends Last-Event-ID on its own retries; `after` carries it when the page reconnects by hand.
+    const lastEventId = typeof header === "string" && header ? header : typeof query.after === "string" ? query.after : "";
+    const ctl = new AbortController();
+    open.add(ctl);
+    reply.raw.on("close", () => {
+      ctl.abort();
+      open.delete(ctl);
+    });
+    const connect = setTimeout(() => ctl.abort(), STREAM_CONNECT_TIMEOUT_MS);
+    let upstream: Response;
+    try {
+      upstream = await fetchImpl(`${baseUrl}/schedule/stream?${new URLSearchParams(window)}`, {
+        method: "GET",
+        headers: { accept: "text/event-stream", ...(/^[\w-]{1,64}$/.test(lastEventId) ? { "last-event-id": lastEventId } : {}) },
+        signal: ctl.signal
+      });
+    } catch (err) {
+      open.delete(ctl);
+      return reply.status(502).send({ error: `${baseUrl}: ${describeError(err, STREAM_CONNECT_TIMEOUT_MS)}` });
+    } finally {
+      clearTimeout(connect);
+    }
+    if (!upstream.ok || !upstream.body) {
+      // Read Candybar's reason before aborting: an aborted signal fails the body read too.
+      const text = (await upstream.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 120);
+      ctl.abort();
+      open.delete(ctl);
+      return reply.status(502).send({ error: `${baseUrl}: HTTP ${upstream.status}${text ? `: ${text}` : ""}` });
+    }
+    streamHeaders(reply);
+    reply.header("Content-Type", "text/event-stream; charset=utf-8");
+    return reply.send(withPings(Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]), pingMs));
   });
 }

@@ -37,3 +37,26 @@ export type CandybarPayload = {
 };
 
 export type ViewId = "all" | "active" | "inactive" | "failing";
+
+// Payload of /api/modules/candybar/schedule (apps/api/src/candybar.ts).
+
+export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean };
+/** [candybar index, fireTime as Candybar wrote it, state, lastResult, skipped]. */
+export type ScheduleTuple = [number, string, FireState, "success" | "fail" | null, 0 | 1];
+export type SchedulePayload = { generated_at: string; from: string; to: string; candybars: ScheduleCandybar[]; rows: ScheduleTuple[] };
+
+export type FireState = "past" | "current" | "upcoming";
+
+/** One row of /schedule and of the stream's `row` (holocene-view-contract.md, "Schedule window"). */
+export type WireRow = {
+  candybarId: string;
+  name: string;
+  schedule: string;
+  fireTime: string;
+  state: FireState;
+  lastResult?: "success" | "fail";
+  skipped: boolean;
+  noise: boolean;
+};
+
+export type TabId = "schedule" | "definitions";

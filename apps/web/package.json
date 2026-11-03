@@ -8,7 +8,8 @@
     "start": "next start --hostname 0.0.0.0 -p ${HOLOCENE_WEB_PORT:-3001}",
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .next dist"
+    "clean": "rm -rf .next dist",
+    "test": "node --import tsx --test \"app/candybar/*.test.ts\""
   },
   "dependencies": {
     "@holocene/module-sdk": "workspace:*",
@@ -25,6 +26,7 @@
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }
