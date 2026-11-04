@@ -31,7 +31,7 @@ Decisions (mine, not user-visible gaps):
 - Schedule row actions sit over the cron text on hover or focus-within on a hover-capable wide screen (the buttons stay in the tab order) and behind a small trailing button on touch and narrow screens. A single skip marks the row at once, a rest-of-day skip refetches the snapshot, noise flips the candybar's rows; the stream's `skip.applied` and `definition.changed` say the same later. Failures show as a transient alert above the list.
 - Outcome chips use hub tokens only: Nominal `--cleared`, Suboptimal `--pop`, Drifted `--broken` on the soft-fail tint, Orphaned dashed `--ink-3`.
 
-Files: `apps/api/src/candybar.ts`, `candybar-actions.test.ts` (18 tests; the API suite is 225), `apps/web/app/candybar/{candybar-model.ts,candybar-api.ts,row-parts.tsx,profile-panel.tsx,action-bar.tsx}` (+ `candybar-model.test.ts`, 25 web tests in all), `candybar-app.tsx`, `schedule-view.tsx`, `schedule-model.ts`, `candybar.css`, `types.ts`, `apps/web/app/hub/hub-app.tsx` (`usePoll.reload`).
+Files: `apps/api/src/candybar.ts`, `candybar-actions.test.ts` (18 tests; the API suite is 225), `apps/web/app/candybar/{candybar-model.ts,candybar-api.ts,row-parts.tsx,profile-panel.tsx,action-bar.tsx}` (+ `candybar-model.test.ts`, 24 web tests in all), `candybar-app.tsx`, `schedule-view.tsx`, `schedule-model.ts`, `candybar.css`, `types.ts`, `apps/web/app/hub/hub-app.tsx` (`usePoll.reload`).
 
 Surprises:
 
