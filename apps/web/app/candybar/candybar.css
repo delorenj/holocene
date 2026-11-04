@@ -529,6 +529,8 @@
 .hub-root .cb-act[aria-busy="true"],
 .hub-root .cb-fa[aria-busy="true"],
 .hub-root .cb-act.is-running { color: var(--working); border-color: var(--working); }
+/* Like the row's task chip: running is solid, queued is dashed. */
+.hub-root .cb-act.is-running[aria-disabled="true"] { border-style: solid; }
 .hub-root .cb-act.is-queued { color: var(--working); border-color: var(--working); border-style: dashed; }
 .hub-root .cb-act.is-warn { color: var(--broken); border-color: var(--broken); }
 .hub-root .cb-act-why { margin: 0; font: 400 12px/17px var(--font-mono); color: var(--ink-2); overflow-wrap: anywhere; }
