@@ -38,6 +38,8 @@ export type RunResult = LastRun["result"];
 
 export type TaskAction = "enrich" | "fix" | "evaluate" | "refactor";
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed";
+/** LLM spend of a task's session, as Candybar recorded it. Only numeric fields pass. */
+export type TaskTokens = Partial<Record<"input" | "output" | "reasoning" | "cacheRead" | "cacheWrite" | "total", number>>;
 export type Task = {
   id: string;
   candybarId: string;
@@ -51,6 +53,8 @@ export type Task = {
   reportKey?: string;
   invocationId?: string;
   error?: string;
+  costUsd?: number;
+  tokens?: TaskTokens;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -78,6 +82,9 @@ export type Evaluation = {
   axes: Partial<Record<AxisName, { rating: "good" | "fair" | "poor"; finding: string }>>;
   recommendation: string;
   followUp: "none" | "refactor" | "fix" | "archive";
+  /** How the follow-up went: queued, running, done, failed, or flagged (a protected candybar is never archived). */
+  followUpStatus?: string;
+  followUpTaskId?: string;
   reportKey: string;
   evaluatedAt?: string;
   taskId?: string;
@@ -241,6 +248,24 @@ const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | undefin
 
 const TASK_ACTIONS = ["enrich", "fix", "evaluate", "refactor"] as const;
 const TASK_STATUSES = ["queued", "running", "succeeded", "failed"] as const;
+/** A short machine word (an outcome or a status Candybar may add later), never free text. */
+const slug = (v: unknown): string | undefined => (typeof v === "string" && /^[A-Za-z][A-Za-z_-]{0,31}$/.test(v) ? v : undefined);
+const TOKEN_KEYS = ["input", "output", "reasoning", "cacheRead", "cacheWrite", "total"] as const;
+const SNAKE_TOKEN_KEYS: Record<string, (typeof TOKEN_KEYS)[number]> = { cache_read: "cacheRead", cache_write: "cacheWrite" };
+
+/** A bare count is the total; an object keeps only the known numeric fields (camelCase or snake_case). */
+export function projectTokens(v: unknown): TaskTokens | undefined {
+  const n = num(v);
+  if (n !== undefined) return n >= 0 ? { total: n } : undefined;
+  if (!isRecord(v)) return undefined;
+  const out: TaskTokens = {};
+  for (const [k, raw] of Object.entries(v)) {
+    const key = (TOKEN_KEYS as readonly string[]).includes(k) ? (k as (typeof TOKEN_KEYS)[number]) : SNAKE_TOKEN_KEYS[k];
+    const value = num(raw);
+    if (key && value !== undefined && value >= 0) out[key] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 export function projectTask(raw: unknown): Task | undefined {
   if (!isRecord(raw)) return undefined;
@@ -252,6 +277,7 @@ export function projectTask(raw: unknown): Task | undefined {
   if (!id || !candybarId || !action || !status || !createdAt) return undefined;
   const opt = <K extends string, V>(key: K, value: V | undefined | null): Partial<Record<K, V>> =>
     value === undefined || value === null || value === "" ? {} : ({ [key]: value } as Record<K, V>);
+  const cost = num(raw.costUsd);
   return {
     id,
     candybarId,
@@ -261,11 +287,13 @@ export function projectTask(raw: unknown): Task | undefined {
     ...opt("model", str(raw.model)),
     ...opt("parentTaskId", str(raw.parentTaskId)),
     ...opt("sessionId", str(raw.sessionId)),
-    ...opt("outcome", str(raw.outcome)),
+    ...opt("outcome", slug(raw.outcome)),
     ...opt("summary", clip(raw.summary)),
     ...opt("reportKey", str(raw.reportKey)),
     ...opt("invocationId", str(raw.invocationId)),
     ...opt("error", clip(raw.error)),
+    ...opt("costUsd", cost !== undefined && cost >= 0 ? cost : undefined),
+    ...opt("tokens", projectTokens(raw.tokens)),
     ...opt("startedAt", stamp(raw.startedAt)),
     ...opt("finishedAt", stamp(raw.finishedAt))
   };
@@ -311,6 +339,8 @@ function projectEvaluation(raw: unknown): Evaluation | null {
     axes,
     recommendation: clip(raw.recommendation) ?? "",
     followUp: oneOf(raw.followUp, FOLLOW_UPS) ?? "none",
+    ...(slug(raw.followUpStatus) ? { followUpStatus: slug(raw.followUpStatus) } : {}),
+    ...(str(raw.followUpTaskId) ? { followUpTaskId: str(raw.followUpTaskId) } : {}),
     reportKey: str(raw.reportKey) ?? "",
     ...(stamp(raw.evaluatedAt) ? { evaluatedAt: stamp(raw.evaluatedAt) } : {}),
     ...(str(raw.taskId) ? { taskId: str(raw.taskId) } : {})
@@ -534,6 +564,9 @@ async function readSchedule(fetchImpl: Fetch, baseUrl: string, now: number, fing
   }
   const to = now + SCHEDULE_WINDOW_MS;
   const slice = SCHEDULE_WINDOW_MS / SCHEDULE_SLICES;
+  // A skip moves fires without changing the fingerprint, so a window read that began before one must not be cached
+  // over its invalidation: it would serve the skipped fire as "next" for up to SCHEDULE_TTL_MS.
+  const gen = generation;
   const reads = await Promise.all(
     Array.from({ length: SCHEDULE_SLICES }, (_, i) => {
       const params = new URLSearchParams({ from: new Date(now + i * slice).toISOString(), to: new Date(now + (i + 1) * slice).toISOString() });
@@ -552,7 +585,7 @@ async function readSchedule(fetchImpl: Fetch, baseUrl: string, now: number, fing
       ? { ...prev, error }
       : { error, fingerprint };
   }
-  scheduleCache = { at: now, value: read };
+  if (gen === generation) scheduleCache = { at: now, value: read };
   return read;
 }
 
@@ -685,7 +718,9 @@ export function withPings(source: Readable, intervalMs = STREAM_PING_MS): PassTh
   return out;
 }
 
-export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean };
+/** `timezone` is the candybar's own zone (from the definitions; absent when they could not be read): a rest-of-day
+ *  skip covers one date in it, which the view names before it asks. */
+export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean; timezone?: string };
 /** [candybar index, fireTime as Candybar wrote it, state, lastResult, skipped]. */
 export type ScheduleTuple = [number, string, "past" | "current" | "upcoming", "success" | "fail" | null, 0 | 1];
 export type SchedulePayload = {
@@ -711,7 +746,13 @@ export function parseWindow(query: Record<string, unknown>): { from: string; to:
 const STATES = new Set(["past", "current", "upcoming"]);
 
 /** Allowlisted, deduplicated rows; fireTime stays verbatim, because the stream's patch keys use Candybar's spelling. */
-export function compactSchedule(raws: unknown[], window: { from: string; to: string }, now: number, hide?: ReadonlySet<string>): SchedulePayload {
+export function compactSchedule(
+  raws: unknown[],
+  window: { from: string; to: string },
+  now: number,
+  hide?: ReadonlySet<string>,
+  zones?: ReadonlyMap<string, string>
+): SchedulePayload {
   const index = new Map<string, number>();
   const candybars: ScheduleCandybar[] = [];
   const rows: ScheduleTuple[] = [];
@@ -729,7 +770,8 @@ export function compactSchedule(raws: unknown[], window: { from: string; to: str
     if (i === undefined) {
       i = candybars.length;
       index.set(id, i);
-      candybars.push({ id, name: str(raw.name) ?? id, schedule: str(raw.schedule) ?? "", noise: raw.noise === true });
+      const timezone = zones?.get(id);
+      candybars.push({ id, name: str(raw.name) ?? id, schedule: str(raw.schedule) ?? "", noise: raw.noise === true, ...(timezone ? { timezone } : {}) });
     }
     const result = raw.lastResult === "success" || raw.lastResult === "fail" ? raw.lastResult : null;
     rows.push([i, fireTime, state as ScheduleTuple[2], result, raw.skipped === true ? 1 : 0]);
@@ -740,7 +782,15 @@ export function compactSchedule(raws: unknown[], window: { from: string; to: str
 
 export async function readDaySchedule(
   window: { from: string; to: string },
-  opts: { fetchImpl?: Fetch; baseUrl?: string; now?: () => number; /** Candybars whose fires never show (archived). */ hide?: ReadonlySet<string> } = {}
+  opts: {
+    fetchImpl?: Fetch;
+    baseUrl?: string;
+    now?: () => number;
+    /** Candybars whose fires never show (archived). */
+    hide?: ReadonlySet<string>;
+    /** Each candybar's own time zone, by id. */
+    zones?: ReadonlyMap<string, string>;
+  } = {}
 ): Promise<SchedulePayload | { error: string }> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const baseUrl = opts.baseUrl ?? CANDYBAR_API_URL;
@@ -756,7 +806,7 @@ export async function readDaySchedule(
   );
   const failed = reads.find((r) => !r.ok || !Array.isArray(r.body));
   if (failed) return { error: failed.ok ? "GET /schedule did not return a list" : failed.error };
-  return compactSchedule(reads.flatMap((r) => (r.ok ? (r.body as unknown[]) : [])), window, (opts.now ?? Date.now)(), opts.hide);
+  return compactSchedule(reads.flatMap((r) => (r.ok ? (r.body as unknown[]) : [])), window, (opts.now ?? Date.now)(), opts.hide, opts.zones);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -849,7 +899,8 @@ export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?:
     // Archived candybars never show. Their ids come from the (cached) list; if it cannot be read, nothing is hidden.
     const list = await readList(fetchImpl, baseUrl, Date.now());
     const hide = new Set(list.definitions.filter((d) => d.archived).map((d) => d.id));
-    const day = await readDaySchedule(window, { ...opts, hide });
+    const zones = new Map(list.definitions.map((d) => [d.id, d.timezone] as const));
+    const day = await readDaySchedule(window, { ...opts, hide, zones });
     if ("error" in day) return reply.status(502).send({ error: `${baseUrl}: ${day.error}` });
     return day;
   });
@@ -887,16 +938,23 @@ export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?:
   write("/skip-rest-of-day", async (id, body, reply) => {
     const fireTime = parseFireTime(body.fireTime);
     if (!fireTime) return bad(reply, "fireTime must be a whole-minute ISO timestamp");
+    // The date the operator confirmed, when the page knew the candybar's zone. A different answer here (a zone changed
+    // since the page read it) is refused rather than skipping a day nobody agreed to.
+    const expect = body.expectDate;
+    if (expect !== undefined && (typeof expect !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(expect))) return bad(reply, "expectDate must be YYYY-MM-DD");
     // The day is the candybar's own: a 9 PM New York fire is already tomorrow in UTC.
     const list = await readList(fetchImpl, baseUrl, Date.now());
     const def = list.definitions.find((d) => d.id === id);
     if (!def) return reply.status(list.down ? 502 : 404).send({ error: list.down ? `${baseUrl}: ${list.down}` : "no candybar with that id" });
     const date = localDate(Date.parse(fireTime), def.timezone);
     if (!date) return bad(reply, `cannot compute the date in the time zone ${def.timezone}`, 422);
+    if (expect !== undefined && expect !== date) {
+      return reply.status(409).send({ error: `that fire falls on ${date} in ${def.timezone}, not ${expect}; nothing was skipped`, date, timezone: def.timezone });
+    }
     const r = await sendJson(fetchImpl, baseUrl, "POST", `/candybars/${id}/skip-rest-of-day`, { date });
     if (!r.ok) return refused(reply, r);
     invalidateAfterWrite({ schedule: true });
-    return { ok: true, skipped: true, date };
+    return { ok: true, skipped: true, date, timezone: def.timezone };
   });
 
   write("/noise", async (id, body, reply) => {
@@ -930,8 +988,17 @@ export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?:
     if (!action) return bad(reply, `action must be one of ${STEWARD_ACTIONS.join(", ")}`);
     const r = await sendJson(fetchImpl, baseUrl, "POST", `/candybars/${id}/steward`, { action });
     if (!r.ok) {
-      // A twin already queued or running is not a failure of this click: the list will show it.
-      if (r.status === 409) invalidateAfterWrite();
+      // A twin already queued or running is not a failure of this click: the list will show it, and the page says
+      // how far along it is, so the twin is read back when Candybar named it.
+      if (r.status === 409) {
+        invalidateAfterWrite();
+        const taskId = isRecord(r.body) ? str(r.body.taskId) : undefined;
+        if (taskId) {
+          const t = await sendJson(fetchImpl, baseUrl, "GET", `/candybars/${id}/steward/tasks?limit=20`);
+          const twin = t.ok && isRecord(t.body) && Array.isArray(t.body.tasks) ? t.body.tasks.map(projectTask).find((x) => x?.id === taskId) : undefined;
+          return reply.status(409).send({ error: r.error, taskId, ...(twin ? { task: twin } : {}) });
+        }
+      }
       return refused(reply, r);
     }
     invalidateAfterWrite();

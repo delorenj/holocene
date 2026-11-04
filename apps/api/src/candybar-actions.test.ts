@@ -214,7 +214,7 @@ test("skip-rest-of-day computes the date in the candybar's own time zone", async
   const ny = await post(routes, "/skip-rest-of-day", { fireTime: "2026-11-04T02:30:00Z" }, NY);
   assert.equal(ny.res.statusCode, 200);
   assert.deepEqual(ny.calls.find((c) => c.method === "POST")?.body, { date: "2026-11-03" });
-  assert.deepEqual(ny.body, { ok: true, skipped: true, date: "2026-11-03" });
+  assert.deepEqual(ny.body, { ok: true, skipped: true, date: "2026-11-03", timezone: "America/New_York" });
 
   const routes2 = { ...healthy(), [`POST /candybars/${UTC_ID}/skip-rest-of-day`]: () => json({ skipped: true }) };
   const utc = await post(routes2, "/skip-rest-of-day", { fireTime: "2026-11-04T02:30:00Z" });
@@ -368,4 +368,108 @@ test("a profile read begun before a write does not repopulate the caches the wri
   assert.equal(calls.filter((c) => c.path === "/profiles").length, 2, "the stale read was not cached");
   await app.close();
   void ({} as CandybarPayload);
+});
+
+test("a schedule-window read begun before a skip does not repopulate the window cache (the skipped fire stays gone)", async () => {
+  // A list poll is still reading the window when the operator skips the next fire. The reload right after the skip
+  // reads a fresh window; the older read then lands and must not be cached over it.
+  const t0 = Math.ceil(Date.now() / 60_000) * 60_000 + 5 * 60_000;
+  const fireIso = (t: number) => new Date(t).toISOString().replace(".000Z", "+00:00");
+  let skipped = false;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstRead = true;
+  const routes = healthy();
+  routes["GET /schedule"] = async (c) => {
+    const from = Date.parse(new URLSearchParams(c.search).get("from") ?? "");
+    // Only the slice holding the fires answers rows; the stale read is the one that saw them unskipped.
+    const rows = from <= t0 && t0 < from + 5 * 3_600_000
+      ? [
+          { candybarId: UTC_ID, name: "deploy-smoke", schedule: "* * * * *", fireTime: fireIso(t0), state: "upcoming", skipped, noise: false },
+          { candybarId: UTC_ID, name: "deploy-smoke", schedule: "* * * * *", fireTime: fireIso(t0 + 60_000), state: "upcoming", skipped: false, noise: false }
+        ]
+      : [];
+    if (firstRead) await gate;
+    return json(rows);
+  };
+  routes[`POST /candybars/${UTC_ID}/skip`] = () => {
+    skipped = true;
+    return json({ skipped: true });
+  };
+  const { impl, calls } = fake(routes);
+  const app = Fastify();
+  registerCandybarRoutes(app, { fetchImpl: impl, baseUrl: BASE });
+  const next = async () => ((await app.inject({ method: "GET", url: "/api/modules/candybar/list" })).json() as CandybarPayload).candybars.find((c) => c.id === UTC_ID)?.nextFire;
+
+  const stale = app.inject({ method: "GET", url: "/api/modules/candybar/list" });
+  await new Promise((r) => setTimeout(r, 30));
+  firstRead = false;
+  const skip = await app.inject({ method: "POST", url: `/api/modules/candybar/${UTC_ID}/skip`, payload: { fireTime: new Date(t0).toISOString() } });
+  assert.equal(skip.statusCode, 200);
+  assert.equal(await next(), new Date(t0 + 60_000).toISOString(), "the reload after the skip shows the fire after it");
+  release();
+  await stale;
+  assert.equal(await next(), new Date(t0 + 60_000).toISOString(), "the older read did not bring the skipped fire back");
+  assert.equal(calls.filter((c) => c.path === "/schedule").length, 10, "two window reads, the third list served from the fresh one");
+  await app.close();
+});
+
+test("skip-rest-of-day refuses a date the operator did not confirm, and answers the date and zone it skipped", async () => {
+  const routes = { ...healthy(), [`POST /candybars/${UTC_ID}/skip-rest-of-day`]: () => json({ skipped: true }) };
+  const wrong = await post(routes, "/skip-rest-of-day", { fireTime: "2026-11-04T03:07:00Z", expectDate: "2026-11-03" });
+  assert.equal(wrong.res.statusCode, 409);
+  assert.match(String(wrong.body.error), /falls on 2026-11-04 in UTC, not 2026-11-03; nothing was skipped/);
+  assert.equal(wrong.calls.some((c) => c.method === "POST"), false, "nothing reached Candybar");
+  const right = await post(routes, "/skip-rest-of-day", { fireTime: "2026-11-04T03:07:00Z", expectDate: "2026-11-04" });
+  assert.equal(right.res.statusCode, 200);
+  assert.deepEqual(right.body, { ok: true, skipped: true, date: "2026-11-04", timezone: "UTC" });
+  const junk = await post(routes, "/skip-rest-of-day", { fireTime: "2026-11-04T03:07:00Z", expectDate: "Nov 4" });
+  assert.equal(junk.res.statusCode, 400);
+});
+
+test("a steward 409 for a twin task carries the twin, read back from Candybar", async () => {
+  const twin = task({ id: "01a1a47d-8eb9-73fc-b3e5-bd780154a482", action: "evaluate", status: "running", startedAt: "2026-11-03T17:42:00Z" });
+  const routes = {
+    ...healthy(),
+    [`POST /candybars/${UTC_ID}/steward`]: () => json({ title: "Steward task already active", detail: "deploy-smoke already has a running evaluate task", taskId: twin.id }, 409),
+    [`GET /candybars/${UTC_ID}/steward/tasks`]: () => json({ candybarId: UTC_ID, tasks: [twin, task()] })
+  };
+  const r = await post(routes, "/steward", { action: "evaluate" });
+  assert.equal(r.res.statusCode, 409);
+  assert.equal(r.body.taskId, twin.id);
+  assert.deepEqual((r.body.task as { id: string; status: string; startedAt: string }), projectTask(twin));
+  // An archived-fix 409 names no task: it stays a plain refusal.
+  const archived = { ...healthy(), [`POST /candybars/${UTC_ID}/steward`]: () => json({ title: "Candybar is archived", detail: "archived candybars may be enriched and evaluated, not fixed" }, 409) };
+  const a = await post(archived, "/steward", { action: "fix" });
+  assert.deepEqual(a.body, { error: "archived candybars may be enriched and evaluated, not fixed" });
+  assert.equal(a.calls.filter((c) => c.method === "GET" && c.path.endsWith("/steward/tasks")).length, 0);
+});
+
+test("the schedule snapshot names each candybar's own time zone", async () => {
+  const rows = [
+    { candybarId: NY, name: "honda-hunt", schedule: "0 9 * * *", fireTime: "2026-11-03T21:30:00+00:00", state: "upcoming", skipped: false, noise: false },
+    { candybarId: "01a17a00-0000-7000-8000-0000000000ee", name: "unlisted", schedule: "0 9 * * *", fireTime: "2026-11-03T21:31:00+00:00", state: "upcoming", skipped: false, noise: false }
+  ];
+  const { impl } = fake({ ...healthy(), "GET /schedule": () => json(rows) });
+  const app = Fastify();
+  registerCandybarRoutes(app, { fetchImpl: impl, baseUrl: BASE });
+  const q = new URLSearchParams({ from: "2026-11-03T05:00:00Z", to: "2026-11-04T05:00:00Z" });
+  const body = (await app.inject({ method: "GET", url: `/api/modules/candybar/schedule?${q}` })).json() as SchedulePayload;
+  assert.deepEqual(body.candybars.map((c) => [c.name, c.timezone]), [["honda-hunt", "America/New_York"], ["unlisted", undefined]]);
+  await app.close();
+});
+
+test("the new steward fields pass the allowlist: follow-up status, task outcomes, cost and tokens", () => {
+  const t = projectTask(task({ status: "succeeded", action: "refactor", outcome: "done_not_proven", costUsd: 0.4213, tokens: { input: 1200, output: 340, cache_read: 50, planted: 9, reasoning: "x" } }))!;
+  assert.equal(t.outcome, "done_not_proven");
+  assert.equal(t.costUsd, 0.4213);
+  assert.deepEqual(t.tokens, { input: 1200, output: 340, cacheRead: 50 });
+  assert.deepEqual(projectTask(task({ tokens: 1540 }))?.tokens, { total: 1540 });
+  assert.equal(projectTask(task({ costUsd: -1, tokens: {} }))?.costUsd, undefined);
+  assert.equal(projectTask(task({ outcome: "rm -rf /; echo" }))?.outcome, undefined, "an outcome is a word, never free text");
+  const p = projectProfile({ ...PROFILE, evaluation: { ...PROFILE.evaluation, outcome: "Orphaned", followUp: "archive", followUpStatus: "flagged", followUpTaskId: null } })!;
+  assert.equal(p.evaluation?.followUpStatus, "flagged");
+  assert.equal("followUpTaskId" in (p.evaluation ?? {}), false);
+  const q = projectProfile({ ...PROFILE, evaluation: { ...PROFILE.evaluation, followUpStatus: "queued", followUpTaskId: "01a1a480-3dd5-753c-83d4-9c27eeec79d1" } })!;
+  assert.equal(q.evaluation?.followUpTaskId, "01a1a480-3dd5-753c-83d4-9c27eeec79d1");
 });
