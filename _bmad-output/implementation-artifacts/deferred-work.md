@@ -26,3 +26,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-row-actions.md`
   summary: Verify the write proxies and the profile/task panels against the real Candybar steward routes.
   evidence: When this slice shipped, https://candybar.delo.sh answered 404 for `/profiles` and `/steward/tasks`; the routes were tested against contract fakes and a local fake Candybar only.
+  status: done 2026-11-03 (round 1). Verified live: profiles, tasks, archive, unarchive, enable, noise and skip through the UI. The steward POST (Enrich/Evaluate/Fix) is left to the integrator's live run.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-row-actions.md`
+  summary: Offer Cancel for a queued or running steward task (`POST /steward/tasks/{taskId}/cancel`, contract v1.1) beside the "queued 5m: is candybar-steward running?" hint.
+  evidence: The route landed in candybar d1b3796 during round 1. Holocene only says the steward may be down, and the way out is still `candybar steward cancel <task-id>`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-row-actions.md`
+  summary: Read active tasks with `GET /steward/tasks?active=1` as well as the newest 200, so an old stuck task still holds its button.
+  evidence: maybe-false, would be low. The list reads `?limit=200` across all candybars, so a queued task older than the 200 newest would not show. Candybar's startup reaper now fails expired queued tasks, which makes this unlikely.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-row-actions.md`
+  summary: Run the impeccable detector as a URL scan of the live Candybar tab at 1440 and 390.
+  evidence: The file scan of every changed web file returns []. The URL scan needs puppeteer, which is not installed for the skill's scripts.
+- source_spec: `_bmad-output/implementation-artifacts/spec-holoc-24-candybar-row-actions.md`
+  summary: Find what recreates holocene-web outside a deploy. It was recreated twice during round 1's live pass, the IP moved between 172.19.0.91 and .96, and an in-flight Enable was cut.
+  evidence: `docker inspect` showed holocene-web created 23:03:52 EST, mid-run, with no recreate from this session. The cut request left deploy-smoke-exec unarchived but disabled until it was re-enabled through the UI. Docker events did not name the actor.
