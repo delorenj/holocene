@@ -59,7 +59,7 @@ export type Evaluation = {
   axes: Partial<Record<AxisName, { rating: "good" | "fair" | "poor"; finding: string }>>;
   recommendation: string;
   followUp: "none" | "refactor" | "fix" | "archive";
-  /** How the follow-up went: queued, running, done, failed, or flagged (a protected candybar is never archived). */
+  /** How the follow-up went: queued, done, failed, or flagged (left for the operator: a protected candybar is not archived, an unapplied refactor is not retried). */
   followUpStatus?: string;
   followUpTaskId?: string;
   reportKey: string;

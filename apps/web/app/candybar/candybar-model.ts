@@ -171,7 +171,7 @@ export function confirmText(c: Pick<CandybarRow, "name" | "enabled" | "archived"
       return `Fix ${c.name}?\n\nAn agent reads its recent failures, then commits and pushes a repair straight to main in ${repo ? repo : "the job's repo"}, and runs ${c.name} once to prove it. It works on its own for up to 30 minutes.`;
     }
     case "evaluate":
-      return `Evaluate ${c.name}?\n\nAn adversarial review of whether it still earns its place, and its verdict acts on its own: Suboptimal queues a refactor (code or schedule changes, committed and pushed), Drifted queues a fix, Orphaned archives the candybar. A protected candybar is only flagged, never archived.`;
+      return `Evaluate ${c.name}?\n\nAn adversarial review of whether it still earns its place, and its verdict acts on its own: Suboptimal queues a refactor (code or schedule changes, committed and pushed), Drifted queues a fix, Orphaned archives the candybar. A protected candybar (a canary, smoke, watchdog or policy job, a backup, or one named in the scheduling policy) is only flagged for you, never archived.`;
     case "enabled":
       return c.enabled ? `Disable ${c.name}?\n\nIt stops firing until you enable it again. Nothing is deleted.` : undefined;
     case "archived":
@@ -209,18 +209,20 @@ export const queuedNote = (name: string, action: TaskAction) => `${ACTION_LABEL[
 
 // ---------- the steward's notes ----------
 
+// Candybar's follow-up statuses are queued, done, flagged (left for the operator: a protected candybar is not
+// archived, a refactor that was not applied is not retried) and failed; a child task's own status maps onto them.
 const FOLLOW_UP_STATUS: Record<string, string> = {
   queued: "queued",
   running: "running",
   done: "done",
   succeeded: "done",
   failed: "failed",
-  flagged: "flagged (protected, not archived)",
   skipped: "skipped"
 };
+const flagged = (followUp: Evaluation["followUp"]) => (followUp === "archive" ? "flagged: protected, not archived" : "flagged for you to decide");
 
 /**
- * "refactor queued", "refactor done", "archive flagged (protected, not archived)"; "none" when nothing follows. Without
+ * "refactor queued", "refactor done", "archive flagged: protected, not archived"; "none" when nothing follows. Without
  * a stored followUpStatus (an older Candybar), the follow-up task itself says how far it got: the one whose
  * parentTaskId is this evaluation's task.
  */
@@ -228,6 +230,7 @@ export function followUpLabel(e: Pick<Evaluation, "followUp" | "followUpStatus" 
   if (e.followUp === "none") return "none";
   const status = e.followUpStatus ?? (child && e.taskId && child.parentTaskId === e.taskId ? child.status : undefined);
   if (!status) return e.followUp;
+  if (status === "flagged") return `${e.followUp} ${flagged(e.followUp)}`;
   return `${e.followUp} ${FOLLOW_UP_STATUS[status] ?? status.replace(/_/g, " ")}`;
 }
 

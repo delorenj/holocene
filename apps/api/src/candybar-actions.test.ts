@@ -465,6 +465,7 @@ test("the new steward fields pass the allowlist: follow-up status, task outcomes
   assert.equal(t.costUsd, 0.4213);
   assert.deepEqual(t.tokens, { input: 1200, output: 340, cacheRead: 50 });
   assert.deepEqual(projectTask(task({ tokens: 1540 }))?.tokens, { total: 1540 });
+  assert.deepEqual(projectTask(task({ tokens: { input: 10, output: 2, reasoning: 1, cache: { read: 7, write: 0 } } }))?.tokens, { input: 10, output: 2, reasoning: 1, cacheRead: 7, cacheWrite: 0 }, "OpenCode's nested cache counts");
   assert.equal(projectTask(task({ costUsd: -1, tokens: {} }))?.costUsd, undefined);
   assert.equal(projectTask(task({ outcome: "rm -rf /; echo" }))?.outcome, undefined, "an outcome is a word, never free text");
   const p = projectProfile({ ...PROFILE, evaluation: { ...PROFILE.evaluation, outcome: "Orphaned", followUp: "archive", followUpStatus: "flagged", followUpTaskId: null } })!;

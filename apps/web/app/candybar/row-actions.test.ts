@@ -84,7 +84,7 @@ test("Fix and Evaluate confirm first and say what will happen", () => {
   assert.match(evaluate, /Suboptimal queues a refactor/);
   assert.match(evaluate, /Drifted queues a fix/);
   assert.match(evaluate, /Orphaned archives the candybar/);
-  assert.match(evaluate, /protected candybar is only flagged/);
+  assert.match(evaluate, /A protected candybar \(a canary, smoke, watchdog or policy job, a backup, or one named in the scheduling policy\) is only flagged for you, never archived/);
   assert.equal(confirmText(row(), "enrich"), undefined, "Enrich only writes Candybar's own notes");
   assert.equal(confirmText(row(), "noise"), undefined);
   assert.equal(confirmText(row({ enabled: false }), "enabled"), undefined, "enabling asks nothing");
@@ -101,7 +101,9 @@ test("the steward's newer fields read as words: follow-up status, outcomes, spen
   const e = { followUp: "refactor" as const, taskId: "ev1" };
   assert.equal(followUpLabel({ ...e, followUpStatus: "queued" }), "refactor queued");
   assert.equal(followUpLabel({ ...e, followUpStatus: "done" }), "refactor done");
-  assert.equal(followUpLabel({ followUp: "archive", followUpStatus: "flagged" }), "archive flagged (protected, not archived)");
+  assert.equal(followUpLabel({ followUp: "archive", followUpStatus: "flagged" }), "archive flagged: protected, not archived");
+  assert.equal(followUpLabel({ ...e, followUpStatus: "flagged" }), "refactor flagged for you to decide", "a refactor not applied");
+  assert.equal(followUpLabel({ ...e, followUpStatus: "failed" }), "refactor failed");
   assert.equal(followUpLabel({ followUp: "none", followUpStatus: "flagged" }), "none");
   assert.equal(followUpLabel(e, { status: "succeeded", parentTaskId: "ev1" }), "refactor done", "an older Candybar: the child task says it");
   assert.equal(followUpLabel(e, { status: "succeeded", parentTaskId: "other" }), "refactor", "someone else's refactor says nothing");

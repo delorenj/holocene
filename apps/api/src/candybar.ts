@@ -82,7 +82,7 @@ export type Evaluation = {
   axes: Partial<Record<AxisName, { rating: "good" | "fair" | "poor"; finding: string }>>;
   recommendation: string;
   followUp: "none" | "refactor" | "fix" | "archive";
-  /** How the follow-up went: queued, running, done, failed, or flagged (a protected candybar is never archived). */
+  /** How the follow-up went: queued, done, failed, or flagged (left for the operator: a protected candybar is not archived, an unapplied refactor is not retried). */
   followUpStatus?: string;
   followUpTaskId?: string;
   reportKey: string;
@@ -253,13 +253,17 @@ const slug = (v: unknown): string | undefined => (typeof v === "string" && /^[A-
 const TOKEN_KEYS = ["input", "output", "reasoning", "cacheRead", "cacheWrite", "total"] as const;
 const SNAKE_TOKEN_KEYS: Record<string, (typeof TOKEN_KEYS)[number]> = { cache_read: "cacheRead", cache_write: "cacheWrite" };
 
-/** A bare count is the total; an object keeps only the known numeric fields (camelCase or snake_case). */
+/**
+ * A bare count is the total; an object keeps only the known numeric fields (camelCase or snake_case). OpenCode's own
+ * shape nests the cache counts (`{input, output, reasoning, cache: {read, write}}`); they are flattened.
+ */
 export function projectTokens(v: unknown): TaskTokens | undefined {
   const n = num(v);
   if (n !== undefined) return n >= 0 ? { total: n } : undefined;
   if (!isRecord(v)) return undefined;
   const out: TaskTokens = {};
-  for (const [k, raw] of Object.entries(v)) {
+  const cache = isRecord(v.cache) ? { cacheRead: v.cache.read, cacheWrite: v.cache.write } : {};
+  for (const [k, raw] of Object.entries({ ...v, ...cache })) {
     const key = (TOKEN_KEYS as readonly string[]).includes(k) ? (k as (typeof TOKEN_KEYS)[number]) : SNAKE_TOKEN_KEYS[k];
     const value = num(raw);
     if (key && value !== undefined && value >= 0) out[key] = value;
