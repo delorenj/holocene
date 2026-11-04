@@ -474,3 +474,134 @@ test("the new steward fields pass the allowlist: follow-up status, task outcomes
   const q = projectProfile({ ...PROFILE, evaluation: { ...PROFILE.evaluation, followUpStatus: "queued", followUpTaskId: "01a1a480-3dd5-753c-83d4-9c27eeec79d1" } })!;
   assert.equal(q.evaluation?.followUpTaskId, "01a1a480-3dd5-753c-83d4-9c27eeec79d1");
 });
+
+// ---------- round 3: stale profiles and tasks (N4), cancel (N2) ----------
+
+/** A flaky Candybar: `/profiles` and `/steward/tasks` answer from `mode`, which a test flips between reads. */
+function flaky(mode: { current: "good" | "timeout" | "gone" | "bad" }) {
+  const routes = healthy();
+  const answer = (good: () => Response) => () => {
+    if (mode.current === "good") return good();
+    if (mode.current === "gone") return new Response("not found", { status: 404 });
+    if (mode.current === "bad") return json({ nope: true });
+    return new Response("gateway timeout", { status: 504 });
+  };
+  const profiles = routes["GET /profiles"];
+  const tasks = routes["GET /steward/tasks"];
+  routes["GET /profiles"] = answer(() => profiles({} as Call) as Response);
+  routes["GET /steward/tasks"] = answer(() => tasks({} as Call) as Response);
+  return fake(routes);
+}
+
+test("a transient failure keeps the last good profiles and tasks, marked stale with their age (N4)", async () => {
+  const mode = { current: "good" as "good" | "timeout" | "gone" | "bad" };
+  const { impl } = flaky(mode);
+  let now = NOW;
+  const read = () => readCandybars({ fetchImpl: impl, baseUrl: BASE, now: () => now });
+  const fresh = await read();
+  assert.equal(fresh.stale, undefined, "fresh reads carry no stale marker");
+  mode.current = "timeout";
+  now = NOW + 40_000;
+  const p = await read();
+  const row = p.candybars.find((c) => c.id === UTC_ID)!;
+  assert.equal(row.profile?.project?.name, "Candybar", "the last good profile stands");
+  assert.deepEqual(row.tasks?.active.map((t) => t.id), ["t1"], "and the last good tasks");
+  assert.deepEqual(p.stale, { profiles: 40, tasks: 40 });
+  assert.ok(p.warnings.some((w) => /profiles from an older read \(40s ago\): HTTP 504/.test(w)));
+  assert.ok(p.warnings.some((w) => /steward tasks from an older read \(40s ago\): HTTP 504/.test(w)));
+  assert.equal(p.warnings.some((w) => /unavailable/.test(w)), false);
+  // Another cycle that also fails: still the first good read, now older.
+  now = NOW + 75_000;
+  assert.deepEqual((await read()).stale, { profiles: 75, tasks: 75 });
+  // It recovers: fresh again, no marker.
+  mode.current = "good";
+  now = NOW + 90_000;
+  const back = await read();
+  assert.equal(back.stale, undefined);
+  assert.equal(back.warnings.some((w) => /older read/.test(w)), false);
+});
+
+test("a 404 on profiles or tasks is not stale-served, and a read that never worked has nothing to serve (N4)", async () => {
+  const mode = { current: "good" as "good" | "timeout" | "gone" | "bad" };
+  const { impl } = flaky(mode);
+  let now = NOW;
+  const read = () => readCandybars({ fetchImpl: impl, baseUrl: BASE, now: () => now });
+  await read();
+  mode.current = "gone";
+  now = NOW + 30_000;
+  const p = await read();
+  for (const c of p.candybars) {
+    assert.equal("profile" in c, false, "an older Candybar without the route: the buttons stay off");
+    assert.equal("tasks" in c, false);
+  }
+  assert.equal(p.stale, undefined);
+  assert.ok(p.warnings.some((w) => /profiles unavailable: HTTP 404/.test(w)));
+  // Never readable: the first read times out.
+  resetCandybarCache();
+  mode.current = "timeout";
+  const never = await read();
+  assert.equal("profile" in never.candybars[0], false);
+  assert.equal(never.stale, undefined);
+  assert.ok(never.warnings.some((w) => /steward tasks unavailable: HTTP 504/.test(w)));
+});
+
+test("with Candybar's list down, the last good profiles and tasks stand in, marked stale (N4)", async () => {
+  const routes = healthy();
+  const { impl } = fake(routes);
+  let now = NOW;
+  await readCandybars({ fetchImpl: impl, baseUrl: BASE, now: () => now });
+  const down = fake({ ...routes, "GET /candybars": () => new Response("down", { status: 503 }) });
+  now = NOW + 20_000; // past the 10 s list cache, so the read goes back to Candybar
+  const p = await readCandybars({ fetchImpl: down.impl, baseUrl: BASE, now: () => now });
+  assert.equal(p.source.down, true);
+  assert.equal(p.candybars.find((c) => c.id === UTC_ID)?.profile?.project?.name, "Candybar");
+  assert.deepEqual(p.stale, { profiles: 20, tasks: 20 });
+  assert.equal(down.calls.some((c) => c.path === "/profiles" || c.path === "/steward/tasks"), false, "no further reads while the list is down");
+});
+
+const TASK_ID = "01a1a47d-8eb9-73fc-b3e5-bd780154a482";
+
+test("cancel forwards to Candybar's cancel route and answers the cancelled task (N2)", async () => {
+  const cancelled = task({ id: TASK_ID, action: "enrich", status: "failed", error: "cancelled by operator", finishedAt: "2026-11-03T17:46:00Z" });
+  const routes = { ...healthy(), [`POST /steward/tasks/${TASK_ID}/cancel`]: () => json(cancelled) };
+  const { impl, calls } = fake(routes);
+  const app = Fastify();
+  registerCandybarRoutes(app, { fetchImpl: impl, baseUrl: BASE });
+  await app.inject({ method: "GET", url: "/api/modules/candybar/list" });
+  const res = await app.inject({ method: "POST", url: `/api/modules/candybar/tasks/${TASK_ID.toUpperCase()}/cancel`, payload: {} });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as { ok: boolean; task: { id: string; status: string; error: string } };
+  assert.deepEqual([body.ok, body.task.id, body.task.status, body.task.error], [true, TASK_ID, "failed", "cancelled by operator"]);
+  assert.equal(calls.filter((c) => c.path === `/steward/tasks/${TASK_ID}/cancel`).length, 1, "the id is lowercased and forwarded once");
+  // The write dropped the caches: the next list goes back to Candybar.
+  await app.inject({ method: "GET", url: "/api/modules/candybar/list" });
+  assert.equal(calls.filter((c) => c.path === "/steward/tasks").length, 2);
+  await app.close();
+});
+
+test("cancel validates the task id, and Candybar's 409 and 404 come back as { error } with that status (N2)", async () => {
+  const app = Fastify();
+  const { impl, calls } = fake({
+    [`POST /steward/tasks/${TASK_ID}/cancel`]: () => json({ title: "Steward task already finished", detail: `task ${TASK_ID} is already succeeded` }, 409),
+    "POST /steward/tasks/01a1a47d-0000-7000-8000-000000000000/cancel": () => json({ title: "Steward task not found", detail: "no steward task with that id" }, 404)
+  });
+  registerCandybarRoutes(app, { fetchImpl: impl, baseUrl: BASE });
+  for (const id of ["not-a-uuid", "..%2F..%2Fcandybars", `${TASK_ID}x`]) {
+    const res = await app.inject({ method: "POST", url: `/api/modules/candybar/tasks/${id}/cancel`, payload: {} });
+    assert.equal(res.statusCode, 400, id);
+  }
+  assert.equal(calls.length, 0, "nothing invalid reaches Candybar");
+  const finished = await app.inject({ method: "POST", url: `/api/modules/candybar/tasks/${TASK_ID}/cancel`, payload: {} });
+  assert.equal(finished.statusCode, 409);
+  assert.deepEqual(finished.json(), { error: `task ${TASK_ID} is already succeeded` });
+  const unknown = await app.inject({ method: "POST", url: "/api/modules/candybar/tasks/01a1a47d-0000-7000-8000-000000000000/cancel", payload: {} });
+  assert.equal(unknown.statusCode, 404);
+  assert.deepEqual(unknown.json(), { error: "no steward task with that id" });
+  // Unreachable Candybar: 502.
+  const down = Fastify();
+  registerCandybarRoutes(down, { fetchImpl: (async () => { throw new Error("connect ECONNREFUSED"); }) as typeof fetch, baseUrl: BASE });
+  const r = await down.inject({ method: "POST", url: `/api/modules/candybar/tasks/${TASK_ID}/cancel`, payload: {} });
+  assert.equal(r.statusCode, 502);
+  await app.close();
+  await down.close();
+});

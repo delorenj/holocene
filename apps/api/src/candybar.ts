@@ -133,6 +133,11 @@ export type CandybarPayload = {
   window: { known: boolean; to?: string };
   /** Partial reads that did not fail the list (schedule window, last runs). */
   warnings: string[];
+  /**
+   * Set when the profiles or the steward tasks on the rows come from an older good read because the latest one failed
+   * (a timeout, a 5xx): how old each is, in seconds, at `generated_at`. Absent when both are fresh, or were never readable.
+   */
+  stale?: { profiles?: number; tasks?: number };
   candybars: CandybarRow[];
 };
 
@@ -411,12 +416,15 @@ export function composePayload(input: {
   lastRuns: Map<string, LastRun | null | undefined>;
   histories?: Map<string, RunResult[] | undefined>;
   lastRunErrors: number;
-  /** Absent when profiles could not be read. */
+  /** Absent when profiles were never readable (or the route is a 404). */
   profiles?: Map<string, Profile>;
   profilesError?: string;
-  /** Absent when steward tasks could not be read. */
+  /** When `profiles` is the last good read rather than a fresh one. */
+  profilesStaleAt?: number;
+  /** Absent when steward tasks were never readable (or the route is a 404). */
   tasks?: Task[];
   tasksError?: string;
+  tasksStaleAt?: number;
 }): CandybarPayload {
   const { now, definitions, fires, lastRuns, histories, profiles, tasks } = input;
   const candybars: CandybarRow[] = [...definitions].sort(byName).map((d) => {
@@ -437,8 +445,13 @@ export function composePayload(input: {
   const warnings: string[] = [];
   if (input.scheduleError) warnings.push(`next fires ${fires ? "from an older read" : "unavailable"}: ${input.scheduleError}`);
   if (input.lastRunErrors) warnings.push(`last run could not be refreshed for ${input.lastRunErrors} of ${candybars.length} candybars`);
-  if (input.profilesError) warnings.push(`profiles unavailable: ${input.profilesError}`);
-  if (input.tasksError) warnings.push(`steward tasks unavailable: ${input.tasksError}`);
+  const ageOf = (at: number) => Math.max(0, Math.round((now - at) / 1000));
+  if (input.profilesError) warnings.push(profiles && input.profilesStaleAt !== undefined ? `profiles from an older read (${ageOf(input.profilesStaleAt)}s ago): ${input.profilesError}` : `profiles unavailable: ${input.profilesError}`);
+  if (input.tasksError) warnings.push(tasks && input.tasksStaleAt !== undefined ? `steward tasks from an older read (${ageOf(input.tasksStaleAt)}s ago): ${input.tasksError}` : `steward tasks unavailable: ${input.tasksError}`);
+  const stale = {
+    ...(profiles && input.profilesStaleAt !== undefined ? { profiles: ageOf(input.profilesStaleAt) } : {}),
+    ...(tasks && input.tasksStaleAt !== undefined ? { tasks: ageOf(input.tasksStaleAt) } : {})
+  };
   return {
     generated_at: new Date(now).toISOString(),
     source: {
@@ -457,6 +470,7 @@ export function composePayload(input: {
     },
     window: fires ? { known: true, ...(input.windowTo ? { to: new Date(input.windowTo).toISOString() } : {}) } : { known: false },
     warnings,
+    ...(Object.keys(stale).length ? { stale } : {}),
     candybars
   };
 }
@@ -468,8 +482,8 @@ type Cached<T> = { at: number; value: T };
 type ListRead = { definitions: Definition[]; at?: number; down?: string };
 type ScheduleRead = { fires?: Map<string, number[]>; to?: number; error?: string; fingerprint: string };
 type LastRunEntry = { at: number; value: LastRun | null | undefined; history: RunResult[] | undefined; failed: boolean };
-type ProfilesRead = { profiles?: Map<string, Profile>; error?: string };
-type TasksRead = { tasks?: Task[]; error?: string };
+type ProfilesRead = { profiles?: Map<string, Profile>; error?: string; staleAt?: number };
+type TasksRead = { tasks?: Task[]; error?: string; staleAt?: number };
 
 let lastGoodList: Cached<Definition[]> | undefined;
 let listCache: Cached<ListRead> | undefined;
@@ -477,6 +491,11 @@ let scheduleCache: Cached<ScheduleRead> | undefined;
 const lastRunCache = new Map<string, LastRunEntry>();
 let profilesCache: Cached<ProfilesRead> | undefined;
 let tasksCache: Cached<TasksRead> | undefined;
+// The last good profiles and tasks. A transient failure of either read (a timeout, a 5xx) serves these, marked stale,
+// instead of switching every steward button off; only a read that never worked, or a 404 (an older Candybar without
+// the route), leaves the rows without them.
+let lastGoodProfiles: Cached<Map<string, Profile>> | undefined;
+let lastGoodTasks: Cached<Task[]> | undefined;
 let inflight: Promise<CandybarPayload> | undefined;
 /** Bumped by every write; a read that began before one does not repopulate the caches it just invalidated. */
 let generation = 0;
@@ -488,6 +507,8 @@ export function resetCandybarCache() {
   lastRunCache.clear();
   profilesCache = undefined;
   tasksCache = undefined;
+  lastGoodProfiles = undefined;
+  lastGoodTasks = undefined;
   inflight = undefined;
 }
 
@@ -532,6 +553,9 @@ async function readList(fetchImpl: Fetch, baseUrl: string, now: number): Promise
   return read;
 }
 
+/** A route Candybar does not serve (an older build): there is nothing to fall back on, and the buttons say so. */
+const isNotFound = (raw: Raw) => !raw.ok && /^HTTP 404\b/.test(raw.error);
+
 async function readProfiles(fetchImpl: Fetch, baseUrl: string, now: number): Promise<ProfilesRead> {
   if (profilesCache && now - profilesCache.at < LIST_TTL_MS) return profilesCache.value;
   const gen = generation;
@@ -544,7 +568,12 @@ async function readProfiles(fetchImpl: Fetch, baseUrl: string, now: number): Pro
       if (projected) profiles.set(projected.candybarId, (({ candybarId: _id, ...profile }) => profile)(projected));
     }
     read = { profiles };
-  } else read = { error: raw.ok ? "GET /profiles did not return { profiles }" : raw.error };
+    lastGoodProfiles = { at: now, value: profiles };
+  } else {
+    const error = raw.ok ? "GET /profiles did not return { profiles }" : raw.error;
+    if (isNotFound(raw)) lastGoodProfiles = undefined;
+    read = lastGoodProfiles ? { profiles: lastGoodProfiles.value, error, staleAt: lastGoodProfiles.at } : { error };
+  }
   if (gen === generation) profilesCache = { at: now, value: read };
   return read;
 }
@@ -555,8 +584,14 @@ async function readTasks(fetchImpl: Fetch, baseUrl: string, now: number): Promis
   const raw = await getJson(fetchImpl, baseUrl, `/steward/tasks?limit=${TASKS_LIMIT}`);
   let read: TasksRead;
   if (raw.ok && isRecord(raw.body) && Array.isArray(raw.body.tasks)) {
-    read = { tasks: raw.body.tasks.map(projectTask).filter((t): t is Task => t !== undefined) };
-  } else read = { error: raw.ok ? "GET /steward/tasks did not return { tasks }" : raw.error };
+    const tasks = raw.body.tasks.map(projectTask).filter((t): t is Task => t !== undefined);
+    read = { tasks };
+    lastGoodTasks = { at: now, value: tasks };
+  } else {
+    const error = raw.ok ? "GET /steward/tasks did not return { tasks }" : raw.error;
+    if (isNotFound(raw)) lastGoodTasks = undefined;
+    read = lastGoodTasks ? { tasks: lastGoodTasks.value, error, staleAt: lastGoodTasks.at } : { error };
+  }
   if (gen === generation) tasksCache = { at: now, value: read };
   return read;
 }
@@ -646,9 +681,9 @@ export async function readCandybars(opts: { fetchImpl?: Fetch; baseUrl?: string;
           errors: 0
         }
       : readLastRuns(fetchImpl, baseUrl, list.definitions.map((d) => d.id), now),
-    // With Candybar down, whatever was last read stands in; no further reads that would only time out.
-    list.down ? (profilesCache?.value ?? {}) : readProfiles(fetchImpl, baseUrl, now),
-    list.down ? (tasksCache?.value ?? {}) : readTasks(fetchImpl, baseUrl, now)
+    // With Candybar down, whatever was last read well stands in (marked stale); no further reads that would only time out.
+    list.down ? (lastGoodProfiles ? { profiles: lastGoodProfiles.value, staleAt: lastGoodProfiles.at } : {}) : readProfiles(fetchImpl, baseUrl, now),
+    list.down ? (lastGoodTasks ? { tasks: lastGoodTasks.value, staleAt: lastGoodTasks.at } : {}) : readTasks(fetchImpl, baseUrl, now)
   ]);
   return composePayload({
     now: clock(),
@@ -663,8 +698,10 @@ export async function readCandybars(opts: { fetchImpl?: Fetch; baseUrl?: string;
     lastRunErrors: runs.errors,
     profiles: profiles.profiles,
     profilesError: profiles.error,
+    profilesStaleAt: profiles.staleAt,
     tasks: tasks.tasks,
-    tasksError: tasks.error
+    tasksError: tasks.error,
+    tasksStaleAt: tasks.staleAt
   });
 }
 
@@ -1008,6 +1045,24 @@ export function registerCandybarRoutes(app: FastifyInstance, opts: { fetchImpl?:
     invalidateAfterWrite();
     const task = projectTask(r.body);
     return reply.status(r.status === 200 ? 200 : 202).send({ ok: true, ...(task ? { task } : {}) });
+  });
+
+  // Cancel a queued or running steward task. Candybar marks it failed with "cancelled by operator" (its failed fact
+  // first) and answers the Task; the steward notices within a minute and stops a run in progress. 409 when the task has
+  // already finished, 404 when it is unknown: both come back as { error } with that status.
+  app.post("/api/modules/candybar/tasks/:taskId/cancel", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const raw = (request.params as { taskId?: unknown }).taskId;
+    if (typeof raw !== "string" || !UUID.test(raw)) return bad(reply, "the task id must be a UUID");
+    const r = await sendJson(fetchImpl, baseUrl, "POST", `/steward/tasks/${raw.toLowerCase()}/cancel`);
+    if (!r.ok) {
+      // Whatever the refusal, the list may be behind (the task may have ended meanwhile): drop it.
+      if (r.status === 409 || r.status === 404) invalidateAfterWrite();
+      return refused(reply, r);
+    }
+    invalidateAfterWrite();
+    const task = projectTask(r.body);
+    return { ok: true, ...(task ? { task } : {}) };
   });
 
   app.get("/api/modules/candybar/:id/tasks", async (request, reply) => {
