@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyEvent, byTime, fireKey, fromSnapshot, markSkipped, setNoise } from "./schedule-model";
+import { applyEvent, byTime, fireKey, fromSnapshot, markSkipped, restOfDay, setNoise, zonedMidnight } from "./schedule-model";
 import type { SchedulePayload, WireRow } from "./types";
 
 // Frames as the live stream sent them on 2026-11-03 (holocene-view-contract.md, "Wire format").
@@ -130,4 +130,65 @@ test("markSkipped and setNoise update the local rows ahead of the stream", () =>
   setNoise(m, SYNC, true);
   assert.deepEqual([...m.fires.values()].filter((f) => f.candybarId === SYNC).map((f) => f.noise), [true, true]);
   assert.equal([...m.fires.values()].filter((f) => f.candybarId === HOOKS).some((f) => f.noise), false);
+});
+
+test("definition.changed with archived: true drops the candybar's rows, even the past runs a windowed stream still sends", () => {
+  const m = fromSnapshot(SNAP);
+  const r = applyEvent(m, "definition.changed", {
+    candybarId: SYNC,
+    change: "updated",
+    definition: { id: SYNC, name: "sync-jim-dropbox", schedule: "*/10 * * * *", enabled: false, archived: true, noise: false },
+    changes: { archived: true, enabled: false },
+    rows: [row({ fireTime: "2026-11-03T21:20:00+00:00", lastResult: "fail" })]
+  });
+  assert.equal(r, "ok", "no refetch needed: the rows are gone either way");
+  assert.equal([...m.fires.values()].some((f) => f.candybarId === SYNC), false);
+  assert.equal(m.fires.size, 3, "the other candybar's rows stay");
+});
+
+test("rows for an archived candybar are ignored until it is unarchived", () => {
+  const m = fromSnapshot(SNAP);
+  applyEvent(m, "definition.changed", { candybarId: SYNC, definition: { archived: true }, changes: { archived: true } });
+  assert.equal(applyEvent(m, "invocation.completed", { candybarId: SYNC, result: "success", row: row({ lastResult: "success" }) }), "ignored");
+  assert.equal(applyEvent(m, "skip.applied", { candybarId: SYNC, reason: "occurrence", row: row({ state: "upcoming", skipped: true }) }), "ignored");
+  assert.equal([...m.fires.values()].some((f) => f.candybarId === SYNC), false);
+  // A refetch whose list had not caught up yet still leaves it out.
+  const again = fromSnapshot(SNAP, m.archived);
+  assert.equal([...again.fires.values()].some((f) => f.candybarId === SYNC), false);
+  // Unarchived (windowless stream): the view refetches, and its rows count again.
+  assert.equal(applyEvent(again, "definition.changed", { candybarId: SYNC, definition: { archived: false, enabled: false }, changes: { archived: false } }), "refetch");
+  assert.equal(again.archived.has(SYNC), false);
+  assert.equal(applyEvent(again, "invocation.started", { candybarId: SYNC, row: row({}) }), "ok");
+});
+
+test("a fire knows its candybar's zone from the snapshot, and keeps it through row events", () => {
+  const m = fromSnapshot({ ...SNAP, candybars: SNAP.candybars.map((c, i) => (i === 0 ? { ...c, timezone: "America/New_York" } : c)) });
+  const key = fireKey(SYNC, "2026-11-03T21:30:00+00:00");
+  assert.equal(m.fires.get(key)?.timezone, "America/New_York");
+  applyEvent(m, "invocation.started", { candybarId: SYNC, row: row({}) });
+  assert.equal(m.fires.get(key)?.timezone, "America/New_York");
+  assert.equal(m.fires.get(fireKey(HOOKS, "2026-11-03T21:25:00+00:00"))?.timezone, undefined);
+});
+
+test("zonedMidnight is the instant a date begins in a zone, across DST changes", () => {
+  assert.equal(new Date(zonedMidnight("2026-11-04", "UTC")!).toISOString(), "2026-11-04T00:00:00.000Z");
+  assert.equal(new Date(zonedMidnight("2026-11-03", "America/New_York")!).toISOString(), "2026-11-03T05:00:00.000Z");
+  assert.equal(new Date(zonedMidnight("2026-11-01", "America/New_York")!).toISOString(), "2026-11-01T04:00:00.000Z", "EDT still holds at midnight on fall-back day");
+  assert.equal(new Date(zonedMidnight("2026-03-08", "America/New_York")!).toISOString(), "2026-03-08T05:00:00.000Z");
+  assert.equal(new Date(zonedMidnight("2026-11-04", "Asia/Tokyo")!).toISOString(), "2026-11-03T15:00:00.000Z");
+  assert.equal(zonedMidnight("Nov 4", "UTC"), undefined);
+  assert.equal(zonedMidnight("2026-11-04", "Not/AZone"), undefined);
+});
+
+test("restOfDay words a skip in the candybar's day on the viewer's clock", () => {
+  const now = Date.parse("2026-11-04T03:00:00Z"); // 10:00 PM in New York
+  const sameZone = restOfDay({ name: "restic-vault", fireT: Date.parse("2026-11-04T04:30:00Z"), zone: "America/New_York", now, viewer: "America/New_York", viewEnd: Date.parse("2026-11-04T05:00:00Z") });
+  assert.equal(sameZone.date, "2026-11-03", "11:30 PM in New York is still the 3rd there");
+  assert.equal(sameZone.confirm, "Skip every fire of restic-vault on 2026-11-03 (America/New_York), all day today?");
+  assert.equal(sameZone.beyondView, false);
+  const tokyo = restOfDay({ name: "jp", fireT: Date.parse("2026-11-04T03:30:00Z"), zone: "Asia/Tokyo", now, viewer: "America/New_York" });
+  assert.equal(tokyo.range, "10:00 AM today to 10:00 AM tomorrow EST");
+  const unknown = restOfDay({ name: "x", fireT: now, now, viewer: "America/New_York" });
+  assert.equal(unknown.date, undefined);
+  assert.match(unknown.confirm, /could not read that zone/);
 });

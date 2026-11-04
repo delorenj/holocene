@@ -15,6 +15,7 @@ export type RunResult = LastRun["result"];
 
 export type TaskAction = "enrich" | "fix" | "evaluate" | "refactor";
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed";
+export type TaskTokens = Partial<Record<"input" | "output" | "reasoning" | "cacheRead" | "cacheWrite" | "total", number>>;
 export type Task = {
   id: string;
   candybarId: string;
@@ -28,6 +29,9 @@ export type Task = {
   reportKey?: string;
   invocationId?: string;
   error?: string;
+  /** LLM spend of the task's session, when Candybar recorded it. */
+  costUsd?: number;
+  tokens?: TaskTokens;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -55,6 +59,9 @@ export type Evaluation = {
   axes: Partial<Record<AxisName, { rating: "good" | "fair" | "poor"; finding: string }>>;
   recommendation: string;
   followUp: "none" | "refactor" | "fix" | "archive";
+  /** How the follow-up went: queued, running, done, failed, or flagged (a protected candybar is never archived). */
+  followUpStatus?: string;
+  followUpTaskId?: string;
   reportKey: string;
   evaluatedAt?: string;
   taskId?: string;
@@ -103,7 +110,8 @@ export type ViewId = "all" | "active" | "inactive" | "failing" | "archived";
 
 // Payload of /api/modules/candybar/schedule (apps/api/src/candybar.ts).
 
-export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean };
+/** `timezone` is the candybar's own zone, absent when the API could not read the definitions. */
+export type ScheduleCandybar = { id: string; name: string; schedule: string; noise: boolean; timezone?: string };
 /** [candybar index, fireTime as Candybar wrote it, state, lastResult, skipped]. */
 export type ScheduleTuple = [number, string, FireState, "success" | "fail" | null, 0 | 1];
 export type SchedulePayload = { generated_at: string; from: string; to: string; candybars: ScheduleCandybar[]; rows: ScheduleTuple[] };

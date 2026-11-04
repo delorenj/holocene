@@ -1,6 +1,6 @@
 "use client";
 
-import { padHistory, summarizeHistory, taskChipLabel } from "./candybar-model";
+import { isStaleQueued, padHistory, summarizeHistory, taskChipLabel } from "./candybar-model";
 import type { CandybarRow, EvaluationOutcome, RunResult, Task } from "./types";
 
 // Small row signals: the 30-run health strip, the in-flight task chip and the evaluation outcome chip.
@@ -18,8 +18,15 @@ export function RunStrip({ history }: { history: RunResult[] | undefined }) {
   );
 }
 
-export function TaskChip({ task }: { task: Pick<Task, "action" | "status"> }) {
-  return <span className={`cb-task-chip is-${task.status}`} role="status">{taskChipLabel(task)}</span>;
+/** The in-flight task, with its age. Not a live region: it sits inside the row's button (whose name is set on its
+ *  own), and the page's announcer reports changes. */
+export function TaskChip({ task, now }: { task: Pick<Task, "action" | "status" | "createdAt" | "startedAt">; now: number }) {
+  const stale = isStaleQueued(task, now);
+  return (
+    <span className={`cb-task-chip is-${task.status}${stale ? " is-stale" : ""}`} title={stale ? "Queued for a while: is candybar-steward running?" : undefined}>
+      {taskChipLabel(task, now)}
+    </span>
+  );
 }
 
 const OUTCOME_HINT: Record<EvaluationOutcome, string> = {

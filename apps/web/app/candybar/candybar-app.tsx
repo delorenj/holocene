@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
-import { ActionBar } from "./action-bar";
-import { groupByProject, projectOf, splitViews, type Group } from "./candybar-model";
+import { ActionBar, Announcer } from "./action-bar";
+import { actionStore } from "./action-store";
+import { groupByProject, homeView, projectOf, rowDescription, rowName, splitViews, type Group } from "./candybar-model";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
 import { ProfileView, TasksView } from "./profile-panel";
 import { OutcomeChip, RunStrip, TaskChip, activeTask } from "./row-parts";
@@ -209,8 +210,8 @@ function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: str
       {run?.result === "fail" && run.errorMessage ? (
         <p className="cb-error"><span className="hub-label">Last failure</span>{run.errorMessage}</p>
       ) : null}
-      <ActionBar c={c} onChanged={onChanged} />
-      <ProfileView profile={c.profile} />
+      <ActionBar c={c} now={now} onChanged={onChanged} />
+      <ProfileView profile={c.profile} tasks={c.tasks} />
       <TasksView tasks={c.tasks} />
       <dl className="cb-dl">
         {dd.map(([k, v]) => (
@@ -238,13 +239,23 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = tru
   showProject?: boolean;
 }) {
   const panelId = `cb-panel-${c.id}`;
+  const descId = `cb-row-desc-${c.id}`;
   const words = describeCron(c.schedule);
   const task = activeTask(c);
   const project = projectOf(c);
   const outcome = c.profile?.evaluation?.outcome;
   return (
     <article className={`cb-row${c.enabled ? "" : " is-inactive"}${c.archived ? " is-archived" : ""}${open ? " is-open" : ""}`} data-candybar-id={c.id}>
-      <button type="button" className="cb-row-head" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle}>
+      {/* The button's name stays short (name, state, next fire); the rest of what the row shows is its description. */}
+      <button
+        type="button"
+        className="cb-row-head"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        aria-label={rowName(c, now, windowKnown)}
+        aria-describedby={descId}
+        onClick={onToggle}
+      >
         <span className="cb-sig"><Glyph signal={rowSignal(c)} size={12} /></span>
         <span className="cb-main">
           <span className="cb-name-line">
@@ -253,7 +264,7 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = tru
             {c.noise ? <span className="cb-flag">noise</span> : null}
             {project && showProject ? <span className="cb-project" title={`Project: ${project}`}>{project}</span> : null}
             {outcome ? <OutcomeChip outcome={outcome} /> : null}
-            {task ? <TaskChip task={task} /> : null}
+            {task ? <TaskChip task={task} now={now} /> : null}
           </span>
           {c.description ? <span className="cb-desc">{c.description}</span> : null}
           <span className="cb-meta">
@@ -268,6 +279,7 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = tru
           <RunStrip history={c.history} />
         </span>
       </button>
+      <span id={descId} hidden>{rowDescription(c, now)}</span>
       {open ? <Panel c={c} now={now} id={panelId} onChanged={onChanged} /> : null}
     </article>
   );
@@ -352,6 +364,33 @@ export function CandybarApp() {
   const list = usePoll<CandybarPayload>("/api/modules/candybar/list", POLL_MS);
   const reload = list.reload;
   const data = list.data;
+
+  // Tasks this page queued are shown from the POST's answer until the list has them.
+  useEffect(() => {
+    if (data) actionStore.reconcile(data.candybars);
+  }, [data]);
+
+  // A change that moves a row (Disable sends it to Inactive, Archive out of the view) remounts it, and focus would drop
+  // to the page. While an action's focus intent is live, a lost focus goes to the same button in the row's new place,
+  // else the row itself, else the view tab where the row now lives.
+  useEffect(() => {
+    const intent = actionStore.focusIntent();
+    if (!intent || !data) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const row = document.querySelector<HTMLElement>(`[data-candybar-id="${intent.candybarId}"]`);
+    const target = row?.querySelector<HTMLElement>(`[data-action="${intent.key}"]`) ?? row?.querySelector<HTMLElement>(".cb-row-head");
+    if (target) {
+      target.focus();
+      actionStore.clearFocusIntent();
+      return;
+    }
+    const c = data.candybars.find((x) => x.id === intent.candybarId);
+    if (c) {
+      tabRefs.current[homeView(c)]?.focus();
+      actionStore.clearFocusIntent();
+    }
+  }, [data, state.view, state.group]);
 
   // The search applies first; "Hide noise" then drops noisy candybars, except one whose last run failed: a failure
   // is never noise.
@@ -450,6 +489,7 @@ export function CandybarApp() {
       </header>
 
       <div className="hub-body">
+        <Announcer />
         <nav className="cb-modes" aria-label="Candybar views">
           {TABS.map((t) => (
             <a

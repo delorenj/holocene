@@ -34,12 +34,13 @@ test("Fix is offered after a failed last run or 3 failures in the last 10, never
   assert.equal(canFix(row()), false);
 });
 
-test("groupByProject orders projects A to Z, puts Unclassified last, and keeps the incoming order inside a group", () => {
+test("groupByProject orders projects A to Z, then Unclassified, then Unknown when profiles were unreadable", () => {
   const p = (name?: string) => ({ profile: name ? { project: { id: name, name, confidence: 1, method: "ledger" } } : null, n: name });
-  const rows = [{ ...p("b"), id: 1 }, { ...p(), id: 2 }, { ...p("a"), id: 3 }, { ...p("b"), id: 4 }, { ...p(), id: 5 }, { id: 6, profile: undefined }] as never[];
+  const rows = [{ ...p("b"), id: 1 }, { ...p(), id: 2 }, { id: 6, profile: undefined }, { ...p("a"), id: 3 }, { ...p("b"), id: 4 }, { ...p(), id: 5 }] as never[];
   const groups = groupByProject(rows);
-  assert.deepEqual(groups.map((g) => g.label), ["a", "b", "Unclassified"]);
-  assert.deepEqual(groups.map((g) => g.items.map((i: { id: number }) => i.id)), [[3], [1, 4], [2, 5, 6]]);
+  assert.deepEqual(groups.map((g) => g.label), ["a", "b", "Unclassified", "Unknown (profiles unavailable)"]);
+  assert.deepEqual(groups.map((g) => g.items.map((i: { id: number }) => i.id)), [[3], [1, 4], [2, 5], [6]]);
+  assert.deepEqual(groupByProject([{ profile: undefined }] as never[]).map((g) => g.label), ["Unknown (profiles unavailable)"], "never Unclassified when the data is missing");
   assert.deepEqual(groupByProject([]), []);
 });
 
@@ -50,9 +51,11 @@ test("splitViews keeps archived rows out of every other view", () => {
 });
 
 test("task chips and active actions", () => {
-  assert.equal(taskChipLabel({ action: "enrich", status: "running" }), "Enriching…");
-  assert.equal(taskChipLabel({ action: "refactor", status: "running" }), "Refactoring…");
-  assert.equal(taskChipLabel({ action: "fix", status: "queued" }), "Fix queued");
+  const at = "2026-11-03T17:00:00Z";
+  const now = Date.parse("2026-11-03T17:04:00Z");
+  assert.equal(taskChipLabel({ action: "enrich", status: "running", createdAt: at }), "Enriching");
+  assert.equal(taskChipLabel({ action: "refactor", status: "running", createdAt: at, startedAt: "2026-11-03T17:01:00Z" }, now), "Refactoring 3m", "running counts from the start");
+  assert.equal(taskChipLabel({ action: "fix", status: "queued", createdAt: at }, now), "Fix queued 4m", "queued counts from creation");
   const t = (action: "fix" | "evaluate") => ({ id: action, candybarId: "c", action, status: "running" as const, createdAt: "x" });
   assert.deepEqual([...activeActions({ tasks: { active: [t("fix"), t("evaluate")], latest: {} } })].sort(), ["evaluate", "fix"]);
   assert.equal(activeActions({}).size, 0);

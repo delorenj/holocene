@@ -503,6 +503,7 @@
 .hub-root .cb-outcome.is-orphaned { color: var(--ink-3); border-style: dashed; }
 .hub-root .cb-task-chip { color: var(--working); border-color: var(--working); text-transform: none; letter-spacing: 0; font-weight: 600; }
 .hub-root .cb-task-chip.is-queued { border-style: dashed; }
+.hub-root .cb-task-chip.is-stale { color: var(--broken); border-color: var(--broken); }
 
 /* Actions */
 .hub-root .cb-actions { display: flex; flex-direction: column; gap: 6px; }
@@ -520,16 +521,38 @@
   white-space: nowrap;
 }
 .hub-root .cb-act { height: 30px; padding: 0 12px; }
-.hub-root .cb-act:hover:not(:disabled),
-.hub-root .cb-fa:hover:not(:disabled) { background: var(--wash); border-color: var(--ink); }
-.hub-root .cb-act:disabled,
-.hub-root .cb-fa:disabled { opacity: 0.5; cursor: default; }
+.hub-root .cb-act:hover:not([aria-disabled="true"]),
+.hub-root .cb-fa:hover:not([aria-disabled="true"]) { background: var(--wash); border-color: var(--ink); }
+/* aria-disabled, not disabled: the button keeps focus and its place in the tab order, and says why. */
+.hub-root .cb-act[aria-disabled="true"],
+.hub-root .cb-fa[aria-disabled="true"] { color: var(--ink-3); border-style: dashed; cursor: default; }
 .hub-root .cb-act[aria-busy="true"],
-.hub-root .cb-fa[aria-busy="true"] { color: var(--working); border-color: var(--working); }
+.hub-root .cb-fa[aria-busy="true"],
+.hub-root .cb-act.is-running { color: var(--working); border-color: var(--working); }
+.hub-root .cb-act.is-queued { color: var(--working); border-color: var(--working); border-style: dashed; }
+.hub-root .cb-act.is-warn { color: var(--broken); border-color: var(--broken); }
+.hub-root .cb-act-why { margin: 0; font: 400 12px/17px var(--font-mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.hub-root .cb-act-why.is-warn { color: var(--broken); }
+.hub-root .cb-act-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 4px 8px;
+  font: 400 12.5px/18px var(--font-sans);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  overflow-wrap: anywhere;
+}
+.hub-root .cb-act-note.is-error { color: var(--broken); border-color: var(--broken); background: var(--cb-soft-fail); }
+.hub-root .cb-act-note.is-done { border-color: var(--cleared); }
+.hub-root .cb-act-note.is-info { border-style: dashed; }
+.hub-root .cb-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.hub-root .cb-follow-up.is-flagged { color: var(--pop); }
 .hub-root .cb-act:focus-visible,
 .hub-root .cb-fa:focus-visible,
 .hub-root .cb-fire-more:focus-visible { outline: 2px solid var(--pop); outline-offset: 2px; }
-.hub-root .cb-act-error { align-items: flex-start; overflow-wrap: anywhere; }
 
 /* The steward's overview */
 .hub-root .cb-ov, .hub-root .cb-eval, .hub-root .cb-tasks { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -623,7 +646,8 @@
 }
 .hub-root .cb-fa { height: 28px; padding: 0 10px; font-size: 11px; }
 .hub-root .cb-fire.is-next .cb-fa { color: var(--ground); background: transparent; border-color: var(--ground); }
-.hub-root .cb-fire.is-next .cb-fa:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: var(--ground); }
+.hub-root .cb-fire.is-next .cb-fa:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.12); border-color: var(--ground); }
+.hub-root .cb-fire.is-next .cb-fa[aria-disabled="true"] { color: var(--ground); opacity: 0.7; }
 
 @media (hover: hover) and (min-width: 601px) {
   .hub-root .cb-fire-columns,

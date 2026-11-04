@@ -1,7 +1,7 @@
 "use client";
 
 import { CopyRef } from "../hub/ui";
-import { ACTION_LABEL } from "./candybar-model";
+import { ACTION_LABEL, followUpLabel, taskOutcomeLabel, taskSpend } from "./candybar-model";
 import { OutcomeChip } from "./row-parts";
 import type { AxisName, Evaluation, Overview, Profile, RowTasks, Task, TaskAction } from "./types";
 
@@ -68,8 +68,10 @@ function OverviewView({ o, profile }: { o: Overview; profile: Profile }) {
 const AXES: AxisName[] = ["efficacy", "cost", "value", "usage", "alternatives"];
 const RATING_WORD = { good: "Good", fair: "Fair", poor: "Poor" } as const;
 
-function EvaluationView({ e }: { e: Evaluation }) {
+function EvaluationView({ e, tasks }: { e: Evaluation; tasks: RowTasks | undefined }) {
   const evaluated = stamp(e.evaluatedAt);
+  const child = e.followUp === "refactor" || e.followUp === "fix" ? tasks?.latest[e.followUp] : undefined;
+  const followUp = followUpLabel(e, child);
   return (
     <section className="cb-eval" aria-label="Evaluation">
       <h3 className="cb-sub-h">
@@ -90,14 +92,14 @@ function EvaluationView({ e }: { e: Evaluation }) {
       </dl>
       {e.recommendation ? <p className="cb-ov-p"><span className="cb-inline-h">Recommendation</span> {e.recommendation}</p> : null}
       <p className="cb-eval-foot">
-        <span><span className="cb-inline-h">Follow-up</span> {e.followUp}</span>
+        <span className={`cb-follow-up${e.followUpStatus === "flagged" ? " is-flagged" : ""}`}><span className="cb-inline-h">Follow-up</span> {followUp}</span>
         {e.reportKey ? <CopyRef value={e.reportKey} label={`report ${e.reportKey.split("/").pop()}`} /> : null}
       </p>
     </section>
   );
 }
 
-export function ProfileView({ profile }: { profile: Profile | null | undefined }) {
+export function ProfileView({ profile, tasks }: { profile: Profile | null | undefined; tasks?: RowTasks }) {
   if (profile === undefined) {
     return <p className="cb-empty-note">Profiles could not be read from Candybar, so there is no overview to show.</p>;
   }
@@ -108,7 +110,7 @@ export function ProfileView({ profile }: { profile: Profile | null | undefined }
       ) : (
         <p className="cb-empty-note">No overview yet. Press <strong>Enrich</strong> and the steward will read this candybar&rsquo;s source and write one.</p>
       )}
-      {profile?.evaluation ? <EvaluationView e={profile.evaluation} /> : null}
+      {profile?.evaluation ? <EvaluationView e={profile.evaluation} tasks={tasks} /> : null}
     </>
   );
 }
@@ -128,8 +130,10 @@ export function TasksView({ tasks }: { tasks: RowTasks | undefined }) {
             <span className="cb-task-head">
               <span className="cb-task-action">{ACTION_LABEL[t.action]}</span>
               <span className={`cb-task-status is-${t.status}`}>{STATUS_WORD[t.status]}</span>
-              {t.outcome ? <span className="cb-task-outcome">{t.outcome}</span> : null}
+              {t.outcome ? <span className="cb-task-outcome">{taskOutcomeLabel(t.outcome)}</span> : null}
+              {t.parentTaskId ? <span className="cb-task-when">follow-up of an evaluation</span> : null}
               <span className="cb-task-when">{stamp(t.finishedAt ?? t.startedAt ?? t.createdAt)}</span>
+              {taskSpend(t) ? <span className="cb-task-when">{taskSpend(t)}</span> : null}
             </span>
             {t.summary ? <span className="cb-task-summary">{t.summary}</span> : null}
             {t.error ? <span className="cb-task-error">{t.error}</span> : null}

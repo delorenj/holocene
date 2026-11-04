@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Glyph, formatDuration } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
+import { useActions } from "./action-bar";
+import { actionStore } from "./action-store";
 import { postAction } from "./candybar-api";
+import { fireActionKey, fireActionLabel, fireActionsFor, runFireAction, type FireAction } from "./fire-actions";
 import { applyEvent, byTime, emptyModel, fromSnapshot, markSkipped, setNoise, type Fire, type Model } from "./schedule-model";
 import { subscribeSchedule, type StreamStatus } from "./schedule-stream";
 import type { SchedulePayload } from "./types";
@@ -13,7 +16,8 @@ import type { SchedulePayload } from "./types";
 // solid, upcoming rows count down, and the list follows the day as it advances. One /schedule snapshot per local
 // day, then Candybar's stream patches it in place; a `reset` (Candybar restarted, or we fell too far behind) reloads
 // the snapshot once. Upcoming rows can be skipped (this fire, or the rest of the candybar's day) and any row's
-// candybar can be marked noise; Candybar applies it and its stream says so (the row also updates at once).
+// candybar can be marked noise; Candybar applies it and its stream says so (the row also updates at once). Buttons
+// that cannot act are aria-disabled (they keep focus); results go to the page's live region.
 
 const PAST_STEP = 40;
 const UPCOMING_STEP = 150;
@@ -58,18 +62,16 @@ function FireStatus({ f, next, now }: { f: Fire; next: boolean; now: number }) {
   return <span className="cb-fire-status is-none" title="no recorded run for this fire (coalesced, disabled, or still in flight)">no run</span>;
 }
 
-type FireAction = "skip" | "rest" | "noise";
-
 /** Skip (this fire), Skip rest of day and Mark noise. Beside the cron on hover or focus on desktop; behind a small
- *  trailing button on touch and narrow screens, where there is no hover. */
+ *  trailing button on touch and narrow screens, where there is no hover. The menu stays open after an action, so
+ *  focus stays in it (Skip disappears once the fire is skipped; focus then moves to the noise button). */
 function FireActions({ f, open, busy, onToggle, onAct }: {
   f: Fire;
   open: boolean;
-  busy: boolean;
+  busy: ReadonlySet<string>;
   onToggle: () => void;
   onAct: (action: FireAction) => void;
 }) {
-  const canSkip = f.state !== "past" && !f.skipped;
   const label = `${f.name} at ${CLOCK.format(f.t)}`;
   return (
     <>
@@ -83,9 +85,14 @@ function FireActions({ f, open, busy, onToggle, onAct }: {
         <span aria-hidden="true">{open ? "×" : "⋯"}</span>
       </button>
       <div className="cb-fire-actions" role="group" aria-label={`Actions for ${label}`}>
-        {canSkip ? <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("skip")}>Skip</button> : null}
-        {canSkip ? <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("rest")}>Skip rest of day</button> : null}
-        <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("noise")}>{f.noise ? "Unmark noise" : "Mark noise"}</button>
+        {fireActionsFor(f).map((a) => {
+          const on = busy.has(fireActionKey(f, a));
+          return (
+            <button key={a} type="button" className="cb-fa" data-fa={a} aria-disabled={on || undefined} aria-busy={on || undefined} onClick={() => onAct(a)}>
+              {on ? (a === "noise" ? (f.noise ? "Unmarking…" : "Marking…") : "Skipping…") : fireActionLabel(f, a)}
+            </button>
+          );
+        })}
       </div>
     </>
   );
@@ -97,7 +104,7 @@ function FireRow({ f, next, now, rowRef, onOpen, busy, onAct }: {
   now: number;
   rowRef?: (el: HTMLLIElement | null) => void;
   onOpen: (candybarId: string) => void;
-  busy: boolean;
+  busy: ReadonlySet<string>;
   onAct: (f: Fire, action: FireAction) => void;
 }) {
   const signal = fireSignal(f);
@@ -108,6 +115,7 @@ function FireRow({ f, next, now, rowRef, onOpen, busy, onAct }: {
       ref={rowRef}
       className={`cb-fire is-${f.state}${next ? " is-next" : ""}${f.lastResult === "fail" ? " is-fail" : ""}${f.skipped ? " is-skipped" : ""}${menu ? " is-menu" : ""}`}
       aria-current={next ? "time" : undefined}
+      data-fire-key={f.key}
     >
       <time className="cb-fire-time" dateTime={new Date(f.t).toISOString()}>{CLOCK.format(f.t)}</time>
       <span className="cb-fire-sig">{signal ? <Glyph signal={signal} /> : null}</span>
@@ -124,7 +132,7 @@ function FireRow({ f, next, now, rowRef, onOpen, busy, onAct }: {
       </a>
       <span className="cb-fire-cron" title={f.schedule}>{words ?? f.schedule}</span>
       <FireStatus f={f} next={next} now={now} />
-      <FireActions f={f} open={menu} busy={busy} onToggle={() => setMenu((m) => !m)} onAct={(a) => { setMenu(false); onAct(f, a); }} />
+      <FireActions f={f} open={menu} busy={busy} onToggle={() => setMenu((m) => !m)} onAct={(a) => onAct(f, a)} />
     </li>
   );
 }
@@ -156,7 +164,9 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   const nextEl = useRef<HTMLLIElement | null>(null);
   const controls = useRef<{ bump: () => void; refetch: () => void }>({ bump: () => undefined, refetch: () => undefined });
   const [notice, setNotice] = useState<string>();
-  const [busyKey, setBusyKey] = useState<string>();
+  const actions = useActions();
+  /** After an action that can remove the focused button (or the whole row), where focus goes. */
+  const focusAfter = useRef<{ key: string; neighbor?: string; until: number }>();
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
   const scrolledOnce = useRef(false);
   /** Scroll events before this instant are our own scrollIntoView, not the operator's. */
@@ -206,7 +216,8 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `${res.status} ${res.statusText}`);
         }
-        const model = fromSnapshot((await res.json()) as SchedulePayload);
+        // Candybars the stream archived stay out even if the API's list had not caught up yet.
+        const model = fromSnapshot((await res.json()) as SchedulePayload, modelRef.current.archived);
         if (!alive) return;
         // Events that arrived while the snapshot was read are applied on top; each is absolute state.
         let refetch = false;
@@ -226,7 +237,15 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
       }
     }
 
-    controls.current = { bump, refetch: () => void readSnapshot() };
+    // A refetch asked for by a row action buffers the stream like a `reset` does: events that land while the snapshot
+    // is read are applied on top of it, not to the model it replaces.
+    controls.current = {
+      bump,
+      refetch: () => {
+        loaded = false;
+        void readSnapshot();
+      }
+    };
 
     const close = subscribeSchedule({
       ...dayWindow,
@@ -273,27 +292,32 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   }, []);
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
-  const act = useCallback(async (f: Fire, action: FireAction) => {
-    if (action === "rest" && !window.confirm(`Skip every remaining fire of ${f.name} on the day of its ${CLOCK.format(f.t)} fire?\n\nCandybar applies it to that day in the candybar's own time zone.`)) return;
-    setBusyKey(f.key);
+  const act = useCallback(async (f: Fire, action: FireAction, neighbor: string | undefined) => {
     setNotice(undefined);
-    const r = action === "skip"
-      ? await postAction(f.candybarId, "skip", { fireTime: f.fireTime })
-      : action === "rest"
-        ? await postAction(f.candybarId, "skip-rest-of-day", { fireTime: f.fireTime })
-        : await postAction(f.candybarId, "noise", { noise: !f.noise });
-    setBusyKey(undefined);
-    if (!r.ok) {
-      const what = action === "skip" ? "Skip" : action === "rest" ? "Skip rest of day" : f.noise ? "Unmark noise" : "Mark noise";
-      fail(`${what} failed for ${f.name}: ${r.error}${r.status ? ` (${r.status})` : ""}`);
-      return;
-    }
-    // The stream says the same in a moment; the row need not wait for it.
-    if (action === "skip") markSkipped(modelRef.current, f.key);
-    else if (action === "noise") setNoise(modelRef.current, f.candybarId, !f.noise);
-    if (action === "rest") controls.current.refetch();
-    else controls.current.bump();
-  }, [fail]);
+    // The candybar's own zone: the fire's, else any other fire of the same candybar that carries it.
+    const zone = f.timezone ?? [...modelRef.current.fires.values()].find((x) => x.candybarId === f.candybarId && x.timezone)?.timezone;
+    const outcome = await runFireAction(f, action, {
+      store: actionStore,
+      post: postAction,
+      confirm: (t) => window.confirm(t),
+      zone,
+      viewEnd: Date.parse(dayWindow.to),
+      showNoise,
+      clock: (t) => CLOCK.format(t),
+      // The stream says the same in a moment; the row need not wait for it.
+      onSkipped: (key) => {
+        markSkipped(modelRef.current, key);
+        controls.current.bump();
+      },
+      onNoise: (id, noise) => {
+        setNoise(modelRef.current, id, noise);
+        controls.current.bump();
+      },
+      onRefetch: () => controls.current.refetch(),
+      onError: fail
+    });
+    if (outcome === "sent") focusAfter.current = { key: f.key, neighbor, until: Date.now() + 15_000 };
+  }, [fail, dayWindow, showNoise]);
 
   // ---------- what to show ----------
 
@@ -324,6 +348,28 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   const start = Math.max(0, pivot - pastShown);
   const end = Math.min(visible.length, pivot + upcomingShown);
   const rows = visible.slice(start, end);
+
+  // Skip leaves the row without its Skip buttons, and Mark noise can hide the row: when that drops focus, it goes to
+  // the row's noise button, else the next row (the one after it, else before it), else the list.
+  useEffect(() => {
+    const intent = focusAfter.current;
+    if (!intent) return;
+    if (Date.now() > intent.until) {
+      focusAfter.current = undefined;
+      return;
+    }
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const row = document.querySelector<HTMLElement>(`[data-fire-key="${intent.key}"]`);
+    const target =
+      row?.querySelector<HTMLElement>('[data-fa="noise"]') ??
+      (intent.neighbor ? document.querySelector<HTMLElement>(`[data-fire-key="${intent.neighbor}"] .cb-fire-name`) : null) ??
+      document.querySelector<HTMLElement>(".cb-fires");
+    if (target) {
+      target.focus();
+      focusAfter.current = undefined;
+    }
+  });
 
   const done = visible.filter((f) => f.state === "past");
   const failed = done.filter((f) => f.lastResult === "fail").length;
@@ -374,7 +420,19 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
     }
     const isNext = f === next;
     items.push(
-      <FireRow key={f.key} f={f} next={isNext} now={now} onOpen={onOpenDefinition} busy={busyKey === f.key} onAct={act} rowRef={isNext ? (el) => { nextEl.current = el; } : undefined} />
+      <FireRow
+        key={f.key}
+        f={f}
+        next={isNext}
+        now={now}
+        onOpen={onOpenDefinition}
+        busy={actions.busy}
+        onAct={(fire, a) => {
+          const i = rows.indexOf(fire);
+          void act(fire, a, (rows[i + 1] ?? rows[i - 1])?.key);
+        }}
+        rowRef={isNext ? (el) => { nextEl.current = el; } : undefined}
+      />
     );
   }
 
@@ -392,7 +450,8 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
             {noisyFailures.length > 3 ? `, and ${plural(noisyFailures.length - 3, "other noisy candybar")}` : ""} today; their fires are hidden.
           </p>
         ) : null}
-        {notice ? <p className="hub-error" role="alert"><span className="hub-label">Failed</span>{notice}</p> : null}
+        {/* Announced by the page's alert region; shown here for eight seconds. */}
+        {notice ? <p className="hub-error"><span className="hub-label">Failed</span>{notice}</p> : null}
         {stream.status === "reconnecting" ? (
           <p className="hub-error" role="status"><span className="hub-label">Stream</span>{stream.detail ?? "Reconnecting."} The rows shown may be behind.</p>
         ) : null}
@@ -439,7 +498,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
               Show earlier fires ({start} more)
             </button>
           ) : null}
-          <ol className="cb-fires" aria-label="Today's fires">{items}</ol>
+          <ol className="cb-fires" aria-label="Today's fires" tabIndex={-1}>{items}</ol>
           {end < visible.length ? (
             <button type="button" className="cb-more" onClick={() => setUpcomingShown((n) => n + UPCOMING_STEP * 2)}>
               Show later fires ({visible.length - end} more)
