@@ -171,6 +171,10 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   const scrolledOnce = useRef(false);
   /** Scroll events before this instant are our own scrollIntoView, not the operator's. */
   const ourScrollUntil = useRef(0);
+  // The page is prerendered on a UTC server; the viewer's zone name is only known in the browser, so it is rendered
+  // after mount (rendering it during hydration was React error #418 for every viewer outside UTC).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     let alive = true;
@@ -401,7 +405,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
 
   // ---------- render ----------
 
-  const zone = zoneName(now);
+  const zone = mounted ? zoneName(now) : "";
   const statement =
     load.status !== "ok"
       ? load.status === "error" ? "The day's schedule could not be read." : "Reading today's schedule…"
@@ -512,7 +516,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
         </div>
       )}
       <p className="cb-note">
-        Times are {zone}. Noise is the explicit collection plus anything firing more often than every {NOISE_MINUTES} min; hidden noisy failures are counted above the list.
+        Times are {zone || "your local time"}. Noise is the explicit collection plus anything firing more often than every {NOISE_MINUTES} min; hidden noisy failures are counted above the list.
       </p>
     </>
   );
