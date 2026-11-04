@@ -147,7 +147,12 @@ export function stewardControl(
   const unavailable = stewardUnavailable(c);
   if (unavailable) return { label, disabled: true, busy: false, reason: unavailable };
   const task = inFlight(c, action, opts.pending);
-  if (!task) return { label, disabled: false, busy: false };
+  if (!task) {
+    // Candybar refuses a fix while a refactor is queued or running (one change to a job at a time).
+    const refactor = action === "fix" ? inFlight(c, "refactor") : undefined;
+    if (refactor) return { label, disabled: true, busy: false, reason: `${taskChipLabel(refactor, now)}: Fix waits until it ends (one change to a job at a time).` };
+    return { label, disabled: false, busy: false };
+  }
   const stale = isStaleQueued(task, now);
   return {
     label: taskChipLabel(task, now),
@@ -196,11 +201,13 @@ export function doneNote(name: string, key: "noise" | "enabled" | "archived", va
 }
 
 /** A steward 409 for a twin task is information, not a failure: "Already running: Evaluate started 3m ago". */
-export function conflictNote(action: TaskAction, twin: Pick<Task, "status" | "createdAt" | "startedAt"> | undefined, now: number): string {
-  const label = ACTION_LABEL[action];
-  if (!twin) return `Already queued or running: ${label}.`;
-  if (twin.status === "running") return `Already running: ${label} started ${age(taskAge(twin, now))} ago.`;
-  const queued = `Already queued: ${label} queued ${age(taskAge(twin, now))} ago.`;
+export function conflictNote(action: TaskAction, twin: Pick<Task, "status" | "createdAt" | "startedAt" | "action"> | undefined, now: number): string {
+  if (!twin) return `Already queued or running: ${ACTION_LABEL[action]}.`;
+  // A fix is also refused while a refactor is in flight (one change to a job at a time): the twin says which.
+  const label = ACTION_LABEL[twin.action ?? action];
+  const other = twin.action && twin.action !== action ? " One change to a job at a time." : "";
+  if (twin.status === "running") return `Already running: ${label} started ${age(taskAge(twin, now))} ago.${other}`;
+  const queued = `Already queued: ${label} queued ${age(taskAge(twin, now))} ago.${other}`;
   return isStaleQueued(twin, now) ? `${queued} Is candybar-steward running?` : queued;
 }
 

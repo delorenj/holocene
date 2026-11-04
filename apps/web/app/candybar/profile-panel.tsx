@@ -115,6 +115,12 @@ export function ProfileView({ profile, tasks }: { profile: Profile | null | unde
   );
 }
 
+/** "follow-up of the evaluate" (a refactor or fix it queued), "follow-up of the fix" (an enrich after commits). */
+function followUpOf(t: Task, known: Task[]): string {
+  const parent = known.find((x) => x.id === t.parentTaskId);
+  return parent ? `follow-up of the ${ACTION_LABEL[parent.action].toLowerCase()}` : "follow-up";
+}
+
 const STATUS_WORD: Record<Task["status"], string> = { queued: "queued", running: "running", succeeded: "succeeded", failed: "failed" };
 const ORDER: TaskAction[] = ["enrich", "evaluate", "fix", "refactor"];
 
@@ -131,7 +137,7 @@ export function TasksView({ tasks }: { tasks: RowTasks | undefined }) {
               <span className="cb-task-action">{ACTION_LABEL[t.action]}</span>
               <span className={`cb-task-status is-${t.status}`}>{STATUS_WORD[t.status]}</span>
               {t.outcome ? <span className="cb-task-outcome">{taskOutcomeLabel(t.outcome)}</span> : null}
-              {t.parentTaskId ? <span className="cb-task-when">follow-up of an evaluation</span> : null}
+              {t.parentTaskId ? <span className="cb-task-when">{followUpOf(t, latest)}</span> : null}
               <span className="cb-task-when">{stamp(t.finishedAt ?? t.startedAt ?? t.createdAt)}</span>
               {taskSpend(t) ? <span className="cb-task-when">{taskSpend(t)}</span> : null}
             </span>

@@ -44,6 +44,14 @@ test("a steward button tells queued from running, with the task's age", () => {
   assert.equal(stewardControl(row(), "evaluate", NOW, { busy: true }).label, "Queuing…");
 });
 
+test("Fix is off while a refactor is in flight (Candybar allows one change to a job at a time)", () => {
+  const c = row({ tasks: { active: [task({ action: "refactor", status: "running", startedAt: "2026-11-03T17:07:00Z" })], latest: {} } });
+  const fix = stewardControl(c, "fix", NOW);
+  assert.deepEqual([fix.label, fix.disabled], ["Fix", true]);
+  assert.equal(fix.reason, "Refactoring 3m: Fix waits until it ends (one change to a job at a time).");
+  assert.equal(stewardControl(c, "evaluate", NOW).disabled, false, "an evaluate may run beside it");
+});
+
 test("a task queued for more than 2 minutes says the steward may be down", () => {
   const c = stewardControl(row({ tasks: { active: [task({ createdAt: "2026-11-03T17:05:00Z" })], latest: {} } }), "evaluate", NOW);
   assert.equal(c.label, "Evaluate queued 5m");
@@ -92,9 +100,14 @@ test("Fix and Evaluate confirm first and say what will happen", () => {
 
 test("a 409 for a twin task reads as information", () => {
   assert.equal(conflictNote("evaluate", task({ status: "running", startedAt: "2026-11-03T17:07:00Z" }), NOW), "Already running: Evaluate started 3m ago.");
-  assert.equal(conflictNote("enrich", task({ createdAt: "2026-11-03T17:09:00Z" }), NOW), "Already queued: Enrich queued 1m ago.");
-  assert.equal(conflictNote("enrich", task({ createdAt: "2026-11-03T17:00:00Z" }), NOW), "Already queued: Enrich queued 10m ago. Is candybar-steward running?");
+  assert.equal(conflictNote("enrich", task({ action: "enrich", createdAt: "2026-11-03T17:09:00Z" }), NOW), "Already queued: Enrich queued 1m ago.");
+  assert.equal(conflictNote("enrich", task({ action: "enrich", createdAt: "2026-11-03T17:00:00Z" }), NOW), "Already queued: Enrich queued 10m ago. Is candybar-steward running?");
   assert.equal(conflictNote("fix", undefined, NOW), "Already queued or running: Fix.");
+  assert.equal(
+    conflictNote("fix", task({ action: "refactor", status: "running", startedAt: "2026-11-03T17:05:00Z" }), NOW),
+    "Already running: Refactor started 5m ago. One change to a job at a time.",
+    "a fix is refused while a refactor runs; the note names the refactor"
+  );
 });
 
 test("the steward's newer fields read as words: follow-up status, outcomes, spend", () => {
