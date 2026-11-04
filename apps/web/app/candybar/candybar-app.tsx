@@ -227,13 +227,15 @@ function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: str
   );
 }
 
-function Row({ c, now, windowKnown, open, onToggle, onChanged }: {
+function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = true }: {
   c: CandybarRow;
   now: number;
   windowKnown: boolean;
   open: boolean;
   onToggle: () => void;
   onChanged: () => void;
+  /** False when the rows sit under a project heading, which already says it. */
+  showProject?: boolean;
 }) {
   const panelId = `cb-panel-${c.id}`;
   const words = describeCron(c.schedule);
@@ -249,7 +251,7 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged }: {
             <span className="cb-name">{c.name}</span>
             {!c.enabled || c.archived ? <StateBadge c={c} /> : null}
             {c.noise ? <span className="cb-flag">noise</span> : null}
-            {project ? <span className="cb-project" title={`Project: ${project}`}>{project}</span> : null}
+            {project && showProject ? <span className="cb-project" title={`Project: ${project}`}>{project}</span> : null}
             {outcome ? <OutcomeChip outcome={outcome} /> : null}
             {task ? <TaskChip task={task} /> : null}
           </span>
@@ -388,7 +390,7 @@ export function CandybarApp() {
   const toggle = (id: string) => update({ open: state.open === id ? undefined : id });
   const windowKnown = data?.window.known ?? false;
   const rows = (items: CandybarRow[]) =>
-    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} onChanged={reload} />);
+    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} onChanged={reload} showProject={state.group !== "project"} />);
 
   const [streamSource, setStreamSource] = useState<Source>();
   const sources: Source[] = state.tab === "schedule"
