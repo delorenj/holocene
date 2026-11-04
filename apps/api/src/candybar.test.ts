@@ -5,8 +5,15 @@ import {
   composePayload,
   indexFires,
   nextFireAfter,
+  localDate,
+  parseFireTime,
+  problemMessage,
   projectDefinition,
+  projectHistory,
   projectLastRun,
+  projectProfile,
+  projectTask,
+  summarizeTasks,
   readCandybars,
   registerCandybarRoutes,
   resetCandybarCache,
@@ -82,14 +89,16 @@ const healthy = (): Routes => ({
   "/schedule": () => json(SCHEDULE),
   [`/candybars/${SMOKE.id}/invocations`]: () => json({ candybarId: SMOKE.id, invocations: [invocation()] }),
   [`/candybars/${HONDA.id}/invocations`]: () => json({ candybarId: HONDA.id, invocations: [] }),
-  [`/candybars/${BACKUP.id}/invocations`]: () => json({ candybarId: BACKUP.id, invocations: [invocation({ candybarId: BACKUP.id, result: "fail", exitCode: 1, errorMessage: "restic:\n  repository locked" })] })
+  [`/candybars/${BACKUP.id}/invocations`]: () => json({ candybarId: BACKUP.id, invocations: [invocation({ candybarId: BACKUP.id, result: "fail", exitCode: 1, errorMessage: "restic:\n  repository locked" })] }),
+  "/profiles": () => json({ profiles: [] }),
+  "/steward/tasks": () => json({ tasks: [] })
 });
 
 beforeEach(() => resetCandybarCache());
 
 test("projectDefinition keeps only contract fields and rejects rows without identity", () => {
   const d = projectDefinition({ ...SMOKE, runner: { kind: "exec" }, entrypoint: "/x" });
-  assert.deepEqual(Object.keys(d ?? {}).sort(), ["createdAt", "description", "enabled", "id", "name", "noise", "schedule", "tags", "timezone"]);
+  assert.deepEqual(Object.keys(d ?? {}).sort(), ["archived", "createdAt", "description", "enabled", "id", "name", "noise", "schedule", "tags", "timezone"]);
   assert.equal(projectDefinition({ ...SMOKE, enabled: "yes" }), undefined);
   assert.equal(projectDefinition({ name: "x", schedule: "* * * * *", enabled: true }), undefined);
   assert.equal(projectDefinition({ ...SMOKE, timezone: undefined })?.timezone, "UTC");
@@ -124,7 +133,7 @@ test("composePayload counts active, inactive and failing; disabled candybars nev
     lastRuns: new Map([[BACKUP.id, { result: "fail", startedAt: "2026-11-03T04:30:00Z" }]]),
     lastRunErrors: 0
   });
-  assert.deepEqual(p.counts, { total: 3, active: 2, inactive: 1, failing: 1 });
+  assert.deepEqual(p.counts, { total: 3, active: 2, inactive: 1, failing: 1, archived: 0 });
   assert.deepEqual(p.candybars.map((c) => c.name), ["backup-drill", "deploy-smoke", "honda-hunt-daily-check"]);
   assert.equal(p.candybars.find((c) => c.id === HONDA.id)?.nextFire, null);
   assert.equal("lastRun" in p.candybars.find((c) => c.id === SMOKE.id)!, false, "an unread last run is absent, not null");
@@ -134,7 +143,7 @@ test("readCandybars composes list, next fire and last run from the live shapes",
   const { impl, calls } = fakeFetch(healthy());
   const p = await readCandybars({ fetchImpl: impl, baseUrl: "http://candybar.test", now: () => NOW });
   assert.equal(p.source.down, undefined);
-  assert.deepEqual(p.counts, { total: 3, active: 2, inactive: 1, failing: 1 });
+  assert.deepEqual(p.counts, { total: 3, active: 2, inactive: 1, failing: 1, archived: 0 });
   assert.equal(p.window.known, true);
   assert.deepEqual(p.warnings, []);
   const smoke = p.candybars.find((c) => c.id === SMOKE.id)!;
