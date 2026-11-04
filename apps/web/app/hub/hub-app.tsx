@@ -34,6 +34,9 @@ function writeUrl(view: View, focus: string | undefined, push: boolean) {
 export function usePoll<T>(url: string, intervalMs = POLL_MS) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<string>();
+  // Bumping it re-runs the effect: an immediate read, then the usual cadence. A write calls it to show its own result.
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -54,8 +57,8 @@ export function usePoll<T>(url: string, intervalMs = POLL_MS) {
       live = false;
       clearTimeout(timer);
     };
-  }, [url, intervalMs]);
-  return { data, error };
+  }, [url, intervalMs, nonce]);
+  return { data, error, reload };
 }
 
 export function useTheme(): [Theme, () => void] {

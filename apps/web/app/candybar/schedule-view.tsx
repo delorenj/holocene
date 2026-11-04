@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Glyph, formatDuration } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
-import { applyEvent, byTime, emptyModel, fromSnapshot, type Fire, type Model } from "./schedule-model";
+import { postAction } from "./candybar-api";
+import { applyEvent, byTime, emptyModel, fromSnapshot, markSkipped, setNoise, type Fire, type Model } from "./schedule-model";
 import { subscribeSchedule, type StreamStatus } from "./schedule-stream";
 import type { SchedulePayload } from "./types";
 
 // The Schedule view: today's fires, oldest at the top. Past rows are greyed with their result, the next fire is
 // solid, upcoming rows count down, and the list follows the day as it advances. One /schedule snapshot per local
 // day, then Candybar's stream patches it in place; a `reset` (Candybar restarted, or we fell too far behind) reloads
-// the snapshot once. Read-only: skips and noise edits stay with the `candybar` CLI.
+// the snapshot once. Upcoming rows can be skipped (this fire, or the rest of the candybar's day) and any row's
+// candybar can be marked noise; Candybar applies it and its stream says so (the row also updates at once).
 
 const PAST_STEP = 40;
 const UPCOMING_STEP = 150;
@@ -56,19 +58,55 @@ function FireStatus({ f, next, now }: { f: Fire; next: boolean; now: number }) {
   return <span className="cb-fire-status is-none" title="no recorded run for this fire (coalesced, disabled, or still in flight)">no run</span>;
 }
 
-function FireRow({ f, next, now, rowRef, onOpen }: {
+type FireAction = "skip" | "rest" | "noise";
+
+/** Skip (this fire), Skip rest of day and Mark noise. Beside the cron on hover or focus on desktop; behind a small
+ *  trailing button on touch and narrow screens, where there is no hover. */
+function FireActions({ f, open, busy, onToggle, onAct }: {
+  f: Fire;
+  open: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onAct: (action: FireAction) => void;
+}) {
+  const canSkip = f.state !== "past" && !f.skipped;
+  const label = `${f.name} at ${CLOCK.format(f.t)}`;
+  return (
+    <>
+      <button
+        type="button"
+        className="cb-fire-more"
+        aria-expanded={open}
+        aria-label={`Actions for ${label}`}
+        onClick={onToggle}
+      >
+        <span aria-hidden="true">{open ? "×" : "⋯"}</span>
+      </button>
+      <div className="cb-fire-actions" role="group" aria-label={`Actions for ${label}`}>
+        {canSkip ? <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("skip")}>Skip</button> : null}
+        {canSkip ? <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("rest")}>Skip rest of day</button> : null}
+        <button type="button" className="cb-fa" disabled={busy} onClick={() => onAct("noise")}>{f.noise ? "Unmark noise" : "Mark noise"}</button>
+      </div>
+    </>
+  );
+}
+
+function FireRow({ f, next, now, rowRef, onOpen, busy, onAct }: {
   f: Fire;
   next: boolean;
   now: number;
   rowRef?: (el: HTMLLIElement | null) => void;
   onOpen: (candybarId: string) => void;
+  busy: boolean;
+  onAct: (f: Fire, action: FireAction) => void;
 }) {
   const signal = fireSignal(f);
   const words = describeCron(f.schedule);
+  const [menu, setMenu] = useState(false);
   return (
     <li
       ref={rowRef}
-      className={`cb-fire is-${f.state}${next ? " is-next" : ""}${f.lastResult === "fail" ? " is-fail" : ""}${f.skipped ? " is-skipped" : ""}`}
+      className={`cb-fire is-${f.state}${next ? " is-next" : ""}${f.lastResult === "fail" ? " is-fail" : ""}${f.skipped ? " is-skipped" : ""}${menu ? " is-menu" : ""}`}
       aria-current={next ? "time" : undefined}
     >
       <time className="cb-fire-time" dateTime={new Date(f.t).toISOString()}>{CLOCK.format(f.t)}</time>
@@ -86,6 +124,7 @@ function FireRow({ f, next, now, rowRef, onOpen }: {
       </a>
       <span className="cb-fire-cron" title={f.schedule}>{words ?? f.schedule}</span>
       <FireStatus f={f} next={next} now={now} />
+      <FireActions f={f} open={menu} busy={busy} onToggle={() => setMenu((m) => !m)} onAct={(a) => { setMenu(false); onAct(f, a); }} />
     </li>
   );
 }
@@ -115,6 +154,10 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   const [upcomingShown, setUpcomingShown] = useState(UPCOMING_STEP);
   const [follow, setFollow] = useState(true);
   const nextEl = useRef<HTMLLIElement | null>(null);
+  const controls = useRef<{ bump: () => void; refetch: () => void }>({ bump: () => undefined, refetch: () => undefined });
+  const [notice, setNotice] = useState<string>();
+  const [busyKey, setBusyKey] = useState<string>();
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
   const scrolledOnce = useRef(false);
   /** Scroll events before this instant are our own scrollIntoView, not the operator's. */
   const ourScrollUntil = useRef(0);
@@ -183,6 +226,8 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
       }
     }
 
+    controls.current = { bump, refetch: () => void readSnapshot() };
+
     const close = subscribeSchedule({
       ...dayWindow,
       onStatus: (status, detail) => alive && setStream({ status, detail }),
@@ -218,6 +263,37 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
     });
   }, [stream, onSource]);
   useEffect(() => () => onSource(undefined), [onSource]);
+
+  // ---------- row actions ----------
+
+  const fail = useCallback((text: string) => {
+    setNotice(text);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(undefined), 8_000);
+  }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  const act = useCallback(async (f: Fire, action: FireAction) => {
+    if (action === "rest" && !window.confirm(`Skip every remaining fire of ${f.name} on the day of its ${CLOCK.format(f.t)} fire?\n\nCandybar applies it to that day in the candybar's own time zone.`)) return;
+    setBusyKey(f.key);
+    setNotice(undefined);
+    const r = action === "skip"
+      ? await postAction(f.candybarId, "skip", { fireTime: f.fireTime })
+      : action === "rest"
+        ? await postAction(f.candybarId, "skip-rest-of-day", { fireTime: f.fireTime })
+        : await postAction(f.candybarId, "noise", { noise: !f.noise });
+    setBusyKey(undefined);
+    if (!r.ok) {
+      const what = action === "skip" ? "Skip" : action === "rest" ? "Skip rest of day" : f.noise ? "Unmark noise" : "Mark noise";
+      fail(`${what} failed for ${f.name}: ${r.error}${r.status ? ` (${r.status})` : ""}`);
+      return;
+    }
+    // The stream says the same in a moment; the row need not wait for it.
+    if (action === "skip") markSkipped(modelRef.current, f.key);
+    else if (action === "noise") setNoise(modelRef.current, f.candybarId, !f.noise);
+    if (action === "rest") controls.current.refetch();
+    else controls.current.bump();
+  }, [fail]);
 
   // ---------- what to show ----------
 
@@ -298,7 +374,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
     }
     const isNext = f === next;
     items.push(
-      <FireRow key={f.key} f={f} next={isNext} now={now} onOpen={onOpenDefinition} rowRef={isNext ? (el) => { nextEl.current = el; } : undefined} />
+      <FireRow key={f.key} f={f} next={isNext} now={now} onOpen={onOpenDefinition} busy={busyKey === f.key} onAct={act} rowRef={isNext ? (el) => { nextEl.current = el; } : undefined} />
     );
   }
 
@@ -316,6 +392,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
             {noisyFailures.length > 3 ? `, and ${plural(noisyFailures.length - 3, "other noisy candybar")}` : ""} today; their fires are hidden.
           </p>
         ) : null}
+        {notice ? <p className="hub-error" role="alert"><span className="hub-label">Failed</span>{notice}</p> : null}
         {stream.status === "reconnecting" ? (
           <p className="hub-error" role="status"><span className="hub-label">Stream</span>{stream.detail ?? "Reconnecting."} The rows shown may be behind.</p>
         ) : null}
@@ -355,6 +432,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
             <span>Candybar</span>
             <span>Schedule</span>
             <span>Result · countdown</span>
+            <span className="cb-fire-colmore" />
           </div>
           {start > 0 ? (
             <button type="button" className="cb-more" onClick={() => setPastShown((n) => n + PAST_STEP * 5)}>

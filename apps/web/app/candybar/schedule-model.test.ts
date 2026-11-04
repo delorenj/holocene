@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyEvent, byTime, fireKey, fromSnapshot } from "./schedule-model";
+import { applyEvent, byTime, fireKey, fromSnapshot, markSkipped, setNoise } from "./schedule-model";
 import type { SchedulePayload, WireRow } from "./types";
 
 // Frames as the live stream sent them on 2026-11-03 (holocene-view-contract.md, "Wire format").
@@ -118,4 +118,16 @@ test("a rest-of-day skip asks for a refetch: the stream carries only its first r
 
 test("a malformed snapshot is refused rather than rendered empty", () => {
   assert.throws(() => fromSnapshot({ rows: null } as unknown as SchedulePayload), /malformed/);
+});
+
+test("markSkipped and setNoise update the local rows ahead of the stream", () => {
+  const m = fromSnapshot(SNAP);
+  const key = fireKey(SYNC, "2026-11-03T21:30:00+00:00");
+  assert.equal(markSkipped(m, key), true);
+  assert.equal(m.fires.get(key)?.skipped, true);
+  assert.equal(markSkipped(m, key), false, "already skipped");
+  assert.equal(markSkipped(m, "nope"), false);
+  setNoise(m, SYNC, true);
+  assert.deepEqual([...m.fires.values()].filter((f) => f.candybarId === SYNC).map((f) => f.noise), [true, true]);
+  assert.equal([...m.fires.values()].filter((f) => f.candybarId === HOOKS).some((f) => f.noise), false);
 });

@@ -144,3 +144,18 @@ export function applyEvent(m: Model, name: string, data: unknown): "ok" | "refet
 }
 
 export const byTime = (a: Fire, b: Fire) => a.t - b.t || a.name.localeCompare(b.name);
+
+/** Marks one fire skipped as soon as Candybar accepted the skip; the stream's `skip.applied` then says the same. */
+export function markSkipped(m: Model, key: string): boolean {
+  const f = m.fires.get(key);
+  if (!f || f.skipped) return false;
+  m.fires.set(key, { ...f, skipped: true });
+  m.version += 1;
+  return true;
+}
+
+/** Sets the noise flag on every fire of a candybar, ahead of the stream's `definition.changed`. */
+export function setNoise(m: Model, candybarId: string, noise: boolean): void {
+  for (const [k, f] of m.fires) if (f.candybarId === candybarId && f.noise !== noise) m.fires.set(k, { ...f, noise });
+  m.version += 1;
+}

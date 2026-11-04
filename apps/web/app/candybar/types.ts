@@ -11,6 +11,63 @@ export type LastRun = {
   errorMessage?: string;
 };
 
+export type RunResult = LastRun["result"];
+
+export type TaskAction = "enrich" | "fix" | "evaluate" | "refactor";
+export type TaskStatus = "queued" | "running" | "succeeded" | "failed";
+export type Task = {
+  id: string;
+  candybarId: string;
+  action: TaskAction;
+  status: TaskStatus;
+  model?: string;
+  parentTaskId?: string;
+  sessionId?: string;
+  outcome?: string;
+  summary?: string;
+  reportKey?: string;
+  invocationId?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+};
+
+export type Overview = {
+  summary: string;
+  purpose: string;
+  behavior: string[];
+  inputs: string[];
+  outputs: string[];
+  sideEffects: string[];
+  dependencies: string[];
+  failureModes: string[];
+  verification: string[];
+  runbook: string[];
+  source: { repo: string | null; paths: string[]; runner: string };
+  cadenceNote: string;
+};
+export type EvaluationOutcome = "Nominal" | "Suboptimal" | "Drifted" | "Orphaned";
+export type AxisName = "efficacy" | "cost" | "value" | "usage" | "alternatives";
+export type Evaluation = {
+  outcome: EvaluationOutcome;
+  summary: string;
+  axes: Partial<Record<AxisName, { rating: "good" | "fair" | "poor"; finding: string }>>;
+  recommendation: string;
+  followUp: "none" | "refactor" | "fix" | "archive";
+  reportKey: string;
+  evaluatedAt?: string;
+  taskId?: string;
+};
+export type Profile = {
+  overview: Overview | null;
+  templateVersion: number | null;
+  project: { id: string; name: string; confidence: number; method: "ledger" | "jev" | "manual" } | null;
+  enrichedAt: string | null;
+  evaluation: Evaluation | null;
+};
+export type RowTasks = { active: Task[]; latest: Partial<Record<TaskAction, Task>> };
+
 export type CandybarRow = {
   id: string;
   name: string;
@@ -20,23 +77,29 @@ export type CandybarRow = {
   timezone: string;
   noise: boolean;
   enabled: boolean;
+  archived: boolean;
   createdAt: string;
   /** The next fire within the schedule window; null when none falls inside it (or the candybar is disabled). */
   nextFire: string | null;
   /** The newest invocation; null when it has never run. Absent when it could not be read. */
   lastRun?: LastRun | null;
+  /** The last (up to) 30 results, oldest first. Absent when they could not be read. */
+  history?: RunResult[];
+  /** Null: read, none yet. Absent: could not be read (older Candybar, or it is down). */
+  profile?: Profile | null;
+  tasks?: RowTasks;
 };
 
 export type CandybarPayload = {
   generated_at: string;
   source: Source;
-  counts: { total: number; active: number; inactive: number; failing: number };
+  counts: { total: number; active: number; inactive: number; failing: number; archived: number };
   window: { known: boolean; to?: string };
   warnings: string[];
   candybars: CandybarRow[];
 };
 
-export type ViewId = "all" | "active" | "inactive" | "failing";
+export type ViewId = "all" | "active" | "inactive" | "failing" | "archived";
 
 // Payload of /api/modules/candybar/schedule (apps/api/src/candybar.ts).
 

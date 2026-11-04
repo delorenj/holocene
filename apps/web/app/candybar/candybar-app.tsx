@@ -4,16 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
+import { ActionBar } from "./action-bar";
+import { groupByProject, projectOf, splitViews, type Group } from "./candybar-model";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
+import { ProfileView, TasksView } from "./profile-panel";
+import { OutcomeChip, RunStrip, TaskChip, activeTask } from "./row-parts";
 import { ScheduleView } from "./schedule-view";
 import type { CandybarPayload, CandybarRow, LastRun, TabId, ViewId } from "./types";
 
 // The Candybar tab. Schedule (the default) is today's fires, live; Definitions is every
 // recurring job Candybar (the host's single clock) knows, active and inactive, with when it
-// fires next and how its last run went. Read-only by design:
-// Holocene never registers, pauses, resumes or runs a candybar; the `candybar` CLI does.
+// fires next, how its last 30 runs went, and what the steward has written about it. Each row's
+// panel carries the actions (enrich, evaluate, fix, mark noise, disable, archive); Holocene
+// asks Candybar and never registers, edits or runs a candybar itself.
 // Next fires come from Candybar's own /schedule, so DST and skips match the dispatcher.
-// State (tab, view, sort, search, noise, open row) lives in the URL.
+// State (tab, view, group, sort, search, noise, open row) lives in the URL.
 
 const POLL_MS = 15_000;
 
@@ -21,12 +26,14 @@ const VIEWS: Array<{ id: ViewId; label: string }> = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
   { id: "inactive", label: "Inactive" },
-  { id: "failing", label: "Failing" }
+  { id: "failing", label: "Failing" },
+  { id: "archived", label: "Archived" }
 ];
 
 type Sort = "next" | "name";
-type UrlState = { tab: TabId; view: ViewId; sort: Sort; q: string; noise: boolean; showNoise: boolean; open?: string };
-const DEFAULT_STATE: UrlState = { tab: "schedule", view: "all", sort: "next", q: "", noise: false, showNoise: false };
+type Group_ = "none" | "project";
+type UrlState = { tab: TabId; view: ViewId; sort: Sort; group: Group_; q: string; noise: boolean; showNoise: boolean; open?: string };
+const DEFAULT_STATE: UrlState = { tab: "schedule", view: "all", sort: "next", group: "none", q: "", noise: false, showNoise: false };
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "schedule", label: "Schedule" },
   { id: "definitions", label: "Definitions" }
@@ -38,12 +45,13 @@ function readUrl(): UrlState {
   const q = new URLSearchParams(window.location.search);
   const view = q.get("view");
   // Links from before the Schedule tab carry Definitions' own params, so they still open Definitions.
-  const legacy = ["view", "sort", "noise", "open"].some((k) => q.has(k));
+  const legacy = ["view", "sort", "group", "noise", "open"].some((k) => q.has(k));
   return {
     tab: q.get("tab") === "definitions" || (!q.has("tab") && legacy) ? "definitions" : "schedule",
     showNoise: q.get("fires") === "all",
     view: VIEWS.some((v) => v.id === view) ? (view as ViewId) : "all",
     sort: q.get("sort") === "name" ? "name" : "next",
+    group: q.get("group") === "project" ? "project" : "none",
     q: q.get("q") ?? "",
     noise: q.get("noise") === "1",
     open: q.get("open") || undefined
@@ -65,6 +73,7 @@ function writeUrl(s: UrlState) {
 function writeDefinitionParams(q: URLSearchParams, s: UrlState) {
   if (s.view !== "all") q.set("view", s.view);
   if (s.sort !== "next") q.set("sort", s.sort);
+  if (s.group !== "none") q.set("group", s.group);
   if (s.noise) q.set("noise", "1");
   if (s.open) q.set("open", s.open);
 }
@@ -129,7 +138,8 @@ function statement(d: CandybarPayload): string {
   const c = d.counts;
   const lead = d.source.down ? "Candybar is not answering. From the last good read: " : "";
   const failing = c.failing ? ` ${c.failing} of the active ones failed on their last run.` : " None of the active ones failed on its last run.";
-  return `${lead}${plural(c.total, "candybar")}: ${c.active} active, ${c.inactive} inactive.${failing}`;
+  const archived = c.archived ? ` ${c.archived} archived.` : "";
+  return `${lead}${plural(c.total, "candybar")}: ${c.active} active, ${c.inactive} inactive.${failing}${archived}`;
 }
 
 // ---------- small parts ----------
@@ -144,6 +154,7 @@ function Chips({ items }: { items: string[] }) {
 }
 
 function StateBadge({ c }: { c: CandybarRow }) {
+  if (c.archived) return <span className="cb-state is-archived">Archived</span>;
   return c.enabled ? <span className="cb-state is-active">Active</span> : <span className="cb-state is-inactive">Inactive</span>;
 }
 
@@ -175,12 +186,13 @@ function LastRunCell({ run, now }: { run: LastRun | null | undefined; now: numbe
 
 // ---------- rows ----------
 
-function Panel({ c, now, id }: { c: CandybarRow; now: number; id: string }) {
+function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: string; onChanged: () => void }) {
   const run = c.lastRun;
   const dd: Array<[string, React.ReactNode]> = [
     ["Schedule", <><code>{c.schedule}</code>{describeCron(c.schedule) ? ` · ${describeCron(c.schedule)}` : ""}</>],
     ["Timezone", c.timezone],
-    ["State", c.enabled ? "Active — dispatched on schedule" : "Inactive — registered, never fires"],
+    ["State", c.archived ? "Archived — disabled and hidden from the lists and the schedule" : c.enabled ? "Active — dispatched on schedule" : "Inactive — registered, never fires"],
+    ...(projectOf(c) ? [["Project", `${projectOf(c)}${c.profile?.project ? ` (${c.profile.project.method})` : ""}`] as [string, React.ReactNode]] : []),
     ["Next fire", c.enabled && c.nextFire ? `${stampIn(c.nextFire, c.timezone)} (${countdown(c.nextFire, now)})` : c.enabled ? "not within 24h" : "—"],
     ["Noise", c.noise ? "in the noise collection" : isFrequent(c.schedule) ? "fires more often than every 10 min" : "no"],
     ["Registered", valid(c.createdAt) ? DATE.format(ms(c.createdAt)) : "—"]
@@ -197,6 +209,9 @@ function Panel({ c, now, id }: { c: CandybarRow; now: number; id: string }) {
       {run?.result === "fail" && run.errorMessage ? (
         <p className="cb-error"><span className="hub-label">Last failure</span>{run.errorMessage}</p>
       ) : null}
+      <ActionBar c={c} onChanged={onChanged} />
+      <ProfileView profile={c.profile} />
+      <TasksView tasks={c.tasks} />
       <dl className="cb-dl">
         {dd.map(([k, v]) => (
           <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
@@ -212,18 +227,31 @@ function Panel({ c, now, id }: { c: CandybarRow; now: number; id: string }) {
   );
 }
 
-function Row({ c, now, windowKnown, open, onToggle }: { c: CandybarRow; now: number; windowKnown: boolean; open: boolean; onToggle: () => void }) {
+function Row({ c, now, windowKnown, open, onToggle, onChanged }: {
+  c: CandybarRow;
+  now: number;
+  windowKnown: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onChanged: () => void;
+}) {
   const panelId = `cb-panel-${c.id}`;
   const words = describeCron(c.schedule);
+  const task = activeTask(c);
+  const project = projectOf(c);
+  const outcome = c.profile?.evaluation?.outcome;
   return (
-    <article className={`cb-row${c.enabled ? "" : " is-inactive"}${open ? " is-open" : ""}`} data-candybar-id={c.id}>
+    <article className={`cb-row${c.enabled ? "" : " is-inactive"}${c.archived ? " is-archived" : ""}${open ? " is-open" : ""}`} data-candybar-id={c.id}>
       <button type="button" className="cb-row-head" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle}>
         <span className="cb-sig"><Glyph signal={rowSignal(c)} size={12} /></span>
         <span className="cb-main">
           <span className="cb-name-line">
             <span className="cb-name">{c.name}</span>
-            {!c.enabled ? <StateBadge c={c} /> : null}
+            {!c.enabled || c.archived ? <StateBadge c={c} /> : null}
             {c.noise ? <span className="cb-flag">noise</span> : null}
+            {project ? <span className="cb-project" title={`Project: ${project}`}>{project}</span> : null}
+            {outcome ? <OutcomeChip outcome={outcome} /> : null}
+            {task ? <TaskChip task={task} /> : null}
           </span>
           {c.description ? <span className="cb-desc">{c.description}</span> : null}
           <span className="cb-meta">
@@ -233,9 +261,12 @@ function Row({ c, now, windowKnown, open, onToggle }: { c: CandybarRow; now: num
           </span>
         </span>
         <span className="cb-when"><NextFire c={c} now={now} windowKnown={windowKnown} /></span>
-        <span className="cb-last"><LastRunCell run={c.lastRun} now={now} /></span>
+        <span className="cb-last">
+          <LastRunCell run={c.lastRun} now={now} />
+          <RunStrip history={c.history} />
+        </span>
       </button>
-      {open ? <Panel c={c} now={now} id={panelId} /> : null}
+      {open ? <Panel c={c} now={now} id={panelId} onChanged={onChanged} /> : null}
     </article>
   );
 }
@@ -317,6 +348,7 @@ export function CandybarApp() {
   }, [searchText, ready, update]);
 
   const list = usePoll<CandybarPayload>("/api/modules/candybar/list", POLL_MS);
+  const reload = list.reload;
   const data = list.data;
 
   // The search applies first; "Hide noise" then drops noisy candybars, except one whose last run failed: a failure
@@ -324,18 +356,21 @@ export function CandybarApp() {
   const searched = useMemo(() => {
     const needle = state.q.toLowerCase();
     if (!needle) return data?.candybars ?? [];
-    return (data?.candybars ?? []).filter((c) => [c.name, c.description, c.schedule, c.timezone, ...c.tags].some((s) => s.toLowerCase().includes(needle)));
+    return (data?.candybars ?? []).filter((c) => [c.name, c.description, c.schedule, c.timezone, projectOf(c) ?? "", ...c.tags].some((s) => s.toLowerCase().includes(needle)));
   }, [data, state.q]);
-  const hideable = (c: CandybarRow) => isNoise(c) && c.lastRun?.result !== "fail";
+  const hideable = (c: CandybarRow) => !c.archived && isNoise(c) && c.lastRun?.result !== "fail";
   const filtered = useMemo(() => (state.noise ? searched.filter((c) => !hideable(c)) : searched), [searched, state.noise]);
   const hiddenNoise = state.noise ? searched.length - filtered.length : 0;
 
   const sorter = state.sort === "name" ? byName : byNext;
-  const active = useMemo(() => filtered.filter((c) => c.enabled).sort(sorter), [filtered, sorter]);
-  const inactive = useMemo(() => filtered.filter((c) => !c.enabled).sort(byName), [filtered]);
-  const failing = useMemo(() => filtered.filter((c) => c.enabled && c.lastRun?.result === "fail").sort(sorter), [filtered, sorter]);
+  // Archived candybars belong to the Archived view alone; they are in no other list or count.
+  const views = useMemo(() => splitViews(filtered), [filtered]);
+  const active = useMemo(() => [...views.active].sort(sorter), [views, sorter]);
+  const inactive = useMemo(() => [...views.inactive].sort(byName), [views]);
+  const failing = useMemo(() => [...views.failing].sort(sorter), [views, sorter]);
+  const archived = useMemo(() => [...views.archived].sort(byName), [views]);
 
-  const counts: Record<ViewId, number> = { all: active.length + inactive.length, active: active.length, inactive: inactive.length, failing: failing.length };
+  const counts: Record<ViewId, number> = { all: active.length + inactive.length, active: active.length, inactive: inactive.length, failing: failing.length, archived: archived.length };
 
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const i = VIEWS.findIndex((t) => t.id === state.view);
@@ -353,7 +388,7 @@ export function CandybarApp() {
   const toggle = (id: string) => update({ open: state.open === id ? undefined : id });
   const windowKnown = data?.window.known ?? false;
   const rows = (items: CandybarRow[]) =>
-    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} />);
+    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} onChanged={reload} />);
 
   const [streamSource, setStreamSource] = useState<Source>();
   const sources: Source[] = state.tab === "schedule"
@@ -383,17 +418,22 @@ export function CandybarApp() {
         </p>
       </div>
     );
-  } else if (state.view === "all") {
-    body = active.length + inactive.length ? (
-      <>
-        {active.length ? <Section title="Active" count={active.length} note={state.sort === "next" ? "soonest first" : undefined}>{rows(active)}</Section> : null}
-        {inactive.length ? <Section title="Inactive" count={inactive.length} note="registered, never fire">{rows(inactive)}</Section> : null}
-      </>
-    ) : empty("candybars");
   } else {
-    const items = state.view === "active" ? active : state.view === "inactive" ? inactive : failing;
-    const noun = state.view === "failing" ? "failing candybars" : `${state.view} candybars`;
-    body = items.length ? <><Columns /><div className="cb-list">{rows(items)}</div></> : empty(noun);
+    const items = state.view === "all" ? [...active, ...inactive] : state.view === "active" ? active : state.view === "inactive" ? inactive : state.view === "failing" ? failing : archived;
+    const noun = state.view === "all" ? "candybars" : state.view === "failing" ? "failing candybars" : `${state.view} candybars`;
+    if (!items.length) body = empty(noun);
+    else if (state.group === "project") {
+      // Within a project the current sort stands; the sections themselves run A to Z with Unclassified last.
+      const groups: Array<Group<CandybarRow>> = groupByProject(items);
+      body = <>{groups.map((g) => <Section key={g.key} title={g.label} count={g.items.length}>{rows(g.items)}</Section>)}</>;
+    } else if (state.view === "all") {
+      body = (
+        <>
+          {active.length ? <Section title="Active" count={active.length} note={state.sort === "next" ? "soonest first" : undefined}>{rows(active)}</Section> : null}
+          {inactive.length ? <Section title="Inactive" count={inactive.length} note="registered, never fire">{rows(inactive)}</Section> : null}
+        </>
+      );
+    } else body = <><Columns /><div className="cb-list">{rows(items)}</div></>;
   }
 
   return (
@@ -476,7 +516,14 @@ export function CandybarApp() {
               </div>
 
               <div className="cb-controls-end">
-                {state.view !== "inactive" ? (
+                <div className="cb-group" role="group" aria-label="Group candybars">
+                  {(["none", "project"] as const).map((g) => (
+                    <button key={g} type="button" className="cb-seg" aria-pressed={state.group === g} onClick={() => update({ group: g })}>
+                      {g === "none" ? "Ungrouped" : "By project"}
+                    </button>
+                  ))}
+                </div>
+                {state.view !== "inactive" && state.view !== "archived" ? (
                   <div className="cb-group" role="group" aria-label="Sort active candybars">
                     {(["next", "name"] as const).map((s) => (
                       <button key={s} type="button" className="cb-seg" aria-pressed={state.sort === s} onClick={() => update({ sort: s })}>
@@ -509,7 +556,7 @@ export function CandybarApp() {
 
         <footer className="hub-foot">
           <span>
-            Read-only. Candybar is the single clock; change a candybar with <code>candybar edit</code>, <code>pause</code>, <code>resume</code> or <code>skip</code>.
+            Candybar is the single clock. These buttons ask it to skip, enable, disable, archive or mark noise, and queue its steward to enrich, evaluate or fix; changing a schedule or a runner stays with <code>candybar edit</code>.
             {state.tab === "definitions" ? ` Noise is the explicit collection plus anything firing more often than every ${NOISE_MINUTES} min.` : null}
           </span>
         </footer>
