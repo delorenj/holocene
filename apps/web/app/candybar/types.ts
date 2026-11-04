@@ -103,6 +103,8 @@ export type CandybarPayload = {
   counts: { total: number; active: number; inactive: number; failing: number; archived: number };
   window: { known: boolean; to?: string };
   warnings: string[];
+  /** Seconds old (at `generated_at`) of the profiles and steward tasks, when they come from an earlier good read. */
+  stale?: { profiles?: number; tasks?: number };
   candybars: CandybarRow[];
 };
 

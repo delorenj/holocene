@@ -1,19 +1,29 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { postAction } from "./candybar-api";
-import { canFix, stewardControl, stewardUnavailable, type Control } from "./candybar-model";
+import { postAction, postCancel } from "./candybar-api";
+import {
+  cancelLabel,
+  fixOffered,
+  inFlightTasks,
+  noteVisible,
+  stewardControl,
+  stewardUnavailable,
+  toggleBlockedReason,
+  toggleInFlight,
+  type Control,
+  type ToggleKey
+} from "./candybar-model";
 import { actionKey, actionStore, liveText, type ActionState } from "./action-store";
-import { runRowAction, toggleWord, type RunDeps } from "./row-actions";
-import type { CandybarRow } from "./types";
+import { runCancel, runRowAction, toggleWord, type RunDeps } from "./row-actions";
+import type { CandybarRow, Task } from "./types";
 
 // The expanded panel's action bar. Real buttons, never nested in the row's own button. A button that cannot act is
 // aria-disabled, not disabled, so it keeps focus and its place in the tab order and says why. Busy state, the task just
 // queued and the last result live in a page-wide store (action-store.ts), so they survive a collapsed panel and a row
 // that moved section. Fix, Evaluate, Disable and Archive ask first and say what will happen; results show here and are
-// announced by the page's live region.
-
-const NOTE_MS = 30_000;
+// announced by the page's live region. A task in flight carries a Cancel button beside the steward buttons. Noise,
+// enable or disable and archive run one at a time per candybar: while one runs the others are aria-disabled and say why.
 
 export function useActions(): ActionState {
   return useSyncExternalStore(actionStore.subscribe, actionStore.get, actionStore.get);
@@ -31,16 +41,21 @@ export function Announcer() {
   );
 }
 
-export function ActionBar({ c, now, onChanged }: { c: CandybarRow; now: number; onChanged: () => void }) {
+export function ActionBar({ c, now, onChanged, stale }: { c: CandybarRow; now: number; onChanged: () => void; stale?: string }) {
   const s = useActions();
   const deps: RunDeps = { store: actionStore, post: postAction, confirm: (t) => window.confirm(t), onChanged };
   const reasonId = (k: string) => `cb-act-why-${c.id}-${k}`;
   const unavailable = stewardUnavailable(c);
   const reasons: Array<{ id: string; text: string; warn?: boolean }> = unavailable ? [{ id: reasonId("steward"), text: unavailable }] : [];
+  if (stale) reasons.push({ id: reasonId("stale"), text: stale });
+
+  const control = (action: "enrich" | "evaluate" | "fix"): Control => {
+    const k = actionKey(c.id, action);
+    return stewardControl(c, action, now, { pending: s.queued.get(k), busy: s.busy.has(k) });
+  };
 
   const steward = (action: "enrich" | "evaluate" | "fix") => {
-    const k = actionKey(c.id, action);
-    const ctl: Control = stewardControl(c, action, now, { pending: s.queued.get(k), busy: s.busy.has(k) });
+    const ctl = control(action);
     const why = unavailable ? reasonId("steward") : ctl.reason ? reasonId(action) : undefined;
     if (ctl.reason && !unavailable) reasons.push({ id: reasonId(action), text: ctl.reason, warn: ctl.warn });
     return (
@@ -59,15 +74,21 @@ export function ActionBar({ c, now, onChanged }: { c: CandybarRow; now: number; 
     );
   };
 
-  const toggle = (key: "noise" | "enabled" | "archived", on: boolean, busyWords: [string, string]) => {
+  // One change to a candybar at a time: while a toggle runs, the others are off and say why.
+  const running: ToggleKey | undefined = toggleInFlight(s.busy, c.id);
+  const blockedReason = running ? toggleBlockedReason(c, running) : undefined;
+  if (blockedReason) reasons.push({ id: reasonId("toggle"), text: blockedReason });
+  const toggle = (key: ToggleKey, on: boolean, busyWords: [string, string]) => {
     const busy = s.busy.has(actionKey(c.id, key));
+    const blocked = !busy && running !== undefined;
     return (
       <button
         type="button"
         className="cb-act"
         data-action={key}
-        aria-disabled={busy || undefined}
+        aria-disabled={busy || blocked || undefined}
         aria-busy={busy || undefined}
+        aria-describedby={blocked ? reasonId("toggle") : undefined}
         onClick={() => void runRowAction(c, key, deps)}
       >
         {busy ? busyWords[on ? 1 : 0] : toggleWord(key, !on)}
@@ -75,13 +96,34 @@ export function ActionBar({ c, now, onChanged }: { c: CandybarRow; now: number; 
     );
   };
 
+  const cancel = (t: Task) => {
+    const busy = s.busy.has(actionKey(c.id, "cancel", t.id));
+    return (
+      <button
+        key={t.id}
+        type="button"
+        className="cb-act cb-act-cancel"
+        data-action="cancel"
+        data-task-id={t.id}
+        aria-disabled={busy || undefined}
+        aria-busy={busy || undefined}
+        onClick={() => void runCancel(c, t, { store: actionStore, cancel: postCancel, confirm: deps.confirm, onChanged })}
+      >
+        {busy ? "Cancelling…" : cancelLabel(t)}
+      </button>
+    );
+  };
+
   const note = s.notes.get(c.id);
-  const showNote = note && (note.tone === "error" || now - note.at < NOTE_MS);
+  const showNote = note && noteVisible(note, now);
+  // Fix stays on the bar while its task is queued or running, even if the proving run turned the job green.
+  const fixCtl = control("fix");
   const buttons = (
     <>
       {steward("enrich")}
       {steward("evaluate")}
-      {canFix(c) ? steward("fix") : null}
+      {fixOffered(c, fixCtl) ? steward("fix") : null}
+      {inFlightTasks(c, (a) => s.queued.get(actionKey(c.id, a))).map(cancel)}
     </>
   );
 

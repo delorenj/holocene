@@ -55,7 +55,7 @@ test("Fix is off while a refactor is in flight (Candybar allows one change to a 
 test("a task queued for more than 2 minutes says the steward may be down", () => {
   const c = stewardControl(row({ tasks: { active: [task({ createdAt: "2026-11-03T17:05:00Z" })], latest: {} } }), "evaluate", NOW);
   assert.equal(c.label, "Evaluate queued 5m");
-  assert.equal(c.reason, "Evaluate queued 5m: is candybar-steward running?");
+  assert.equal(c.reason, "Evaluate queued 5m: the steward (candybar-steward) may be down. You can cancel it.");
   assert.equal(c.warn, true);
 });
 
@@ -101,7 +101,7 @@ test("Fix and Evaluate confirm first and say what will happen", () => {
 test("a 409 for a twin task reads as information", () => {
   assert.equal(conflictNote("evaluate", task({ status: "running", startedAt: "2026-11-03T17:07:00Z" }), NOW), "Already running: Evaluate started 3m ago.");
   assert.equal(conflictNote("enrich", task({ action: "enrich", createdAt: "2026-11-03T17:09:00Z" }), NOW), "Already queued: Enrich queued 1m ago.");
-  assert.equal(conflictNote("enrich", task({ action: "enrich", createdAt: "2026-11-03T17:00:00Z" }), NOW), "Already queued: Enrich queued 10m ago. Is candybar-steward running?");
+  assert.equal(conflictNote("enrich", task({ action: "enrich", createdAt: "2026-11-03T17:00:00Z" }), NOW), "Already queued: Enrich queued 10m ago. The steward may be down; you can cancel it.");
   assert.equal(conflictNote("fix", undefined, NOW), "Already queued or running: Fix.");
   assert.equal(
     conflictNote("fix", task({ action: "refactor", status: "running", startedAt: "2026-11-03T17:05:00Z" }), NOW),
@@ -296,7 +296,7 @@ test("Skip rest of day names the date, the zone and the hours of your day it cov
   assert.equal(await runFireAction(fire(), "rest", t.d), "sent");
   assert.equal(
     t.confirms[0],
-    "Skip every fire of newapi-staff-sso on 2026-11-04 (UTC), 7:00 PM tonight to 7:00 PM tomorrow EST?\n\nThis view lists only your day, so the fires after midnight are skipped without showing here."
+    "Skip every fire of newapi-staff-sso on 2026-11-04 (UTC), 7:00 PM tonight EST to 7:00 PM tomorrow EST?\n\nThis view lists only your day, so the fires after midnight are skipped without showing here."
   );
   assert.deepEqual(t.sent[0].body, { fireTime: "2026-11-04T03:07:00+00:00", expectDate: "2026-11-04" });
   assert.deepEqual(t.events, ["refetch"]);

@@ -1,5 +1,6 @@
 import type { ActionResult } from "./candybar-api";
 import { actionKey, type ActionStore } from "./action-store";
+import { toggleInFlight, type ToggleKey } from "./candybar-model";
 import type { RunOutcome } from "./row-actions";
 import { restOfDay, type Fire } from "./schedule-model";
 
@@ -43,6 +44,10 @@ export type FireDeps = {
   onError: (text: string) => void;
 };
 
+const CHANGE_WORD: Record<ToggleKey, string> = { noise: "A noise change", enabled: "An enable or disable", archived: "An archive change" };
+/** Why Mark noise is off on a row: another change to the same candybar is still running. */
+export const fireBlockedReason = (name: string, running: ToggleKey) => `${CHANGE_WORD[running]} to ${name} is in progress; one change to a candybar at a time.`;
+
 const zoneWord = (z: unknown) => (z === "Etc/UTC" ? "UTC" : typeof z === "string" ? z : undefined);
 
 export async function runFireAction(f: Fire, action: FireAction, deps: FireDeps): Promise<RunOutcome> {
@@ -51,6 +56,14 @@ export async function runFireAction(f: Fire, action: FireAction, deps: FireDeps)
   const key = fireActionKey(f, action);
   if (store.isBusy(key)) return "busy";
   if (action !== "noise" && !fireActionsFor(f).includes(action)) return "blocked";
+  if (action === "noise") {
+    // Shares the Definitions bar's rule: one state-changing action per candybar at a time.
+    const running = toggleInFlight(store.get().busy, f.candybarId);
+    if (running) {
+      store.announce(fireBlockedReason(f.name, running));
+      return "blocked";
+    }
+  }
   let expectDate: string | undefined;
   if (action === "rest") {
     const plan = restOfDay({ name: f.name, fireT: f.t, zone: deps.zone, now: now(), viewer: deps.viewer, viewEnd: deps.viewEnd });

@@ -23,7 +23,7 @@ export function RunStrip({ history }: { history: RunResult[] | undefined }) {
 export function TaskChip({ task, now }: { task: Pick<Task, "action" | "status" | "createdAt" | "startedAt">; now: number }) {
   const stale = isStaleQueued(task, now);
   return (
-    <span className={`cb-task-chip is-${task.status}${stale ? " is-stale" : ""}`} title={stale ? "Queued for a while: is candybar-steward running?" : undefined}>
+    <span className={`cb-task-chip is-${task.status}${stale ? " is-stale" : ""}`} title={stale ? "Queued for a while: the steward may be down. You can cancel it." : undefined}>
       {taskChipLabel(task, now)}
     </span>
   );

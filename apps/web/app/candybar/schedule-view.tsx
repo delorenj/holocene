@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Glyph, formatDuration } from "../hub/ui";
 import type { Signal, Source } from "../hub/types";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
 import { useActions } from "./action-bar";
 import { actionStore } from "./action-store";
 import { postAction } from "./candybar-api";
-import { fireActionKey, fireActionLabel, fireActionsFor, runFireAction, type FireAction } from "./fire-actions";
-import { applyEvent, byTime, emptyModel, fromSnapshot, markSkipped, setNoise, type Fire, type Model } from "./schedule-model";
+import { toggleInFlight } from "./candybar-model";
+import { endOnInteraction } from "./focus-intent";
+import { fireActionKey, fireActionLabel, fireBlockedReason, fireActionsFor, runFireAction, type FireAction } from "./fire-actions";
+import { byTime, emptyModel, markSkipped, setNoise, type Fire, type Model } from "./schedule-model";
+import { createScheduleSync } from "./schedule-sync";
 import { subscribeSchedule, type StreamStatus } from "./schedule-stream";
 import type { SchedulePayload } from "./types";
 
@@ -87,10 +90,17 @@ function FireActions({ f, open, busy, onToggle, onAct }: {
       <div className="cb-fire-actions" role="group" aria-label={`Actions for ${label}`}>
         {fireActionsFor(f).map((a) => {
           const on = busy.has(fireActionKey(f, a));
+          // One change to a candybar at a time: Mark noise is off while its enable, disable or archive runs.
+          const other = a === "noise" && !on ? toggleInFlight(busy, f.candybarId) : undefined;
+          const why = other ? fireBlockedReason(f.name, other) : undefined;
+          const whyId = `cb-fa-why-${f.key}`;
           return (
-            <button key={a} type="button" className="cb-fa" data-fa={a} aria-disabled={on || undefined} aria-busy={on || undefined} onClick={() => onAct(a)}>
-              {on ? (a === "noise" ? (f.noise ? "Unmarking…" : "Marking…") : "Skipping…") : fireActionLabel(f, a)}
-            </button>
+            <Fragment key={a}>
+              <button type="button" className="cb-fa" data-fa={a} aria-disabled={on || why !== undefined || undefined} aria-busy={on || undefined} aria-describedby={why ? whyId : undefined} title={why} onClick={() => onAct(a)}>
+                {on ? (a === "noise" ? (f.noise ? "Unmarking…" : "Marking…") : "Skipping…") : fireActionLabel(f, a)}
+              </button>
+              {why ? <span id={whyId} className="cb-sr-only">{why}</span> : null}
+            </Fragment>
           );
         })}
       </div>
@@ -168,6 +178,8 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
   /** After an action that can remove the focused button (or the whole row), where focus goes. */
   const focusAfter = useRef<{ key: string; neighbor?: string; until: number }>();
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  // The operator taking over (any pointerdown or keydown) ends the focus intent, as on the Definitions tab.
+  useEffect(() => endOnInteraction(document, () => void (focusAfter.current = undefined)), []);
   const scrolledOnce = useRef(false);
   /** Scroll events before this instant are our own scrollIntoView, not the operator's. */
   const ourScrollUntil = useRef(0);
@@ -178,13 +190,7 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
 
   useEffect(() => {
     let alive = true;
-    let loaded = false;
-    let loading = false;
-    let again = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
     let frame: number | undefined;
-    let ctl: AbortController | undefined;
-    const pending: Array<[string, unknown]> = [];
     modelRef.current = emptyModel();
     setLoad({ status: "loading" });
     setVersion((v) => v + 1);
@@ -202,77 +208,40 @@ export function ScheduleView({ now, q, searchText, onSearch, showNoise, onShowNo
       });
     };
 
-    async function readSnapshot() {
-      if (loading) {
-        again = true;
-        return;
-      }
-      loading = true;
-      again = false;
-      clearTimeout(retry);
-      // Everything heard before this read is older than the snapshot it returns, so only later events are kept;
-      // this also bounds the buffer while Candybar keeps refusing the snapshot.
-      pending.length = 0;
-      ctl = new AbortController();
-      try {
-        const res = await fetch(`/api/modules/candybar/schedule?${new URLSearchParams(dayWindow)}`, { cache: "no-store", signal: ctl.signal });
+    // The snapshot/stream ordering rules live in schedule-sync.ts (tested there): a refetch asked for by a row action
+    // buffers the stream like a `reset` does, until the last queued snapshot read has landed.
+    const sync = createScheduleSync({
+      fetchSnapshot: async (signal) => {
+        const res = await fetch(`/api/modules/candybar/schedule?${new URLSearchParams(dayWindow)}`, { cache: "no-store", signal });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `${res.status} ${res.statusText}`);
         }
-        // Candybars the stream archived stay out even if the API's list had not caught up yet.
-        const model = fromSnapshot((await res.json()) as SchedulePayload, modelRef.current.archived);
-        if (!alive) return;
-        // Events that arrived while the snapshot was read are applied on top; each is absolute state.
-        let refetch = false;
-        for (const [name, data] of pending.splice(0)) refetch = applyEvent(model, name, data) === "refetch" || refetch;
-        modelRef.current = model;
-        loaded = true;
-        setLoad({ status: "ok" });
-        bump();
-        if (refetch) again = true;
-      } catch (err) {
-        if (!alive || ctl?.signal.aborted) return;
-        setLoad({ status: "error", error: err instanceof Error ? err.message : String(err) });
-        retry = setTimeout(() => void readSnapshot(), SNAPSHOT_RETRY_MS);
-      } finally {
-        loading = false;
-        if (alive && again) void readSnapshot();
-      }
-    }
-
-    // A refetch asked for by a row action buffers the stream like a `reset` does: events that land while the snapshot
-    // is read are applied on top of it, not to the model it replaces.
-    controls.current = {
+        return (await res.json()) as SchedulePayload;
+      },
+      getModel: () => modelRef.current,
+      setModel: (m) => {
+        modelRef.current = m;
+      },
+      onLoad: (l) => alive && setLoad(l),
       bump,
-      refetch: () => {
-        loaded = false;
-        void readSnapshot();
-      }
-    };
+      retryMs: SNAPSHOT_RETRY_MS,
+      after: (fn, ms) => setTimeout(fn, ms),
+      cancelAfter: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
+    });
+    controls.current = { bump, refetch: () => sync.refetch() };
 
     const close = subscribeSchedule({
       ...dayWindow,
       onStatus: (status, detail) => alive && setStream({ status, detail }),
-      onEvent: (name, data) => {
-        if (!loaded) {
-          pending.push([name, data]);
-          if (name === "reset") pending.length = 0;
-          return;
-        }
-        if (applyEvent(modelRef.current, name, data) === "refetch") {
-          loaded = false;
-          void readSnapshot();
-        } else bump();
-      }
+      onEvent: (name, data) => sync.event(name, data)
     });
-    void readSnapshot();
+    void sync.read();
 
     return () => {
       alive = false;
       close();
-      ctl?.abort();
-      clearTimeout(retry);
+      sync.dispose();
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, [dayWindow]);

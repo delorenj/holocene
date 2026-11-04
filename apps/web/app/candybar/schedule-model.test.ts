@@ -187,7 +187,12 @@ test("restOfDay words a skip in the candybar's day on the viewer's clock", () =>
   assert.equal(sameZone.confirm, "Skip every fire of restic-vault on 2026-11-03 (America/New_York), all day today?");
   assert.equal(sameZone.beyondView, false);
   const tokyo = restOfDay({ name: "jp", fireT: Date.parse("2026-11-04T03:30:00Z"), zone: "Asia/Tokyo", now, viewer: "America/New_York" });
-  assert.equal(tokyo.range, "10:00 AM today to 10:00 AM tomorrow EST");
+  assert.equal(tokyo.range, "10:00 AM today EST to 10:00 AM tomorrow EST");
+  // N6: across a DST change each end carries its own zone (the clocks fell back on 2026-11-01).
+  const fall = restOfDay({ name: "utc-job", fireT: Date.parse("2026-11-01T09:00:00Z"), zone: "UTC", now: Date.parse("2026-10-31T23:00:00Z"), viewer: "America/New_York" });
+  assert.equal(fall.date, "2026-11-01");
+  assert.equal(fall.range, "8:00 PM tonight EDT to 7:00 PM tomorrow EST", "the start is EDT, the end EST");
+  assert.equal(fall.confirm, "Skip every fire of utc-job on 2026-11-01 (UTC), 8:00 PM tonight EDT to 7:00 PM tomorrow EST?");
   const unknown = restOfDay({ name: "x", fireT: now, now, viewer: "America/New_York" });
   assert.equal(unknown.date, undefined);
   assert.match(unknown.confirm, /could not read that zone/);

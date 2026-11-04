@@ -1,4 +1,4 @@
-import type { CandybarRow, Evaluation, RunResult, Task, TaskAction, ViewId } from "./types";
+import type { CandybarPayload, CandybarRow, Evaluation, RunResult, Task, TaskAction, ViewId } from "./types";
 
 // Pure helpers for the Definitions tab's row actions and signals, and the decisions behind the action bar and the
 // Schedule row actions (labels, what is disabled and why, what a confirm says, what a result says). DOM-free so they
@@ -93,9 +93,9 @@ export function taskChipLabel(t: Pick<Task, "action" | "status" | "createdAt" | 
 
 export const isStaleQueued = (t: Pick<Task, "status" | "createdAt" | "startedAt">, now: number) => t.status === "queued" && taskAge(t, now) > QUEUED_STALE_S;
 
-/** "queued 5m: is candybar-steward running?" once a task has waited past QUEUED_STALE_S. */
+/** "queued 5m: the steward may be down. You can cancel it." once a task has waited past QUEUED_STALE_S. */
 export const staleHint = (t: Pick<Task, "status" | "createdAt" | "startedAt">, now: number) =>
-  `queued ${age(taskAge(t, now))}: is candybar-steward running?`;
+  `queued ${age(taskAge(t, now))}: the steward (candybar-steward) may be down. You can cancel it.`;
 
 export function activeActions(c: Pick<CandybarRow, "tasks">): Set<TaskAction> {
   return new Set((c.tasks?.active ?? []).map((t) => t.action));
@@ -114,6 +114,13 @@ export function inFlight(c: Pick<CandybarRow, "tasks">, action: TaskAction, pend
   const latest = c.tasks?.latest[action];
   if (latest && (latest.id === pending.id || Date.parse(latest.createdAt) >= Date.parse(pending.createdAt))) return undefined;
   return pending;
+}
+
+export const TASK_ACTIONS: TaskAction[] = ["enrich", "evaluate", "fix", "refactor"];
+
+/** Every task still in flight for this row (one per action at most), the page's just-queued ones included. */
+export function inFlightTasks(c: Pick<CandybarRow, "tasks">, pendingOf: (action: TaskAction) => Task | undefined = () => undefined): Task[] {
+  return TASK_ACTIONS.map((a) => inFlight(c, a, pendingOf(a))).filter((t): t is Task => t !== undefined);
 }
 
 /** Why the steward buttons cannot be trusted right now, or undefined when they can. */
@@ -163,6 +170,34 @@ export function stewardControl(
   };
 }
 
+/**
+ * Whether the Fix button is on the bar. Fix is offered while the job is failing (canFix), and it STAYS while a fix is
+ * queued, running or being requested, even if the proving run turned the last result green: the button carries the
+ * task's state, and a button that vanishes mid-task drops the operator's focus. Never for an archived candybar.
+ */
+export function fixOffered(c: Pick<CandybarRow, "archived" | "lastRun" | "history">, ctl: Pick<Control, "task" | "busy">): boolean {
+  if (c.archived) return false;
+  return canFix(c) || ctl.task !== undefined || ctl.busy;
+}
+
+// ---------- cancelling a steward task ----------
+
+export const cancelLabel = (t: Pick<Task, "action">) => `Cancel ${ACTION_LABEL[t.action].toLowerCase()}`;
+
+/** Asked before a task is cancelled: what happens to a queued one and to one already running. */
+export function cancelConfirm(name: string, t: Pick<Task, "action" | "status">): string {
+  const verb = ACTION_LABEL[t.action].toLowerCase();
+  const mutates = t.action === "fix" || t.action === "refactor";
+  const body =
+    t.status === "running"
+      ? `The task ends as failed ("cancelled by operator"). The steward stops the agent within a minute.${mutates ? " Anything it already committed or pushed stays." : ""}`
+      : `It has not started. The task ends as failed ("cancelled by operator") and never runs.`;
+  return `Cancel the ${verb} of ${name}?\n\n${body}`;
+}
+
+export const cancelledNote = (name: string, t: Pick<Task, "action" | "status">) =>
+  `Cancelled the ${ACTION_LABEL[t.action].toLowerCase()} of ${name}. It ends as failed (cancelled by operator).${t.status === "running" ? " The steward stops the agent within a minute." : ""}`;
+
 /** The repo a Fix commits to, when the steward's overview names it. */
 export const repoOf = (c: Pick<CandybarRow, "profile">): string | undefined => c.profile?.overview?.source.repo || undefined;
 
@@ -208,11 +243,54 @@ export function conflictNote(action: TaskAction, twin: Pick<Task, "status" | "cr
   const other = twin.action && twin.action !== action ? " One change to a job at a time." : "";
   if (twin.status === "running") return `Already running: ${label} started ${age(taskAge(twin, now))} ago.${other}`;
   const queued = `Already queued: ${label} queued ${age(taskAge(twin, now))} ago.${other}`;
-  return isStaleQueued(twin, now) ? `${queued} Is candybar-steward running?` : queued;
+  return isStaleQueued(twin, now) ? `${queued} The steward may be down; you can cancel it.` : queued;
 }
 
 /** What a steward request said when it was queued. */
 export const queuedNote = (name: string, action: TaskAction) => `${ACTION_LABEL[action]} of ${name} queued. The steward picks it up shortly.`;
+
+// ---------- one change to a candybar at a time (N7) ----------
+
+export const TOGGLE_KEYS = ["noise", "enabled", "archived"] as const;
+export type ToggleKey = (typeof TOGGLE_KEYS)[number];
+export const isToggleKey = (key: string): key is ToggleKey => (TOGGLE_KEYS as readonly string[]).includes(key);
+
+/** The state-changing toggle (noise, enable or disable, archive) with a request in flight for this candybar. */
+export function toggleInFlight(busy: ReadonlySet<string>, candybarId: string): ToggleKey | undefined {
+  return TOGGLE_KEYS.find((k) => busy.has(`${candybarId}:${k}`));
+}
+
+const PROGRESS: Record<ToggleKey, [string, string]> = {
+  noise: ["Marking noise", "Unmarking noise"],
+  enabled: ["Enabling", "Disabling"],
+  archived: ["Archiving", "Unarchiving"]
+};
+
+/** "Disabling is in progress; one change to a candybar at a time." The reason the other toggles are aria-disabled. */
+export function toggleBlockedReason(c: Pick<CandybarRow, "noise" | "enabled" | "archived">, running: ToggleKey): string {
+  const on = running === "noise" ? c.noise : running === "enabled" ? c.enabled : c.archived;
+  return `${PROGRESS[running][on ? 1 : 0]} is in progress; one change to a candybar at a time.`;
+}
+
+/** How long a result stays on the panel: a failure is read once and cleared; the rest linger a little longer. */
+export const ERROR_NOTE_MS = 10_000;
+export const NOTE_MS = 30_000;
+export const noteVisible = (note: { tone: "error" | "info" | "done"; at: number }, now: number) => now - note.at < (note.tone === "error" ? ERROR_NOTE_MS : NOTE_MS);
+
+// ---------- stale steward data (N4) ----------
+
+/** "Profiles and steward tasks are 40s old (Candybar did not answer the last read)." Undefined when both are fresh. */
+export function staleNote(stale: CandybarPayload["stale"], generatedAt: string, now: number): string | undefined {
+  if (!stale || (stale.profiles === undefined && stale.tasks === undefined)) return undefined;
+  const since = secondsSince(generatedAt, now);
+  const profiles = stale.profiles === undefined ? undefined : age(stale.profiles + since);
+  const tasks = stale.tasks === undefined ? undefined : age(stale.tasks + since);
+  const what =
+    profiles !== undefined && tasks !== undefined
+      ? profiles === tasks ? `Profiles and steward tasks are ${profiles} old` : `Profiles are ${profiles} old and steward tasks are ${tasks} old`
+      : profiles !== undefined ? `Profiles are ${profiles} old` : `Steward tasks are ${tasks} old`;
+  return `${what} (Candybar did not answer the last read). The buttons use the last good read; Candybar still refuses a duplicate task.`;
+}
 
 // ---------- the steward's notes ----------
 
@@ -228,17 +306,49 @@ const FOLLOW_UP_STATUS: Record<string, string> = {
 };
 const flagged = (followUp: Evaluation["followUp"]) => (followUp === "archive" ? "flagged: protected, not archived" : "flagged for you to decide");
 
+type Kid = Pick<Task, "status" | "parentTaskId" | "outcome"> & { id?: string };
+/** The follow-up task of THIS evaluation: named by followUpTaskId, else the one whose parent is the evaluation's task. */
+const childOf = (e: Pick<Evaluation, "followUpTaskId" | "taskId">, child?: Kid): Kid | undefined =>
+  child && ((e.followUpTaskId && child.id === e.followUpTaskId) || (e.taskId && child.parentTaskId === e.taskId)) ? child : undefined;
+
+/** What a finished follow-up task's own outcome says: the status Candybar would record, and the words for it. */
+const CHILD_OUTCOME: Record<string, [status: string, words: string]> = {
+  done: ["done", "done"],
+  done_proven: ["done", "done"],
+  fixed: ["done", "fixed"],
+  done_not_proven: ["failed", "done, not proven"],
+  not_fixed: ["failed", "not fixed"],
+  not_applied: ["flagged", "not applied, flagged for you to decide"]
+};
+
+function fromChild(kid: Kid): [status: string, words: string] | undefined {
+  if (kid.status === "queued" || kid.status === "running") return [kid.status, kid.status];
+  if (kid.status === "failed") return ["failed", "failed"];
+  return CHILD_OUTCOME[kid.outcome ?? ""] ?? ["done", "done"];
+}
+
+/** The follow-up's status: Candybar's followUpStatus, else what the follow-up task itself says. */
+export function followUpStatusOf(e: Pick<Evaluation, "followUp" | "followUpStatus" | "followUpTaskId" | "taskId">, child?: Kid): string | undefined {
+  if (e.followUp === "none") return undefined;
+  const kid = childOf(e, child);
+  return e.followUpStatus ?? (kid ? fromChild(kid)?.[0] : undefined);
+}
+
 /**
  * "refactor queued", "refactor done", "archive flagged: protected, not archived"; "none" when nothing follows. Without
- * a stored followUpStatus (an older Candybar), the follow-up task itself says how far it got: the one whose
- * parentTaskId is this evaluation's task.
+ * a stored followUpStatus (an older Candybar), the follow-up task itself says how far it got and with what outcome: a
+ * refactor that succeeded but was not applied is flagged for the operator, not done; one not proven is "done, not
+ * proven"; a fix reads "fixed" or "not fixed".
  */
-export function followUpLabel(e: Pick<Evaluation, "followUp" | "followUpStatus" | "taskId">, child?: Pick<Task, "status" | "parentTaskId">): string {
+export function followUpLabel(e: Pick<Evaluation, "followUp" | "followUpStatus" | "followUpTaskId" | "taskId">, child?: Kid): string {
   if (e.followUp === "none") return "none";
-  const status = e.followUpStatus ?? (child && e.taskId && child.parentTaskId === e.taskId ? child.status : undefined);
-  if (!status) return e.followUp;
-  if (status === "flagged") return `${e.followUp} ${flagged(e.followUp)}`;
-  return `${e.followUp} ${FOLLOW_UP_STATUS[status] ?? status.replace(/_/g, " ")}`;
+  const kid = childOf(e, child);
+  if (e.followUpStatus) {
+    if (e.followUpStatus === "flagged") return `${e.followUp} ${e.followUp !== "archive" && kid?.outcome === "not_applied" ? "not applied, flagged for you to decide" : flagged(e.followUp)}`;
+    return `${e.followUp} ${FOLLOW_UP_STATUS[e.followUpStatus] ?? e.followUpStatus.replace(/_/g, " ")}`;
+  }
+  const own = kid ? fromChild(kid) : undefined;
+  return own ? `${e.followUp} ${own[1]}` : e.followUp;
 }
 
 const OUTCOME_WORD: Record<string, string> = {

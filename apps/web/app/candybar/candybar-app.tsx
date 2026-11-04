@@ -6,7 +6,8 @@ import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration, sinceSeconds } fr
 import type { Signal, Source } from "../hub/types";
 import { ActionBar, Announcer } from "./action-bar";
 import { actionStore } from "./action-store";
-import { groupByProject, homeView, projectOf, rowDescription, rowName, splitViews, type Group } from "./candybar-model";
+import { groupByProject, homeView, projectOf, rowDescription, rowName, splitViews, staleNote, type Group } from "./candybar-model";
+import { endOnInteraction } from "./focus-intent";
 import { NOISE_MINUTES, describeCron, isFrequent } from "./cron";
 import { ProfileView, TasksView } from "./profile-panel";
 import { OutcomeChip, RunStrip, TaskChip, activeTask } from "./row-parts";
@@ -187,7 +188,7 @@ function LastRunCell({ run, now }: { run: LastRun | null | undefined; now: numbe
 
 // ---------- rows ----------
 
-function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: string; onChanged: () => void }) {
+function Panel({ c, now, id, onChanged, stale }: { c: CandybarRow; now: number; id: string; onChanged: () => void; stale?: string }) {
   const run = c.lastRun;
   const dd: Array<[string, React.ReactNode]> = [
     ["Schedule", <><code>{c.schedule}</code>{describeCron(c.schedule) ? ` · ${describeCron(c.schedule)}` : ""}</>],
@@ -210,7 +211,7 @@ function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: str
       {run?.result === "fail" && run.errorMessage ? (
         <p className="cb-error"><span className="hub-label">Last failure</span>{run.errorMessage}</p>
       ) : null}
-      <ActionBar c={c} now={now} onChanged={onChanged} />
+      <ActionBar c={c} now={now} onChanged={onChanged} stale={stale} />
       <ProfileView profile={c.profile} tasks={c.tasks} />
       <TasksView tasks={c.tasks} />
       <dl className="cb-dl">
@@ -228,7 +229,7 @@ function Panel({ c, now, id, onChanged }: { c: CandybarRow; now: number; id: str
   );
 }
 
-function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = true }: {
+function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = true, stale }: {
   c: CandybarRow;
   now: number;
   windowKnown: boolean;
@@ -237,6 +238,8 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = tru
   onChanged: () => void;
   /** False when the rows sit under a project heading, which already says it. */
   showProject?: boolean;
+  /** Set when the profiles or steward tasks come from an earlier read: how old, in words. */
+  stale?: string;
 }) {
   const panelId = `cb-panel-${c.id}`;
   const descId = `cb-row-desc-${c.id}`;
@@ -280,7 +283,7 @@ function Row({ c, now, windowKnown, open, onToggle, onChanged, showProject = tru
         </span>
       </button>
       <span id={descId} hidden>{rowDescription(c, now)}</span>
-      {open ? <Panel c={c} now={now} id={panelId} onChanged={onChanged} /> : null}
+      {open ? <Panel c={c} now={now} id={panelId} onChanged={onChanged} stale={stale} /> : null}
     </article>
   );
 }
@@ -370,6 +373,9 @@ export function CandybarApp() {
     if (data) actionStore.reconcile(data.candybars);
   }, [data]);
 
+  // The operator taking over (any pointerdown or keydown) ends the intent: a poll after that must not pull focus back.
+  useEffect(() => endOnInteraction(document, () => actionStore.clearFocusIntent()), []);
+
   // A change that moves a row (Disable sends it to Inactive, Archive out of the view) remounts it, and focus would drop
   // to the page. While an action's focus intent is live, a lost focus goes to the same button in the row's new place,
   // else the row itself, else the view tab where the row now lives.
@@ -428,8 +434,9 @@ export function CandybarApp() {
 
   const toggle = (id: string) => update({ open: state.open === id ? undefined : id });
   const windowKnown = data?.window.known ?? false;
+  const stale = data ? staleNote(data.stale, data.generated_at, now) : undefined;
   const rows = (items: CandybarRow[]) =>
-    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} onChanged={reload} showProject={state.group !== "project"} />);
+    items.map((c) => <Row key={c.id} c={c} now={now} windowKnown={windowKnown} open={state.open === c.id} onToggle={() => toggle(c.id)} onChanged={reload} showProject={state.group !== "project"} stale={stale} />);
 
   const [streamSource, setStreamSource] = useState<Source>();
   const sources: Source[] = state.tab === "schedule"

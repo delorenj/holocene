@@ -533,6 +533,9 @@
 .hub-root .cb-act.is-running[aria-disabled="true"] { border-style: solid; }
 .hub-root .cb-act.is-queued { color: var(--working); border-color: var(--working); border-style: dashed; }
 .hub-root .cb-act.is-warn { color: var(--broken); border-color: var(--broken); }
+/* Cancel sits beside the task's own button and stays quieter than it; it turns red when the task looks stuck. */
+.hub-root .cb-act-cancel { color: var(--ink-2); border-color: var(--line); background: transparent; }
+.hub-root .cb-act-cancel:hover:not([aria-disabled="true"]) { color: var(--broken); border-color: var(--broken); background: var(--cb-soft-fail); }
 .hub-root .cb-act-why { margin: 0; font: 400 12px/17px var(--font-mono); color: var(--ink-2); overflow-wrap: anywhere; }
 .hub-root .cb-act-why.is-warn { color: var(--broken); }
 .hub-root .cb-act-note {

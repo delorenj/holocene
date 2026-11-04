@@ -1,7 +1,7 @@
 "use client";
 
 import { CopyRef } from "../hub/ui";
-import { ACTION_LABEL, followUpLabel, taskOutcomeLabel, taskSpend } from "./candybar-model";
+import { ACTION_LABEL, followUpLabel, followUpStatusOf, taskOutcomeLabel, taskSpend } from "./candybar-model";
 import { OutcomeChip } from "./row-parts";
 import type { AxisName, Evaluation, Overview, Profile, RowTasks, Task, TaskAction } from "./types";
 
@@ -72,6 +72,7 @@ function EvaluationView({ e, tasks }: { e: Evaluation; tasks: RowTasks | undefin
   const evaluated = stamp(e.evaluatedAt);
   const child = e.followUp === "refactor" || e.followUp === "fix" ? tasks?.latest[e.followUp] : undefined;
   const followUp = followUpLabel(e, child);
+  const flagged = followUpStatusOf(e, child) === "flagged";
   return (
     <section className="cb-eval" aria-label="Evaluation">
       <h3 className="cb-sub-h">
@@ -92,7 +93,7 @@ function EvaluationView({ e, tasks }: { e: Evaluation; tasks: RowTasks | undefin
       </dl>
       {e.recommendation ? <p className="cb-ov-p"><span className="cb-inline-h">Recommendation</span> {e.recommendation}</p> : null}
       <p className="cb-eval-foot">
-        <span className={`cb-follow-up${e.followUpStatus === "flagged" ? " is-flagged" : ""}`}><span className="cb-inline-h">Follow-up</span> {followUp}</span>
+        <span className={`cb-follow-up${flagged ? " is-flagged" : ""}`}><span className="cb-inline-h">Follow-up</span> {followUp}</span>
         {e.reportKey ? <CopyRef value={e.reportKey} label={`report ${e.reportKey.split("/").pop()}`} /> : null}
       </p>
     </section>

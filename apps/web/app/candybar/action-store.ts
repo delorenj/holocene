@@ -23,7 +23,8 @@ export type ActionState = {
 /** `<candybarId>:<action>`, plus a detail (a fire time) for actions that act on one fire. */
 export const actionKey = (candybarId: string, action: string, detail?: string) => (detail ? `${candybarId}:${action}:${detail}` : `${candybarId}:${action}`);
 
-/** How long a focus intent waits for its row to settle in its new place. */
+/** How long a focus intent waits for its row to settle in its new place. It also ends the moment the operator takes
+ *  over: any pointerdown or keydown (see focus-intent.ts). */
 export const FOCUS_INTENT_MS = 15_000;
 
 export function createActionStore() {
@@ -58,6 +59,12 @@ export function createActionStore() {
       set({ queued: new Map(state.queued).set(actionKey(task.candybarId, task.action), task) });
     },
     pending: (candybarId: string, action: string): Task | undefined => state.queued.get(actionKey(candybarId, action)),
+    /** Forgets a just-queued task by id (it was cancelled), so the button does not wait for a list that already moved on. */
+    forget(taskId: string) {
+      const queued = new Map(state.queued);
+      for (const [key, task] of state.queued) if (task.id === taskId) queued.delete(key);
+      if (queued.size !== state.queued.size) set({ queued });
+    },
     /** Forgets the queued tasks the list now shows (as active, or as the newest of their action). */
     reconcile(rows: Array<Pick<CandybarRow, "id" | "tasks">>) {
       if (!state.queued.size) return;

@@ -243,7 +243,7 @@ export type RestOfDay = {
   /** The candybar-local date that will be skipped (sent as expectDate); absent when the zone is unknown. */
   date?: string;
   zone?: string;
-  /** The span on the viewer's clock, e.g. "7:00 PM tonight to 7:00 PM tomorrow EST". */
+  /** The span on the viewer's clock, each end with its own zone, e.g. "7:00 PM tonight EST to 7:00 PM tomorrow EST". */
   range?: string;
   /** Whether the span runs past the end of the viewer's day, which is all this view lists. */
   beyondView: boolean;
@@ -264,11 +264,12 @@ export function restOfDay(input: { name: string; fireT: number; zone?: string; n
     };
   }
   const zoneLabel = input.zone === "Etc/UTC" ? "UTC" : input.zone;
-  const abbr = fmt(end, viewer, { timeZoneName: "short" }).split(" ").pop() ?? "";
+  // Each end carries its own abbreviation: across a DST change the start is EDT where the end is EST.
+  const abbr = (t: number) => new Intl.DateTimeFormat("en-US", { timeZone: viewer, timeZoneName: "short" }).formatToParts(t).find((p) => p.type === "timeZoneName")?.value ?? "";
   const midnight = (t: number) => fmt(t, viewer, { hour: "numeric", minute: "2-digit", hourCycle: "h23" }) === "00:00";
   const range = midnight(start) && midnight(end)
     ? `all day ${dayWord(start, input.now, viewer)}`
-    : `${clock(start)} ${dayWord(start, input.now, viewer)} to ${clock(end)} ${dayWord(end, input.now, viewer)} ${abbr}`;
+    : `${clock(start)} ${dayWord(start, input.now, viewer)} ${abbr(start)} to ${clock(end)} ${dayWord(end, input.now, viewer)} ${abbr(end)}`;
   const beyondView = input.viewEnd !== undefined && end > input.viewEnd;
   const note = beyondView ? "\n\nThis view lists only your day, so the fires after midnight are skipped without showing here." : "";
   return { date, zone: zoneLabel, range, beyondView, confirm: `Skip every fire of ${input.name} on ${date} (${zoneLabel}), ${range}?${note}` };

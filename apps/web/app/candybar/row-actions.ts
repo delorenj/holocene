@@ -1,5 +1,18 @@
 import type { ActionResult } from "./candybar-api";
-import { ACTION_LABEL, confirmText, conflictNote, doneNote, queuedNote, stewardControl, type ActionKey } from "./candybar-model";
+import {
+  ACTION_LABEL,
+  cancelConfirm,
+  cancelledNote,
+  confirmText,
+  conflictNote,
+  doneNote,
+  isToggleKey,
+  queuedNote,
+  stewardControl,
+  toggleBlockedReason,
+  toggleInFlight,
+  type ActionKey
+} from "./candybar-model";
 import { actionKey, type ActionStore } from "./action-store";
 import type { CandybarRow, Task } from "./types";
 
@@ -42,6 +55,15 @@ export async function runRowAction(c: Row, key: ActionKey, deps: RunDeps): Promi
   const now = deps.now ?? Date.now;
   const k = actionKey(c.id, key);
   if (store.isBusy(k)) return "busy";
+  // One state-changing action per candybar at a time (noise, enable or disable, archive): a second one would race the
+  // first, and Candybar would answer the loser with a confusing 409. The button says why it is off.
+  if (isToggleKey(key)) {
+    const running = toggleInFlight(store.get().busy, c.id);
+    if (running) {
+      store.announce(toggleBlockedReason(c, running));
+      return "blocked";
+    }
+  }
   if (isStewardKey(key)) {
     // A button that is off (aria-disabled, so it still takes the click) says why instead of sending.
     const ctl = stewardControl(c, key, now(), { pending: store.pending(c.id, key) });
@@ -53,6 +75,7 @@ export async function runRowAction(c: Row, key: ActionKey, deps: RunDeps): Promi
   const text = confirmText(c, key);
   if (text && !deps.confirm(text)) return "dismissed";
   // A second click while the confirm was open (or while the first request runs) sends nothing.
+  if (isToggleKey(key) && toggleInFlight(store.get().busy, c.id)) return "blocked";
   if (!store.begin(k)) return "busy";
   store.note(c.id, undefined, now());
   const value = key === "noise" ? !c.noise : key === "enabled" ? !c.enabled : key === "archived" ? !c.archived : undefined;
@@ -96,6 +119,53 @@ export async function runRowAction(c: Row, key: ActionKey, deps: RunDeps): Promi
     // Disable, enable, archive and unarchive move the row to another section (or out of the view): focus follows it.
     store.intendFocus(c.id, key, now());
   }
+  deps.onChanged();
+  return "sent";
+}
+
+export type CancelDeps = Pick<RunDeps, "store" | "confirm" | "onChanged" | "now"> & {
+  cancel: (taskId: string) => Promise<ActionResult>;
+};
+
+/**
+ * Cancels a queued or running steward task, after asking. Candybar settles it as failed ("cancelled by operator"); the
+ * steward stops a run in progress within a minute. A 409 means it had already finished: information, and the list
+ * reloads. The busy key is the task's, so a second click sends nothing.
+ */
+export async function runCancel(c: Pick<Row, "id" | "name">, task: Task, deps: CancelDeps): Promise<RunOutcome> {
+  const { store } = deps;
+  const now = deps.now ?? Date.now;
+  const k = actionKey(c.id, "cancel", task.id);
+  if (store.isBusy(k)) return "busy";
+  if (!deps.confirm(cancelConfirm(c.name, task))) return "dismissed";
+  if (!store.begin(k)) return "busy";
+  store.note(c.id, undefined, now());
+  let r: ActionResult;
+  try {
+    r = await deps.cancel(task.id);
+  } finally {
+    store.end(k);
+  }
+  const verb = ACTION_LABEL[task.action].toLowerCase();
+  if (!r.ok) {
+    if (r.status === 409) {
+      const text = `The ${verb} of ${c.name} had already finished, so there was nothing to cancel.`;
+      store.note(c.id, { tone: "info", text }, now());
+      store.announce(text);
+      store.forget(task.id);
+      deps.onChanged();
+      return "sent";
+    }
+    const text = `Cancel ${verb} failed: ${r.error}${r.status ? ` (${r.status})` : ""}`;
+    store.note(c.id, { tone: "error", text }, now());
+    store.announce(text, true);
+    if (r.status === 404) deps.onChanged();
+    return "sent";
+  }
+  store.forget(task.id);
+  const text = cancelledNote(c.name, task);
+  store.note(c.id, { tone: "done", text }, now());
+  store.announce(text);
   deps.onChanged();
   return "sent";
 }
