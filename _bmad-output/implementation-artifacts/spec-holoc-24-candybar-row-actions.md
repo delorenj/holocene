@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-11-03'
 status: 'done'
 route: 'oneshot'
-review_loop_iteration: 1
+review_loop_iteration: 2
 context: ['/home/delorenj/code/33GOD/candybar/_bmad-output/specs/spec-cron-framework/steward-contract.md']
 ---
 
@@ -31,7 +31,7 @@ Decisions (mine, not user-visible gaps):
 - Schedule row actions sit over the cron text on hover or focus-within on a hover-capable wide screen (the buttons stay in the tab order) and behind a small trailing button on touch and narrow screens. A single skip marks the row at once, a rest-of-day skip refetches the snapshot, noise flips the candybar's rows; the stream's `skip.applied` and `definition.changed` say the same later. Failures show as a transient alert above the list.
 - Outcome chips use hub tokens only: Nominal `--cleared`, Suboptimal `--pop`, Drifted `--broken` on the soft-fail tint, Orphaned dashed `--ink-3`.
 
-Files: `apps/api/src/candybar.ts`, `candybar-actions.test.ts` (23 tests; the API suite is 230), `apps/web/app/candybar/{candybar-model.ts,candybar-api.ts,row-parts.tsx,profile-panel.tsx,action-bar.tsx,action-store.ts,row-actions.ts,fire-actions.ts}` (+ `candybar-model.test.ts`, `row-actions.test.ts`, `schedule-model.test.ts`; 48 web tests in all), `candybar-app.tsx`, `schedule-view.tsx`, `schedule-model.ts`, `candybar.css`, `types.ts`, `apps/web/app/hub/hub-app.tsx` (`usePoll.reload`).
+Files: `apps/api/src/candybar.ts`, `candybar-actions.test.ts` (28 tests; the API suite is 235), `apps/web/app/candybar/{candybar-model.ts,candybar-api.ts,row-parts.tsx,profile-panel.tsx,action-bar.tsx,action-store.ts,row-actions.ts,fire-actions.ts,schedule-sync.ts,focus-intent.ts}` (+ `candybar-model.test.ts`, `row-actions.test.ts`, `schedule-model.test.ts`, `schedule-sync.test.ts`, `round3.test.ts`; 66 web tests in all), `candybar-app.tsx`, `schedule-view.tsx`, `schedule-model.ts`, `candybar.css`, `types.ts`, `apps/web/app/hub/hub-app.tsx` (`usePoll.reload`).
 
 Round 1 (after the adversarial review, 2026-11-03) changed these decisions:
 
@@ -77,3 +77,23 @@ Live verification (2026-11-03, holocene-web, Playwright 1440 and 390, screenshot
 - **Health strips:** 92 strips with 1,559 filled cells, and no warnings.
 - **deploy-smoke-exec:** archived, unarchived and enabled through the UI, and restored exactly. Unmark noise, then Mark noise, on its Schedule row. A Skip of its 04:15Z fire showed at once on the acting page. A second page saw it through the stream's `skip.applied` (captured raw: reason `occurrence`, `skipped: true`).
 - **Not pressed:** Enrich, Evaluate and Fix, left for the integrator.
+
+Round 2 (second adversarial review, 8 verified defects N1-N8, 2026-11-04). All 8 are patched (holocene 5c4477a, 7d06694, 7be6c3e; candybar contract 3cc2854):
+
+- **N1, Fix vanished mid-task.** `fixOffered`: the button stays while a fix is queued, running, being requested or just queued by this page, even when the proving run turned the last result green (the rule "3 failures in the last 10" no longer drops it). Never for an archived candybar. Tested.
+- **N2, no way out of a stuck task.** `POST /api/modules/candybar/tasks/:taskId/cancel` (UUID-validated, forwards to Candybar's cancel route, answers `{ok, task}`; its 409 and 404 come back as `{error}` with that status; caches dropped). Every task in flight, a refactor included, has a Cancel beside the steward buttons. It confirms first, treats a 409 as "already finished" information, and forgets a just-queued task so the button returns. A task queued over 2 minutes says "the steward (candybar-steward) may be down. You can cancel it." API tests (3) and web tests (4). Live: queued an Enrich on `wax-calls-sync` through the UI and cancelled it queued (task `01a1a4fa-b138`) and running (`01a1a4fc-93be`, "Enriching 38s"); both ended `failed`, "cancelled by operator", and the button came back.
+- **N3, events lost into a model about to be replaced.** The snapshot/stream ordering moved from the Schedule effect into `schedule-sync.ts`; `loaded` is now `!again`, so it stays false until the last queued snapshot read lands. The new test fails without the fix (checked).
+- **N4, one timeout switched every steward button off.** The API keeps the last good profiles and tasks (also while the list is down), marks them stale (`stale: {profiles, tasks}` seconds, warning "from an older read (40s ago)"), and the panel says "Profiles and steward tasks are 40s old ...". Only a read that never worked, or a 404, leaves the rows without them (buttons off with the reason). API tests (3), web test (1), mock screenshot.
+- **N5, "refactor done" for a refactor that changed nothing.** Without `followUpStatus` the child task's own outcome words the follow-up: `done` / `done_proven` "done", `fixed`, `not_fixed`, `done_not_proven` "done, not proven", `not_applied` "not applied, flagged for you to decide" (the flagged Suboptimal case, also styled as flagged). The child is the one named by `followUpTaskId`, else the one whose parent is the evaluation. Tested.
+- **N6, one zone label for two ends of the rest-of-day range.** Each end names its own abbreviation ("8:00 PM tonight EDT to 7:00 PM tomorrow EST" across the fall-back). Tested with the 2026-11-01 change; live confirm in New York checked.
+- **N7, two state-changing actions on one candybar at once, and error notes that never left.** Noise, enable or disable and archive run one at a time per candybar (the Schedule's Mark noise too): the others are `aria-disabled`, `aria-describedby` a line "Disabling is in progress; one change to a candybar at a time.", and a blocked click is announced and sends nothing, not even a confirm. Error notes clear after 10 s (others 30 s) or on the next action. Tested; verified live with a 3 s delayed Disable.
+- **N8, focus pulled back after the operator clicked away.** `endOnInteraction`: any pointerdown or keydown (capture phase, auto-repeat ignored) ends the focus intent, on Definitions and on the Schedule; the 15 s timer stays as the backstop. Tested; verified live (Unmark noise keeps focus on its button, a click on empty space, one 15 s poll later focus is still on the body).
+
+Live verification (2026-11-04, holocene-api rebuilt and restarted, holocene-web recreated, Playwright against the container on :3001; scripts in `/tmp/cbshot/round3_*.py`, screenshots `/tmp/cbshots-final/round3-*.png`):
+
+- N2 real cancel on `wax-calls-sync`, queued and running (above).
+- N1, the stuck queue with a running refactor, and N4's stale line on altered list data with every write aborted (`round3_mock.py`).
+- N7 and N8 on `deploy-smoke-exec`, ending exactly as it began (enabled, not archived, noise on): Disable in flight with Archive and Noise off and their clicks sending nothing; an injected 502 note gone after 10.4 s; the N8 focus check.
+- No page or console errors on Schedule and Definitions in UTC, New York and Tokyo, and none at 390 px (no horizontal scroll).
+- Two things went wrong and were repaired: my first N7 script clicked an `aria-disabled` Archive through Playwright's wait, which clicked it for real once Disable finished, leaving `deploy-smoke-exec` archived and disabled for about a minute (restored through Candybar's API, then the script was fixed to force-click without waiting); and another actor recreated `holocene-web` while the first running-cancel pass was in flight (a connection refused), so that pass was rerun.
+- Not pressed live: Fix and Evaluate (their confirms and states are unit-tested and mocked), and the schedule `N3` race (unit-tested only; it needs a stream event landing inside a queued snapshot read).
