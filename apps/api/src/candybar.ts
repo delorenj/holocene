@@ -682,8 +682,8 @@ export async function readCandybars(opts: { fetchImpl?: Fetch; baseUrl?: string;
         }
       : readLastRuns(fetchImpl, baseUrl, list.definitions.map((d) => d.id), now),
     // With Candybar down, whatever was last read well stands in (marked stale); no further reads that would only time out.
-    list.down ? (lastGoodProfiles ? { profiles: lastGoodProfiles.value, staleAt: lastGoodProfiles.at } : {}) : readProfiles(fetchImpl, baseUrl, now),
-    list.down ? (lastGoodTasks ? { tasks: lastGoodTasks.value, staleAt: lastGoodTasks.at } : {}) : readTasks(fetchImpl, baseUrl, now)
+    list.down ? (lastGoodProfiles ? ({ profiles: lastGoodProfiles.value, staleAt: lastGoodProfiles.at } as ProfilesRead) : ({} as ProfilesRead)) : readProfiles(fetchImpl, baseUrl, now),
+    list.down ? (lastGoodTasks ? ({ tasks: lastGoodTasks.value, staleAt: lastGoodTasks.at } as TasksRead) : ({} as TasksRead)) : readTasks(fetchImpl, baseUrl, now)
   ]);
   return composePayload({
     now: clock(),
