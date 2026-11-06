@@ -48,7 +48,8 @@ When sources disagree, record a truth-check note and keep the issue open.
 
 Move the chosen issue to `started` (`tp transition <id> started`) and create/
 refresh its evidence file. In bridge mode, spawn work by creating or refreshing
-one linked Hermes Kanban execution card (WIP=1) rather than direct ad-hoc
+one linked Hermes Kanban execution card per ready issue (parallel lanes; a card
+on another issue never blocks this one) rather than direct ad-hoc
 worker dispatch. Preferred command path:
 `.scripts/scrum-master/bin/kanban-bridge-enqueue.sh <ISSUE_ID> <ASSIGNEE_PROFILE>`.
 
