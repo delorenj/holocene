@@ -17,7 +17,7 @@ Core principle: board status is not proof. Close-gate evidence remains proof.
 The existing Scrum Master rules are strong at governance:
 
 - Provider-agnostic ticket adapter (`tp`) over Plane/Linear/Trello.
-- WIP=1 expectation for active implementation work.
+- Parallel lanes: every ready issue may carry its own implementation worker; no default WIP cap.
 - Evidence-first close gate (`issue-close-gate.sh`).
 - Autonomous delegated review path with drift protection.
 - Bloodbank event trail for consequential transitions.
@@ -120,12 +120,16 @@ Optional metadata:
    - trigger independent reviewer task.
    - run `issue-autonomous-review.sh ... --close`.
 
-## WIP and dependency rules
+## Parallelism and dependency rules
 
-- Global implementation WIP remains 1 primary issue at a time.
-- Within that issue, worker may create child cards only when they are true
+- Every ready issue may have its own implementation worker at the same time;
+  there is no default cap. One owner per issue; an active worker on another
+  issue never blocks dispatching a different ready issue.
+- Within one issue, its worker may create child cards only when they are true
   dependencies (no speculative fan-out).
 - A child card must include parent linkage and inherited provider metadata.
+- Issues whose file scopes clearly collide are sequenced with a `--blocks`
+  relation instead of run blind in parallel.
 
 ## Event contract
 
@@ -180,7 +184,7 @@ Phase 5: hardening
 
 ## Acceptance checklist
 
-- one active implementation issue max (WIP=1)
+- every ready issue has exactly one implementation owner (parallel lanes are the norm; no default WIP cap)
 - every active provider issue has a linked Kanban primary card
 - no provider ticket closes unless close gate passes
 - autonomous close only via delegated-review protocol

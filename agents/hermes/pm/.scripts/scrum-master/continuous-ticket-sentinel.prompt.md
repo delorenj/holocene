@@ -34,9 +34,12 @@ on Linear, Plane, or Trello.
 2. Reconcile: active milestone (`tp active_milestone`), issues (`tp list_issues`),
    local evidence under `_bmad-output/implementation-artifacts/issue-evidence/`,
    and live worker state (zellij sessions, worktrees, git).
-3. If one worker ticket is `started` and healthy, monitor it and record state.
-4. If no worker is active and a ready unblocked issue exists, route exactly one
-   execution lane through Hermes Kanban:
+3. For each ticket that is `started` with a healthy worker, monitor it and
+   record state. A worker active on another ticket never blocks dispatching a
+   different ready ticket.
+4. For every ready unblocked issue that has no active worker, route one
+   execution lane per issue through Hermes Kanban (parallel lanes; no default
+   cap):
    - keep provider issue ownership in `tp` (set/keep issue in `started`)
    - create or refresh one primary Kanban card linked to that provider issue
    - include bridge metadata (`provider`, `provider_issue_id`,
