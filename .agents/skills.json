@@ -1,9 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/delorenj/skillex/main/skills.schema.json",
   "inherit_global": true,
-  "sets": [
-    "min-global-91a161"
-  ],
+  "set": "min-global-91a161",
   "packs": [
     "bmad@6.12.1-next.1",
     "holocene-extras@1.0.0"
