@@ -1,0 +1,7 @@
+{
+  "schema": "skillex.bmad-materialization-receipt/v1",
+  "specDigest": "sha256:7d5f942846421c9945689db3456074098386e711b3931c832161935c2aaec4a5",
+  "inputsDigest": "sha256:7be0e2b795b0a243ebbf3c4d8dfb950a9295f9643ca4d1a73d00975d93a3cc6e",
+  "bmadVersion": "6.12.1-next.1",
+  "owned": []
+}
