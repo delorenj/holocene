@@ -1,6 +1,7 @@
+import { candystoreBaseUrl } from "./candystore-url.js";
 import { getFleetAgentRefs, type FleetAgentRef } from "./fleet.js";
 
-const CANDYSTORE_API_URL = (process.env.CANDYSTORE_API_URL ?? "http://127.0.0.1:8683").replace(/\/$/, "");
+const CANDYSTORE_API_URL = candystoreBaseUrl();
 const CANDYSTORE_PAGE_LIMIT = 1000;
 const CANDYSTORE_MAX_PAGES = 5;
 const GATEWAY_SERVICE = "bloodbank-hermes-gateway";

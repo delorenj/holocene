@@ -40,7 +40,21 @@ HOME = Path.home()
 STATE_DIR = Path(os.environ.get("MEMO_STATE_DIR", HOME / ".local/state/holocene-auto/inbox-watcher"))
 GATEWAY_DB = Path(os.environ.get("MEMO_GATEWAY_DB", HOME / ".hermes/bloodbank-hermes-gateway-state.sqlite3"))
 HERMES_PROFILES = Path(os.environ.get("MEMO_HERMES_PROFILES", HOME / ".hermes/profiles"))
-CANDYSTORE_URL = os.environ.get("MEMO_CANDYSTORE_URL", "http://127.0.0.1:8683")
+# 8683 is the cross-peer Candystore loopback contract (candystore README "Port contract").
+CANDYSTORE_DEFAULT_URL = "http://127.0.0.1:8683"
+
+
+def candystore_base(env=None) -> str:
+    """MEMO_CANDYSTORE_URL, then the platform-wide CANDYSTORE_URL, then 8683; blanks fall through."""
+    env = os.environ if env is None else env
+    for key in ("MEMO_CANDYSTORE_URL", "CANDYSTORE_URL"):
+        value = (env.get(key) or "").strip()
+        if value:
+            return value.rstrip("/")
+    return CANDYSTORE_DEFAULT_URL
+
+
+CANDYSTORE_URL = candystore_base()
 NATS_MONITOR_URL = os.environ.get("MEMO_NATS_MONITOR_URL", "http://127.0.0.1:8222")
 VOX_URL = os.environ.get("MEMO_VOX_URL", "https://vox.delo.sh")
 # Two gateway lanes, one durable consumer each (bloodbank/docs/interactive-command-lane.md).

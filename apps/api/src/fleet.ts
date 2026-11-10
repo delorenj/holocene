@@ -10,6 +10,7 @@ import {
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { load } from "js-yaml";
+import { candystoreBaseUrl } from "./candystore-url.js";
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_PATH = process.env.HERMES_REGISTRY_PATH ?? "/home/delorenj/.hermes/agents-registry.yaml";
@@ -19,7 +20,7 @@ const CANONICAL_PM_SKILL = `${CANONICAL_SKILLS_DIR}/subagent-driven-development/
 const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 const userRuntimeDir = process.env.XDG_RUNTIME_DIR ?? (uid === undefined ? undefined : `/run/user/${uid}`);
 const LOG_TAIL_MAX_BYTES = 128 * 1024;
-const CANDYSTORE_API_URL = (process.env.CANDYSTORE_API_URL ?? "http://127.0.0.1:8683").replace(/\/$/, "");
+const CANDYSTORE_API_URL = candystoreBaseUrl();
 const CANDYSTORE_HISTORY_LIMIT = Math.max(50, Math.min(2000, Number(process.env.CANDYSTORE_HISTORY_LIMIT ?? 800)));
 
 const systemdEnv = {
