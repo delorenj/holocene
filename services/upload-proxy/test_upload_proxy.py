@@ -499,7 +499,7 @@ class EarshotAudioTelemetry(unittest.TestCase):
         self.assertEqual(clean["audio"]["streams"]["alarm"], {"cur": 6, "max": 7})
 
     def test_a_stream_may_be_missing_and_unknown_fields_are_dropped(self):
-        audio = {**AUDIO, "streams": {"alarm": {"cur": 7, "max": 7, "extra": 1}, "voice_call": {"cur": 1, "max": 5}},
+        audio = {**AUDIO, "streams": {"alarm": {"cur": 7, "max": 7, "extra": 1}, "system": {"cur": 1, "max": 5}},
                  "battery": 80}
         clean, _ = up.validate_heard({**HEARTBEAT, "audio": audio})
         self.assertEqual(clean["audio"], {"ringer_mode": "silent", "interruption_filter": "priority",
@@ -547,6 +547,68 @@ class EarshotAudioTelemetry(unittest.TestCase):
         self.assertNotIn("audio", env["data"])
         self.assertNotIn("channels", env["data"])
         self.assertEqual(env["data"]["phase"], "started")
+        self.assertEqual(env["data"]["key"], EKEY)
+
+
+class EarshotInCallTelemetry(unittest.TestCase):
+    """An alarm item that met a phone call reports the path it took (`incall`) and the kind of call (`call`) on its
+    existing phases. Both are optional telemetry: kept when well formed, dropped when not, and never able to cost a
+    beacon its 200, add a phase, or change a Bloodbank fact. The phone's voice-call stream rides in `audio` too."""
+
+    def test_the_voice_call_stream_is_a_known_stream(self):
+        audio = {**AUDIO, "streams": {**AUDIO["streams"], "voice_call": {"cur": 8, "max": 8}}}
+        clean, why = up.validate_heard({**HEARTBEAT, "audio": audio})
+        self.assertIsNone(why)
+        self.assertEqual(clean["audio"]["streams"]["voice_call"], {"cur": 8, "max": 8})
+        bad = {**AUDIO, "streams": {"voice_call": {"cur": 9, "max": 8}}}   # same rule as every stream: cur <= max
+        clean, why = up.validate_heard({**HEARTBEAT, "audio": bad})
+        self.assertIsNone(why)
+        self.assertNotIn("audio", clean)
+
+    def test_every_path_and_a_call_kind_are_kept_on_every_playback_phase(self):
+        for phase in up.EARSHOT_PHASES:
+            for path in ("speaker", "route_only", "failed"):
+                clean, why = up.validate_heard({**BEACON, "phase": phase, "incall": path, "call": "in_communication"})
+                self.assertIsNone(why, (phase, path))
+                self.assertEqual((clean["incall"], clean["call"]), (path, "in_communication"))
+
+    def test_the_started_beacon_may_carry_only_the_kind(self):
+        clean, why = up.validate_heard({**BEACON, "phase": "started", "call": "in_call"})
+        self.assertIsNone(why)
+        self.assertEqual(clean["call"], "in_call")
+        self.assertNotIn("incall", clean)
+
+    def test_beacons_without_them_are_unchanged(self):
+        for beacon in (HEARTBEAT, BEACON):
+            clean, why = up.validate_heard(beacon)
+            self.assertIsNone(why)
+            self.assertNotIn("incall", clean)
+            self.assertNotIn("call", clean)
+
+    def test_a_malformed_value_is_dropped_and_the_beacon_still_accepted(self):
+        for bad in ("loud", "SPEAKER", "", 5, True, [], {}, None, "speaker "):
+            clean, why = up.validate_heard({**BEACON, "phase": "finished", "incall": bad})
+            self.assertIsNone(why, bad)
+            self.assertNotIn("incall", clean, bad)
+            self.assertEqual(clean["phase"], "finished")
+        for bad in ("In Call", "in-call", "", "x" * 33, "1call", 5, True, [], {}, None, "in_call\n"):
+            clean, why = up.validate_heard({**BEACON, "phase": "finished", "call": bad})
+            self.assertIsNone(why, bad)
+            self.assertNotIn("call", clean, bad)
+
+    def test_an_incall_beep_phase_does_not_exist(self):
+        # The path rides on the existing phases; a phase this proxy does not know is a 400 the phone drops.
+        clean, why = up.validate_heard({**BEACON, "phase": "incall_beep"})
+        self.assertIsNone(clean)
+        self.assertIn("bad phase", why)
+
+    def test_they_never_reach_the_bloodbank_fact(self):
+        clean, _ = up.validate_heard({**BEACON, "phase": "finished", "incall": "speaker", "call": "in_communication"})
+        self.assertIn("incall", clean)
+        env = up.build_heard_envelope(clean, "ua")
+        self.assertNotIn("incall", env["data"])
+        self.assertNotIn("call", env["data"])
+        self.assertEqual(env["data"]["phase"], "finished")
         self.assertEqual(env["data"]["key"], EKEY)
 
 
