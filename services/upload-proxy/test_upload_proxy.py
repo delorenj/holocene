@@ -471,6 +471,85 @@ class EarshotHeartbeatAndSkew(unittest.TestCase):
         self.assertEqual(env["data"]["clock_skew_ms"], 250)
 
 
+AUDIO = {"ringer_mode": "silent", "interruption_filter": "priority",
+         "streams": {"ring": {"cur": 0, "max": 7}, "notification": {"cur": 0, "max": 7},
+                     "alarm": {"cur": 6, "max": 7}, "music": {"cur": 9, "max": 15}}}
+
+
+class EarshotAudioTelemetry(unittest.TestCase):
+    """The phone's audio setup (`audio`) and followed channels (`channels`) are optional telemetry: kept when well
+    formed, dropped when not, and never able to cost a beacon its 200 or change a Bloodbank fact."""
+
+    def test_a_heartbeat_with_audio_and_channels_keeps_both(self):
+        clean, why = up.validate_heard({**HEARTBEAT, "audio": AUDIO, "channels": ["phone", "alarm"]})
+        self.assertIsNone(why)
+        self.assertEqual(clean["audio"], AUDIO)
+        self.assertEqual(clean["channels"], ["phone", "alarm"])
+
+    def test_beacons_without_them_are_unchanged(self):
+        for beacon in (HEARTBEAT, BEACON):
+            clean, why = up.validate_heard(beacon)
+            self.assertIsNone(why)
+            self.assertNotIn("audio", clean)
+            self.assertNotIn("channels", clean)
+
+    def test_a_playback_beacon_may_carry_audio_too(self):
+        clean, why = up.validate_heard({**BEACON, "phase": "started", "audio": AUDIO})
+        self.assertIsNone(why)
+        self.assertEqual(clean["audio"]["streams"]["alarm"], {"cur": 6, "max": 7})
+
+    def test_a_stream_may_be_missing_and_unknown_fields_are_dropped(self):
+        audio = {**AUDIO, "streams": {"alarm": {"cur": 7, "max": 7, "extra": 1}, "voice_call": {"cur": 1, "max": 5}},
+                 "battery": 80}
+        clean, _ = up.validate_heard({**HEARTBEAT, "audio": audio})
+        self.assertEqual(clean["audio"], {"ringer_mode": "silent", "interruption_filter": "priority",
+                                          "streams": {"alarm": {"cur": 7, "max": 7}}})
+
+    def test_every_ringer_mode_and_interruption_filter_is_accepted(self):
+        for ringer in ("normal", "vibrate", "silent"):
+            for dnd in ("all", "priority", "alarms", "none", "unknown"):
+                clean, _ = up.validate_heard({**HEARTBEAT, "audio": {**AUDIO, "ringer_mode": ringer, "interruption_filter": dnd}})
+                self.assertEqual((clean["audio"]["ringer_mode"], clean["audio"]["interruption_filter"]), (ringer, dnd))
+
+    def test_a_malformed_audio_block_is_dropped_and_the_beacon_still_accepted(self):
+        bad = [
+            "loud", 5, [], {},
+            {**AUDIO, "ringer_mode": "loud"}, {**AUDIO, "ringer_mode": None},
+            {**AUDIO, "interruption_filter": "sleep"},
+            {**AUDIO, "streams": "all"}, {**AUDIO, "streams": None},
+            {**AUDIO, "streams": {"alarm": {"cur": 8, "max": 7}}},          # cur above max
+            {**AUDIO, "streams": {"alarm": {"cur": -1, "max": 7}}},
+            {**AUDIO, "streams": {"alarm": {"cur": True, "max": 7}}},
+            {**AUDIO, "streams": {"alarm": {"cur": 1.5, "max": 7}}},
+            {**AUDIO, "streams": {"alarm": {"cur": "6", "max": 7}}},
+            {**AUDIO, "streams": {"alarm": {"cur": 1, "max": 10_000}}},
+            {**AUDIO, "streams": {"alarm": 6}},
+            {**AUDIO, "streams": {"alarm": {"cur": 1}}},
+        ]
+        for audio in bad:
+            clean, why = up.validate_heard({**HEARTBEAT, "audio": audio})
+            self.assertIsNone(why, audio)
+            self.assertNotIn("audio", clean, audio)
+            self.assertEqual(clean["phase"], "heartbeat")
+
+    def test_channels_are_slugs_deduplicated_and_bounded(self):
+        clean, _ = up.validate_heard({**HEARTBEAT, "channels": ["phone", "alarm", "phone"]})
+        self.assertEqual(clean["channels"], ["phone", "alarm"])
+        for bad in ("phone", [], [5], ["Phone"], ["a/b"], ["phone", ""], [f"c{i}" for i in range(17)], {"phone": 1}):
+            clean, why = up.validate_heard({**HEARTBEAT, "channels": bad})
+            self.assertIsNone(why, bad)
+            self.assertNotIn("channels", clean, bad)
+
+    def test_telemetry_never_reaches_the_bloodbank_fact(self):
+        clean, _ = up.validate_heard({**BEACON, "phase": "started", "audio": AUDIO, "channels": ["phone"]})
+        self.assertIn("audio", clean)
+        env = up.build_heard_envelope(clean, "ua")
+        self.assertNotIn("audio", env["data"])
+        self.assertNotIn("channels", env["data"])
+        self.assertEqual(env["data"]["phase"], "started")
+        self.assertEqual(env["data"]["key"], EKEY)
+
+
 class BeaconJsonl(unittest.TestCase):
     def test_every_accepted_beacon_lands_as_one_json_line(self):
         with tempfile.TemporaryDirectory() as d:

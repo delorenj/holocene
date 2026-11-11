@@ -45,10 +45,15 @@ publishes as failed(stage record, error_code silent_capture, retryable false) wi
 
 Earshot (bucket channel that plays on the phone, repo delorenj/earshot): the phone POSTs one beacon per phase
 to /upload/heard {channel, key, phase detected|started|finished|failed|missed, at, last_modified, device,
-app_version, error?, clock_skew_ms?}. The proxy validates the shape, logs one JSON line (event "heard",
-status 200 | 400) and publishes bloodbank.audio.earshot.<detected|started|ended|failed|skipped>
+app_version, error?, clock_skew_ms?, audio?, channels?}. The proxy validates the shape, logs one JSON line (event
+"heard", status 200 | 400) and publishes bloodbank.audio.earshot.<detected|started|ended|failed|skipped>
 (finished -> ended, missed -> skipped; data.phase keeps the device's own word), fail-open.
 `earshot trace` reads those log lines.
+Two optional telemetry fields ride on the beacon, both logged and persisted but never published in the Bloodbank
+fact (its data stays exactly what it was): `audio` {ringer_mode, interruption_filter, streams{ring,notification,
+alarm,music: {cur,max}}} is the phone's audio setup (why a drop was silent), and `channels` (heartbeats) is every
+channel the listener follows. They are sanitised leniently: a malformed block is DROPPED and the beacon is still
+accepted, because a diagnostic must never cost the phone its liveness ping.
 phase "heartbeat" (about one a minute while the listener is alive) is liveness only: validated, logged and
 persisted, but it publishes NO Bloodbank fact. `earshot status` reads the persisted heartbeats so a dead
 listener is distinguishable from no drops.
@@ -820,6 +825,7 @@ EARSHOT_BUCKET = "earshot"
 EARSHOT_PHASES = {"detected": "detected", "started": "started", "finished": "ended", "failed": "failed", "missed": "skipped"}
 HEARTBEAT_PHASE = "heartbeat"   # liveness only: logged + persisted, never published as a fact
 EARSHOT_CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+EARSHOT_TELEMETRY_ONLY = ("audio", "channels")   # logged and persisted, never part of a Bloodbank fact
 RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$")
 MAX_SKEW_MS = 86_400_000        # a phone more than a day off its clock has bigger problems
 # Compose bind-mounts this into the container; empty = stdout logging only (dev).
@@ -876,13 +882,51 @@ def _clean_skew(v):
     return ms, None
 
 
+EARSHOT_RINGER_MODES = ("normal", "vibrate", "silent")
+EARSHOT_INTERRUPTION_FILTERS = ("all", "priority", "alarms", "none", "unknown")
+EARSHOT_AUDIO_STREAMS = ("ring", "notification", "alarm", "music")
+MAX_STREAM_INDEX = 1000          # AudioManager indexes are single or double digits; this only rejects garbage
+MAX_FOLLOWED_CHANNELS = 16
+
+
+def _clean_audio(v):
+    """The phone's audio setup as a clean dict, or None when absent or malformed (lenient: the caller drops it
+    and still accepts the beacon). Keeps only the known fields; every stream needs integer cur <= max."""
+    if not isinstance(v, dict):
+        return None
+    ringer, dnd, streams = v.get("ringer_mode"), v.get("interruption_filter"), v.get("streams")
+    if ringer not in EARSHOT_RINGER_MODES or dnd not in EARSHOT_INTERRUPTION_FILTERS or not isinstance(streams, dict):
+        return None
+    clean_streams = {}
+    for name in EARSHOT_AUDIO_STREAMS:
+        s = streams.get(name)
+        if s is None:
+            continue
+        cur, mx = (s.get("cur"), s.get("max")) if isinstance(s, dict) else (None, None)
+        ok = all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= MAX_STREAM_INDEX for n in (cur, mx))
+        if not ok or cur > mx:
+            return None
+        clean_streams[name] = {"cur": cur, "max": mx}
+    return {"ringer_mode": ringer, "interruption_filter": dnd, "streams": clean_streams}
+
+
+def _clean_channels(v):
+    """The channels a listener follows, or None when absent or malformed (lenient, like _clean_audio)."""
+    if not isinstance(v, list) or not 0 < len(v) <= MAX_FOLLOWED_CHANNELS:
+        return None
+    if not all(isinstance(c, str) and EARSHOT_CHANNEL_RE.match(c) for c in v):
+        return None
+    return list(dict.fromkeys(v))
+
+
 def validate_heard(beacon):
     """(clean beacon, None) for a well-formed earshot beacon, else (None, reason).
 
     Required: channel, phase, at, device, app_version. For the five playback phases also key (under
     that channel) and last_modified. phase "heartbeat" is liveness: key and last_modified optional
     (validated when present). Optional on every beacon: error, clock_skew_ms (phone clock minus
-    server clock, ms). Anything else is dropped.
+    server clock, ms), audio (the phone's audio setup) and channels (the channels it follows); the last
+    two are dropped, not refused, when malformed. Anything else is dropped.
     """
     if not isinstance(beacon, dict):
         return None, "body is not a JSON object"
@@ -927,6 +971,12 @@ def validate_heard(beacon):
         clean["error"] = re.sub(r"[\x00-\x1f\x7f]", " ", err)[:300]
     if skew is not None:
         clean["clock_skew_ms"] = skew
+    audio = _clean_audio(beacon.get("audio"))
+    if audio is not None:
+        clean["audio"] = audio
+    channels = _clean_channels(beacon.get("channels"))
+    if channels is not None:
+        clean["channels"] = channels
     return clean, None
 
 
@@ -943,7 +993,9 @@ def build_heard_envelope(beacon: dict, user_agent: str) -> dict:
         "schemaref": f"{ce_type}.v1", "dataschema": f"apicurio://holyfields/{ce_type}/versions/1", "kind": "event",
         "actor": {"type": "service", "agent_id": f"bloodbank.service.{SERVICE}", "cli": None, "provider": None, "model": None},
         "ordering_key": f"earshot:{event_id}",
-        "data": {**beacon, "event_id": event_id, "occurred_at": now_iso(), "client_user_agent": user_agent[:200]},
+        # audio and channels are device telemetry for `earshot status`; the fact's data stays what its schema says.
+        "data": {**{k: v for k, v in beacon.items() if k not in EARSHOT_TELEMETRY_ONLY},
+                 "event_id": event_id, "occurred_at": now_iso(), "client_user_agent": user_agent[:200]},
     }
 
 
@@ -1460,7 +1512,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _heard(self):
         """Earshot device beacon: POST /upload/heard {channel,key?,phase,at,last_modified?,device,
-        app_version,error?,clock_skew_ms?}. Every accepted beacon is logged AND persisted to the
+        app_version,error?,clock_skew_ms?,audio?,channels?}. Every accepted beacon is logged AND persisted to the
         mounted JSONL (history survives container recreation). Heartbeats stop there: one a minute
         per device must not flood the bus, so no Bloodbank fact for them."""
         ua = self.headers.get("User-Agent", "")
