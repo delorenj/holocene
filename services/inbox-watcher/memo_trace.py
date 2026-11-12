@@ -1391,10 +1391,13 @@ def cmd_converse(args) -> int:
             print("         " + ", ".join(bits))
         tl = cb.get("tools") or {}
         print(f"         tools loaded {tl.get('loaded')}" + (f" errors {tl.get('errors')}" if tl.get("errors") else "")
-              + f", default voice {cb.get('default_voice')}, {cb.get('voices')} vox voices")
+              + f", inherited profile voices; emergency {cb.get('emergency_voice') or cb.get('default_voice')}, "
+                f"{cb.get('voices')} vox voices")
         for agent, t in (cb.get("tiles") or {}).items():
-            print(f"         tile {agent}: voice {t.get('voice')}, model {t.get('model') or 'default'} -> ladder "
-                  f"{' > '.join(t.get('ladder') or [])} ({t.get('budget_s')} s)")
+            print(f"         tile {agent}: voice {t.get('voice')} ({t.get('source') or 'unknown'}"
+                  f"{', ' + t['fallback'] if t.get('fallback') else ''}), model {t.get('model') or 'default'} -> ladder "
+                  f"{' > '.join(t.get('ladder') or [])} ({t.get('budget_s')} s); configured={t.get('configured_voice')}, "
+                  f"effective={t.get('effective_voice') or 'unknown'}, availability={t.get('availability') or 'unknown'}")
     else:
         print("watcher  no converse block in heartbeat.json (a watcher from before the desk, or not running)")
     if args.action != "status":
@@ -1405,14 +1408,17 @@ def cmd_converse(args) -> int:
 def print_tiles(desk, s: dict) -> None:
     tiles = s.get("tiles") or {}
     default = os.environ.get("MEMO_VOX_VOICE") or unit_env().get("MEMO_VOX_VOICE") or "rick"
-    if not tiles:
-        print(f"tiles    (none: every tile speaks {default} and thinks with the default ladder)")
-        return
-    for agent, t in sorted(tiles.items()):
+    print(f"voices   inherited from rendered Hermes profiles; emergency only: {default}; overrides are car-only")
+    for agent in sorted(set(tiles) | set(desk.cards.registry())):
+        t = tiles.get(agent) or {}
+        choice = desk.voice_choice(agent, default, car=True)
         lad, info = desk.routes_for(s, agent)
-        print(f"tile     {agent}: voice {t.get('voice') or default + ' (default)'}, model "
+        print(f"tile     {agent}: voice {choice['voice']}, model "
               f"{(t.get('model') + ' (' + str(info.get('label')) + ')') if t.get('model') else 'default'}"
-              f"{' [' + info['error'] + ']' if info.get('error') else ''} -> {' > '.join(r['id'] + '=' + r['model'] for r in lad)}")
+              f"{' [' + info['error'] + ']' if info.get('error') else ''} -> {' > '.join(r['id'] + '=' + r['model'] for r in lad)}"
+              f" [{choice['source']}; profile={choice['profile'] or '-'}; fallback={choice['fallback'] or '-'}; "
+              f"configured={choice['configured_voice']}; effective={choice['effective_voice'] or 'unknown'}; "
+              f"availability={choice['availability']}]")
 
 
 def _setting_result(args, ok: bool, out: dict, code: int = 0) -> int:
@@ -1443,18 +1449,27 @@ def cmd_voice(args) -> int:
     watcher reads it per reply, no restart). Car only: the agent's Telegram/Hermes voice is not touched."""
     import converse as cv
     path = c.STATE_DIR / "converse.json"
-    default = desk_env().get("MEMO_VOX_VOICE") or "rick"
+    env = desk_env()
+    emergency = env.get("MEMO_VOX_VOICE") or "rick"
+    desk = cv.Desk(c.STATE_DIR, env=env, log=lambda *a, **k: None)
+    catalog = vox_catalog()  # one bounded availability lookup, including read/clear diagnostics
+    inherited = desk.voice_choice(args.agent, emergency, catalog=catalog)
+    default = inherited["voice"]
     base = {"agent": args.agent, "default_voice": default}
     if args.value is None and not args.clear:
-        t = cv.Desk(c.STATE_DIR, env=desk_env(), log=lambda *a, **k: None).tile(args.agent)
-        v = t.get("voice")
-        return _setting_result(args, True, {**base, "ok": True, "voice": v or default, "own": bool(v),
-                                            "message": f"{args.agent}: car voice {v or default}{'' if v else ' (default)'}"})
+        choice = desk.voice_choice(args.agent, emergency, car=True, catalog=catalog)
+        return _setting_result(args, True, {**base, **choice, "ok": True, "own": choice["source"] == "car_override",
+                                            "message": f"{args.agent}: car voice {choice['voice']} ({choice['source']}; "
+                                                       f"configured={choice['configured_voice']}; "
+                                                       f"effective={choice['effective_voice'] or 'unknown'}; "
+                                                       f"availability={choice['availability']}; fallback={choice['fallback'] or '-'})"})
     if args.clear or str(args.value).strip().lower() in ("default", "--clear", "clear", "none"):
         tile = cv.update_tile(path, args.agent, voice=None, by=args.by)
-        return _setting_result(args, True, {**base, "ok": True, "voice": default, "cleared": True, "tile": tile,
-                                            "message": f"{args.agent}: car voice back to the default ({default})"})
-    catalog = vox_catalog()
+        return _setting_result(args, True, {**base, **inherited, "ok": True, "cleared": True, "tile": tile,
+                                            "message": f"{args.agent}: car voice {default} ({inherited['source']}; "
+                                                       f"configured={inherited['configured_voice']}; "
+                                                       f"effective={inherited['effective_voice'] or 'unknown'}; "
+                                                       f"availability={inherited['availability']}; fallback={inherited['fallback'] or '-'})"})
     if not catalog:
         return _setting_result(args, False, {**base, "ok": False, "error": "vox's voice list could not be read"}, 1)
     v = cv.resolve_voice(args.value, catalog)
@@ -1463,16 +1478,11 @@ def cmd_voice(args) -> int:
         return _setting_result(args, False, {**base, "ok": False, "error": f"no voice called {args.value!r}",
                                              "valid": [x["name"] for x in catalog],
                                              "message": f"refused: no voice called {args.value!r} (vox has: {names})"}, 3)
-    if v == default:
-        # "use rick voice" while rick is the default: the tile follows the default again (tiles {} for an all-default
-        # tile), the same as --clear, instead of pinning a copy of today's default
-        tile = cv.update_tile(path, args.agent, voice=None, by=args.by)
-        return _setting_result(args, True, {**base, "ok": True, "voice": default, "cleared": True, "tile": tile,
-                                            "spoken": cv.voice_spoken(v),
-                                            "message": f"{args.agent}: car voice back to the default ({default})"})
     tile = cv.update_tile(path, args.agent, voice=v, by=args.by)
     disp = next((x.get("display_name") for x in catalog if x["name"] == v), v)
-    return _setting_result(args, True, {**base, "ok": True, "voice": v, "display_name": disp, "spoken": cv.voice_spoken(v),
+    choice = desk.voice_choice(args.agent, emergency, car=True, catalog=catalog)
+    return _setting_result(args, True, {**base, **choice, "ok": True, "cleared": False,
+                                        "display_name": disp, "spoken": cv.voice_spoken(v),
                                         "tile": tile, "message": f"{args.agent}: car voice {v} ({disp}); the watcher "
                                         "uses it from the next reply, no restart"})
 

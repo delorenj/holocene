@@ -374,8 +374,8 @@ function nativeChunks(): NativeChunks | null {
   const n = (window as any).HoloceneNative
   return n && typeof n.playReplyChunk === 'function' ? (n as NativeChunks) : null
 }
-// The host's one speech queue (SpeechArbiter): heard echo, progress narration, and "this memo is final". Absent on an
-// older host; then progress plays through the page's own single audio element (no echo, no overlap either way).
+// The host's one speech queue (SpeechArbiter): progress narration and "this memo is final". Absent on an
+// older host; then progress plays through the page's own single audio element (no overlap either way).
 type NativeSpeech = {
   speechEcho(memoId: string, name: string, heard: string): void
   speechProgress(memoId: string, seq: number, b64: string, ext: string): void
@@ -385,7 +385,7 @@ function nativeSpeech(): NativeSpeech | null {
   const n = (window as any).HoloceneNative
   return n && typeof n.speechProgress === 'function' && typeof n.speechEcho === 'function' ? (n as NativeSpeech) : null
 }
-// A memo is followed (status line, echo, progress) for this long after it was sent, and a failed one stays on its
+// A memo is followed (status line, text-only transcript acknowledgement, progress) for this long after it was sent, and a failed one stays on its
 // tile for a minute.
 const FLIGHT_MAX_MS = 20 * 60 * 1000
 const FAILED_SHOW_MS = 60 * 1000
@@ -561,7 +561,7 @@ function App() {
   const replyBytes = useRef(0) // size of the reply now playing: bounds how long it can legitimately play
   const noteSent = () => { lastSentAt.current = Date.now(); pollNow.current() }
 
-  // ---- memos in flight: the watcher's status object drives the tile line, the heard echo and progress narration ----
+  // ---- memos in flight: status drives the tile line and progress narration; transcript acknowledgement is text-only ----
   // Followed on the reply poll's cadence (2 s for ten minutes after a send). Everything audible goes to the host's
   // speech queue; without one, progress clips wait in the page's own queue (one audio element, after any reply).
   const flights = useRef<Map<string, Flight>>(new Map())
@@ -672,7 +672,7 @@ function App() {
     for (const f of [...flights.current.values()]) await pollFlight(f)
     refreshFlights()
   }
-  // One memo in flight: its status object (tile line, heard echo, final), then its newest progress clip if one is due.
+  // One memo in flight: its status object (tile line, transcript text, final), then its newest progress clip if one is due.
   const pollFlight = async (f: Flight) => {
     if (f.finalAt) return
     const st = await readStatus(f)
@@ -680,17 +680,19 @@ function App() {
     f.status = st
     f.fetchedAt = Date.now()
     noteConv(fastTurns.current, st.conv)
-    const n = nativeSpeech()
     if (isFinal(st.stage)) { flightFinal(f.memoId); return }
-    if (st.heard && !f.echoed) {
-      f.echoed = true
-      try { n?.speechEcho(f.memoId, f.agentName, st.heard) } catch { /* host bridge absent */ }
-    }
-    const due = (st.spoken_seq ?? st.progress_seq) > f.progressSeq
-    if (!due || Date.now() - f.listedAt < PROGRESS_LIST_MS) return
+    // `heard` is text-only transcript acknowledgement: never send private transcript text to native TTS
+    // or turn it into a progress clip. Normal agent progress and final replies keep their existing audio paths.
+    const announced = st.spoken_seq
+    if (typeof announced !== 'number' || announced <= f.progressSeq || Date.now() - f.listedAt < PROGRESS_LIST_MS) return
     f.listedAt = Date.now()
     try {
-      const pick = newestProgress((await listPage(progressPrefix(f.day, f.memoId), '', null)).keys, f.day, f.memoId, f.progressSeq)
+      const keys = (await listPage(progressPrefix(f.day, f.memoId), '', null)).keys
+      const announcedKeys = keys.filter((key) => {
+        const clip = newestProgress([key], f.day, f.memoId, f.progressSeq)
+        return clip !== null && clip.seq <= announced
+      })
+      const pick = newestProgress(announcedKeys, f.day, f.memoId, f.progressSeq)
       if (pick) await sayProgress(f, pick)
     } catch { /* next poll */ }
   }

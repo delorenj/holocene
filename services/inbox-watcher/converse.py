@@ -147,8 +147,10 @@ NS = uuid.uuid5(uuid.NAMESPACE_URL, "urn:33god:holocene:converse")
 # conversation, so it never changes a live system unless the Permission section (clamped by the driver's own words) allows.
 DELEGATE_PREFIX = os.environ.get("MEMO_CONVERSE_DELEGATE_PREFIX", (
     "[Delegated from the driver's car conversation with the fast desk. The driver heard the brief below read back and "
-    "confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. Do it yourself: "
-    "never delegate to a subagent (delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, "
+    "confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. "
+    "Follow your normal role workflow: PMs delegate implementation; use coding workers when implementation requires them. "
+    "Being in the car does not reduce authorization to edit or test code, and does not bypass role boundaries or permission "
+    "limits. Never run vox-speak or any text-to-speech yourself. Run no deploy, "
     "restart, push or other change to a live system unless the Permission section below allows it; the driver's words came "
     "through speech-to-text, so where anything is unclear do only the read-only part and say what you left undone. Your "
     "final message is spoken to the driver as a follow-up: end it with a spoken summary of the result in two to four "
@@ -1558,6 +1560,50 @@ def hindsight_recall(bank: str, timeout_s: float) -> str:
     return "\n".join(out)
 
 
+def voice_name(value) -> str | None:
+    """Only Vox identifiers, never paths, shell fragments or serialized config values."""
+    return value.strip() if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value.strip()) else None
+
+
+class ProfileVoice:
+    """Adapter over CardCache's registry and rendered profiles; no second assignment roster."""
+
+    def __init__(self, cards):
+        self.cards = cards
+
+    def resolve(self, agent: str | None, emergency: str, profile: str | None = None) -> dict:
+        emergency = voice_name(emergency) or "rick"
+        result = {"voice": emergency, "requested": emergency, "source": "emergency_fallback",
+                  "profile": None, "fallback": "profile_missing"}
+        if not voice_name(agent) or agent != voice_name(agent):
+            return {**result, "fallback": "invalid_agent"}
+        row = self.cards.row(agent)
+        # Gateway-confirmed profiles may differ from the original tile's registered alias.
+        name = profile if profile is not None else row.get("profile_name")
+        if not voice_name(name) or name != voice_name(name):
+            return {**result, "fallback": "invalid_profile" if name is not None else "profile_missing"}
+        result["profile"] = name
+        try:
+            root = self.cards.profiles_dir.resolve()
+            path = (root / name / "config.yaml").resolve()
+            if not path.is_relative_to(root):
+                return {**result, "fallback": "invalid_profile_path"}
+            import yaml  # type: ignore
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            tts = config.get("tts") if isinstance(config, dict) else None
+            if not isinstance(tts, dict):
+                return {**result, "fallback": "profile_voice_missing"}
+            vox = tts.get("vox")
+            value = voice_name(tts.get("voice")) or voice_name(vox.get("voice") if isinstance(vox, dict) else None)
+            if value:
+                return {**result, "voice": value, "requested": value, "source": "inherited", "fallback": None}
+            return {**result, "fallback": "profile_voice_missing"}
+        except (OSError, UnicodeError):
+            return {**result, "fallback": "profile_unreadable"}
+        except Exception:  # YAML errors must not leak config text (which may contain credentials).
+            return {**result, "fallback": "profile_malformed"}
+
+
 class CardCache:
     """The agent card: what the fast model may say about the agent and its project. Rebuilt only when an input file
     changed or the recall digest expired, so its bytes stay identical across turns (Hyper caches the prompt prefix)."""
@@ -1568,14 +1614,18 @@ class CardCache:
         self.profiles_dir = profiles_dir or Path(os.environ.get("MEMO_HERMES_PROFILES", HOME / ".hermes/profiles"))
         self.roster_path = roster_path or Path(os.environ.get("MEMO_PAD_ROSTER", HOME / ".local/share/holocene-auto/pad-roster/roster.json"))
         self.recall, self.recall_s, self.recall_ttl_s, self.clock = recall, recall_s, recall_ttl_s, clock
-        self._reg: tuple[int | None, dict] = (None, {})
+        self._reg: tuple[tuple | None, dict] = (None, {})
         self._roster: tuple[int | None, list] = (None, [])
         self._recall: dict[str, tuple[float, str]] = {}
         self._cards: dict[str, tuple[tuple, dict]] = {}
         self._lock = threading.RLock()
 
     def registry(self) -> dict:
-        mt = _mtime(self.registry_path)
+        try:
+            st = self.registry_path.stat()
+            mt = (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+        except OSError:
+            mt = None
         with self._lock:
             if mt is not None and mt == self._reg[0]:
                 return self._reg[1]
@@ -1782,7 +1832,7 @@ class FlagFile:
             return None
         except OSError as e:
             return {"mode": "off", "error": f"flag file unreadable: {e}"[:200]}
-        key = (st.st_mtime_ns, st.st_size)
+        key = (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
         with self._lock:
             if key == self._key:
                 return self._doc
@@ -2113,6 +2163,7 @@ class VoiceCatalog:
         self.ttl_s, self.clock = ttl_s, clock
         self._fetch = fetch or self._http
         self._at, self._list = 0.0, []
+        self._retry_after = 0.0
         self._refreshing = False
         self._lock = threading.Lock()
 
@@ -2131,6 +2182,10 @@ class VoiceCatalog:
                 return self._list
             stale = list(self._list)
             refreshing = self._refreshing
+            if not stale and (refreshing or self.clock() < self._retry_after):
+                return []
+            if not stale:
+                self._refreshing = True
             if stale and not refreshing:
                 self._refreshing = True
         if stale:
@@ -2149,7 +2204,15 @@ class VoiceCatalog:
             self._refreshing = False
             if rows:
                 self._at, self._list = self.clock(), rows
+                self._retry_after = 0.0
+            else:
+                self._retry_after = self.clock() + 30.0
             return self._list
+
+    def cached(self) -> list[dict]:
+        """Nonblocking availability snapshot: diagnostics never fetch/refresh a catalog."""
+        with self._lock:
+            return list(self._list)
 
     def names(self) -> list[str]:
         return [v["name"] for v in self.get()]
@@ -2170,7 +2233,9 @@ class Desk:
         self.keys = keys or KeyCache()
         self.breaker = Breaker()
         self.http = http_ or Http()
-        self.cards = cards or CardCache()
+        self.cards = cards or CardCache(
+            registry_path=Path(env["MEMO_AGENT_REGISTRY"]) if env.get("MEMO_AGENT_REGISTRY") else None,
+            profiles_dir=Path(env["MEMO_HERMES_PROFILES"]) if env.get("MEMO_HERMES_PROFILES") else None)
         self.budget_s = _env_float(env, "MEMO_CONVERSE_BUDGET_S", 8.0)
         self.reask_min_s = _env_float(env, "MEMO_CONVERSE_REASK_MIN_S", REASK_MIN_S)
         self.idle_s = _env_float(env, "MEMO_CONVERSE_IDLE_S", 900.0)
@@ -2269,10 +2334,26 @@ class Desk:
         return t if isinstance(t, dict) else {}
 
     def voice_for(self, agent: str | None, default: str) -> str:
-        """The car reply voice of this tile: its own (memo:voice, the car-set-voice skill, "use walken voice"), else the
-        watcher's default (MEMO_VOX_VOICE)."""
-        v = self.tile(agent).get("voice")
-        return v if isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", v) else default
+        """Car-context convenience; non-car callers use voice_choice(car=False)."""
+        return self.voice_choice(agent, default, car=True)["voice"]
+
+    def voice_choice(self, agent: str | None, emergency: str, *, profile: str | None = None,
+                     car: bool = False, check_catalog: bool = False, catalog: list | None = None) -> dict:
+        choice = ProfileVoice(self.cards).resolve(agent, emergency, profile)
+        override = voice_name(self.tile(agent).get("voice")) if car and isinstance(agent, str) else None
+        if override:
+            choice.update(voice=override, requested=override, source="car_override", fallback=None)
+        rows = catalog if catalog is not None else self.voices.get() if check_catalog else self.voices.cached()
+        names = {v["name"] for v in rows}
+        choice.update(configured_voice=choice["voice"], configured_source=choice["source"],
+                      availability="unknown", effective_voice=None)
+        if names:
+            choice["availability"] = "available" if choice["voice"] in names else "unavailable"
+            if choice["voice"] not in names:
+                choice.update(voice=voice_name(emergency) or "rick", source="emergency_fallback",
+                              fallback="voice_not_found")
+            choice["effective_voice"] = choice["voice"] if choice["voice"] in names else None
+        return choice
 
     def routes_for(self, s: dict, agent: str | None) -> tuple[list[dict], dict]:
         """The ladder for this tile: its model alias's routes (car_desk_aliases.json) in front of the default ladder,
@@ -2514,13 +2595,14 @@ class Desk:
         path = self.flag.path
         try:
             if name == TOOL_VOICE:
-                v = resolve_voice(args["voice"], self.voices.get())
+                catalog = self.voices.get()
+                v = resolve_voice(args["voice"], catalog)
                 if v is None:
                     return {"ok": False, "exit": 3, "out": None, "error": f"no voice called {args['voice']!r}", "ms": 0}
-                # the watcher's default voice by name ("use rick voice") clears the tile, like "default voice"
-                clear = v in ("default", str(self.env.get("MEMO_VOX_VOICE") or "rick"))
+                clear = v == "default"
                 tile = update_tile(path, agent, voice=None if clear else v, by=by)
-                out = {"ok": True, "agent": agent, "voice": tile.get("voice"), "cleared": clear}
+                choice = self.voice_choice(agent, self.env.get("MEMO_VOX_VOICE") or "rick", car=True, catalog=catalog)
+                out = {"ok": True, "agent": agent, **choice, "cleared": clear}
             else:
                 a = resolve_alias(args["model"], self.aliases())
                 if a is None:
@@ -2600,9 +2682,12 @@ class Desk:
                else "unread" if vals == {"unread"} else "partial")
         table = self.aliases()
         tiles = {}
-        for agent, t in sorted((s.get("tiles") or {}).items()):
+        catalog = self.voices.cached()
+        for agent in sorted(set(s.get("tiles") or {}) | set(self.cards.registry())):
+            t = self.tile(agent, s)
             lad, info = self.routes_for(s, agent)
-            tiles[agent] = {"voice": t.get("voice") or default_voice, "voice_own": bool(t.get("voice")),
+            choice = self.voice_choice(agent, default_voice or "rick", car=True, catalog=catalog)
+            tiles[agent] = {**choice, "voice_own": choice["source"] == "car_override",
                             "model": t.get("model"), "model_label": info.get("label"), "model_error": info.get("error"),
                             "ladder": [r["id"] for r in lad], "budget_s": info.get("budget_s") or self.budget_s,
                             "extra_routes": [self._route_row(r) for r in lad if r["id"] not in keys]}
@@ -2610,7 +2695,8 @@ class Desk:
         return {"mode": s["mode"], "source": s["source"], "agents": s["agents"], "devices": s["devices"],
                 "handoff": s["handoff"], "error": s["error"], "open_conversations": open_conversations,
                 "routes": routes, "refused": s["refused"], "key_status": agg, "keys": keys, "contract": contract,
-                "budget_s": self.budget_s, "default_voice": default_voice, "tiles": tiles,
+                "budget_s": self.budget_s, "default_voice": default_voice, "voice_default": "profile",
+                "emergency_voice": default_voice, "tiles": tiles,
                 "aliases": {"version": table.get("version"), "models": sorted((table.get("models") or {}))},
                 "tools": {"dir": str(self.tools.skills_dir), "loaded": [t["name"] for t in tools],
                           "skills": [t["skill"] for t in tools], "errors": self.tools.errors or None},

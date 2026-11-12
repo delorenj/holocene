@@ -62,7 +62,7 @@ from memo_common import (  # noqa: E402
 SERVICE = "inbox-watcher"
 TRANSCRIBE = os.environ.get("MEMO_TRANSCRIBE", str(Path.home() / ".local/bin/transcribe"))
 TRANSCRIBE_DIR = os.environ.get("TRANSCRIBE_DIR", str(Path.home() / "HeyMa"))
-VOICE = os.environ.get("MEMO_VOX_VOICE", "rick")
+VOICE = cv.voice_name(os.environ.get("MEMO_VOX_VOICE")) or "rick"
 
 # Which gateway lane a memo's command rides: "interactive" (bloodbank.agent.invocation.invoke, own
 # durable consumer + reserved slots, starts within seconds even while grooming saturates the batch
@@ -123,20 +123,24 @@ VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - spe
                               "within about a minute and at most 3 tool calls. The driver hears your progress aloud while you "
                               "work: before each tool call, write one short sentence saying what you are about to do. Never "
                               "run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or "
-                              "wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long "
-                              "command unless asked. If the ask needs longer "
+                              "wait and re-check, and run no deploy or long command unless asked. "
+                              "Follow your normal role workflow: PMs delegate implementation; use coding workers when "
+                              "implementation requires them. Being in the car does not reduce authorization to edit or "
+                              "test code, and does not bypass role boundaries or permission limits. If the ask needs longer "
                               "work, do not start it now: tell the driver in one or two sentences what you will do, then end "
                               "your reply with a line that starts with BACKGROUND: followed by complete instructions for "
-                              "yourself. That work starts right after, on this same conversation, and its result is spoken "
-                              "to the driver as a follow-up.] ")
+                              "the background turn. That work starts right after, on this same conversation, and its result "
+                              "is spoken to the driver as a follow-up.] ")
 # Prepended to a reply's BACKGROUND: instructions when they go back to the same agent as a background turn.
 # The plan below it was written by the agent from a speech-to-text transcript and runs unattended (2026-10-22 review):
 # the voice prefix's "no deploy unless asked" rule is carried over, and a misheard ask does the safe part and says so.
-# No delegate_task: a subagent runs on automaticai/auto/subagent, not the turn's model (B, 2026-10-22: 410 s synchronous).
+# The car is transport: background work follows the agent's normal role and implementation workflow.
 FOLLOWUP_PREFIX = os.environ.get("MEMO_FOLLOWUP_PREFIX", "[Background continuation of the voice memo above: the driver already "
                                  "heard your short answer. Do the work below now, in full, without asking questions; the "
-                                 "one-minute budget does not apply here. Do it yourself: never delegate to a subagent "
-                                 "(delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, "
+                                 "one-minute budget does not apply here. Follow your normal role workflow: PMs delegate "
+                                 "implementation; use coding workers when implementation requires them. Being in the car "
+                                 "does not reduce authorization to edit or test code, and does not bypass role boundaries "
+                                 "or permission limits. Never run vox-speak or any text-to-speech yourself. Run no deploy, "
                                  "restart, push or other change to a live system unless the driver's own words asked for "
                                  "it; the ask came through speech-to-text, so if it is unclear, do only the read-only part "
                                  "and say what you left undone. Your final message is spoken to the driver as a follow-up: "
@@ -258,7 +262,7 @@ WAIT_LOG_EVERY_S = 30
 # status/<yyyy>/<mm>/<dd>/<memo_id>.json is rewritten on every stage change and every new progress line; the pad reads
 # it anonymously (Cache-Control: no-store). One writer thread, newest document per memo wins.
 STATUS_ATTR = "Content-Type=application/json;Cache-Control=no-store"
-HEARD_CHARS = 200            # status.heard: the start of the transcript, for the car's "heard" echo
+HEARD_CHARS = 200            # status.heard: text-only transcript acknowledgement, never speech
 PROGRESS_LINE_CHARS = 200    # status.progress: the newest progress line, one line
 # How often the watcher asks Candystore for a working memo's newest agent.invocation.progressed (a ~20 ms query).
 PROGRESS_POLL_S = float(os.environ.get("MEMO_PROGRESS_POLL_S", "1.5"))
@@ -271,7 +275,6 @@ NARRATE_CHARS = int(os.environ.get("MEMO_NARRATE_CHARS", "140"))
 # vox has no per-request engine choice: a voice is served by its own engine (vibevoice for a cloned profile, else the
 # VOX_ENGINES order, voxcpm on this host today). A short line on voxcpm renders in about 2 s (measured 2026-10-20: 70
 # characters, 2.1 s at 6 steps, 2.6 s at 10), so progress keeps the reply's voice at fewer steps.
-PROGRESS_VOICE = os.environ.get("MEMO_PROGRESS_VOICE") or VOICE
 PROGRESS_TTS_STEPS = int(os.environ.get("MEMO_PROGRESS_TTS_STEPS", "6"))
 # ---- chunked reply speech: the car starts speaking the first sentence while the rest renders
 # vox renders a whole 500-character reply in 8-19 s before a single word plays. A reply longer than CHUNK_MIN_CHARS is
@@ -772,7 +775,7 @@ def memo_started_ts(m: dict) -> float:
 
 def fast_turn(m: dict) -> bool:
     """The memo is (or was) a fast desk turn, not an agent turn: it is at the converse stage, or the desk decided anything
-    but `direct` for it. Its transcript is not echoed back ("<agent> heard: ..."): the answer itself is seconds away."""
+    but `direct` for it. Only direct/full-agent turns expose a text-only transcript preview in status."""
     conv = m.get("conv")
     return m.get("stage") == "converse" or (isinstance(conv, dict) and conv.get("action") not in (None, "direct"))
 
@@ -782,13 +785,12 @@ def status_doc(m: dict) -> dict:
     now = time.time()
     started = memo_started_ts(m)
     stage = car_stage(m)
-    # heard is null for a fast desk turn: the pad echoes the transcript only when heard is set, and the echo would put
-    # seconds of speech in front of an answer that is itself seconds away. A direct turn gets it back (today's path).
+    # Keep transcript observability without reading private transcript text through any speech path.
     heard = None if fast_turn(m) else (re.sub(r"\s+", " ", m.get("transcript") or "").strip()[:HEARD_CHARS] or None)
     doc = {
         "v": 1, "memo_id": m["memo_id"], "agent": m.get("agent"),
         "agent_name": m.get("display_name") or (m.get("agent") or "").replace("-", " ") or None,
-        "s3_key": m["key"], "stage": stage, "heard": heard,
+        "s3_key": m["key"], "stage": stage, "heard": heard, "heard_delivery": "text_only",
         "progress": m.get("progress_text"), "progress_seq": m.get("progress_seq", 0),
         "progress_at": iso(m["progress_ts"]) if m.get("progress_ts") else None,
         # the newest progress clip: progress/<day>/<memo_id>-<spoken_seq>.ogg (1..n per memo, the pad's playback cursor)
@@ -1125,7 +1127,8 @@ class Watcher:
         step_dispatch reads to recover a published command goes: with the old command id and publish_attempted still
         there it would find the old command in the gateway journal and call it dispatched, never sending anything."""
         for k in ("command_id", "publish_attempted", "lane", "lane_reason", "command_envelope_id", "escalation_causation",
-                  "dropped_since", "last_wait_log", "unwind_since", "live", "live_ts", "cs_checked_ts"):
+                  "dropped_since", "last_wait_log", "unwind_since", "live", "live_ts", "cs_checked_ts", "profile",
+                  "cue_voice_lock"):
             m.pop(k, None)
 
     def revive(self, m: dict, stage: str, why: str) -> None:
@@ -1299,7 +1302,8 @@ class Watcher:
                 continue
             st = self.agent_status(m)
             if st["state"] == "done":
-                m["profile"] = st.get("profile") or m["agent"]
+                if st.get("profile") is not None:
+                    m["profile"] = st["profile"]
                 m["late"] = True
                 log("late_rescued", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], command_id=m["command_id"],
                     waited_s=int(time.time() - m["dispatched_ts"]), note="agent finished after the deadline; replying late")
@@ -1355,6 +1359,8 @@ class Watcher:
                 "converse": converse_hb,
                 "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
                             "running": m["key"] in self.running,
+                            "voice": {k: (m.get("voice_lock") or m.get("cue_voice_lock") or {}).get(k)
+                                      for k in ("voice", "source", "profile", "requested", "fallback", "stamp")},
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
                            for m in self.active()]})
 
@@ -1962,6 +1968,9 @@ class Watcher:
                     raw["tool"] = self.desk.run_tool(agent, name, raw["decision"].get("tool_name"),
                                                      raw["decision"].get("args"), by="car")
                     raw["decision"]["say"] = raw["tool"]["say"]
+                    if raw["tool"].get("ok") and raw["decision"].get("tool_name") == cv.TOOL_VOICE:
+                        with self.mu:
+                            m.pop("cue_voice_lock", None)  # acknowledge a deliberate switch in the NEW voice
             except WatcherStopping:
                 raise
             except Exception as e:  # noqa: BLE001 - never a failed memo for a desk bug: today's path
@@ -2616,10 +2625,11 @@ class Watcher:
 
     def step_await_agent(self, m: dict) -> None:
         st = self.agent_status(m)
+        if st.get("profile") is not None:
+            m["profile"] = st["profile"]  # observed running/completed responder, never an alias guessed from the tile
         waited = time.time() - m["dispatched_ts"]
         fu = live_followup(m)
         if st["state"] == "done":
-            m["profile"] = st.get("profile") or m["agent"]
             m["agent_seconds"] = round(waited, 2)
             m["agent_done_ts"] = time.time()
             # what the gateway did with data.model: {requested, applied, reason} (absent from a gateway without it)
@@ -2631,7 +2641,7 @@ class Watcher:
             if fu is not None:
                 fu["agent_done_at"] = iso(now_utc())
             return self.done_stage(m, "agent", "reply", ms=waited * 1000, command_id=m["command_id"],
-                                   source=st["source"], profile=m["profile"])
+                                   source=st["source"], profile=m.get("profile"))
         if st["state"] == "failed":
             if fu is not None:
                 # The quick answer was already spoken and promised more: say the background half did not make it.
@@ -2807,57 +2817,173 @@ class Watcher:
         self.s.save()
 
     def _tile_voice(self, agent: str | None, key: str | None, default: str, m: dict | None = None) -> str:
-        """The tile's own car voice for this memo's reply, else `default`. Car only: the tile voice is a car setting, so a
-        memo the car did not send (a browser memo, or one whose sender cannot be read) keeps the default. The sender is
-        read (S3 metadata, once, kept on the memo) only when the tile has a voice of its own."""
-        try:
-            v = self.desk.voice_for(agent, default)
-        except Exception:  # noqa: BLE001 - a broken flag file never stops a reply: the default voice
-            return default
-        if v == default:
-            return v
+        """Compatibility for callers without a memo; assignment inheritance is not car-only."""
+        return self._voice_choice(m if m is not None else self.s.memos.get(key or "", {"agent": agent, "key": key}),
+                                  default)["voice"]
+
+    def _voice_choice(self, m: dict, emergency: str = VOICE) -> dict:
+        agent = self._responding_agent(m)
+        profile = m.get("profile")
+        # Only overrides need sender I/O. An inherited voice also applies to browser/unknown-origin memos.
+        override = cv.voice_name(self.desk.tile(agent).get("voice")) if isinstance(agent, str) else None
         with self.mu:
-            mm = m if m is not None else self.s.memos.get(key or "")
-            sender = (mm or {}).get("sender")
-        if not (isinstance(sender, dict) and sender.get("ok")) and key:
+            sender = m.get("sender")
+        if override and not (isinstance(sender, dict) and sender.get("ok")) and m.get("key"):
             try:
-                sender = mc_.s3_sender(key)
+                sender = mc_.s3_sender(m["key"])
             except Exception:  # noqa: BLE001
                 sender = {"ok": False}
-            if sender.get("ok") and mm is not None:
+            if sender.get("ok"):
                 with self.mu:
-                    if not (mm.get("sender") or {}).get("ok"):
-                        mm["sender"] = sender
-        if not isinstance(sender, dict) or sender.get("host") != "car":
-            log("tile_voice_not_car", key=key, agent=agent, tile_voice=v, used=default,
-                host=(sender or {}).get("host") if isinstance(sender, dict) else None,
-                note="the tile's voice is a car setting: this memo did not come from the car")
-            return default
-        return v
+                    m["sender"] = sender
+        car = isinstance(sender, dict) and sender.get("ok") is True and sender.get("host") == "car"
+        choice = self.desk.voice_choice(agent, emergency, profile=profile, car=car, check_catalog=True)
+        choice["agent"] = agent
+        if override and not car:
+            log("tile_voice_not_car", key=m.get("key"), agent=agent, tile_voice=override, used=choice["voice"])
+        return choice
+
+    @staticmethod
+    def _responding_agent(m: dict) -> str | None:
+        fu = live_followup(m)
+        if fu is None:
+            latest = (m.get("followups") or [None])[-1]
+            if isinstance(latest, dict) and latest.get("command_id") == m.get("command_id"):
+                fu = latest
+        return (fu or {}).get("target") or m.get("agent")
+
+    def _voice_identity(self, m: dict) -> list:
+        return [m.get("command_id"), self._responding_agent(m)]
+
+    def _cue_matches(self, m: dict, choice: dict) -> bool:
+        identity = choice.get("identity")
+        current = self._voice_identity(m)
+        # The desk's pre-dispatch cue can carry into the first full-agent turn. A confirmed DIFFERENT responder cannot.
+        same = identity == current or (isinstance(identity, list) and identity == [None, current[1]])
+        return same and (m.get("profile") is None or m["profile"] == choice.get("profile"))
+
+    def _cue_voice(self, m: dict) -> dict:
+        """Freeze pre-reply narration/cues for this responder round, then promote into the stamped reply."""
+        identity = self._voice_identity(m)
+        with self.mu:
+            final = m.get("voice_lock") or {}
+            if final.get("stamp") == m.get("reply_stamp") and final.get("voice"):
+                final.setdefault("lock_id", str(uuid.uuid4()))
+                return dict(final)
+            pending = m.get("cue_voice_lock") or {}
+            if self._cue_matches(m, pending):
+                pending.setdefault("lock_id", str(uuid.uuid4()))
+                return dict(pending)
+        choice = {**self._voice_choice(m), "identity": identity, "lock_id": str(uuid.uuid4())}
+        with self.mu:
+            pending = m.get("cue_voice_lock") or {}
+            if not self._cue_matches(m, pending):
+                m["cue_voice_lock"] = choice
+                self._log_voice(m, choice)
+                self.s.save()
+            return dict(m["cue_voice_lock"])
+
+    def _log_voice(self, m: dict, choice: dict) -> None:
+        log("voice_resolved", "warn" if choice.get("fallback") else "info", memo_id=m.get("memo_id"),
+            agent=choice.get("agent"), profile=choice.get("profile"), voice=choice["voice"],
+            requested=choice.get("requested"), source=choice.get("source"), fallback=choice.get("fallback"))
 
     def _reply_voice(self, m: dict) -> str:
-        """The voice of this reply, locked at its first render: the tile's own car voice (converse.json `tiles`: memo:voice,
-        the car-set-voice skill, "use walken voice") for a memo the car sent, else MEMO_VOX_VOICE. The chunks, the full
-        file and every retry of one reply keep it; the memo's next reply round (a follow-up: a new reply_stamp) locks
-        again."""
+        """Stamped audio identity survives chunks/retry/resume, even if assignments change mid-render."""
         with self.mu:
             stamp = m.get("reply_stamp")
             vl = m.get("voice_lock")
             if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
+                vl.setdefault("lock_id", str(uuid.uuid4()))
                 return vl["voice"]
-        v = self._tile_voice(m.get("agent"), m.get("key"), VOICE, m)
+        with self.mu:
+            pending = m.get("cue_voice_lock") or {}
+        choice = (dict(pending) if self._cue_matches(m, pending)
+                  and pending.get("stamp") in (None, stamp) else self._voice_choice(m))
         with self.mu:
             vl = m.get("voice_lock")
             if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
                 return vl["voice"]  # another render of this reply locked it first
-            m["voice_lock"] = {"stamp": stamp, "voice": v, "requested": v, "fallback": None}
-            return v
+            m["voice_lock"] = {**choice, "stamp": stamp, "lock_id": choice.get("lock_id") or str(uuid.uuid4())}
+            m.pop("cue_voice_lock", None)
+            self._log_voice(m, choice)
+            self.s.save()  # persist before crossing the render boundary, not only after the first upload
+            return choice["voice"]
+
+    def _cue_current(self, m: dict, choice: dict) -> bool:
+        """Under mu: a render owns only its captured command, responder, stamp and lock generation."""
+        return (m.get("reply_stamp") == choice.get("cue_stamp")
+                and self._voice_identity(m) == choice.get("cue_identity")
+                and m.get("profile") == choice.get("cue_profile")
+                and not self._cancelled(m))
+
+    def _missing_voice(self, m: dict, choice: dict, *, cue: bool = False) -> dict | None:
+        """Fallback can mutate only the exact unrendered lock that requested it, never a promoted/new reply."""
+        requested = choice.get("requested") or choice["voice"]
+        with self.mu:
+            if cue and not self._cue_current(m, choice):
+                return None
+            field = "cue_voice_lock" if cue else "voice_lock"
+            lock = m.get(field) or {}
+            owns = (choice.get("lock_id") and lock.get("lock_id") == choice["lock_id"]
+                    and lock.get("voice") == choice["voice"])
+            if not cue:
+                owns = (owns and lock.get("stamp") == choice.get("stamp") == m.get("reply_stamp")
+                        and not lock.get("rendered") and not m.get("voiced_n"))
+            if choice.get("source") != "progress_override":
+                if not owns:
+                    return None
+                lock.update(voice=VOICE, effective_voice=VOICE, availability="unavailable",
+                            source="emergency_fallback", fallback="voice_not_found")
+                self.s.save()
+        choice = {**choice, "voice": VOICE, "effective_voice": VOICE, "availability": "unavailable",
+                  "source": "emergency_fallback", "fallback": "voice_not_found"}
+        log("voice_fallback", "warn", memo_id=m.get("memo_id"), agent=choice.get("agent"),
+            requested=requested, used=VOICE, source="emergency_fallback", fallback="voice_not_found")
+        return choice
+
+    def _synth_cue(self, m: dict, text: str, tmp: Path, steps: int, *, progress: bool = False) -> tuple | None:
+        pin = cv.voice_name(os.environ.get("MEMO_PROGRESS_VOICE")) if progress else None
+        choice = ({"voice": pin, "requested": pin, "source": "progress_override", "fallback": None}
+                  if pin else self._cue_voice(m))
+        if pin:
+            self._log_voice(m, choice)
+        with self.mu:
+            choice.update(cue_stamp=m.get("reply_stamp"), cue_identity=self._voice_identity(m),
+                          cue_profile=m.get("profile"))
+        voice = choice["voice"]
+        hit = self.phrases.get(text, voice, steps)
+        if hit is not None:
+            out = tmp / "cue.ogg"
+            try:
+                shutil.copyfile(hit, out)
+                self.phrases.hits += 1
+                return out, "phrasebank", choice, True
+            except OSError:
+                pass
+        try:
+            audio, engine = synthesize(text, tmp, **synth_kw(steps, TtsGate.NARRATION, voice))
+        except VoiceNotFound:
+            if voice == VOICE:
+                raise
+            # An explicit narration pin is not an assignment and must not mutate the reply lock.
+            choice = self._missing_voice(m, choice, cue=True)
+            if choice is None:
+                return None
+            audio, engine = synthesize(text, tmp, **synth_kw(steps, TtsGate.NARRATION, choice["voice"]))
+        with self.mu:
+            if not self._cue_current(m, choice):
+                return None
+        self.phrases.put(text, choice["voice"], steps, audio, engine)
+        return audio, engine, choice, False
 
     def _synth(self, m: dict, text: str, tmp: Path, steps: int | None = None, prio: int | None = None) -> tuple[Path, str]:
         """synthesize() in this reply's locked voice. A voice vox does not know (removed or mistyped) falls back to the
-        default voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
+        emergency voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
         stage for 30 minutes."""
         v = self._reply_voice(m)
+        with self.mu:
+            choice = dict(m["voice_lock"])
         banked = self.phrases.get(text, v, steps)
         if banked is not None:
             out = tmp / "reply.ogg"
@@ -2865,38 +2991,42 @@ class Watcher:
                 shutil.copyfile(banked, out)
                 self.phrases.hits += 1
                 log("phrasebank_hit", memo_id=m.get("memo_id"), voice=v, chars=len(text))
+                self._voice_rendered(m, choice)
                 return out, "phrasebank"
             except OSError:
                 pass
         try:
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, v))
             self.phrases.put(text, v, steps, audio, engine)
+            self._voice_rendered(m, choice)
             return audio, engine
-        except VoiceNotFound as e:
+        except VoiceNotFound:
             if v == VOICE:
                 raise
-            with self.mu:
-                vl = m.setdefault("voice_lock", {"stamp": m.get("reply_stamp"), "requested": v})
-                vl.update(voice=VOICE, fallback="voice_not_found")
-                log("voice_fallback", "warn", memo_id=m.get("memo_id"), key=m.get("key"), agent=m.get("agent"),
-                    requested=v, used=VOICE, error=str(e)[:200], note="vox does not know the tile's voice: the default voice")
+            choice = self._missing_voice(m, choice)
+            if choice is None:
+                log("voice_unavailable_locked", "warn", memo_id=m.get("memo_id"), voice=v,
+                    note="already-rendered reply identity preserved; refusing mixed-voice chunks")
+                raise
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
             self.phrases.put(text, VOICE, steps, audio, engine)
+            self._voice_rendered(m, choice)
             return audio, engine
 
-    def warm_phrases(self) -> None:
-        """Start-up, own thread: the fixed lines in the default voice and the tiles' own voices, at the fast desk's steps."""
-        if not self.phrases.enabled:
-            return
-        voices = [VOICE]
-        try:
-            for t in (self.desk.settings().get("tiles") or {}).values():
-                v = t.get("voice") if isinstance(t, dict) else None
-                if isinstance(v, str) and v and v not in voices:
-                    voices.append(v)
-        except Exception:  # noqa: BLE001
-            pass
+    def _voice_rendered(self, m: dict, choice: dict) -> None:
+        with self.mu:
+            if (m.get("reply_stamp") != choice.get("stamp")
+                    or (m.get("voice_lock") or {}).get("lock_id") != choice.get("lock_id")):
+                raise StageError("tts", "voice_round_changed", "reply round changed during render", retryable=False)
+            if not m["voice_lock"].get("rendered"):
+                m["voice_lock"]["rendered"] = True
+                m["voice_lock"]["effective_voice"] = m["voice_lock"]["voice"]
+                self.s.save()
 
+    def warm_phrases(self) -> None:
+        """Warm inherited and explicit car voices, using the same profile Adapter as replies."""
+        if not self.phrases.enabled or os.environ.get("MEMO_PHRASEBANK_WARM", "1") == "0":
+            return
         def render(text: str, voice: str) -> Path:
             d = Path(tempfile.mkdtemp(prefix="memo-phrase-"))
             try:
@@ -2912,6 +3042,20 @@ class Watcher:
         def work():
             t0 = time.time()
             made = 0
+            voices = []
+            try:
+                # Collection is optional work too: no profile/catalog I/O on the startup thread.
+                catalog = self.desk.voices.get()
+                agents = list(dict.fromkeys([*self.desk.cards.registry(), *(self.desk.settings().get("tiles") or {})]))
+                for agent in agents:
+                    for car in (False, True):
+                        choice = self.desk.voice_choice(agent, VOICE, car=car, catalog=catalog)
+                        if choice.get("fallback"):
+                            self._log_voice({}, {**choice, "agent": agent})
+                        if choice["voice"] not in voices:
+                            voices.append(choice["voice"])
+            except Exception:  # noqa: BLE001 - optional warmup cannot prevent processing new memos
+                return
             for v in voices:
                 made += self.phrases.warm([v], CONVERSE_TTS_STEPS, lambda t, vv: render(t, vv))
             log("phrasebank_warmed", rendered=made, voices=voices, lines=len(self.phrases.lines()), ms=int((time.time() - t0) * 1000))
@@ -2927,7 +3071,9 @@ class Watcher:
     def _voice_fields(self, m: dict) -> dict:
         """The voice facts carry: the one the reply was rendered in, and the tile's voice when it fell back from it."""
         used, fell = self._voice_used(m)
-        return {"voice": used, **({"voice_requested": fell, "voice_fallback": "voice_not_found"} if fell else {})}
+        vl = m.get("voice_lock") or {}
+        # Existing event contract fields only. Rich provenance stays on locks, heartbeat and structured logs.
+        return {"voice": used, **({"voice_requested": fell, "voice_fallback": vl.get("fallback")} if fell else {})}
 
     def step_speak(self, m: dict) -> None:
         """Render the reply and put the car's copy up (replies/...). The phone decision and the replied fact are the next
@@ -3156,7 +3302,7 @@ class Watcher:
                         "voiced_first_ts", "voiced_first_s", "voiced_last_s", "earshot_key", "earshot_text_key",
                         "earshot_attempted", "earshot_skipped", "earshot_reason", "prompt_match", "agent_seconds",
                         "agent_done_ts", "progress_cmd", "progress_seq", "progress_text", "progress_ts", "progress_full",
-                        "model_override", "voice_lock")
+                        "model_override", "voice_lock", "cue_voice_lock", "profile")
 
     def start_followup(self, m: dict, kind: str = "background") -> None:
         """Under the lock, right after the quick answer's replied fact: mint follow-up N for the memo's BACKGROUND: plan and
@@ -3852,20 +3998,15 @@ class Watcher:
         tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
         try:
             t0 = time.time()
-            # the tile's own car voice for a car memo (unless MEMO_PROGRESS_VOICE pins narration to one voice); an unknown
-            # one falls back
-            voice = PROGRESS_VOICE
-            if not os.environ.get("MEMO_PROGRESS_VOICE"):
-                voice = self._tile_voice(job["agent"], key, PROGRESS_VOICE)
-            try:
-                audio, engine = synthesize(job["spoken"], tmp, voice=voice, steps=PROGRESS_TTS_STEPS,
-                                           **synth_kw(None, TtsGate.NARRATION))
-            except VoiceNotFound:
-                if voice == PROGRESS_VOICE:
-                    raise
-                voice = PROGRESS_VOICE
-                audio, engine = synthesize(job["spoken"], tmp, voice=voice, steps=PROGRESS_TTS_STEPS,
-                                           **synth_kw(None, TtsGate.NARRATION))
+            with self.mu:
+                memo = self.s.memos.get(key)
+                if self._still_working(memo, job):
+                    return
+            result = self._synth_cue(memo, job["spoken"], tmp, PROGRESS_TTS_STEPS, progress=True)
+            if result is None:
+                return
+            audio, engine, choice, _ = result
+            voice = choice["voice"]
             tts_s = time.time() - t0
             with self.mu:
                 why = self._still_working(self.s.memos.get(key), job)
@@ -3895,6 +4036,7 @@ class Watcher:
             elapsed = time.time() - float(m.get("dispatched_ts") or time.time())
             log("narrated", memo_id=mid, key=key, agent=job["agent"], stage="agent", n=job["n"], seq=job["seq"],
                 progress_key=pkey, tts_ms=int(tts_s * 1000), engine=engine, elapsed_s=round(elapsed, 1),
+                voice=voice, voice_source=choice.get("source"), voice_fallback=choice.get("fallback"),
                 text=job["line"][:120])
             self.fact("narrated", m, {
                 "command_id": job["cid"], "seq": job["seq"], "narration": job["n"], "progress_s3_key": pkey,
@@ -3909,14 +4051,14 @@ class Watcher:
     # ---- hold cue: a very short spoken line while the driver waits and nothing else is being said (HOLOC-23) ----------
     #
     # Two gaps used to be silent. (1) The desk's decision: ack:stopped, then nothing until the answer (3-7 s typical, 22 s at
-    # the timeout). (2) A turn the desk handed to the full agent: the "heard" echo, then nothing until the first narration,
+    # the timeout). (2) A turn the desk handed to the full agent: no transcript readback before the first narration,
     # NARRATE_FIRST_S after dispatch. The hold cue fills both with a <1 s line ("One sec.", "Still on it.") in the tile's voice,
     # rendered once per voice (PhraseBank) and played by the pad as a progress clip named <memo>-<n>h.ogg.
     #   - desk wait: a thread per desk call says line 1 at HOLD_CUE_S, line 2 at HOLD_CUE2_S and line 3 at HOLD_CUE3_S unless the decision is in. A
     #     cue is checked three times (before the render, after it, after the upload) and dropped if the decision arrived: the
     #     answer never waits behind a stale cue.
     #   - fall-through: poll_progress asks maybe_keepalive for every converse "direct" turn that is waiting on its agent.
-    # The pad's speech queue ranks a progress clip below the echo and the reply, drops it once the memo has its reply, and the
+    # The pad's speech queue ranks a progress clip below the reply, drops it once the memo has its reply, and the
     # pad itself drops a hold cue while the driver is recording or arming.
 
     def hold_line(self, agent: str, lines: tuple[str, ...]) -> str | None:
@@ -3935,13 +4077,12 @@ class Watcher:
         try:
             if not self.phrases.enabled or not self.phrases.banked(text):
                 return
-            voice = self._tile_voice(m["agent"], m["key"], VOICE, m)
+            voice = self._cue_voice(m)["voice"]
             if self.phrases.get(text, voice, CONVERSE_TTS_STEPS) is not None:
                 return
             tmp = Path(tempfile.mkdtemp(prefix="memo-holdp-"))
             try:
-                audio, engine = synthesize(text, tmp, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, voice))
-                self.phrases.put(text, voice, CONVERSE_TTS_STEPS, audio, engine)
+                self._synth_cue(m, text, tmp, CONVERSE_TTS_STEPS)
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
         except Exception as e:  # noqa: BLE001 - priming is a courtesy: the cue renders on demand
@@ -4000,28 +4141,11 @@ class Watcher:
         tmp = Path(tempfile.mkdtemp(prefix="memo-hold-"))
         try:
             t0 = time.time()
-            voice = self._tile_voice(agent, key, VOICE, m)
-            audio = banked = None
-            for v in ((voice, VOICE) if voice != VOICE else (voice,)):
-                hit = self.phrases.get(text, v, CONVERSE_TTS_STEPS)
-                if hit is not None:
-                    audio = tmp / "hold.ogg"
-                    try:
-                        shutil.copyfile(hit, audio)
-                        voice, banked, engine = v, True, "phrasebank"
-                        self.phrases.hits += 1
-                        break
-                    except OSError:
-                        audio = None
-                try:
-                    audio, engine = synthesize(text, tmp, **synth_kw(CONVERSE_TTS_STEPS, TtsGate.NARRATION, v))
-                    self.phrases.put(text, v, CONVERSE_TTS_STEPS, audio, engine)
-                    voice = v
-                    break
-                except VoiceNotFound:
-                    if v == VOICE:
-                        raise
-                    voice = VOICE  # the tile's voice is gone: the default one
+            result = self._synth_cue(m, text, tmp, CONVERSE_TTS_STEPS)
+            if result is None:
+                return
+            audio, engine, choice, banked = result
+            voice = choice["voice"]
             tts_s = time.time() - t0
             clip_s = (mc_.probe_audio(audio).get("duration") if audio else None)
             if clip_s is not None and clip_s > HOLD_MAX_CLIP_S:
@@ -4063,7 +4187,8 @@ class Watcher:
             m.update(narr_count=n, narr_key=pkey, narr_text=text, narr_hold=tag, hold_count=m.get("hold_count", 0) + 1)
             elapsed = time.time() - since
             log("hold_cue", memo_id=mid, key=key, agent=agent, stage="converse" if cid is None else "agent", n=n, tag=tag,
-                progress_key=pkey, tts_ms=int(tts_s * 1000), engine=engine, elapsed_s=round(elapsed, 1), voice=voice, text=text)
+                progress_key=pkey, tts_ms=int(tts_s * 1000), engine=engine, elapsed_s=round(elapsed, 1), voice=voice,
+                voice_source=choice.get("source"), voice_fallback=choice.get("fallback"), text=text)
             self.fact_fast("narrated", m, {
                 "command_id": cid, "seq": n, "narration": n, "progress_s3_key": pkey, "spoken_text": text,
                 "elapsed_seconds": round(max(0.0, elapsed), 1), "tts_seconds": round(tts_s, 2), "tts_engine": engine,
@@ -4633,7 +4758,7 @@ class PhraseBank:
 
 class VoiceNotFound(StageError):
     """vox does not know the voice asked for (a tile's voice that was removed or mistyped): the render falls back to the
-    default voice at once, never into the 1800 s TTS retry budget."""
+    emergency voice at once, never into the 1800 s TTS retry budget."""
 
 
 def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None,

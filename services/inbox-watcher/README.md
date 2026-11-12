@@ -44,16 +44,16 @@ tools to see every hop of it.
         |       never in the turn's first 15 s, at most one per 30 s, newest line wins, none once the turn is done
         |     narrated   fact: audio.memo.narrated {seq, narration n, progress_s3_key, tts_seconds}
         |-- reads that session's last assistant message   HOP 8  reply text
-        |-- vox /synthesize-url (voice rick) -> OGG        HOP 9  TTS
+        |-- vox /synthesize-url (responder profile voice) -> OGG        HOP 9  TTS
         |-- mc cp -> replies/<yyyy>/<mm>/<dd>/<HHMMSS>Z-<agent>-<memo_id>.ogg    HOP 10 reply object
         |-- replied     fact: audio.memo.replied
         |-- EVERY stage change and progress line: status/<yyyy>/<mm>/<dd>/<memo_id>.json (the car's view)
         v
    Agent Pad polls replies/ every 2 s for 10 min after a send (else 15 s), plays in order   HOP 11 playback
-        |-- and the memo's status object on the same poll: tile line "Working 1:20 · <progress>", heard echo, progress clips
+        |-- and the memo's status object on the same poll: tile line "Working 1:20 · <progress>", transcript text, progress clips
         |-- POST /upload/played {reply_key, phase}  -> upload proxy log line "playback"
         |-- played      fact: audio.memo.played (phase started|ended)  or  failed(stage=playback, retryable)
-        |-- the car's ONE speech queue (SpeechArbiter): ack on Stop & Send, heard echo, progress, reply, never over a
+        |-- the car's ONE speech queue (SpeechArbiter): ack on Stop & Send, progress, reply, never over a
         |   recording or each other; every decision POST /upload/client-event {event: speech} -> log line "speech",
         |   and memo-tied start|end|halt|drop|deferred -> notified fact: audio.memo.notified
 
@@ -69,7 +69,7 @@ silent:
 | when | what the driver gets | from |
 |---|---|---|
 | Stop & Send, ~0.5 s | "Got it, <agent>'s on it" (local Android TTS, no server) | the car |
-| transcription done, ~7 s | "<agent> heard: <first words>" | `status.heard` |
+| direct/full-agent transcript acknowledgement | no transcript readback | `status.heard` is text-only; no native or server heard audio |
 | every 30 s while the agent works (not before 15 s) | "<agent>: <newest progress line>" | `progress/...-<n>.ogg` |
 | the turn is done | the reply, as before | `replies/` |
 
@@ -80,7 +80,8 @@ progress line by one writer thread (newest document per memo wins, a failed writ
 ```json
 {"v": 1, "memo_id": "...", "agent": "holocene-pm", "agent_name": "Holocene PM", "s3_key": "inbox/holocene-pm/...",
  "stage": "received|transcribing|heard|working|replying|done|failed",
- "heard": "<first 200 chars of the transcript>", "progress": "<newest progress line, one line, <= 200>",
+ "heard": "<first 200 chars of the transcript>", "heard_delivery": "text_only",
+ "progress": "<newest progress line, one line, <= 200>",
  "progress_seq": 7, "progress_at": "...", "spoken_seq": 2, "spoken_key": "progress/2026/10/20/<memo_id>-2.ogg",
  "narration": {"n": 2, "key": "...", "seq": 7, "at": "...", "text": "..."},
  "started_at": "<upload time>", "dispatched_at": "...", "updated_at": "...", "elapsed_s": 81.4,
@@ -93,6 +94,16 @@ Both prefixes expire after 7 days (bucket lifecycle rules on `status/` and `prog
 `progress_seq` is the gateway's seq (it restarts at 1 on an escalated memo's batch command); `spoken_seq` is the newest
 clip number, 1..n per memo, the one the pad plays up to. `error`/`error_code` only on `failed` (a `memo:cancel` is
 `failed` with `error_code: cancelled`).
+
+**Text-only transcript acknowledgement.** Direct/full-agent memos retain `status.heard` and the transcribed fact for
+observability, but neither the watcher nor Agent Pad reads the transcript aloud. There is no server heard-audio job,
+`kind=heard` narration, heard retry lifecycle or MEMO_HEARD_ACK option. The page never calls native `speechEcho`.
+This removes redundant private-transcript readback rather than routing it around native spoken-feedback/quiet-phone
+policy. Browser and unknown-origin memos gain no echo either. Normal assigned-voice progress, hold cues, final/error
+replies and their existing privacy/playback gates remain unchanged; no fallback is concealed and ordinary replies
+are not muted. **The updated Agent Pad web bundle must be published/loaded to remove the old native echo call.**
+No Kotlin/APK change is required. This implementation has not been deployed or physically accepted.
+Earlier timing/acceptance records that mention audible heard echoes describe historical behavior, not this contract.
 
 **Spoken progress** comes from `bloodbank.agent.invocation.progressed`, which the Hermes gateway publishes for every
 line the model writes next to a tool call (bloodbank `services/hermes-gateway/README.md`, "Progress"). Most memo turns
@@ -475,9 +486,11 @@ Behaviour worth knowing:
   so (`NO_HANDOFF_LINE`), never "Done.". The marker is matched in upper case only and never inside a code fence
   (`**Background:**`, CSS `background:` and YAML `background: true` are ordinary text). `MEMO_FOLLOWUP_PREFIX` carries
   the voice prefix's rule over: no deploy, restart or push unless the driver's own words asked (the plan was written
-  from a speech-to-text transcript; an unclear ask does the read-only part and says what it left undone), and no
-  `delegate_task` (a subagent runs on `automaticai/auto/subagent`, not the turn's model: 410 s synchronous on the
-  2026-10-22 sim). This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
+  from a speech-to-text transcript; an unclear ask does the read-only part and says what it left undone).
+  Both prefixes follow the agent's normal role workflow, including coding workers when implementation requires them;
+  PMs delegate implementation. Being in the car does not reduce authorization to edit or test code, bypass role
+  boundaries, or grant extra permissions. Longer work still belongs in the background turn, not in the short first
+  reply. This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
   watcher already owns the memo, its cancel and its trace.
 - **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL`, default
   `automaticai/personal/sol-6.1`. A follow-up carries `MEMO_FOLLOWUP_MODEL`, default empty (the profile's own model).
@@ -684,12 +697,14 @@ it", "no") is `cancel`; "that's all" / "thanks, bye" is `end`; "ask <agent> dire
   the tile (`converse_retarget_refused`). A confirm that names a different target is read back again, never sent.
 - A reply that claims something was sent or started has that sentence removed ("Nothing was sent.").
 
-**The brief that is sent.** `MEMO_CONVERSE_DELEGATE_PREFIX` (do it now, yourself, no `delegate_task`, no vox, **no
+**The brief that is sent.** `MEMO_CONVERSE_DELEGATE_PREFIX` (do it now through the agent's normal role workflow,
+including coding workers when implementation requires them; PMs delegate implementation, no self-generated TTS, **no
 deploy, restart, push or other change to a live system unless the Permission section allows it**, end with a spoken
 summary, no `BACKGROUND:` line) + the stored brief (`# title`, goal, `## Context`, `## Done when`, `## Permission`) + the
 driver's own words, oldest first, with times (the confirmation included) + a trace line (conversation, memo, brief id,
-tile). The words are only the turns that built THIS draft (the draft's `built_by` memo ids: the proposal and each edit of
-it; a turn that opens by taking the draft back, "actually forget that, instead ...", starts the chain over), never a
+tile). Car transport does not reduce authorization to edit or test code and does not bypass role boundaries or the
+confirmed permission ceiling. The words are only the turns that built THIS draft (the draft's `built_by` memo ids: the
+proposal and each edit of it; a turn that opens by taking the draft back, "actually forget that, instead ...", starts the chain over), never a
 withdrawn request, an earlier failed ask or small talk (a clarifying reply turn that fed the proposal is not carried: its
 substance reaches the agent only through the brief); the stored brief stays verbatim. It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
 `uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the **voice model** (`MEMO_CONVERSE_DELEGATE_MODEL`, default `MEMO_VOICE_MODEL` = sol-6.1; the PMs' own default is
@@ -713,8 +728,8 @@ its budget, `memo:cancel`) puts the draft back to proposed and marks the delegat
 itself), chunks of 70/170/300 characters from 80 (`MEMO_CONVERSE_CHUNK_CHARS`, `_MIN_CHARS`), vox at 6 steps
 (`MEMO_CONVERSE_TTS_STEPS`). Every vox render of the watcher goes through `TtsGate`: one at a time, fast turns first, then
 replies and results, then narration, released between chunks. The car's status object says `stage: working` during
-converse, sends `heard: null` for a fast turn (no "<agent> heard: ..." echo in front of an answer seconds away; a direct
-turn gets `heard` back), and adds `conv: {sid, turn, action, draft_title, reply_key}`: `reply_key` is THIS turn's reply of
+converse, sends `heard: null` for a fast turn (the answer is seconds away; a direct
+turn gets the text-only `heard` preview back), and adds `conv: {sid, turn, action, draft_title, reply_key}`: `reply_key` is THIS turn's reply of
 record, so the pad tells a barged fast-turn reply (not replayed) from a follow-up result (its own key, replayed).
 
 **The default route (never Anthropic; operator decision 2026-10-22).** Operator, verbatim: "use aai/auto/fast and its
@@ -805,23 +820,50 @@ in it is `scope_unsafe`, no proof is `scope_unproven`, and either skips the rout
 (`route_unproven`, `route_out_of_scope`, `forbidden_model`); (3) the **response `model`** field is checked the same way. A
 route that fails any of them is thrown away and the memo takes the full-agent path.
 
-If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, the echo restored): a memo is never
+If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, text-only transcript status restored): a memo is never
 failed for an LLM reason.
 
 **Tiles: a voice and a model per agent (HOLOC-23, 2026-10-22).** The flag file carries `tiles: {<agent>: {voice, model,
 voice_set_at/by, model_set_at/by}}`, written under an fcntl lock (`.converse.json.lock`; the watcher, the CLI and the skills
 all write the same file; `memo:converse on|off` keeps the map). A file that only holds tiles keeps the unit's mode.
 
-- **Voice** (car only; the agent's Telegram/Hermes `tts.voice` is untouched): `tiles[agent].voice`, else `MEMO_VOX_VOICE`
-  (rick), for a memo **the car sent**: a browser memo, or one whose sender cannot be read (S3 metadata, read once and only
-  when the tile has a voice of its own), keeps the default (`tile_voice_not_car` log). Per agent, not per device: a voice
-  set from the sim also speaks on the Honda (clear it after a sim run). Valid = vox's list (`voxxy -q voice list --json`, `GET <vox>/voices`; 12 today: brule carlin damian david dumply
-  marge morgan morty peter rick walken walken2); a display name, a unique first/last word (`freeman`) or spoken digits
-  (`walken two` = walken2) resolve. The voice is **locked per reply at its first render** (`voice_lock` on the memo: chunks,
-  the full file and retries keep it; a follow-up round locks again). If vox answers `voice 'x' not found`, the render falls
-  back to the default voice at once (`voice_fallback` log, no 1800 s TTS retry). `voiced` / `replied` facts carry `voice`
-  (used) and, on a fallback, `voice_requested` + `voice_fallback`. Progress narration uses the tile's voice too unless
-  `MEMO_PROGRESS_VOICE` pins one.
+- **Voice inheritance**: the responding agent's registry `profile_name` selects its rendered Hermes `config.yaml`.
+  `tts.voice` wins, then `tts.vox.voice`. The Adapter reuses `CardCache`'s registry/profile roots
+  (`MEMO_AGENT_REGISTRY`, `MEMO_HERMES_PROFILES`); there is no copied voice roster. Full-agent replies use the
+  gateway-confirmed profile; delegated follow-ups use the named target, not the original tile. Identifiers and resolved
+  paths are validated. Missing, malformed, unreadable or voiceless profiles use an observable emergency
+  `MEMO_VOX_VOICE`/Rick fallback. The watcher's own `VOX_VOICE` is not another agent's assignment.
+  A deliberate `tiles[agent].voice` overrides inheritance **only** for a verified car-origin memo. Browser and
+  unknown-origin memos still inherit the responding profile. Neither path writes profile/Telegram settings.
+  Overrides are per agent, not per device: a setting from the sim also applies on the Honda.
+  `default`/`--clear` removes the override and restores profile inheritance; naming Rick explicitly pins Rick.
+  Valid override choices come from Vox's list (`GET <vox>/voices`); display names, unique first/last words (`freeman`)
+  and spoken digits (`walken two` = walken2) resolve.
+  The voice is **locked per reply stamp** (`voice_lock` on the memo): chunks, joined output and retries/resume keep it.
+  Progress/hold cues freeze the responder decision before a reply stamp exists; the final reply inherits that decision.
+  A deliberate setting acknowledgement uses the new selection. Profile, registry and override changes affect the next
+  round, without changing an already-rendering reply.
+  A missing catalog voice falls back before rendering; a Vox `voice 'x' not found` response falls back immediately
+  before any reply audio has rendered (`voice_fallback` log, no 1800 s TTS retry). If a voice disappears **after** a
+  chunk has rendered, the reply fails non-retryably instead of mixing identities. `voiced`/`replied` facts carry `voice`
+  (used) and, on fallback, `voice_requested` + `voice_fallback`. Structured logs, memo locks, `memo:voice`,
+  `memo:converse status` and heartbeat tile diagnostics distinguish `inherited`, `car_override` and
+  `emergency_fallback` with profile/reason. Progress narration shares inheritance unless explicit `MEMO_PROGRESS_VOICE`
+  pins it (`progress_override` in logs); that pin never changes the final reply's assignment.
+  Diagnostics separate `configured_voice`/`configured_source` from `effective_voice` and `availability`.
+  A cached catalog lacking the requested voice shows the same emergency fallback as reply resolution.
+  With no catalog knowledge, `availability=unknown` and `effective_voice=null`; the compatibility `voice` is only
+  the requested candidate, not a verified available assignment. Heartbeat uses one cached snapshot without network
+  waits; `memo:voice` makes one bounded catalog lookup, including clear/default diagnostics.
+  Cue fallback owns its captured command, responder, reply stamp and lock generation: a stale narration cannot
+  mutate a rendered final lock or a newer round even when both selected the same voice.
+  Optional phrase warmup collects profiles and one catalog snapshot inside its background worker, never in
+  the startup path. Empty/failed catalog reads have a 30-second negative-cache interval; no per-agent timeout loop.
+  Set `MEMO_PHRASEBANK_WARM=0` in the watcher's process environment to skip **proactive startup warmup only**:
+  no warmup worker, catalog collection or synthesis is started. Unset or `1` preserves normal startup warming.
+  This does not disable PhraseBank reads/learning or ordinary user-requested reply rendering; it is distinct from
+  `MEMO_PHRASEBANK=0`. The parent can use this opt-out for an authorized restart that must not proactively synthesize,
+  without editing any agent profile. No live environment or service change is made by documenting this option.
 - **Model** (the desk's ladder only; the agent's own Hermes model, the direct-turn and delegated-turn models are
   untouched): `tiles[agent].model` names an alias in **`car_desk_aliases.json`** (version 1, shared by the watcher, the CLI
   and the car-set-model skill). The alias's routes go in FRONT of the default route (auto/fast); a `(base_url, model)` already in the
@@ -964,13 +1006,14 @@ heard the stop tone and then nothing for up to ~27 s. Now (cues at 3 / 9 / 16 s 
 | the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | the same second-cue lines (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
 
 - **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES` / `HOLD_CUE3_LINES`, warmed per tile voice at
-  start-up), spoken in the tile's own voice (`tiles[agent].voice`; a voice vox lacks falls back to the default), so a cue is a
+  start-up), spoken in the responding profile's voice (or a deliberate car override; missing voices use the emergency
+  fallback), so a cue is a
   file copy (~1 ms, engine `phrasebank`), never a vox render on the critical path. The same line is never heard twice in a row
   per tile. Every line is about a second of speech or less, and that is **measured, not assumed**: the watcher probes the clip it
   is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s; `hold_cue_dropped` reason `too_long`,
-  and the line is not used again until a restart). Measured on `rick` (the default voice): One sec. 0.97 s, Thinking. 0.65 s,
+  and the line is not used again until a restart). Historical measurements on `rick` (now emergency-only by default): One sec. 0.97 s, Thinking. 0.65 s,
   Hold on. 0.65 s, Hang on. 0.65 s, Still on it. 0.97 s, Still thinking. 0.97 s, Almost there. 0.81 s, Any second. 0.97 s on rick ("Almost done." rendered 1.29 s on rick and hit the 1.2 s cap live on 2026-10-22, so it was replaced; the candidates "Nearly there." 1.13 s and "Nearly done." 1.29 s were too long, and "Still here." and "Working on it." rendered 1.29 s, so they are not shipped). On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
-  hand-off, so keep the lines short: a longer line delays the echo behind it. While the cue waits for its mark the watcher
+  hand-off, so keep the lines short: a longer line delays other speech behind it. While the cue waits for its mark the watcher
   also renders and banks the chosen line if the tile voice has no banked copy (a voice changed at run time), so the cue is a
   file copy at the mark rather than a 1.5-3.5 s live render.
 - **Wire.** A cue is a progress clip: `progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>h.ogg` (the `h` suffix marks a hold cue; it shares
@@ -983,7 +1026,7 @@ heard the stop tone and then nothing for up to ~27 s. Now (cues at 3 / 9 / 16 s 
   answer never waits behind a stale cue. A cue that went up just before the decision landed is removed from the bucket again
   (`removed: true`), so the pad cannot list and play it while the reply renders. Hold clips are counted apart from the agent's
   narrations (`NARRATE_MAX` counts real narrations only), and the status object's `narration` block names the hold clip with
-  its own text, `kind` and a null `seq`. The pad's speech queue ranks a progress clip below the reply and the heard echo, drops
+  its own text, `kind` and a null `seq`. The pad's speech queue ranks a progress clip below the reply, drops
   it once the memo has its reply, and never overlaps utterances; the pad itself drops a hold cue (`mayPlayProgress`) while the
   driver is arming or recording instead of deferring it, checked at the pick and again after the clip has downloaded and been
   encoded, right before it reaches the queue. A cue already playing is about a second, so the answer simply follows.
@@ -991,7 +1034,7 @@ heard the stop tone and then nothing for up to ~27 s. Now (cues at 3 / 9 / 16 s 
 - **Trace.** `memo:trace` shows `car:hold-cue#<n>` hops and a "first hold cue" timing for an agent turn.
 - **Not covered (on purpose).** After the agent's first real narration the keep-alives stop and `MEMO_NARRATE_GAP_S` (30 s)
   applies again. The reply's own TTS render (about 2-3 s once the decision is in) has no cue. The cue ranks as `progress` on the
-  pad (below the echo), not as `cue`: a JS-driven clip at the cue rank would need a Kotlin change. A watcher restart or
+  pad, not as `cue`: a JS-driven clip at the cue rank would need a Kotlin change. A watcher restart or
   `memo:retry` during the desk call restarts the 3 s / 9 s / 16 s timers.
 
 

@@ -144,13 +144,14 @@ class DeskWait(HoldHarness, unittest.TestCase):
         self.assertEqual(c1["kind"], "hold_cue")
 
     def test_a_cue_not_yet_up_when_the_answer_is_ready_is_dropped_never_uploaded(self):
-        slow_voice = self.w._tile_voice
+        synth_cue = self.w._synth_cue
 
-        def slow_tile_voice(*a, **kw):   # the cue is mid-render when the desk's decision lands
+        def slow_synth_cue(*a, **kw):   # the cue is mid-render when the desk's decision lands
             time.sleep(0.9)
-            return slow_voice(*a, **kw)
+            return synth_cue(*a, **kw)
         self.slow(0.6)
-        with unittest.mock.patch.object(self.w, "_tile_voice", side_effect=slow_tile_voice), \
+        with unittest.mock.patch.object(self.w, "_synth_cue", side_effect=slow_synth_cue), \
+                unittest.mock.patch.object(self.w, "_hold_prime", return_value=None), \
                 unittest.mock.patch.object(iw, "HOLD_CUE2_S", 0):
             key, m = self.say("What's Holocene working on?")
             self.wait_for(lambda: bool(self.dropped()), "the drop")

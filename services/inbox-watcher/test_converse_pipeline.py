@@ -14,6 +14,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from test_car_workflow_parity import assert_role_workflow
 from test_converse import SECRET, decision, fake_server
 from test_inbox_watcher import (  # noqa: F401 - importing it sets up the fakes and the environment
     EMITS, HERMES, REGISTRY, VOX_TEXTS, MemoHarness, RecordingWriter, facts, hermes_session, iw, journal, mc_,
@@ -350,6 +351,7 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertEqual(cmd["data"]["target_agent_id"], "holocene-pm")
         prompt = cmd["data"]["prompt"]
         self.assertTrue(prompt.startswith(cv.DELEGATE_PREFIX))
+        assert_role_workflow(self, prompt)
         self.assertIn(draft["body"], prompt)
         self.assertIn('"Have the PM look into why the audio spool is disabled and report back"', prompt)
         self.assertIn('"Send it."', prompt)
@@ -510,6 +512,23 @@ class Delegation(ConverseHarness, unittest.TestCase):
             self.assertNotIn(gone, prompt)
         words = prompt.split("## The driver's own words")[1].split("## Trace")[0]
         self.assertEqual(words.count("\n- "), 3)
+
+    def test_confirmed_coding_dispatch_preserves_clamped_permission_and_brief(self):
+        self.propose("Fix the car workflow code and test it, but do not deploy.",
+                     dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "changes_ok")
+        self.assertIn(cv.PERM_RULE["changes_ok"], draft["body"])
+        key, m = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        prompt = cmd["data"]["prompt"]
+        assert_role_workflow(self, prompt)
+        self.assertEqual(cmd["data"]["context"]["perm"], "changes_ok")
+        self.assertEqual(prompt[len(cv.DELEGATE_PREFIX):].split("\n\n## The driver's own words")[0], draft["body"])
+        self.assertIn('"Fix the car workflow code and test it, but do not deploy."', prompt)
+        self.assertIn('"Send it."', prompt)
+        self.assertIn("unless the Permission section below allows it", prompt)
+        self.assertEqual(m["followups"][0]["brief_sha256"], draft["brief_sha256"])
 
     def test_a_named_handoff_goes_to_that_agent_and_its_result_is_named(self):
         dec = {**PROPOSE, "target": "flume-pm"}
