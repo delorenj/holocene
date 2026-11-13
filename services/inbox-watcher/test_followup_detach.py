@@ -11,6 +11,7 @@ import unittest
 import unittest.mock
 import uuid
 
+from test_car_workflow_parity import assert_role_workflow
 from test_inbox_watcher import (  # noqa: F401 - the module sets up the fakes and the environment
     GATEWAY_DB, HERMES, VOX_TEXTS, MemoHarness, RecordingWriter, facts, hermes_session, iw, journal, journal_turn_timeout,
     mc_, progress_fact,
@@ -124,13 +125,23 @@ class VoiceTurnModel(MemoHarness, unittest.TestCase):
         for must in ("A driver is waiting", "within about a minute", "at most 3 tool calls", "vox-speak", "never sleep",
                      "BACKGROUND:", "follow-up"):
             self.assertIn(must, p)
-        self.assertIn("delegate_task", p)
+        assert_role_workflow(self, p)
 
-    def test_the_follow_up_prefix_carries_the_deploy_rule_and_no_delegation(self):
+    def test_the_follow_up_prefix_carries_the_deploy_rule_and_normal_role_workflow(self):
         p = iw.FOLLOWUP_PREFIX
-        for must in ("never delegate to a subagent", "delegate_task", "Run no deploy", "speech-to-text", "read-only part",
+        for must in ("Run no deploy", "speech-to-text", "read-only part",
                      "spoken summary", "do not write a BACKGROUND: line"):
             self.assertIn(must, p)
+        assert_role_workflow(self, p)
+
+    def test_immediate_dispatch_keeps_coding_request_and_role_workflow(self):
+        key = self.upload("car-code-parity")
+        text = "Fix the failing regression and test the code; do not deploy or restart anything."
+        m = self.transcribed(key, text)
+        self.tick_until(lambda: m["stage"] == "await_agent")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["prompt"], iw.VOICE_PREFIX + text)
+        assert_role_workflow(self, cmd["data"]["prompt"])
 
     def test_a_follow_up_runs_on_the_profile_model_by_default(self):
         # Sol's weekly pool keeps the VOICE turns fast; nobody waits on a follow-up (2026-10-22 review). Sonnet 5.5 was
@@ -167,6 +178,8 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         self.assertEqual((t1, t2), ("bloodbank.cmd.agent.invocation.invoke", "bloodbank.cmd.agent.invocation.start"))
         self.assertEqual(c2["data"]["thread_id"], m["memo_id"])
         self.assertEqual(c2["data"]["prompt"], iw.FOLLOWUP_PREFIX + "Walk all 8 zellij tabs and report.")
+        assert_role_workflow(self, c1["data"]["prompt"])
+        assert_role_workflow(self, c2["data"]["prompt"])
         ctx = c2["data"]["context"]
         self.assertEqual((ctx["reason"], ctx["followup_of"], ctx["followup_depth"]), ("voice-followup", cid1, 1))
         self.assertNotIn("model", c2["data"])  # the profile's own model: Sol stays for the voice turns
@@ -187,6 +200,16 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         self.assertEqual(doc["stage"], "working")
         self.assertEqual((doc["followup"]["n"], doc["followup"]["state"]), (1, "running"))
         self.assertEqual(self.w.narration_due(m), "followup")  # nothing narrated while the background turn works
+
+    def test_coding_background_dispatch_preserves_plan_and_permission_limits(self):
+        plan = "Use the normal PM workflow to fix and test the code. Do not deploy, restart or push."
+        key, m, _ = self.quick_answer("car-code-background", plan=plan)
+        (_, immediate), (_, background) = self.cmds(key)
+        self.assertEqual(background["data"]["prompt"], iw.FOLLOWUP_PREFIX + plan)
+        self.assertEqual(m["followups"][0]["plan"], plan)
+        assert_role_workflow(self, immediate["data"]["prompt"])
+        assert_role_workflow(self, background["data"]["prompt"])
+        self.assertIn("unless the driver's own words asked for it", background["data"]["prompt"])
 
     def test_the_follow_up_reply_is_spoken_later_into_a_new_reply_object(self):
         key, m, cid1 = self.quick_answer("atb-reply")

@@ -147,8 +147,10 @@ NS = uuid.uuid5(uuid.NAMESPACE_URL, "urn:33god:holocene:converse")
 # conversation, so it never changes a live system unless the Permission section (clamped by the driver's own words) allows.
 DELEGATE_PREFIX = os.environ.get("MEMO_CONVERSE_DELEGATE_PREFIX", (
     "[Delegated from the driver's car conversation with the fast desk. The driver heard the brief below read back and "
-    "confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. Do it yourself: "
-    "never delegate to a subagent (delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, "
+    "confirmed it aloud. Do the work now, in full, without asking questions; nobody is waiting on the line. "
+    "Follow your normal role workflow: PMs delegate implementation; use coding workers when implementation requires them. "
+    "Being in the car does not reduce authorization to edit or test code, and does not bypass role boundaries or permission "
+    "limits. Never run vox-speak or any text-to-speech yourself. Run no deploy, "
     "restart, push or other change to a live system unless the Permission section below allows it; the driver's words came "
     "through speech-to-text, so where anything is unclear do only the read-only part and say what you left undone. Your "
     "final message is spoken to the driver as a follow-up: end it with a spoken summary of the result in two to four "

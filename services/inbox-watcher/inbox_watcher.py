@@ -123,20 +123,24 @@ VOICE_PREFIX = os.environ.get("MEMO_VOICE_PREFIX", "[Voice memo transcript - spe
                               "within about a minute and at most 3 tool calls. The driver hears your progress aloud while you "
                               "work: before each tool call, write one short sentence saying what you are about to do. Never "
                               "run vox-speak or any text-to-speech yourself (your reply is spoken for you), never sleep or "
-                              "wait and re-check, never delegate to a subagent (delegate_task), and run no deploy or long "
-                              "command unless asked. If the ask needs longer "
+                              "wait and re-check, and run no deploy or long command unless asked. "
+                              "Follow your normal role workflow: PMs delegate implementation; use coding workers when "
+                              "implementation requires them. Being in the car does not reduce authorization to edit or "
+                              "test code, and does not bypass role boundaries or permission limits. If the ask needs longer "
                               "work, do not start it now: tell the driver in one or two sentences what you will do, then end "
                               "your reply with a line that starts with BACKGROUND: followed by complete instructions for "
-                              "yourself. That work starts right after, on this same conversation, and its result is spoken "
-                              "to the driver as a follow-up.] ")
+                              "the background turn. That work starts right after, on this same conversation, and its result "
+                              "is spoken to the driver as a follow-up.] ")
 # Prepended to a reply's BACKGROUND: instructions when they go back to the same agent as a background turn.
 # The plan below it was written by the agent from a speech-to-text transcript and runs unattended (2026-10-22 review):
 # the voice prefix's "no deploy unless asked" rule is carried over, and a misheard ask does the safe part and says so.
-# No delegate_task: a subagent runs on automaticai/auto/subagent, not the turn's model (B, 2026-10-22: 410 s synchronous).
+# The car is transport: background work follows the agent's normal role and implementation workflow.
 FOLLOWUP_PREFIX = os.environ.get("MEMO_FOLLOWUP_PREFIX", "[Background continuation of the voice memo above: the driver already "
                                  "heard your short answer. Do the work below now, in full, without asking questions; the "
-                                 "one-minute budget does not apply here. Do it yourself: never delegate to a subagent "
-                                 "(delegate_task). Never run vox-speak or any text-to-speech yourself. Run no deploy, "
+                                 "one-minute budget does not apply here. Follow your normal role workflow: PMs delegate "
+                                 "implementation; use coding workers when implementation requires them. Being in the car "
+                                 "does not reduce authorization to edit or test code, and does not bypass role boundaries "
+                                 "or permission limits. Never run vox-speak or any text-to-speech yourself. Run no deploy, "
                                  "restart, push or other change to a live system unless the driver's own words asked for "
                                  "it; the ask came through speech-to-text, so if it is unclear, do only the read-only part "
                                  "and say what you left undone. Your final message is spoken to the driver as a follow-up: "

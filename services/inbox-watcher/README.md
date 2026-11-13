@@ -475,9 +475,11 @@ Behaviour worth knowing:
   so (`NO_HANDOFF_LINE`), never "Done.". The marker is matched in upper case only and never inside a code fence
   (`**Background:**`, CSS `background:` and YAML `background: true` are ordinary text). `MEMO_FOLLOWUP_PREFIX` carries
   the voice prefix's rule over: no deploy, restart or push unless the driver's own words asked (the plan was written
-  from a speech-to-text transcript; an unclear ask does the read-only part and says what it left undone), and no
-  `delegate_task` (a subagent runs on `automaticai/auto/subagent`, not the turn's model: 410 s synchronous on the
-  2026-10-22 sim). This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
+  from a speech-to-text transcript; an unclear ask does the read-only part and says what it left undone).
+  Both prefixes follow the agent's normal role workflow, including coding workers when implementation requires them;
+  PMs delegate implementation. Being in the car does not reduce authorization to edit or test code, bypass role
+  boundaries, or grant extra permissions. Longer work still belongs in the background turn, not in the short first
+  reply. This is a watcher-side self-dispatch rather than a gateway tool: no gateway edit or reload, and the
   watcher already owns the memo, its cancel and its trace.
 - **Voice turns name their model (2026-10-22).** Every memo command carries `data.model = MEMO_VOICE_MODEL`, default
   `automaticai/personal/sol-6.1`. A follow-up carries `MEMO_FOLLOWUP_MODEL`, default empty (the profile's own model).
@@ -684,12 +686,14 @@ it", "no") is `cancel`; "that's all" / "thanks, bye" is `end`; "ask <agent> dire
   the tile (`converse_retarget_refused`). A confirm that names a different target is read back again, never sent.
 - A reply that claims something was sent or started has that sentence removed ("Nothing was sent.").
 
-**The brief that is sent.** `MEMO_CONVERSE_DELEGATE_PREFIX` (do it now, yourself, no `delegate_task`, no vox, **no
+**The brief that is sent.** `MEMO_CONVERSE_DELEGATE_PREFIX` (do it now through the agent's normal role workflow,
+including coding workers when implementation requires them; PMs delegate implementation, no self-generated TTS, **no
 deploy, restart, push or other change to a live system unless the Permission section allows it**, end with a spoken
 summary, no `BACKGROUND:` line) + the stored brief (`# title`, goal, `## Context`, `## Done when`, `## Permission`) + the
 driver's own words, oldest first, with times (the confirmation included) + a trace line (conversation, memo, brief id,
-tile). The words are only the turns that built THIS draft (the draft's `built_by` memo ids: the proposal and each edit of
-it; a turn that opens by taking the draft back, "actually forget that, instead ...", starts the chain over), never a
+tile). Car transport does not reduce authorization to edit or test code and does not bypass role boundaries or the
+confirmed permission ceiling. The words are only the turns that built THIS draft (the draft's `built_by` memo ids: the
+proposal and each edit of it; a turn that opens by taking the draft back, "actually forget that, instead ...", starts the chain over), never a
 withdrawn request, an earlier failed ask or small talk (a clarifying reply turn that fed the proposal is not carried: its
 substance reaches the agent only through the brief); the stored brief stays verbatim. It is follow-up 1 of the confirming memo (`start_followup(kind="delegation")`): command id
 `uuid5(brief_id)` (the gateway dedupes a redelivery), `MEMO_CONVERSE_DELEGATE_LANE` (batch), the **voice model** (`MEMO_CONVERSE_DELEGATE_MODEL`, default `MEMO_VOICE_MODEL` = sol-6.1; the PMs' own default is
