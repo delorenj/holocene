@@ -1,0 +1,9 @@
+== v7 phone runtime (Medium_Phone_API_36.0) ==
+APK sha256: 3bbcd247f0528b1277ea37e7c5d22a275b37ecef0af56289f74868e61bcee04c
+versionName='0.2.5-internal'
+feature-automotive present on phone: 0 (characteristics=emulator)
+isCarHostAvailable -> false (Class.forName android.car.Car throws, caught) => phone path, fail-closed
+UI: "Not a car host; fixture availability shown read-only, diagnostics disabled"
+  + "Open privacy policy in browser" (phone policy preserved)
+No crash buffer output. No android.car NoClassDefFoundError (CarHost boundary holds).
+captures: v7-phone-portrait-1080x1920.png, v7-phone-landscape-1920x1080.png

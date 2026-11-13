@@ -1,0 +1,26 @@
+HOLOC-11 v7 internal publication evidence
+Agent: holocene-pm
+Date: 2026-10-05
+
+Signed artifact: apps/auto/app/build/outputs/bundle/release/app-release.aab
+SHA256: bde4e6d9936a13947ed8b89bcf9667e77085ad67c16a3d53de077dbf70234de2
+Bundle manifest: io.automaticai.holocene, versionCode7, versionName0.2.5-internal, minSdk33, targetSdk35; automotive and android.car optional; RECORD_AUDIO only.
+jarsigner: jar verified. Self-signed upload certificate SHA25690d276cb82ddb16e72386c5d07c32de35396dc12723c61d9b9e5329703bfca17 matches established upload key. Certificate-chain and timestamp warnings are not signature failures. Signing wrapper temporary directory removal verified.
+Independent re-review: cache/delegation/subagent-summary-0-20261005_081540_359947.txt PASS.
+Debug runtime evidence: aaos-v7-genuine/v7-aaos-genuine-evidence.txt and phone-v7/v7-phone-runtime-evidence.txt (debugAPK3bbcd247; not the signed AAB).
+
+Console internal track4701731390750096325 release4:
+Uploaded bundle processed7(0.2.5-internal).
+Preview: no blocking errors; optional deobfuscation file warning only.
+Supported car devices13, no change from prior release.
+Save and publish confirmation accepted.
+Track readback: Active / Latest release:7(0.2.5-internal) / Available to internal testers / Released Oct5 4:20PM / Not reviewed.
+Form factors include Android Automotive OS.
+Tester link from prior Console readback: https://play.google.com/apps/internaltest/4701731390750096325
+
+Limitations/open work:
+- No verified physical Civic installation or launch; Civic API level unknown. minSdk33 excludes API32 variants.
+- Honda parked car-host path and phone fail-closed UI verified on corrected debug build; driving-state injection blocked on Honda user build. No driving approval claimed.
+- Existing listing saved with authentic prior captures; corrected-build screenshot replacement pending. Additional preview from old feasibility package rejected and not uploaded.
+- Public policy currently explicitly describes version6; version7 scope clarification pending. No consumer review submitted.
+- No commit/push performed; unrelated source/runtime modifications preserved.

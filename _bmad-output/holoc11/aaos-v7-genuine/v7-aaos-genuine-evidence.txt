@@ -1,0 +1,43 @@
+== v7 AAOS GENUINE car-host path (Honda HOLOC_9_Honda_API33, API 33) ==
+APK sha256: 3bbcd247f0528b1277ea37e7c5d22a275b37ecef0af56289f74868e61bcee04c
+versionName='0.2.5-internal'
+device characteristics: nosdcard,automotive
+feature-automotive: 1
+
+== android.car class availability (device facts) ==
+android.car classes are NOT in any /system/framework/*.jar (scan: 0 hits for android/car/).
+They ARE on the BOOTCLASSPATH via apex:
+  BOOTCLASSPATH includes /apex/com.android.car.framework/javalib/android.car-module.jar
+  dex in that jar confirmed to define:
+    Landroid/car/Car;
+    Landroid/car/Car$CarServiceLifecycleListener;
+    Landroid/car/drivingstate/CarUxRestrictionsManager;
+    Landroid/car/drivingstate/CarUxRestrictions;
+    CAR_UX_RESTRICTION_SERVICE
+=> Class.forName("android.car.Car", false, classloader) returns true on this image.
+   The prior filename substring gate (sharedLibraryFiles contains "android.car") was the
+   ONLY blocker; car-frameworks-service is the service jar, not the API library.
+
+== runtime (baseline / parked UXR) ==
+dumpsys car_service UXR: "Port: 0x00 UXR: DO: false UxR: 0", State:parked, baseline mode
+HoloceneProbe: Host UX requiresDO=false, mask=0; unrestricted=true
+UI status line: "Host unrestricted; diagnostic controls only"
+UI rendered: full diagnostic controls (Preview canned input, Probe microphone 6s,
+  Probe final ASR + local acknowledgement, Cancel diagnostic) + Open privacy policy.
+  => REAL CarUxRestrictionsManager listener fired; connected=true; unrestricted=true.
+Teardown on rotation/force-stop: "event=released ... reason=Activity destroyed" then
+  clean reconnect "unrestricted=true" (no crash, no late-callback leak).
+
+== restricted / driving transition ==
+BLOCKED by device facts: this is a user build.
+  cmd car_service inject-driving-state -> SecurityException: requires non-user build
+  cmd car_service inject-vehicle-signal -> SecurityException: requires non-user build
+=> UXR restricted/moving transition CANNOT be exercised without an eng/non-user build.
+   Did NOT fake safety flags, did NOT set unrestricted manually, did NOT record live mic/audio.
+   App fail-closed policy preserved: unknown/driving => unrestricted=false.
+
+== captures ==
+v7-aaos-genuine-800x1280-top.png   (800x1280, unrestricted car UX)
+v7-aaos-genuine-1024x768-top.png   (1024x768, unrestricted car UX)
+v7-aaos-genuine-1024x768-scrolled.png (1024x768, scrolled; distinct lower content - 2 genuine views)
+No duplicate-image claims: 800x1280 has a single view (content fit); 1024x768 top+scrolled are distinct.

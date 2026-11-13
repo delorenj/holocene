@@ -1,0 +1,35 @@
+== v7 AAOS GENUINE 800x1280 portrait PREVIEW-STATE capture ==
+date: 2026-10-05T08:24:58-04:00
+device: emulator-5584 (HOLOC_9_Honda_API33, emu_pub_honda_g_car / IVI_SYSTEM), API 33
+APK: apps/auto/app/build/outputs/apk/debug/app-debug.apk
+APK sha256: 3bbcd247f0528b1277ea37e7c5d22a275b37ecef0af56289f74868e61bcee04c
+package/activity: sh.delo.holocene.auto.feasibility/sh.delo.holocene.auto.MainActivity
+wm: 800x1280 override (physical 1280x720), density 160, user_rotation 0
+
+== second app state reached ==
+Tapped existing on-screen control "Preview canned input (never send)"
+  (uiautomator bounds [168,453][776,509] -> tap 472,481).
+Resulting status line:
+  "FIXTURE preview to fixture-thread-1: Summarize recent work
+   Confirmation not implemented; publication disabled"
+logcat HoloceneProbe at tap time:
+  10-05 08:24:14.545 I HoloceneProbe: FIXTURE preview to fixture-thread-1: Summarize recent work
+  10-05 08:24:14.545 I HoloceneProbe: Confirmation not implemented; publication disabled
+
+== no-publication / no-mic / no-network evidence ==
+- UI copy: "Confirmation not implemented; publication disabled" -> no event published.
+- "Cancel diagnostic capture / unsent preview" control unchanged -> preview unsent.
+- Did NOT tap any microphone control (only Preview canned input).
+- logcat grep publish|http|socket for pid 4901 (app): no hits; only Play services
+  traffic (com.google.android.gms) present, none attributable to the app.
+- No FATAL / AndroidRuntime crash for the app; Activity is topResumedActivity;
+  app process (pid 4901) alive.
+- prior HoloceneProbe lines (from rotation/relaunch): event=cancel, event=released
+  reason="Activity paused; capture cancelled" -> clean teardown, no leak.
+- Host UX line: "Host UX requiresDO=false, mask=0; unrestricted=true"
+  -> REAL CarUxRestrictionsManager callback fired; parked/unrestricted baseline.
+
+== distinctness vs existing baseline ==
+Baseline top view has status "Host UX requiresDO=false ..." as third line; the
+preview capture replaces it with the FIXTURE preview status banner -> two
+visually distinct 800x1280 portrait states, no duplicate-image claim.

@@ -1,0 +1,20 @@
+== v7 AAOS runtime ==
+APK sha256: 471867a625d1061988fc71b9b48f28b054af0302bd15e84f60933ccecdf9891a
+versionName='0.2.5-internal'
+device characteristics: nosdcard,automotive
+feature-automotive: 1
+car shared library present: 0
+usesOptionalLibraries: android.car (from dumpsys)
+
+== ResumedActivity ==
+    topResumedActivity=ActivityRecord{71caa1d u10 io.automaticai.holocene/sh.delo.holocene.auto.MainActivity} t1000019}
+
+== crash buffer ==
+(empty=no crash)
+
+== UI text ==
+text="Holocene Auto · FIXTURE"
+text="Emulator diagnostic only · no live agents · not driving approved"
+text="Not a car host; fixture availability shown read-only, diagnostics disabled"
+text="Assistant role available=true, held=false; no role change"
+text="Recognition provider=true; on-device=false"
