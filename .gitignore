@@ -34,3 +34,9 @@ apps/reply-player/.kotlin/
 apps/reply-player/local.properties
 apps/reply-player/**/*.apk
 services/inbox-watcher/inbox-watcher-state.json
+
+# docs lives in DeLoDocs (Syncthing-only, never git); local symlink, see ~/d/Projects/33GOD/Holocene/docs
+/docs
+
+# Generated opencode skill-permission projection (rewritten by skill sync)
+/opencode.json
