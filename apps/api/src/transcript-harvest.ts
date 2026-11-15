@@ -79,7 +79,8 @@ function toJob(event: CollectedEvent, state: HarvestJobState, now: number): Harv
     state,
     at,
     harvest_id: harvestId,
-    review_url: state === "review_ready" || state === "published" ? reviewPath(data.review_url, harvestId) : null,
+    // a publish that failed still has its review: the form is where it is retried (Done again), not a re-harvest
+    review_url: state === "review_ready" || state === "published" || (state === "failed" && stage === "publish") ? reviewPath(data.review_url, harvestId) : null,
     reason: state === "failed" ? str(data.reason) ?? "the harvest failed" : null,
     stage: state === "failed" ? stage : null,
     waiting_for: state === "queued" ? str(data.waiting_for, 40) : null,

@@ -137,6 +137,7 @@ function JobChip({ job }: { job: HarvestJob }) {
   return (
     <span className="tr-job is-failed" title={`${job.stage ? `${job.stage}: ` : ""}${job.reason ?? ""}`}>
       Failed{job.stage ? ` · ${job.stage}` : ""}{job.reason ? ` — ${job.reason.length > 80 ? `${job.reason.slice(0, 79)}…` : job.reason}` : ""}
+      {job.review_url ? <> · <a href={job.review_url} target="_blank" rel="noreferrer" title="Open the review again and press Done to retry the publish">Review and retry ↗</a></> : null}
     </span>
   );
 }
@@ -152,7 +153,9 @@ function HarvestControl({ row, again = false }: { row: TranscriptRow; again?: bo
   const mine = req[row.transcript_id];
   const pending = isPending(job);
   const done = harvested(row) || job?.state === "published";
-  const retry = job?.state === "failed" || (!!job?.stale && (job.state === "queued" || job.state === "running"));
+  // a failed publish is retried from its review form (the chip links it); Retry here would re-harvest from scratch
+  const publishFailed = job?.state === "failed" && job.stage === "publish";
+  const retry = (job?.state === "failed" && !publishFailed) || (!!job?.stale && (job.state === "queued" || job.state === "running"));
   const reviewing = job?.state === "review_ready";
   const sending = mine?.status === "sending";
   const requested = mine?.status === "requested" && !pending;

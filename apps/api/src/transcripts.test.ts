@@ -266,10 +266,22 @@ test("harvest_job: the latest harvest event per transcript wins and states map t
   assert.equal(b?.state, "failed");
   assert.equal(b?.stage, "enrichment");
   assert.equal(b?.reason, "pass classification failed");
+  assert.equal(b?.review_url, null, "a harvest that never finished has no review");
   const c = lookup(rowOf(9));
   assert.equal(c?.state, "published");
   assert.deepEqual(c?.tickets, { created: 2, adopted: 1, failed: 0 });
   assert.equal(lookup(rowOf(404)), null);
+});
+
+test("harvest_job: a failed publish keeps its review link, where Done retries it", () => {
+  const lookup = harvestJobs([
+    evt(2, "bloodbank.audio.harvest.failed", { transcript_id: 11, wax_item_id: null, harvest_id: "hv-11", stage: "publish", reason: "plane 502" }),
+    evt(1, "bloodbank.audio.harvest.completed", { transcript_id: 11, wax_item_id: null, harvest_id: "hv-11", review_url: "https://holocene.delo.sh/harvest/review/hv-11/" })
+  ], NOW);
+  const j = lookup(rowOf(11));
+  assert.equal(j?.state, "failed");
+  assert.equal(j?.stage, "publish");
+  assert.equal(j?.review_url, "/harvest/review/hv-11/");
 });
 
 test("harvest_job: matches on wax_item_id when the event carries no transcript_id; a stale queued job is flagged", () => {
