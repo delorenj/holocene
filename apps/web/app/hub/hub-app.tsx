@@ -228,7 +228,7 @@ export function HubApp() {
         )}
 
         <footer className="hub-foot">
-          <span>Holocene reads Bloodbank; it never publishes.</span>
+          <span>Holocene reads Bloodbank. It publishes one command, the Harvest button&apos;s <code>bloodbank.audio.harvest.start</code>, and never a domain event.</span>
           <a href="/legacy">Legacy dashboard</a>
           <a href="/hooks">Hooks</a>
           <a href="/voice">Voice memos</a>

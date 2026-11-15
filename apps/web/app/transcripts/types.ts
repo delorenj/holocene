@@ -1,6 +1,7 @@
 // Payloads of /api/modules/transcripts/{list,search,:id} (apps/api/src/transcripts.ts),
 // hand-mirrored as Wax's types are. They carry summaries and ticket links, never the
-// note body, the note path, the frontmatter or any storage location. Read-only.
+// note body, the note path, the frontmatter or any storage location. Read-only, except
+// the Harvest button (POST .../:id/harvest), which publishes one Bloodbank command.
 
 export type TranscriptsSource = { name: string; value?: string; ageSeconds?: number; maxSeconds?: number; down?: boolean; detail?: string };
 
@@ -14,6 +15,21 @@ export type HarvestSummary = {
   ticket_count: number;
   item_count: number;
   last_harvested_at: string | null;
+};
+
+/** The latest bloodbank.audio.harvest.* event for a recording (apps/api/src/transcript-harvest.ts). */
+export type HarvestJob = {
+  state: "queued" | "running" | "review_ready" | "failed" | "published";
+  at: string;
+  harvest_id: string | null;
+  /** Relative (/harvest/review/<id>/), served through Holocene's rewrite to the worker. */
+  review_url: string | null;
+  reason: string | null;
+  stage: "enrichment" | "harvest" | "publish" | null;
+  waiting_for: string | null;
+  items: { total: number; clear: number; held: number; rejected: number } | null;
+  tickets: { created: number; adopted: number; failed: number } | null;
+  stale: boolean;
 };
 
 export type TranscriptRow = {
@@ -38,6 +54,7 @@ export type TranscriptRow = {
   diarized: boolean;
   audio_available: boolean;
   harvest: HarvestSummary;
+  harvest_job: HarvestJob | null;
 };
 
 export type TranscriptTicket = {

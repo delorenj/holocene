@@ -49,7 +49,7 @@ await registerEventRoutes(app, eventCollector);
 registerHookHubRoutes(app, eventCollector);
 registerVoiceRoutes(app, eventCollector);
 registerWaxRoutes(app);
-registerTranscriptRoutes(app);
+registerTranscriptRoutes(app, eventCollector.store);
 registerCandybarRoutes(app);
 registerAvatarRoutes(app);
 eventCollector.start();

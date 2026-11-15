@@ -3,8 +3,15 @@
 ## App overview
 
 Holocene collects Bloodbank events and renders them through filters and read
-projections. Bloodbank owns event distribution; Holocene is a sink and does
-not publish domain events. The Hooks screen is a view of the shared event
+projections. Bloodbank owns event distribution; Holocene is a sink for events
+and publishes exactly one command type, `bloodbank.audio.harvest.start`, on an
+operator click (the Transcripts tab's Harvest button, `POST
+/api/modules/transcripts/:id/harvest`, through `bb-emit`). It never publishes
+domain events. The pilot-owned harvest worker (`px harvest worker`) consumes
+that command and answers with `bloodbank.audio.harvest.*` events, which the
+Transcripts tab reads back from the shared collection as each row's
+`harvest_job`; its review form is served through the `/harvest/review/*`
+rewrite in `apps/web/next.config.mjs` (`HARVEST_WORKER_URL`). The Hooks screen is a view of the shared event
 collection, not a client of the hook hub's HTTP API or receipt database.
 
 Existing fleet and tooling surfaces also use API services and Redis-backed

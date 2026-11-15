@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
+import { HarvestEmitError, emitHarvestStart, jobReader, type EmitOptions, type HarvestJob, type JobSource } from "./transcript-harvest.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -9,7 +10,10 @@ const execFileAsync = promisify(execFile);
 // transcripts search --lexical` (the search box). Wax owns the Postgres schema and
 // the read-only role; Holocene never connects to the database, it execs the CLI and
 // allowlist-projects the answer. Like wax.ts this module is read-only: nothing here
-// can classify, harvest, sync or write a transcript.
+// can classify, harvest, sync or write a transcript. The one write is the operator's
+// Harvest click: POST .../:id/harvest publishes a single Bloodbank command
+// (bloodbank.audio.harvest.start, transcript-harvest.ts) and nothing else; the
+// pilot-owned worker does the harvest and its events come back as `harvest_job`.
 //
 // What never passes: the note body, the note path, the frontmatter block, the S3
 // locations and any DSN. The allowlists below are the policy — a key the CLI grows
@@ -59,6 +63,8 @@ export type TranscriptRow = {
   diarized: boolean;
   audio_available: boolean;
   harvest: HarvestSummary;
+  /** The latest bloodbank.audio.harvest.* event for this recording; null when none. Never from wax. */
+  harvest_job: HarvestJob | null;
 };
 
 export type TranscriptTicket = {
@@ -246,6 +252,8 @@ export function projectRow(raw: unknown): TranscriptRow | undefined {
   row.classification = asClassification(raw.classification);
   if (typeof row.title !== "string" || !row.title) row.title = `Recording #${raw.transcript_id}`;
   row.harvest = projectHarvest(raw.harvest);
+  // Not a wax field: the routes fill it from the event collection, so a CLI can never inject one.
+  row.harvest_job = null;
   return row as unknown as TranscriptRow;
 }
 
@@ -501,7 +509,16 @@ export async function readTranscriptSearch(query: string, view: string | undefin
 
 type ListRouteQuery = { view?: string; include_hermes?: string; project?: string; since?: string; until?: string };
 
-export function registerTranscriptRoutes(app: FastifyInstance) {
+export type TranscriptRouteOptions = { emit?: EmitOptions; wax?: Options };
+
+const withJob = (row: TranscriptRow, jobs: ReturnType<ReturnType<typeof jobReader>>): TranscriptRow => ({ ...row, harvest_job: jobs(row) });
+
+/**
+ * `store` is the shared Bloodbank event collection (the harvest worker's events). Without one every
+ * `harvest_job` is null. Rows are copied, never mutated: the cached wax read is shared.
+ */
+export function registerTranscriptRoutes(app: FastifyInstance, store?: JobSource, routeOptions: TranscriptRouteOptions = {}) {
+  const jobsNow = jobReader(store);
   app.get<{ Querystring: ListRouteQuery }>("/api/modules/transcripts/list", async (req, reply) => {
     reply.header("Cache-Control", "no-store");
     const { view, include_hermes, project, since, until } = req.query;
@@ -509,7 +526,9 @@ export function registerTranscriptRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: `Invalid view '${view}'. Use ${VIEWS.join(", ")}.` });
     }
     try {
-      return await readTranscripts({ view, includeHermes: include_hermes === "1", project, since, until });
+      const payload = await readTranscripts({ view, includeHermes: include_hermes === "1", project, since, until }, routeOptions.wax);
+      const jobs = jobsNow();
+      return { ...payload, rows: payload.rows.map((r) => withJob(r, jobs)) };
     } catch (err) {
       if (err instanceof RangeError) return reply.status(400).send({ error: err.message });
       throw err;
@@ -534,11 +553,50 @@ export function registerTranscriptRoutes(app: FastifyInstance) {
     reply.header("Cache-Control", "no-store");
     if (!/^\d{1,12}$/u.test(req.params.id)) return reply.status(400).send({ error: "transcript id must be a positive integer" });
     try {
-      const detail = await readTranscriptDetail(Number(req.params.id));
+      const detail = await readTranscriptDetail(Number(req.params.id), routeOptions.wax);
       if (!detail) return reply.status(404).send({ error: `no transcript #${req.params.id}` });
-      return detail;
+      return { ...detail, row: detail.row ? withJob(detail.row, jobsNow()) : null };
     } catch (err) {
       if (err instanceof RangeError) return reply.status(400).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  // The Harvest button. Resolves the row through the same wax read as the detail view, then publishes
+  // bloodbank.audio.harvest.start. A recording wax does not track as an item (wax_item_id null) is still
+  // accepted: the command carries transcript_id, and the worker decides what it can gate on.
+  app.post<{ Params: { id: string }; Body: { force?: unknown } | undefined }>("/api/modules/transcripts/:id/harvest", async (req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    if (!/^\d{1,12}$/u.test(req.params.id) || Number(req.params.id) < 1) {
+      return reply.status(400).send({ error: "transcript id must be a positive integer" });
+    }
+    const body = req.body ?? {};
+    if (typeof body !== "object" || Array.isArray(body)) return reply.status(400).send({ error: "body must be a JSON object" });
+    if (body.force !== undefined && typeof body.force !== "boolean") return reply.status(400).send({ error: "force must be a boolean" });
+    const force = body.force === true;
+    const id = Number(req.params.id);
+
+    let detail: TranscriptDetailPayload | undefined;
+    try {
+      detail = await readTranscriptDetail(id, routeOptions.wax);
+    } catch (err) {
+      if (err instanceof RangeError) return reply.status(400).send({ error: err.message });
+      throw err;
+    }
+    if (!detail) return reply.status(404).send({ error: `no transcript #${id}` });
+    if (!detail.row) {
+      return reply.status(502).send({ error: detail.source.detail ?? "the transcript store is not answering" });
+    }
+    const job = jobsNow()(detail.row);
+    if (!force && job && (job.state === "queued" || job.state === "running") && !job.stale) {
+      return reply.status(409).send({ error: `a harvest of transcript #${id} is already ${job.state === "queued" ? "queued" : "running"}`, harvest_job: job });
+    }
+    try {
+      const receipt = await emitHarvestStart({ transcriptId: id, waxItemId: detail.row.wax_item_id, force }, routeOptions.emit);
+      req.log.info({ transcript_id: id, ...receipt }, "harvest start command published");
+      return { ok: true, ...receipt };
+    } catch (err) {
+      if (err instanceof HarvestEmitError) return reply.status(502).send({ error: err.message });
       throw err;
     }
   });

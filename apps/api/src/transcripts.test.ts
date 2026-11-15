@@ -14,6 +14,8 @@ import {
   resetTranscriptsCache,
   searchArgs
 } from "./transcripts.js";
+import { harvestJobs, reviewPath } from "./transcript-harvest.js";
+import type { CollectedEvent } from "./event-store.js";
 
 // The Transcripts tab reads `wax --json transcripts browse|search` through this
 // module. These tests pin the safety properties: an allowlist projection (the
@@ -234,4 +236,172 @@ test("routes: invalid view and non-numeric id are 400, an empty search is 400, a
   assert.equal((await get("/api/modules/transcripts/abc")).statusCode, 400);
   assert.equal((await get("/api/modules/transcripts/search")).statusCode, 400);
   assert.equal((await get("/api/modules/transcripts/search?q=x&view=nope")).statusCode, 400);
+});
+
+// ---------- Harvest button + harvest_job projection ----------
+
+const evt = (cursor: number, type: string, data: Record<string, unknown>, time = "2026-11-15T12:00:00Z"): CollectedEvent => ({
+  cursor, stream: "BLOODBANK", sequence: cursor, subject: `bloodbank.evt.${type.split(".").slice(1).join(".")}`, collected_at: time,
+  envelope: { id: `e${cursor}`, type, time, data } as unknown as CollectedEvent["envelope"]
+});
+const NOW = Date.parse("2026-11-15T12:05:00Z");
+const rowOf = (transcript_id: number, wax_item_id: string | null = null) => ({ transcript_id, wax_item_id });
+
+test("harvest_job: the latest harvest event per transcript wins and states map to the UI states", () => {
+  const events = [ // newest first, as store.recent returns
+    evt(6, "bloodbank.audio.harvest.completed", { transcript_id: 1752, wax_item_id: "a369671213a6fa3c", harvest_id: "h-abc", review_url: "https://holocene.delo.sh/harvest/review/h-abc/", items: 5, clear: 3, held: 1, rejected: 1 }),
+    evt(5, "bloodbank.audio.harvest.started", { transcript_id: 1752, wax_item_id: "a369671213a6fa3c" }),
+    evt(4, "bloodbank.audio.harvest.queued", { transcript_id: 1752, wax_item_id: "a369671213a6fa3c", waiting_for: "enrichment" }),
+    evt(3, "bloodbank.audio.harvest.failed", { transcript_id: 7, wax_item_id: null, stage: "enrichment", reason: "pass classification failed" }),
+    evt(2, "bloodbank.audio.harvest.published", { transcript_id: 9, wax_item_id: null, harvest_id: "h-9", created: 2, adopted: 1, failed: 0, tickets: [] }),
+    evt(1, "bloodbank.audio.harvest.queued", { transcript_id: 9, wax_item_id: null })
+  ];
+  const lookup = harvestJobs(events, NOW);
+  const a = lookup(rowOf(1752, "a369671213a6fa3c"));
+  assert.equal(a?.state, "review_ready");
+  assert.equal(a?.harvest_id, "h-abc");
+  assert.equal(a?.review_url, "/harvest/review/h-abc/");
+  assert.deepEqual(a?.items, { total: 5, clear: 3, held: 1, rejected: 1 });
+  const b = lookup(rowOf(7));
+  assert.equal(b?.state, "failed");
+  assert.equal(b?.stage, "enrichment");
+  assert.equal(b?.reason, "pass classification failed");
+  const c = lookup(rowOf(9));
+  assert.equal(c?.state, "published");
+  assert.deepEqual(c?.tickets, { created: 2, adopted: 1, failed: 0 });
+  assert.equal(lookup(rowOf(404)), null);
+});
+
+test("harvest_job: matches on wax_item_id when the event carries no transcript_id; a stale queued job is flagged", () => {
+  const lookup = harvestJobs([evt(1, "bloodbank.audio.harvest.queued", { transcript_id: null, wax_item_id: "a369671213a6fa3c", waiting_for: "enrichment" }, "2026-11-15T01:00:00Z")], NOW);
+  const job = lookup(rowOf(1752, "a369671213a6fa3c"));
+  assert.equal(job?.state, "queued");
+  assert.equal(job?.waiting_for, "enrichment");
+  assert.equal(job?.stale, true);
+});
+
+test("harvest_job: the review link is only ever a relative /harvest/review path", () => {
+  assert.equal(reviewPath("https://holocene.delo.sh/harvest/review/h1/", "h1"), "/harvest/review/h1/");
+  assert.equal(reviewPath("https://evil.example/phish", "h1"), "/harvest/review/h1/");
+  assert.equal(reviewPath("javascript:alert(1)", null), null);
+  assert.equal(reviewPath(undefined, null), null);
+  const lookup = harvestJobs([evt(1, "bloodbank.audio.harvest.completed", { transcript_id: 3, harvest_id: "bad/id", review_url: "https://x.test/a" })], NOW);
+  assert.equal(lookup(rowOf(3))?.review_url, null);
+});
+
+/** A fake bb-emit that records its argv, prints the --print-ids line, and can fail. */
+async function fakeBbEmit(mode: "ok" | "fail" | "hang" = "ok") {
+  const dir = await mkdtemp(join(tmpdir(), "holocene-bbemit-"));
+  const argvFile = join(dir, "argv.json");
+  const executable = join(dir, "fake-bb-emit");
+  const body = mode === "fail"
+    ? `console.error('bb-emit: NATS unreachable\\ntrace'); process.exit(1);`
+    : mode === "hang"
+      ? `setTimeout(() => {}, 60000);`
+      : `const a = process.argv.slice(2); const at = (f) => a[a.indexOf(f) + 1];
+console.log('PASS noise');
+console.log(JSON.stringify({ id: 'evt-1', type: at('--type'), command_id: at('--command-id'), correlationid: at('--correlation') }));`;
+  await writeFile(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\n${body}\n`);
+  await chmod(executable, 0o700);
+  return { dir, executable, argv: async () => JSON.parse(await readFile(argvFile, "utf8")) as string[] };
+}
+
+const argOf = (argv: string[], flag: string) => argv[argv.indexOf(flag) + 1];
+
+test("POST harvest publishes one start command with argv only and returns its ids", async (t) => {
+  t.after(resetTranscriptsCache);
+  const wax = await fakeWax(router());
+  const bb = await fakeBbEmit();
+  t.after(() => rm(bb.dir, { recursive: true, force: true }));
+  const app = Fastify();
+  registerTranscriptRoutes(app, undefined, { wax: { executable: wax, root: "/srv/heyma" }, emit: { executable: bb.executable } });
+  t.after(() => app.close());
+  const res = await app.inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest", payload: { force: true } });
+  assert.equal(res.statusCode, 200, res.body);
+  const out = res.json() as { ok: boolean; command_id: string; correlation_id: string };
+  assert.equal(out.ok, true);
+  assert.match(out.command_id, /^[0-9a-f-]{36}$/u);
+  assert.match(out.correlation_id, /^[0-9a-f-]{36}$/u);
+  const argv = await bb.argv();
+  assert.ok(argv.includes("--strict"));
+  assert.equal(argOf(argv, "--kind"), "command");
+  assert.equal(argOf(argv, "--type"), "bloodbank.cmd.audio.harvest.start");
+  assert.equal(argOf(argv, "--producer"), "holocene");
+  assert.equal(argOf(argv, "--service"), "holocene-api");
+  assert.equal(argOf(argv, "--source"), "urn:33god:service:holocene-api");
+  assert.equal(argOf(argv, "--actor-id"), "holocene");
+  assert.equal(argOf(argv, "--correlation"), out.correlation_id);
+  assert.deepEqual(JSON.parse(argOf(argv, "--data")), { transcript_id: 1752, wax_item_id: "a369671213a6fa3c", requested_by: "holocene", force: true });
+});
+
+test("POST harvest: no body means force false; unknown id 404; bad id/body 400; a null wax_item_id still publishes", async (t) => {
+  t.after(resetTranscriptsCache);
+  const wax = await fakeWax(router({ detail: { ...DETAIL, row: { ...ROW, wax_item_id: null } } }));
+  const bb = await fakeBbEmit();
+  t.after(() => rm(bb.dir, { recursive: true, force: true }));
+  const app = Fastify();
+  registerTranscriptRoutes(app, undefined, { wax: { executable: wax, root: "/srv/heyma" }, emit: { executable: bb.executable } });
+  t.after(() => app.close());
+  const post = (url: string, payload?: unknown) => app.inject({ method: "POST", url, ...(payload === undefined ? {} : { payload: payload as object }) });
+  assert.equal((await post("/api/modules/transcripts/99999/harvest")).statusCode, 404);
+  assert.equal((await post("/api/modules/transcripts/abc/harvest")).statusCode, 400);
+  assert.equal((await post("/api/modules/transcripts/0/harvest")).statusCode, 400);
+  assert.equal((await post("/api/modules/transcripts/1752/harvest", { force: "yes" })).statusCode, 400);
+  assert.equal((await post("/api/modules/transcripts/1752/harvest", [1])).statusCode, 400);
+  assert.equal((await post("/api/modules/transcripts/1752/harvest")).statusCode, 200);
+  assert.deepEqual(JSON.parse(argOf(await bb.argv(), "--data")), { transcript_id: 1752, wax_item_id: null, requested_by: "holocene", force: false });
+});
+
+test("POST harvest: a failing or hung bb-emit is a clear 502; wax down is 502 too", async (t) => {
+  t.after(resetTranscriptsCache);
+  const wax = await fakeWax(router());
+  const bad = await fakeBbEmit("fail");
+  const hang = await fakeBbEmit("hang");
+  t.after(() => Promise.all([rm(bad.dir, { recursive: true, force: true }), rm(hang.dir, { recursive: true, force: true })]));
+  const mk = (emit: { executable: string; timeoutMs?: number }, waxExe = wax) => {
+    const app = Fastify();
+    registerTranscriptRoutes(app, undefined, { wax: { executable: waxExe, root: "/srv/heyma" }, emit });
+    t.after(() => app.close());
+    return app;
+  };
+  const failed = await mk({ executable: bad.executable }).inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest" });
+  assert.equal(failed.statusCode, 502);
+  assert.match((failed.json() as { error: string }).error, /NATS unreachable/u);
+  const slow = await mk({ executable: hang.executable, timeoutMs: 200 }).inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest" });
+  assert.equal(slow.statusCode, 502);
+  assert.match((slow.json() as { error: string }).error, /timed out/u);
+  resetTranscriptsCache();
+  const down = await fakeWax(`console.error('error: store unreachable'); process.exit(2);`);
+  const noWax = await mk({ executable: bad.executable }, down).inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest" });
+  assert.equal(noWax.statusCode, 502);
+});
+
+test("list and detail carry harvest_job from the event store (null when none); a queued job refuses a second click unless forced", async (t) => {
+  t.after(resetTranscriptsCache);
+  const wax = await fakeWax(router({ list: { ...LIST, rows: [ROW, { ...ROW, transcript_id: 7, wax_item_id: null }] } }));
+  const bb = await fakeBbEmit();
+  t.after(() => rm(bb.dir, { recursive: true, force: true }));
+  const now = new Date().toISOString();
+  const events = [evt(1, "bloodbank.audio.harvest.queued", { transcript_id: 1752, wax_item_id: "a369671213a6fa3c", waiting_for: "enrichment" }, now)];
+  const store = { cursor: 1, recent: () => events };
+  const app = Fastify();
+  registerTranscriptRoutes(app, store, { wax: { executable: wax, root: "/srv/heyma" }, emit: { executable: bb.executable } });
+  t.after(() => app.close());
+  const list = (await app.inject({ method: "GET", url: "/api/modules/transcripts/list" })).json() as { rows: Array<{ transcript_id: number; harvest_job: { state: string } | null }> };
+  assert.equal(list.rows.find((r) => r.transcript_id === 1752)?.harvest_job?.state, "queued");
+  assert.equal(list.rows.find((r) => r.transcript_id === 7)?.harvest_job, null);
+  const detail = (await app.inject({ method: "GET", url: "/api/modules/transcripts/1752" })).json() as { row: { harvest_job: { state: string } | null } };
+  assert.equal(detail.row.harvest_job?.state, "queued");
+  assert.equal((await app.inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest" })).statusCode, 409);
+  assert.equal((await app.inject({ method: "POST", url: "/api/modules/transcripts/1752/harvest", payload: { force: true } })).statusCode, 200);
+});
+
+test("without a store every row's harvest_job is null, and wax can never inject one", async (t) => {
+  t.after(resetTranscriptsCache);
+  const wax = await fakeWax(router({ list: { ...LIST, rows: [{ ...ROW, harvest_job: { state: "published" } }] } }));
+  const app = Fastify();
+  registerTranscriptRoutes(app, undefined, { wax: { executable: wax, root: "/srv/heyma" } });
+  t.after(() => app.close());
+  const list = (await app.inject({ method: "GET", url: "/api/modules/transcripts/list" })).json() as { rows: Array<{ harvest_job: unknown }> };
+  assert.equal(list.rows[0].harvest_job, null);
 });

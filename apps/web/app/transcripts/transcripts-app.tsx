@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
 import { CopyRef, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
 import type { Source } from "../hub/types";
+import { postHarvest } from "./harvest-api";
 import type {
+  HarvestJob,
   KindView,
   SearchHit,
   TranscriptDetailPayload,
@@ -16,8 +18,9 @@ import type {
 } from "./types";
 
 // The Transcripts tab: every recording by kind (monologue, meeting, phone call, other)
-// and by project, with the tickets `px harvest` filed from it. Read-only by design:
-// Holocene runs nothing here. The listing is fetched once for all kinds, so switching
+// and by project, with the tickets `px harvest` filed from it. Holocene runs nothing here:
+// the Harvest button publishes one Bloodbank command (bloodbank.audio.harvest.start) and
+// the pilot-owned worker does the rest; its events come back as each row's `harvest_job`. The listing is fetched once for all kinds, so switching
 // the kind or the grouping is instant and client-side; the expanded panel fetches the
 // one transcript's tickets. State (kind, grouping, search, open row) lives in the URL.
 
@@ -104,6 +107,77 @@ function Marked({ text }: { text: string }) {
   return (
     <>
       {parts.map((p, i) => (p.startsWith("«") ? <mark key={i}>{p.slice(1, -1)}</mark> : <span key={i}>{p}</span>))}
+    </>
+  );
+}
+
+// ---------- the Harvest button ----------
+
+type ReqState = { status: "sending" | "requested" | "error"; error?: string };
+type HarvestCtl = { req: Record<number, ReqState>; run: (id: number, force: boolean) => void };
+const HarvestContext = createContext<HarvestCtl>({ req: {}, run: () => undefined });
+
+const isPending = (j: HarvestJob | null): j is HarvestJob => !!j && (j.state === "queued" || j.state === "running") && !j.stale;
+
+function JobChip({ job }: { job: HarvestJob }) {
+  const { state } = job;
+  if (job.stale) return <span className="tr-job is-failed" title={`No update since ${when(job.at)}`}>Stalled</span>;
+  if (state === "queued") return <span className="tr-job is-queued" title={`Requested ${when(job.at)}`}>Queued{job.waiting_for === "enrichment" ? " · waiting for enrichment" : ""}</span>;
+  if (state === "running") return <span className="tr-job is-running" title={`Started ${when(job.at)}`}>Harvesting…</span>;
+  if (state === "review_ready") {
+    const label = job.items ? `Review harvest · ${plural(job.items.total, "item")}` : "Review harvest";
+    return job.review_url
+      ? <a className="tr-job is-review" href={job.review_url} target="_blank" rel="noreferrer" title="Opens the review form in a new tab">{label} ↗</a>
+      : <span className="tr-job is-review">{label}</span>;
+  }
+  if (state === "published") {
+    const n = job.tickets ? job.tickets.created + job.tickets.adopted : 0;
+    return <span className="tr-job is-published" title={job.tickets ? `${job.tickets.created} created, ${job.tickets.adopted} adopted, ${job.tickets.failed} failed` : undefined}>Published · {plural(n, "ticket")}</span>;
+  }
+  return (
+    <span className="tr-job is-failed" title={`${job.stage ? `${job.stage}: ` : ""}${job.reason ?? ""}`}>
+      Failed{job.stage ? ` · ${job.stage}` : ""}{job.reason ? ` — ${job.reason.length > 80 ? `${job.reason.slice(0, 79)}…` : job.reason}` : ""}
+    </span>
+  );
+}
+
+/**
+ * The row's Harvest affordance: a state chip plus the request button. `again` is the expanded panel,
+ * where an already-harvested recording can be harvested again (force). In a list row a harvested
+ * recording shows no button, so the row stays a quiet record.
+ */
+function HarvestControl({ row, again = false }: { row: TranscriptRow; again?: boolean }) {
+  const { req, run } = useContext(HarvestContext);
+  const job = row.harvest_job;
+  const mine = req[row.transcript_id];
+  const pending = isPending(job);
+  const done = harvested(row) || job?.state === "published";
+  const retry = job?.state === "failed" || (!!job?.stale && (job.state === "queued" || job.state === "running"));
+  const reviewing = job?.state === "review_ready";
+  const sending = mine?.status === "sending";
+  const requested = mine?.status === "requested" && !pending;
+  const busy = pending || sending || requested;
+
+  const showButton = busy || retry || (again ? true : !done && !reviewing);
+  const force = done || reviewing;
+  const label = sending ? "Requesting…" : requested ? "Requested" : pending ? (job.state === "queued" ? "Queued" : "Harvesting") : retry ? "Retry" : force ? "Harvest again" : "Harvest";
+  const showChip = !!job && !(job.state === "published" && !again);
+  if (!showButton && !showChip) return null;
+  return (
+    <>
+      {showChip && job ? <JobChip job={job} /> : null}
+      {showButton ? (
+        <button
+          type="button"
+          className={`tr-act-btn${force ? " is-again" : ""}`}
+          disabled={busy}
+          aria-label={`${label}: ${row.title}`}
+          onClick={() => run(row.transcript_id, force)}
+        >
+          {label}
+        </button>
+      ) : null}
+      {mine?.status === "error" ? <span className="tr-act-err" role="alert">Harvest request failed: {mine.error}</span> : null}
     </>
   );
 }
@@ -231,21 +305,14 @@ function TicketList({ tickets }: { tickets: TranscriptTicket[] }) {
 
 function HarvestSection({ row, detail }: { row: TranscriptRow; detail?: DetailState }) {
   const h = row.harvest;
-  const showCmd = `wax transcripts show ${row.transcript_id}`;
   return (
     <section className="tr-harvest" aria-label="Tickets from px harvest">
       <h4>Tickets from px harvest</h4>
       {detail?.status === "loading" ? <p className="tr-note">Reading tickets…</p> : null}
       {detail?.status === "error" ? <p className="hub-error" role="status"><span className="hub-label">API</span>{detail.error}</p> : null}
-      {h.state === "none" && detail?.status !== "loading" ? (
-        <div className="tr-note">
-          <p>
-            Not harvested yet. Run <code>px harvest &lt;note&gt; --publish</code>, then <code>wax transcripts link-harvest</code>.
-          </p>
-          <p>
-            Find the note&apos;s path with <CopyRef value={showCmd} />
-          </p>
-        </div>
+      <div className="tr-act"><HarvestControl row={row} again /></div>
+      {h.state === "none" && detail?.status !== "loading" && !row.harvest_job ? (
+        <p className="tr-note">Not harvested yet. Harvest waits for enrichment, reads the recording for action items, then hands you a review form before anything is filed.</p>
       ) : null}
       {h.state === "no_items" ? <p className="tr-note">Harvested — no action items found.</p> : null}
       {detail?.status === "ok" && detail.data && detail.data.tickets.length ? (
@@ -310,8 +377,8 @@ function Panel({ row, detail, id }: { row: TranscriptRow; detail?: DetailState; 
           ))}
         </p>
       ) : null}
-      {/* The detail call is fresher than the 15 s list poll: a harvest linked since then must not read "not harvested". */}
-      <HarvestSection row={d?.row ?? row} detail={detail} />
+      {/* The detail call is fresher than the 15 s list poll for the ticket summary: a harvest linked since then must not read "not harvested". The job always comes from the polled list row, which is fresher than the detail. */}
+      <HarvestSection row={{ ...(d?.row ?? row), harvest_job: row.harvest_job }} detail={detail} />
     </div>
   );
 }
@@ -334,6 +401,7 @@ function ListRow({ row, view, open, detail, hit, onToggle, scope }: RowProps) {
   const panelId = `tr-panel-${scope}-${row.transcript_id}`;
   return (
     <article className={`tr-row is-${kind}${open ? " is-open" : ""}`} data-transcript-id={row.transcript_id}>
+      <div className="tr-row-top">
       <button type="button" className="tr-row-head" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle}>
         <span className="tr-when">{when(row.effective_at)}</span>
         <span className="tr-main">
@@ -344,6 +412,9 @@ function ListRow({ row, view, open, detail, hit, onToggle, scope }: RowProps) {
         </span>
         <span className="tr-end"><HarvestBadge row={row} /></span>
       </button>
+      {/* A sibling of the head button: nested buttons are invalid HTML. */}
+      <div className="tr-row-act"><HarvestControl row={row} /></div>
+      </div>
       {open ? <Panel row={row} detail={detail} id={panelId} /> : null}
     </article>
   );
@@ -354,12 +425,15 @@ function CardLine({ row, view, open, detail, onToggle, scope }: RowProps) {
   const kind = kindOf(row);
   return (
     <li className={`tr-line${open ? " is-open" : ""}`} data-transcript-id={row.transcript_id}>
+      <div className="tr-line-top">
       <button type="button" className="tr-line-head" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={onToggle}>
         <span className="tr-line-time">{clock(row.effective_at)}</span>
         <span className="tr-line-title">{row.title}</span>
         {view === "all" ? <span className="tr-flag is-kind">{KIND_LABEL[kind]}</span> : null}
         <span className={`tr-dot${harvested(row) ? " is-harvested" : ""}`} title={harvested(row) ? "harvested" : "not harvested"} aria-label={harvested(row) ? "harvested" : "not harvested"} />
       </button>
+      <div className="tr-line-act"><HarvestControl row={row} /></div>
+      </div>
       {open ? <Panel row={row} detail={detail} id={panelId} /> : null}
     </li>
   );
@@ -469,6 +543,27 @@ export function TranscriptsApp() {
 
   const list = usePoll<TranscriptsPayload>(`/api/modules/transcripts/list?include_hermes=${state.hermes ? 1 : 0}`, POLL_MS);
   const data = list.data;
+  const reload = list.reload;
+
+  // The Harvest button: POST publishes the start command; the job chip then follows the worker's events through the poll.
+  const [req, setReq] = useState<Record<number, ReqState>>({});
+  const run = useCallback((id: number, force: boolean) => {
+    const set = (v: ReqState | undefined) => setReq((r) => { const n = { ...r }; if (v) n[id] = v; else delete n[id]; return n; });
+    set({ status: "sending" });
+    void postHarvest(id, force).then((res) => {
+      if (!res.ok) return set({ status: "error", error: res.error });
+      set({ status: "requested" });
+      // The worker's first event (queued) lands within seconds; look a few times, then settle into the poll.
+      for (const ms of [0, 2500, 7000]) setTimeout(reload, ms);
+      setTimeout(() => setReq((r) => {
+        if (r[id]?.status !== "requested") return r;
+        const next = { ...r };
+        delete next[id];
+        return next;
+      }), 60_000);
+    });
+  }, [reload]);
+  const harvestCtl = useMemo<HarvestCtl>(() => ({ req, run }), [req, run]);
 
   // Debounced lexical search (read-only; no embedding call on each keystroke).
   useEffect(() => {
@@ -500,7 +595,8 @@ export function TranscriptsApp() {
     return () => ctl.abort();
   }, [state.q, searchView]);
 
-  // The expanded row's tickets.
+  // The expanded row's tickets. A new harvest event for that row (publish lands tickets) re-reads them.
+  const openJobAt = data?.rows.find((r) => r.transcript_id === state.open)?.harvest_job?.at ?? null;
   useEffect(() => {
     const id = state.open;
     if (!id) return;
@@ -518,7 +614,7 @@ export function TranscriptsApp() {
       }
     })();
     return () => ctl.abort();
-  }, [state.open]);
+  }, [state.open, openJobAt]);
 
   const rows = useMemo(() => [...(data?.rows ?? [])].sort(byNewest), [data]);
   const names = useMemo(() => new Map((data?.projects ?? []).map((p) => [p.project_id, p.name])), [data]);
@@ -565,6 +661,7 @@ export function TranscriptsApp() {
   const kindWord = state.view === "all" ? "recordings" : KIND_NOUN[state.view][1] === "other" ? "other recordings" : KIND_NOUN[state.view][1];
 
   return (
+    <HarvestContext.Provider value={harvestCtl}>
     <div className="hub-root" data-theme={theme}>
       <header className="hub-header">
         <Brand />
@@ -696,9 +793,10 @@ export function TranscriptsApp() {
         </div>
 
         <footer className="hub-foot">
-          <span>Read-only. Holocene never runs a harvest; <code>px harvest</code> and <code>wax transcripts link-harvest</code> do.</span>
+          <span>Holocene never runs a harvest. The Harvest button publishes one Bloodbank command, <code>bloodbank.audio.harvest.start</code>; the pilot harvest worker runs <code>px harvest</code> and its events come back here.</span>
         </footer>
       </div>
     </div>
+    </HarvestContext.Provider>
   );
 }
