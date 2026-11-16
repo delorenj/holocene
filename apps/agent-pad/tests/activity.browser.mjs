@@ -95,9 +95,42 @@ try {
   console.log('PASS manual scroll gives truthful hidden count; only explicit selection scrolls')
 
   await page.setViewportSize({ width: 1280, height: 720 })
-  await page.evaluate(() => window.__hnHost({ driving: true, maxItems: 5 }))
+  if (await page.locator('.unlock').count()) {
+    await page.locator('.unlock').click()
+    await page.waitForFunction(() => !document.querySelector('.unlock'))
+  }
+  const layout = async () => page.evaluate(() => {
+    const rect = (selector) => {
+      const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect()
+      return { x, y, width, height }
+    }
+    const grid = document.querySelector('.tiles')
+    const first = document.querySelector('.tile')
+    return {
+      ids: [...document.querySelectorAll('.tile')].map((tile) => tile.dataset.agent),
+      columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+      grid: rect('.tiles'), tile: rect('.tile'), record: rect('.rec'),
+      firstRowCount: [...document.querySelectorAll('.tile')].filter((tile) => tile.offsetTop === first.offsetTop).length,
+      heroCount: document.querySelectorAll('.hero').length,
+      target: document.querySelector('.tile[aria-checked=true]')?.dataset.agent,
+    }
+  })
+  const parked = await layout()
+  await page.evaluate(() => window.__hnHost({ driving: true, noVideo: true, noText: true, maxItems: 0 }))
   await status('3 thinking')
-  assert.equal(await page.locator('.tile').count(), 5)
+  const driving = await layout()
+  assert.equal(driving.heroCount, 0, 'driving adds no oversized header')
+  assert.deepEqual(driving.ids, parked.ids, 'driving without a host cap shows every agent in active-first order')
+  assert.equal(driving.target, parked.target)
+  assert.equal(driving.columns, parked.columns)
+  assert.equal(driving.firstRowCount, parked.firstRowCount)
+  for (const key of ['grid', 'tile', 'record']) {
+    for (const axis of ['x', 'y', 'width', 'height']) {
+      assert.ok(Math.abs(driving[key][axis] - parked[key][axis]) <= 1,
+        `${key}.${axis} differs: parked=${parked[key][axis]}, driving=${driving[key][axis]}`)
+    }
+  }
+  console.log('PASS same-viewport parked/driving grid density, tile/header/record geometry and full roster', JSON.stringify({ parked, driving }))
   assert.deepEqual(await cues(), Array.from({ length: 3 }, () => ({ animation: 'thinking-pulse', label: 'Thinking', visible: true })))
   // Exercise the real cascade without playing audio or beginning a recording.
   const otherAnimations = await page.evaluate(() => {
@@ -124,7 +157,13 @@ try {
   assert.equal((await cues()).filter((cue) => cue.visible).length, 2)
   console.log('PASS independent settle and strict host cap with selected slot + truthful 5 hidden workers')
 
-  await page.evaluate(() => window.__hnHost({ driving: false, noVideo: true }))
+  await page.evaluate(() => window.__hnHost({ driving: false, noVideo: true, maxItems: 0 }))
+  await page.waitForFunction(() => document.querySelectorAll('.tile').length === 40)
+  assert.equal(await page.locator('.tile').count(), agents.length, 'removing host cap restores full parked roster')
+  await page.evaluate(() => window.__hnHost({ driving: false, noVideo: true, maxItems: 4 }))
+  assert.equal(await page.locator('.tile').count(), 4, 'genuine host maxItems applies regardless of layout mode')
+  assert.equal(await page.locator('.tile[aria-checked=true]').getAttribute('data-agent'), 'a38')
+  await page.evaluate(() => window.__hnHost({ driving: false, noVideo: true, maxItems: 0 }))
   assert.ok((await cues()).every((cue) => cue.animation === 'none'), 'non-driving noVideo still bans all motion')
   await page.evaluate(() => window.dispatchEvent(new Event('offline')))
   await status('Thinking status unknown')

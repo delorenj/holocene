@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
-import { InFlight, UploadRejected, isFinalRefusal, nagRejected, newestRejectedAt, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
+import { InFlight, UploadRejected, isFinalRefusal, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type Conv, type MemoStatus, elapsedSeconds, isFinal, keyDay, mayPlayProgress, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
 import { convReplyUnit, noteConv, onDeferred } from './convo'
@@ -405,21 +405,9 @@ function blobToBase64(b: Blob): Promise<string> {
   })
 }
 type PadPhase = 'idle' | 'arming' | 'recording' | 'sending' | 'sent' | 'queued' | 'rejected' | 'silent' | 'cancelled' | 'error'
-// The hero's state while a reply plays: REPLY, plus the agent's name when it is not the one selected.
-function replyLabel(agentId: string, selectedId: string | undefined, agents: Agent[], label: (n: string) => string): string {
-  if (!agentId || agentId === selectedId) return 'REPLY'
-  const a = agents.find((x) => x.id === agentId)
-  return a ? `REPLY · ${label(a.name)}` : 'REPLY'
-}
-
-const PHASE_LABEL: Record<PadPhase, string> = {
-  idle: 'READY', arming: 'STARTING', recording: 'RECORDING', sending: 'SENDING', sent: 'SENT',
-  queued: 'SAVED, RETRYING', rejected: 'NOT SENT, SAVED', silent: 'NO SOUND, NOT SENT', cancelled: 'CANCELLED', error: 'MIC ERROR',
-}
 const LS_AGENT = 'agentpad.agent'
 const LS_ROSTER = 'agentpad.roster'
 const ROSTER_POLL_MS = 120_000
-const DRIVE_TILES = 5 // the driving layout's one row of big tiles
 const ROSTER_WAIT_MS = 2500 // how long a start with no cached roster waits for it before showing the fallback list
 // localStorage answers synchronously (a browser keeps it); in the car a cold start empties it, so the IndexedDB copy
 // (rosterDbGet) is read next, and only a first-ever start with no network waits for the fallback list.
@@ -496,7 +484,6 @@ function App() {
   const [memoShort, setMemoShort] = useState<string | null>(null)
   const [outboxCount, setOutboxCount] = useState(0)
   const [rejectedCount, setRejectedCount] = useState(0) // recordings the proxy refused for good: kept, retried hourly
-  const [rejectedAt, setRejectedAt] = useState(0) // newest rejection stamp: the driving hero note fades ~30 min after it
   const [soundUnlocked, setSoundUnlocked] = useState(false)
   const [level, setLevel] = useState(0) // live input level 0..1 while recording
   const [meterOn, setMeterOn] = useState(false) // true once the host or the analyser reports levels
@@ -1398,10 +1385,9 @@ function App() {
     const waiting = retryable(rows).length
     setOutboxCount(waiting)
     setRejectedCount(rows.length - waiting)
-    setRejectedAt(newestRejectedAt(rows))
   }, [])
   // The proxy refused this recording for good (a final refusal it authored). The audio stays in the outbox, marked,
-  // and the slow timer tries it again about hourly; the hero shows it while the refusal is fresh and the device event
+  // and the slow timer tries it again about hourly; the status shows it and the device event
   // says why. 5xx and network failures never come here. `live`: the send that owns the pad's phase just ended, so the
   // phase may be set.
   const holdRejected = useCallback(async (p: Pending, e: UploadRejected, agentId: string | undefined, live: boolean) => {
@@ -1938,7 +1924,7 @@ function App() {
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
-  const tiles = !rosterReady ? [] : host.driving ? driveTiles(ordered, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : ordered
+  const tiles = !rosterReady ? [] : host.maxItems > 0 ? driveTiles(ordered, selected?.id, host.maxItems, speaking?.agent ?? workingAgent) : ordered
   const busyCount = ordered.filter((a) => activity?.get(a.id)?.working).length
   const hiddenBusy = hiddenWorking(ordered, visibleTileIds.map((id) => ({ id })), activity)
   const measureVisibleTiles = useCallback(() => {
@@ -1967,22 +1953,10 @@ function App() {
   }, [measureVisibleTiles])
   const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
-  // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
-  // note is being recorded. A fresh refusal outranks an old list: it is audio the driver thinks went somewhere. It
-  // fades ~30 min after the newest rejection (or on the next successful send); the parked status keeps the count.
-  const heroNote = recording ? '' : nagRejected(rejectedCount, rejectedAt, lastSentAt.current, clock) ? `${rejectedCount} note${rejectedCount > 1 ? 's' : ''} not sent, saved` : stale ? stalenessText(stale, true) : ''
 
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
       <style>{CSS}</style>
-      {host.driving && (
-        <div className="hero" data-phase={phase} style={{ ['--c' as string]: selected?.color ?? '#5a6275' }} aria-live="polite">
-          <div className="hname">{selected ? label(selected.name) : 'Pick an agent'}</div>
-          <div className="hstate">{speaking && phase !== 'recording' && phase !== 'arming' ? replyLabel(speaking.agent, selected?.id, agents, label) : PHASE_LABEL[phase]}</div>
-          {recording && <div className="hsound">{heard ? 'Sound heard' : waited ? 'No sound yet' : ''}</div>}
-          {heroNote && <div className="hsound hnote">{heroNote}</div>}
-        </div>
-      )}
       {!soundUnlocked && !host.driving && (
         <button className="unlock" onClick={unlockAudio}>
           🔊 Tap to enable sound
@@ -2131,32 +2105,10 @@ const CSS = `
 /* The requested thinking indicator is the sole driving motion exception; no reply/record/meter motion. */
 .drive.still .tile.thinking .thinking-label { animation:thinking-pulse 1.8s ease-in-out infinite !important; }
 @media (prefers-reduced-motion: reduce) { .drive.still .tile.thinking .thinking-label { animation:none !important; } }
-/* Driving layout: bounded tiles and record toggle, no scrolling. Only thinking labels can pulse. */
-.pad.drive { overflow:hidden; gap:clamp(8px,1.6vh,16px); padding:clamp(8px,1.6vh,16px) clamp(10px,2vw,20px); }
-.drive .hero { flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 24px; padding:clamp(6px,1.4vh,14px) 24px; border-radius:20px; border:5px solid var(--c); background:color-mix(in srgb, var(--c) 28%, #0b1020); }
-.drive .hname { font-size:clamp(34px,7vh,68px); font-weight:800; line-height:1.05; }
-.drive .hstate { font-size:clamp(34px,7vh,68px); font-weight:900; letter-spacing:.04em; line-height:1.05; }
-.drive .hsound { flex:1 0 100%; font-size:clamp(20px,3.2vh,30px); font-weight:700; color:#b8c2d6; }
-.drive .hsound.hnote { color:#ffb454; }
-.hero[data-phase="recording"] { background:#7a1d16; border-color:#ff5b4d; }
-.hero[data-phase="sent"] { background:#12361f; border-color:#2ecc71; }
-.hero[data-phase="queued"], .hero[data-phase="rejected"], .hero[data-phase="silent"], .hero[data-phase="error"] { background:#3a2a0e; border-color:#ffb454; }
-.drive .tiles { grid-template-columns:repeat(5,1fr); grid-auto-rows:1fr; align-content:stretch; max-height:none; overflow:hidden; padding:6px; flex:1 1 0; min-height:0; }
-.drive .tile { min-height:0; padding:4px; border-radius:18px; }
-.drive .tile:not(.on) { opacity:.78; }
-.drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
-/* Reply motion remains disabled while driving; its tile is filled with colour instead. */
-.drive .tile.speaking, .drive .tile.on.speaking { background:var(--c); border-color:#fff; opacity:1; }
-.drive .tile.speaking .name { color:#fff; text-shadow:0 1px 2px #000, 0 0 6px rgba(0,0,0,.85); }
+/* Driving keeps the parked grid and controls. Only the thinking cue may animate; reply cues remain static. */
+.drive .tile.speaking { background:var(--c); border-color:#fff; }
+.drive .tile.speaking .name, .drive .tile.speaking .work { color:#fff; text-shadow:0 1px 2px #000; }
 .drive .tile.speaking .swatch { box-shadow:0 0 0 4px #fff, 0 0 0 7px rgba(0,0,0,.55); }
-.drive .tile .swatch { width:clamp(64px,16vh,140px); height:clamp(64px,16vh,140px); font-size:clamp(30px,7vh,64px); }
-.drive .tile .name { font-size:clamp(24px,4.4vh,38px); font-weight:800; }
-.drive .tile .work { font-size:clamp(18px,3vh,26px); font-weight:700; }
-.drive .tile.speaking .work { color:#fff; text-shadow:0 1px 2px #000; }
-.drive .bar { flex:1.25 1 0; min-height:0; }
-.drive .rec { flex:1 1 100%; height:100%; min-height:0; border-radius:36px; font-size:clamp(36px,9vh,84px); }
-.drive .rec.live { background:#d93a2b; }
-.drive .status, .drive .unlock, .drive .silent { display:none; }
 .linkbtn { align-self:flex-start; background:none; border:none; padding:10px 0; min-height:48px; color:#8ab4ff; font-size:clamp(18px,2vw,24px); text-decoration:underline; cursor:pointer; }
 `
 
