@@ -1,9 +1,80 @@
 // The agent list comes from /roster/roster.json (services/pad-roster): every agent the gateway can route a memo to,
-// most recently talked to first, each with its Telegram avatar. The built-in list is the fallback for a first start
+// in registry order, each with its Telegram avatar. Live work is joined separately, never restored from cache.
+// The built-in list is the fallback for a first start
 // with no network; the last good roster is kept across cold starts so the car never falls back to it after that.
 export type Agent = { id: string; name: string; color: string; avatar?: string }
 
 export const ROSTER_URL = '/roster/roster.json'
+export const ACTIVITY_URL = '/api/modules/hub/agents'
+export const ACTIVITY_POLL_MS = 3000
+export const ACTIVITY_TTL_MS = 8000
+export type Activity = { working: boolean; lastActiveAt: number | null }
+export type ActivitySnapshot = { rows: Map<string, Activity>; receivedAt: number; validFor: number }
+
+/** Canonical read projection only. Any required source outage makes thinking unknown, not idle. */
+export function readActivity(raw: unknown, dateHeader: string | null, deviceNow: number, monoNow: number): ActivitySnapshot | null {
+  const o = raw as { generatedAt?: unknown; sources?: unknown; agents?: unknown } | null
+  const generated = typeof o?.generatedAt === 'string' ? Date.parse(o.generatedAt) : NaN
+  const serverNow = dateHeader ? Date.parse(dateHeader) : NaN
+  const age = serverNow - generated
+  if (!Number.isFinite(serverNow) || !Number.isFinite(generated) || age < -1000 || age >= ACTIVITY_TTL_MS) return null
+  if (!Array.isArray(o?.sources) || !Array.isArray(o?.agents)) return null
+  let validFor = ACTIVITY_TTL_MS - Math.max(0, age)
+  for (const name of ['events', 'asm', 'agents registry', 'pjangler']) {
+    const source = o.sources.find((s) => s?.name === name)
+    if (!source || source.down || (source.maxSeconds !== undefined &&
+      (!Number.isFinite(source.ageSeconds) || source.ageSeconds < 0 || source.ageSeconds > source.maxSeconds))) return null
+    if (name === 'events' && (!Number.isFinite(source.ageSeconds) || !Number.isFinite(source.maxSeconds))) return null
+    if (source.maxSeconds !== undefined) {
+      validFor = Math.min(validFor, (source.maxSeconds - source.ageSeconds) * 1000 - Math.max(0, age))
+    }
+  }
+  if (validFor <= 0) return null
+  const rows = new Map<string, Activity>()
+  for (const a of o.agents) {
+    if (!a || typeof a.id !== 'string') continue
+    const stamp = typeof a.lastActiveAt === 'string' ? Date.parse(a.lastActiveAt) : NaN
+    rows.set(a.id, { working: a.signal === 'working', lastActiveAt: Number.isFinite(stamp) && stamp <= serverNow + 1000 ? stamp : null })
+  }
+  // deviceNow is deliberately not used as event time: head-unit clocks can be wrong by hours.
+  void deviceNow
+  return { rows, receivedAt: monoNow, validFor }
+}
+
+export function liveActivity(snapshot: ActivitySnapshot | null, monoNow: number): Map<string, Activity> | null {
+  if (!snapshot || monoNow < snapshot.receivedAt || monoNow - snapshot.receivedAt >= snapshot.validFor) return null
+  return snapshot.rows
+}
+
+export async function fetchActivity(
+  fetcher: typeof fetch, signal: AbortSignal, online = () => navigator.onLine,
+  wallNow = Date.now, monoNow = () => performance.now(),
+): Promise<ActivitySnapshot | null> {
+  if (!online()) return null
+  try {
+    const response = await fetcher(ACTIVITY_URL, { cache: 'no-store', signal })
+    if (!response.ok) return null
+    const raw = await response.json()
+    return online() && !signal.aborted ? readActivity(raw, response.headers.get('date'), wallNow(), monoNow()) : null
+  } catch { return null }
+}
+
+export function rankAgents(agents: Agent[], activity: Map<string, Activity> | null): Agent[] {
+  return agents.map((agent, index) => ({ agent, index, work: activity?.get(agent.id) }))
+    .sort((a, b) => Number(!!b.work?.working) - Number(!!a.work?.working) ||
+      (b.work?.lastActiveAt ?? -Infinity) - (a.work?.lastActiveAt ?? -Infinity) || a.index - b.index)
+    .map((a) => a.agent)
+}
+
+/** A recording freezes positions, not activity; the captured Agent object remains the memo target. */
+export function activityOrder(agents: Agent[], activity: Map<string, Activity> | null, locked: boolean, previous: Agent[]): Agent[] {
+  return locked ? previous : rankAgents(agents, activity)
+}
+
+export function hiddenWorking(agents: Agent[], visible: Agent[], activity: Map<string, Activity> | null): number {
+  const shown = new Set(visible.map((a) => a.id))
+  return agents.filter((a) => activity?.get(a.id)?.working && !shown.has(a.id)).length
+}
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 const COLOR = /^#[0-9a-fA-F]{6}$/
 const AVATAR = /^\/roster\/avatars\/[a-z0-9-]+\.[A-Za-z0-9_-]+\.jpg$/
@@ -45,7 +116,7 @@ export function sameRoster(a: Agent[], b: Agent[]): boolean {
 export function driveTiles(agents: Agent[], selectedId: string | undefined, n: number, alsoId?: string): Agent[] {
   // The most recent n, always including the selected agent and the one whose reply is playing (it must be on
   // screen to show the cue); they take the last slots so the order of the rest is kept.
-  const size = Math.max(1, n)
+  const size = Math.max(0, Math.floor(n))
   const musts = [selectedId, alsoId].filter((id, i, arr): id is string => !!id && arr.indexOf(id) === i)
     .map((id) => agents.find((a) => a.id === id)).filter((a): a is Agent => !!a).slice(0, size)
   const rest = agents.filter((a) => !musts.includes(a))

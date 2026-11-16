@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agent Pad roster: every agent the pad can send a memo to, most recently talked to first, wearing its avatar.
+"""Agent Pad roster: every agent the pad can send a memo to, in registry order, wearing its avatar.
 
 One pass per run (systemd timer). Writes, under PAD_ROSTER_DIR (default ~/.local/share/holocene-auto/pad-roster):
 
@@ -226,14 +226,14 @@ def build(out: Path, profiles: Path, registry: Path, now: float, store: Path | N
         if f.name not in referenced:
             f.unlink(missing_ok=True)
 
-    order = {a["id"]: i for i, a in enumerate(keep)}
-    rows.sort(key=lambda r: (-r["_at"], order[r["id"]]))
+    # Registry order is the stable fallback. The pad joins canonical hub work
+    # recency separately; operator contact is metadata, never work evidence.
     for r in rows:
         del r["_at"]
 
     roster = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-        "order": "most recent operator message first (Telegram, CLI, TUI, desktop, Slack, voice memo); never-contacted agents last in registry order",
+        "order": "registry order; live canonical hub activity ranked by the pad",
         "agents": rows,
         "skipped": skipped,
     }

@@ -11,6 +11,7 @@ import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLe
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 import { PLAY_STRIKES, isFocusFailure, retryPlan, stopAckName } from './pace'
 import { type Claim, type ClaimAction, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, PHONE_RECHECK_MAX_MS, phoneRecheckDue, phoneStillHas, startPlan, startVerdict } from './claim'
+import { ACTIVITY_POLL_MS, type ActivitySnapshot, fetchActivity, liveActivity, activityOrder, hiddenWorking } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -465,6 +466,8 @@ function App() {
   const fetchedMeta = useRef(false) // a fetch has answered: a late cache read must not overwrite its stamp
   const agentsRef = useRef(agents)
   agentsRef.current = agents
+  const membershipRef = useRef(agents)
+  membershipRef.current = agents
   // The remembered agent id: localStorage, else IndexedDB (read below), restored as a selection only.
   const savedAgent = useRef(savedAgentId(lsGet(LS_AGENT)))
   const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === savedAgent.current) || null)
@@ -478,6 +481,14 @@ function App() {
   const recordingRef = useRef(false)
   const controlRef = useRef<(c: { action?: string; via?: string }) => void>(() => {})
   const [recording, setRecording] = useState(false)
+  const [activitySnapshot, setActivitySnapshot] = useState<ActivitySnapshot | null>(null)
+  const [activityClock, setActivityClock] = useState(() => performance.now())
+  const activity = liveActivity(activitySnapshot, Math.max(activityClock, performance.now()))
+  const orderedRef = useRef(agents)
+  const ordered = activityOrder(agents, activity, recording || phase === 'arming', orderedRef.current)
+  const orderKey = ordered.map((a) => a.id).join(',')
+  orderedRef.current = ordered
+  agentsRef.current = ordered
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [status, setStatus] = useState('idle')
   const [memoShort, setMemoShort] = useState<string | null>(null)
@@ -1807,12 +1818,45 @@ function App() {
     if (!p.cached) { rosterSeen.current = true; rosterSet(p.list, p.generatedAt) }
     setRosterReady(true)
     restoreAgent(p.list, !p.cached)
-    if (sameRoster(agentsRef.current, p.list)) return
+    if (sameRoster(membershipRef.current, p.list)) return
     setAgents(p.list)
     // The selected agent keeps its selection with its new name and picture; one that left the roster stays
     // selected (its memos still route until the registry says otherwise), it is just no longer listed.
     setSelected((s) => (s ? p.list.find((x) => x.id === s.id) ?? s : null))
   }, [restoreAgent])
+  // Live activity is deliberately never written to either membership cache.
+  useEffect(() => {
+    let alive = true
+    let loading = false
+    let controller: AbortController | null = null
+    const clear = () => { if (alive) setActivitySnapshot(null) }
+    const load = async () => {
+      if (loading) return
+      if (!navigator.onLine) { clear(); return }
+      loading = true
+      controller = new AbortController()
+      const timeout = window.setTimeout(() => controller?.abort(), 2500)
+      try {
+        const snapshot = await fetchActivity(fetch, controller.signal)
+        if (alive) setActivitySnapshot(navigator.onLine ? snapshot : null)
+      } catch { clear() }
+      finally { loading = false; window.clearTimeout(timeout) }
+    }
+    const offline = () => { controller?.abort(); clear() }
+    const foreground = () => { if (document.visibilityState === 'visible') { clear(); void load() } }
+    void load()
+    const poll = window.setInterval(load, ACTIVITY_POLL_MS)
+    const expiry = window.setInterval(() => setActivityClock(performance.now()), 1000)
+    window.addEventListener('offline', offline)
+    window.addEventListener('online', load)
+    document.addEventListener('visibilitychange', foreground)
+    return () => {
+      alive = false; controller?.abort()
+      window.clearInterval(poll); window.clearInterval(expiry)
+      window.removeEventListener('offline', offline); window.removeEventListener('online', load)
+      document.removeEventListener('visibilitychange', foreground)
+    }
+  }, [])
   useEffect(() => {
     let alive = true
     const load = async () => {
@@ -1867,7 +1911,7 @@ function App() {
     if (host.driving || !selected) return
     const el = tilesRef.current?.querySelector<HTMLElement>(`[data-agent="${selected.id}"]`)
     try { el?.scrollIntoView({ block: 'nearest' }) } catch { /* old WebView */ }
-  }, [selected?.id, agents, host.driving, rosterReady])
+  }, [selected?.id, orderKey, host.driving, rosterReady])
 
   selectedRef.current = selected
   recordingRef.current = recording
@@ -1892,7 +1936,9 @@ function App() {
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
-  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : agents
+  const tiles = !rosterReady ? [] : host.driving ? driveTiles(ordered, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : ordered
+  const busyCount = ordered.filter((a) => activity?.get(a.id)?.working).length
+  const hiddenBusy = hiddenWorking(ordered, tiles, activity)
   const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
   // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
@@ -1916,6 +1962,9 @@ function App() {
           🔊 Tap to enable sound
         </button>
       )}
+      <div className="fleet-status" role="status">
+        {activity ? `${busyCount} thinking${hiddenBusy ? ` · ${hiddenBusy} off-screen` : ''}` : 'Thinking status unknown'}
+      </div>
       <div className="tiles" role="radiogroup" aria-label="Agent" ref={tilesRef}>
         {tiles.map((a) => {
           const on = selected?.id === a.id
@@ -1926,13 +1975,14 @@ function App() {
               data-agent={a.id}
               role="radio"
               aria-checked={on}
-              className={`tile${on ? ' on' : ''}${speaking?.agent === a.id ? ' speaking' : ''}`}
+              className={`tile${on ? ' on' : ''}${speaking?.agent === a.id ? ' speaking' : ''}${activity?.get(a.id)?.working ? ' thinking' : ''}`}
               disabled={(recording || phase === 'arming') && !on}
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
             >
               <Swatch a={a} />
               <span className="name">{label(a.name)}</span>
+              {activity?.get(a.id)?.working && <span className="thinking-label" aria-label="Thinking">Thinking</span>}
               {work && <span className="work">{work}</span>}
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
@@ -2024,6 +2074,11 @@ const CSS = `
 .tile .swatch.pic img { width:100%; height:100%; object-fit:cover; display:block; }
 .tile .work { max-width:100%; font-size:clamp(16px,1.8vw,22px); font-weight:600; line-height:1.15; text-align:center; color:#cfe0ff; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
 .tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
+.fleet-status { flex:0 0 auto; color:#e6e6e6; font-size:clamp(20px,2.4vw,28px); font-weight:700; }
+.thinking-label { color:#fff; background:#141a24; border:2px solid #cfe0ff; border-radius:6px; padding:2px 6px; font-size:20px; font-weight:700; }
+.tile.thinking .thinking-label { animation:thinking-pulse 1.8s ease-in-out infinite; }
+@keyframes thinking-pulse { 0%,100% { border-color:#fff; box-shadow:0 0 0 0 #cfe0ff; } 50% { border-color:#cfe0ff; box-shadow:0 0 0 4px #cfe0ff; } }
+@media (prefers-reduced-motion: reduce) { .tile.thinking .thinking-label { animation:none; } }
 /* The agent whose reply is playing: a bouncy border in its colour (HOLOC-14). */
 .tile.speaking { border:5px solid var(--c); padding:5px; animation:speak-bounce .9s ease-in-out infinite; }
 .tile.speaking .swatch { animation:speak-pop .9s ease-in-out infinite; }
