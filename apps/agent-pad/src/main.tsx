@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { durableGet, durableSet } from './durable'
 import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from './capture'
@@ -11,6 +11,7 @@ import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLe
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 import { PLAY_STRIKES, isFocusFailure, retryPlan, stopAckName } from './pace'
 import { type Claim, type ClaimAction, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, PHONE_RECHECK_MAX_MS, phoneRecheckDue, phoneStillHas, startPlan, startVerdict } from './claim'
+import { ACTIVITY_POLL_MS, type ActivitySnapshot, fetchActivity, liveActivity, activityOrder, hiddenWorking, cueVisible } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
 const FALLBACK_AGENTS: Agent[] = [
@@ -465,9 +466,14 @@ function App() {
   const fetchedMeta = useRef(false) // a fetch has answered: a late cache read must not overwrite its stamp
   const agentsRef = useRef(agents)
   agentsRef.current = agents
+  const membershipRef = useRef(agents)
+  membershipRef.current = agents
   // The remembered agent id: localStorage, else IndexedDB (read below), restored as a selection only.
   const savedAgent = useRef(savedAgentId(lsGet(LS_AGENT)))
   const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === savedAgent.current) || null)
+  const [selectionScroll, setSelectionScroll] = useState(0)
+  const [visibleTileIds, setVisibleTileIds] = useState<string[]>([])
+  const tilesRef = useRef<HTMLDivElement | null>(null)
   const [host, setHost] = useState<HostInfo>(readHost)
   const drivingRef = useRef(host.driving) // read when a recording ends: the car may have started moving mid-note
   drivingRef.current = host.driving
@@ -478,6 +484,13 @@ function App() {
   const recordingRef = useRef(false)
   const controlRef = useRef<(c: { action?: string; via?: string }) => void>(() => {})
   const [recording, setRecording] = useState(false)
+  const [activitySnapshot, setActivitySnapshot] = useState<ActivitySnapshot | null>(null)
+  const [activityClock, setActivityClock] = useState(() => performance.now())
+  const activity = liveActivity(activitySnapshot, Math.max(activityClock, performance.now()))
+  const orderedRef = useRef(agents)
+  const ordered = activityOrder(agents, activity, recording || phase === 'arming', orderedRef.current)
+  orderedRef.current = ordered
+  agentsRef.current = ordered
   const [lastReply, setLastReply] = useState<string | null>(null)
   const [status, setStatus] = useState('idle')
   const [memoShort, setMemoShort] = useState<string | null>(null)
@@ -1753,6 +1766,7 @@ function App() {
     // change what the screen and the host say.
     if (recordingRef.current || arming.current) return
     setSelected(a)
+    setSelectionScroll((n) => n + 1)
     savedAgent.current = a.id
     lsSet(LS_AGENT, a.id)
     void agentDbSet(a.id)
@@ -1807,12 +1821,45 @@ function App() {
     if (!p.cached) { rosterSeen.current = true; rosterSet(p.list, p.generatedAt) }
     setRosterReady(true)
     restoreAgent(p.list, !p.cached)
-    if (sameRoster(agentsRef.current, p.list)) return
+    if (sameRoster(membershipRef.current, p.list)) return
     setAgents(p.list)
     // The selected agent keeps its selection with its new name and picture; one that left the roster stays
     // selected (its memos still route until the registry says otherwise), it is just no longer listed.
     setSelected((s) => (s ? p.list.find((x) => x.id === s.id) ?? s : null))
   }, [restoreAgent])
+  // Live activity is deliberately never written to either membership cache.
+  useEffect(() => {
+    let alive = true
+    let loading = false
+    let controller: AbortController | null = null
+    const clear = () => { if (alive) setActivitySnapshot(null) }
+    const load = async () => {
+      if (loading) return
+      if (!navigator.onLine) { clear(); return }
+      loading = true
+      controller = new AbortController()
+      const timeout = window.setTimeout(() => controller?.abort(), 2500)
+      try {
+        const snapshot = await fetchActivity(fetch, controller.signal)
+        if (alive) setActivitySnapshot(navigator.onLine ? snapshot : null)
+      } catch { clear() }
+      finally { loading = false; window.clearTimeout(timeout) }
+    }
+    const offline = () => { controller?.abort(); clear() }
+    const foreground = () => { if (document.visibilityState === 'visible') { clear(); void load() } }
+    void load()
+    const poll = window.setInterval(load, ACTIVITY_POLL_MS)
+    const expiry = window.setInterval(() => setActivityClock(performance.now()), 1000)
+    window.addEventListener('offline', offline)
+    window.addEventListener('online', load)
+    document.addEventListener('visibilitychange', foreground)
+    return () => {
+      alive = false; controller?.abort()
+      window.clearInterval(poll); window.clearInterval(expiry)
+      window.removeEventListener('offline', offline); window.removeEventListener('online', load)
+      document.removeEventListener('visibilitychange', foreground)
+    }
+  }, [])
   useEffect(() => {
     let alive = true
     const load = async () => {
@@ -1861,13 +1908,12 @@ function App() {
     if (!recording && phase !== 'arming') applyRoster()
   }, [recording, phase, applyRoster])
 
-  // Parked, the tiles scroll: keep the lit one in view when the wheel or a roster update moves it.
-  const tilesRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (host.driving || !selected) return
+  // Only an explicit tile/wheel choice scrolls to selection. Activity never pulls the viewport away from workers.
+  useLayoutEffect(() => {
+    if (!selectionScroll || host.driving || !selected) return
     const el = tilesRef.current?.querySelector<HTMLElement>(`[data-agent="${selected.id}"]`)
     try { el?.scrollIntoView({ block: 'nearest' }) } catch { /* old WebView */ }
-  }, [selected?.id, agents, host.driving, rosterReady])
+  }, [selectionScroll])
 
   selectedRef.current = selected
   recordingRef.current = recording
@@ -1892,7 +1938,33 @@ function App() {
   const canRecord = !!selected
   const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
   const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
-  const tiles = !rosterReady ? [] : host.driving ? driveTiles(agents, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : agents
+  const tiles = !rosterReady ? [] : host.driving ? driveTiles(ordered, selected?.id, host.maxItems > 0 ? Math.min(DRIVE_TILES, host.maxItems) : DRIVE_TILES, speaking?.agent ?? workingAgent) : ordered
+  const busyCount = ordered.filter((a) => activity?.get(a.id)?.working).length
+  const hiddenBusy = hiddenWorking(ordered, visibleTileIds.map((id) => ({ id })), activity)
+  const measureVisibleTiles = useCallback(() => {
+    const root = tilesRef.current
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    const viewport = { top: Math.max(0, rect.top), bottom: Math.min(window.innerHeight, rect.bottom),
+      left: Math.max(0, rect.left), right: Math.min(window.innerWidth, rect.right) }
+    const ids = [...root.querySelectorAll<HTMLElement>('[data-agent]')].filter((tile) =>
+      cueVisible((tile.querySelector('.thinking-label') ?? tile).getBoundingClientRect(), viewport)
+    ).map((tile) => tile.dataset.agent!)
+    setVisibleTileIds((prev) => prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids)
+  }, [])
+  // Re-measure after DOM reordering as well as either scroll container and host resizes.
+  useLayoutEffect(measureVisibleTiles)
+  useEffect(() => {
+    window.addEventListener('scroll', measureVisibleTiles, true)
+    window.addEventListener('resize', measureVisibleTiles)
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureVisibleTiles)
+    if (tilesRef.current) resize?.observe(tilesRef.current)
+    return () => {
+      window.removeEventListener('scroll', measureVisibleTiles, true)
+      window.removeEventListener('resize', measureVisibleTiles)
+      resize?.disconnect()
+    }
+  }, [measureVisibleTiles])
   const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
   // Driving: one short static line under the hero, in the hsound size (secondary to the name and state), only while no
@@ -1916,6 +1988,9 @@ function App() {
           🔊 Tap to enable sound
         </button>
       )}
+      <div className="fleet-status" role="status">
+        {activity ? `${busyCount} thinking${hiddenBusy ? ` · ${hiddenBusy} off-screen` : ''}` : 'Thinking status unknown'}
+      </div>
       <div className="tiles" role="radiogroup" aria-label="Agent" ref={tilesRef}>
         {tiles.map((a) => {
           const on = selected?.id === a.id
@@ -1926,13 +2001,14 @@ function App() {
               data-agent={a.id}
               role="radio"
               aria-checked={on}
-              className={`tile${on ? ' on' : ''}${speaking?.agent === a.id ? ' speaking' : ''}`}
+              className={`tile${on ? ' on' : ''}${speaking?.agent === a.id ? ' speaking' : ''}${activity?.get(a.id)?.working ? ' thinking' : ''}`}
               disabled={(recording || phase === 'arming') && !on}
               onClick={() => chooseAgent(a)}
               style={{ ['--c' as string]: a.color }}
             >
               <Swatch a={a} />
               <span className="name">{label(a.name)}</span>
+              {activity?.get(a.id)?.working && <span className="thinking-label" aria-label="Thinking">Thinking</span>}
               {work && <span className="work">{work}</span>}
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
@@ -2011,7 +2087,7 @@ const CSS = `
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 .pad { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:clamp(10px,2vw,20px); gap:clamp(10px,2vw,18px); overflow:auto; }
 .unlock { min-height:64px; padding:0 24px; border-radius:16px; border:3px solid #4f8cff; background:#141a24; color:#4f8cff; font-weight:700; font-size:clamp(18px,2.2vw,26px); cursor:pointer; }
-.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overscroll-behavior:contain; padding:12px; }
+.tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overflow-anchor:none; overscroll-behavior:contain; padding:12px; }
 @media (min-width:600px) { .tiles { grid-template-columns:repeat(3,1fr); } }
 @media (min-width:900px) { .tiles { grid-template-columns:repeat(5,1fr); } }
 .tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(8px,1.6vw,18px); min-height:120px; padding:8px; border-radius:20px; border:2px solid #2a3140; background:#141a24; color:#e6e6e6; cursor:pointer; transition:background .12s, border-color .12s, transform .08s; }
@@ -2024,6 +2100,11 @@ const CSS = `
 .tile .swatch.pic img { width:100%; height:100%; object-fit:cover; display:block; }
 .tile .work { max-width:100%; font-size:clamp(16px,1.8vw,22px); font-weight:600; line-height:1.15; text-align:center; color:#cfe0ff; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
 .tile .check { position:absolute; top:8px; right:12px; font-size:30px; font-weight:800; color:var(--c); }
+.fleet-status { flex:0 0 auto; color:#e6e6e6; font-size:clamp(20px,2.4vw,28px); font-weight:700; }
+.thinking-label { color:#fff; background:#141a24; border:2px solid #cfe0ff; border-radius:6px; padding:2px 6px; font-size:20px; font-weight:700; }
+.tile.thinking .thinking-label { animation:thinking-pulse 1.8s ease-in-out infinite; }
+@keyframes thinking-pulse { 0%,100% { border-color:#fff; box-shadow:0 0 0 0 #cfe0ff; } 50% { border-color:#cfe0ff; box-shadow:0 0 0 4px #cfe0ff; } }
+@media (prefers-reduced-motion: reduce) { .tile.thinking .thinking-label { animation:none; } }
 /* The agent whose reply is playing: a bouncy border in its colour (HOLOC-14). */
 .tile.speaking { border:5px solid var(--c); padding:5px; animation:speak-bounce .9s ease-in-out infinite; }
 .tile.speaking .swatch { animation:speak-pop .9s ease-in-out infinite; }
@@ -2047,8 +2128,10 @@ const CSS = `
 .silent { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; padding:14px 18px; border-radius:16px; border:3px solid #ffb454; background:#2a2112; color:#ffd9a0; font-size:clamp(20px,2.4vw,28px); line-height:1.25; }
 .silent strong { color:#ffb454; font-size:clamp(24px,3vw,34px); }
 .still *, .still *::before, .still *::after { animation:none !important; transition:none !important; }
-/* Driving layout (UX restricted): five big tiles, one giant record toggle, state readable at a glance, no scrolling,
-   no motion, no text beyond agent names. */
+/* The requested thinking indicator is the sole driving motion exception; no reply/record/meter motion. */
+.drive.still .tile.thinking .thinking-label { animation:thinking-pulse 1.8s ease-in-out infinite !important; }
+@media (prefers-reduced-motion: reduce) { .drive.still .tile.thinking .thinking-label { animation:none !important; } }
+/* Driving layout: bounded tiles and record toggle, no scrolling. Only thinking labels can pulse. */
 .pad.drive { overflow:hidden; gap:clamp(8px,1.6vh,16px); padding:clamp(8px,1.6vh,16px) clamp(10px,2vw,20px); }
 .drive .hero { flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 24px; padding:clamp(6px,1.4vh,14px) 24px; border-radius:20px; border:5px solid var(--c); background:color-mix(in srgb, var(--c) 28%, #0b1020); }
 .drive .hname { font-size:clamp(34px,7vh,68px); font-weight:800; line-height:1.05; }
@@ -2062,7 +2145,7 @@ const CSS = `
 .drive .tile { min-height:0; padding:4px; border-radius:18px; }
 .drive .tile:not(.on) { opacity:.78; }
 .drive .tile.on { opacity:1; border-width:9px; padding:0; box-shadow:0 0 0 5px color-mix(in srgb, var(--c) 45%, transparent); }
-/* Driving is motion-free (.still): the replying agent's tile is filled with its colour instead of bouncing. */
+/* Reply motion remains disabled while driving; its tile is filled with colour instead. */
 .drive .tile.speaking, .drive .tile.on.speaking { background:var(--c); border-color:#fff; opacity:1; }
 .drive .tile.speaking .name { color:#fff; text-shadow:0 1px 2px #000, 0 0 6px rgba(0,0,0,.85); }
 .drive .tile.speaking .swatch { box-shadow:0 0 0 4px #fff, 0 0 0 7px rgba(0,0,0,.55); }

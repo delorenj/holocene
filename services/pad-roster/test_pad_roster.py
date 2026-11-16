@@ -93,10 +93,10 @@ class RosterTest(unittest.TestCase):
         for a in ids:
             self.assertIs(memo_common.registry_route(a)["ok"], True, a)
 
-    def test_most_recent_operator_message_first_then_registry_order(self):
+    def test_registry_order_is_stable_regardless_of_operator_contact(self):
         r = self.build()
         self.assertEqual([a["id"] for a in r["agents"]],
-                         ["holocene-pm", "33god-pm", "infra-pm", "flume-pm", "monitoring-pm", "never-pm"])
+                         ["holocene-pm", "33god-pm", "flume-pm", "infra-pm", "monitoring-pm", "never-pm"])
         by = {a["id"]: a for a in r["agents"]}
         self.assertEqual(by["33god-pm"]["via"], "telegram")
         self.assertEqual(by["holocene-pm"]["via"], "voice")
