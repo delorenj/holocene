@@ -26,9 +26,22 @@ export type RegistryRow = {
   reportsTo?: string;
   gatewayUnit?: string;
   provisionedAt?: string;
+  /** Registry-declared memo capability, using memo_common.registry_route's rule. */
+  memoRoutable?: boolean;
   /** Declared by the project manifest but missing from the Hermes registry. */
   declared?: boolean;
 };
+
+// Same declarative capability as services/inbox-watcher/memo_common.py:registry_route.
+// Never infer routability from a running gateway, profile directory, or work evidence.
+export function registryMemoRoutable(agentId: string, cfg: Record<string, unknown>): boolean {
+  const bb = cfg.bloodbank;
+  if (!bb || typeof bb !== "object" || Array.isArray(bb)) return false;
+  const route = bb as Record<string, unknown>;
+  return typeof cfg.profile_name === "string" && !!cfg.profile_name.trim() &&
+    (route.enabled === undefined || route.enabled === true) &&
+    route.gateway_scope === "fleet" && route.target_agent_id === agentId;
+}
 
 export type ProjectRecord = {
   id: string;
@@ -108,6 +121,8 @@ export type HubAgent = {
   blockKind?: string;
   heldSeconds?: number;
   lastActiveAt?: string;
+  /** Observed activity only; unlike lastActiveAt, provisioning never supplies this value. */
+  lastWorkAt: string | null;
   active: boolean;
   gateway: "active" | "inactive" | "unknown";
   project?: ProjectLink;
@@ -319,6 +334,25 @@ export type AgentsModel = {
   stats: { agents: number; active: number; noProject: number; contractors: number; waiting: number };
 };
 
+export type PadActivitySource = { name: string; ageSeconds?: number; maxSeconds?: number; down?: boolean };
+const PAD_SOURCES = new Set(["events", "asm", "agents registry", "pjangler"]);
+
+/** Public allowlist of the canonical hub snapshot, not a second activity fold. */
+export function buildPadActivity(at: number, model: AgentsModel, routableIds: Set<string>, sources: PadActivitySource[]) {
+  return {
+    generatedAt: new Date(at).toISOString(),
+    sources: sources.filter((s) => PAD_SOURCES.has(s.name)).map((s) => ({
+      name: s.name,
+      ...(s.ageSeconds !== undefined ? { ageSeconds: s.ageSeconds } : {}),
+      ...(s.maxSeconds !== undefined ? { maxSeconds: s.maxSeconds } : {}),
+      ...(s.down !== undefined ? { down: s.down } : {})
+    })),
+    agents: model.agents.filter((a) => routableIds.has(a.id)).map((a) => ({
+      id: a.id, signal: a.signal, lastWorkAt: a.lastWorkAt
+    }))
+  };
+}
+
 function subagentContractor(c: OpenSubagent, receipts: AgentInputs["receipts"]): HubContractor {
   return {
     id: `sub:${c.invocationId}`,
@@ -435,6 +469,7 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       blockKind: facts.hitl?.blockKind || undefined,
       heldSeconds: heldFrom(heldFrom0 ?? (declared === "idle" ? asm?.sinceMs : undefined), nowMs),
       lastActiveAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : r.provisionedAt,
+      lastWorkAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : null,
       active: declared !== "idle" && declared !== "done",
       gateway,
       project: link,

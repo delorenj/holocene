@@ -25,7 +25,8 @@ import {
 } from "./containers.js";
 import { getDirectorSnapshot } from "./director.js";
 import { getOrgTree } from "./org.js";
-import { getHubAgents, getHubProjects } from "./hub.js";
+import { getHubAgents, getHubProjects, getPadActivity } from "./hub.js";
+import { registerPadActivityRoute } from "./pad-activity.js";
 import {
   getToolingStat,
   getToolingStatDefinitions,
@@ -54,6 +55,7 @@ registerWaxRoutes(app);
 registerTranscriptRoutes(app, eventCollector.store);
 registerCandybarRoutes(app);
 registerAvatarRoutes(app);
+registerPadActivityRoute(app, () => getPadActivity(eventCollector.store));
 eventCollector.start();
 // Without retention the store grew ~0.9 GiB/day; prune hourly (HOLOCENE_RETENTION_* to tune, =off to disable).
 const stopRetention = startRetention(eventCollector.store, retentionFromEnv(), app.log);

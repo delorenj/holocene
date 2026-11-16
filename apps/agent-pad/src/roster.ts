@@ -5,10 +5,10 @@
 export type Agent = { id: string; name: string; color: string; avatar?: string }
 
 export const ROSTER_URL = '/roster/roster.json'
-export const ACTIVITY_URL = '/api/modules/hub/agents'
+export const ACTIVITY_URL = '/api/pad/activity'
 export const ACTIVITY_POLL_MS = 3000
 export const ACTIVITY_TTL_MS = 8000
-export type Activity = { working: boolean; lastActiveAt: number | null }
+export type Activity = { working: boolean; lastWorkAt: number | null }
 export type ActivitySnapshot = { rows: Map<string, Activity>; receivedAt: number; validFor: number }
 
 /** Canonical read projection only. Any required source outage makes thinking unknown, not idle. */
@@ -33,8 +33,8 @@ export function readActivity(raw: unknown, dateHeader: string | null, deviceNow:
   const rows = new Map<string, Activity>()
   for (const a of o.agents) {
     if (!a || typeof a.id !== 'string') continue
-    const stamp = typeof a.lastActiveAt === 'string' ? Date.parse(a.lastActiveAt) : NaN
-    rows.set(a.id, { working: a.signal === 'working', lastActiveAt: Number.isFinite(stamp) && stamp <= serverNow + 1000 ? stamp : null })
+    const stamp = typeof a.lastWorkAt === 'string' ? Date.parse(a.lastWorkAt) : NaN
+    rows.set(a.id, { working: a.signal === 'working', lastWorkAt: Number.isFinite(stamp) && stamp <= serverNow + 1000 ? stamp : null })
   }
   // deviceNow is deliberately not used as event time: head-unit clocks can be wrong by hours.
   void deviceNow
@@ -62,7 +62,7 @@ export async function fetchActivity(
 export function rankAgents(agents: Agent[], activity: Map<string, Activity> | null): Agent[] {
   return agents.map((agent, index) => ({ agent, index, work: activity?.get(agent.id) }))
     .sort((a, b) => Number(!!b.work?.working) - Number(!!a.work?.working) ||
-      (b.work?.lastActiveAt ?? -Infinity) - (a.work?.lastActiveAt ?? -Infinity) || a.index - b.index)
+      (b.work?.lastWorkAt ?? -Infinity) - (a.work?.lastWorkAt ?? -Infinity) || a.index - b.index)
     .map((a) => a.agent)
 }
 
@@ -71,7 +71,14 @@ export function activityOrder(agents: Agent[], activity: Map<string, Activity> |
   return locked ? previous : rankAgents(agents, activity)
 }
 
-export function hiddenWorking(agents: Agent[], visible: Agent[], activity: Map<string, Activity> | null): number {
+type Rect = { top: number; bottom: number; left: number; right: number }
+/** Count a cue only when its complete labelled area is within the clipped tile viewport. */
+export function cueVisible(cue: Rect, viewport: Rect): boolean {
+  return cue.bottom > cue.top && cue.right > cue.left && cue.top >= viewport.top &&
+    cue.bottom <= viewport.bottom && cue.left >= viewport.left && cue.right <= viewport.right
+}
+
+export function hiddenWorking(agents: Agent[], visible: Pick<Agent, 'id'>[], activity: Map<string, Activity> | null): number {
   const shown = new Set(visible.map((a) => a.id))
   return agents.filter((a) => activity?.get(a.id)?.working && !shown.has(a.id)).length
 }

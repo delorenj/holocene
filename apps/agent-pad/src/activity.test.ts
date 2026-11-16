@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { ACTIVITY_TTL_MS, activityOrder, driveTiles, fetchActivity, hiddenWorking, liveActivity, normRoster, rankAgents, readActivity, restoreSelection, type Agent } from './roster.ts'
+import { ACTIVITY_TTL_MS, activityOrder, driveTiles, fetchActivity, hiddenWorking, cueVisible, liveActivity, normRoster, rankAgents, readActivity, restoreSelection, type Agent } from './roster.ts'
 
 const now = Date.parse('2026-11-16T20:00:00Z')
 const date = new Date(now).toUTCString()
 const agents: Agent[] = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => ({ id, name: id, color: '#112233' }))
 const ids = (rows: Agent[]) => rows.map((a) => a.id)
-const row = (id: string, signal = 'working', lastActiveAt: unknown = '2026-11-16T19:59:00Z') => ({ id, signal, active: true, lastActiveAt })
+const row = (id: string, signal = 'working', lastWorkAt: unknown = '2026-11-16T19:59:00Z') => ({ id, signal, active: true, lastWorkAt })
 const payload = (rows = [row('a'), row('b'), row('c')]) => ({
   generatedAt: new Date(now - 1000).toISOString(),
   sources: [
@@ -115,7 +115,7 @@ test('driving overflow retains selected and reply under strict cap; count covers
 })
 
 test('cache strips activity; selected and captured recording identity survive live ranking and independent clear', () => {
-  const restored = normRoster({ agents: agents.map((a) => ({ ...a, working: true, signal: 'working', lastActiveAt: date })) })!
+  const restored = normRoster({ agents: agents.map((a) => ({ ...a, working: true, signal: 'working', lastWorkAt: date })) })!
   assert.deepEqual(restored, agents)
   const selected = restoreSelection(restored, 'f', false).pick!
   const recordingTarget = selected
@@ -127,6 +127,31 @@ test('cache strips activity; selected and captured recording identity survive li
   assert.deepEqual(ids(activityOrder(restored, next, false, previous)).slice(0, 2), ['g', 'c'])
 })
 
+test('provision-only fallback cannot outrank actual work or fill unknown recency', () => {
+  const rows = [
+    { ...row('a', 'idle', null), lastActiveAt: '2026-11-16T19:59:59.999Z', provisionedAt: date },
+    row('b', 'idle', '2026-11-16T19:58:00.001Z'),
+    { id: 'c', signal: 'idle', lastActiveAt: date },
+  ]
+  const state = readActivity({ ...payload(), agents: rows }, date, now, 100)!
+  assert.equal(state.rows.get('a')?.lastWorkAt, null)
+  assert.equal(state.rows.get('c')?.lastWorkAt, null)
+  assert.deepEqual(ids(rankAgents(agents, state.rows)), ['b', 'a', 'c', 'd', 'e', 'f', 'g'])
+})
+
+test('clipped parked cues count off-screen, not just absent driving tiles', () => {
+  const activity = read().rows
+  const viewport = { top: 0, bottom: 400, left: 0, right: 1000 }
+  const rects = [
+    { top: 20, bottom: 50, left: 20, right: 100 },
+    { top: 390, bottom: 410, left: 20, right: 100 },
+    { top: -30, bottom: 0, left: 20, right: 100 },
+  ]
+  const visible = agents.slice(0, 3).filter((_, i) => cueVisible(rects[i], viewport))
+  assert.equal(hiddenWorking(agents, visible, activity), 2)
+  assert.equal(cueVisible({ top: 1, bottom: 1, left: 0, right: 5 }, viewport), false)
+})
+
 test('UI wires offline clearing, independent per-agent cue, static restrictions and existing record snapshot', () => {
   const source = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
   assert.match(source, /addEventListener\('offline', offline\)/)
@@ -136,7 +161,11 @@ test('UI wires offline clearing, independent per-agent cue, static restrictions 
   assert.match(source, /const agent = selected/)
   assert.match(source, /onClick=\{\(\) => chooseAgent\(a\)\}/)
   const proxy = readFileSync(new URL('../deploy/hub-agents.nginx.conf', import.meta.url), 'utf8')
-  assert.match(proxy, /location = \/api\/modules\/hub\/agents/)
+  assert.match(proxy, /location = \/api\/pad\/activity/)
+  assert.doesNotMatch(proxy, /\/api\/modules\/hub\/agents/)
+  const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
+  assert.match(vite, /'\/api\/pad\/activity'/)
+  assert.doesNotMatch(vite, /\/api\/modules\/hub\/agents/)
   assert.match(proxy, /Cache-Control "no-store" always/)
   assert.match(proxy, /limit_except GET/)
 })

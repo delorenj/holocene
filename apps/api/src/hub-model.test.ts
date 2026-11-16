@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   buildAgents,
   buildProjects,
+  buildPadActivity,
+  registryMemoRoutable,
   linkProject,
   declaredAgents,
   projectTickets,
@@ -153,4 +155,40 @@ test("an idle agent's recency is when it went idle, not the sweeper's last pass"
   assert.equal(by.get("flume-pm")!.lastActiveAt, new Date(now - 3_600_000).toISOString());
   assert.equal(by.get("bloodbank-pm")!.lastActiveAt, new Date(now - 120_000).toISOString());
   assert.equal(by.get("holocene-pm")!.lastActiveAt, new Date(sweep).toISOString());
+  assert.equal(by.get("flume-pm")!.lastWorkAt, new Date(now - 3_600_000).toISOString());
+  assert.equal(by.get("bloodbank-pm")!.lastWorkAt, new Date(now - 120_000).toISOString());
+  assert.equal(by.get("holocene-pm")!.lastWorkAt, new Date(sweep).toISOString());
+});
+
+test("provisioning alone never becomes work recency; existing lastActiveAt fallback is preserved", () => {
+  const now = Date.parse("2026-11-16T20:00:00Z");
+  const provisionedAt = new Date(now - 1000).toISOString();
+  const workedAt = new Date(now - 60_000).toISOString();
+  const model = buildAgents({
+    nowMs: now, registry: [row("new", "", "", { provisionedAt }), row("worker", "", "")], projects: [],
+    asm: new Map(), gateways: new Map(), scopes: [], tickets: new Map(),
+    invocations: [{ id: "e", type: "completed", at: workedAt, agentId: "worker", invocationId: "i" }]
+  });
+  assert.equal(model.agents[0].lastActiveAt, provisionedAt);
+  assert.equal(model.agents[0].lastWorkAt, null);
+  assert.equal(model.agents[1].lastWorkAt, workedAt);
+  assert.deepEqual(buildPadActivity(now, model, new Set(["new", "worker"]), []).agents, [
+    { id: "new", signal: "unknown", lastWorkAt: null },
+    { id: "worker", signal: "unknown", lastWorkAt: workedAt }
+  ]);
+});
+
+test("memo capability matches registry_route default-deny rule, not runtime presence", () => {
+  const good = { profile_name: "profile", bloodbank: { gateway_scope: "fleet", target_agent_id: "a" } };
+  assert.equal(registryMemoRoutable("a", good), true);
+  assert.equal(registryMemoRoutable("a", { ...good, bloodbank: { ...good.bloodbank, enabled: true } }), true);
+  for (const enabled of [false, null, 1, "true"]) {
+    assert.equal(registryMemoRoutable("a", { ...good, bloodbank: { ...good.bloodbank, enabled } }), false);
+  }
+  for (const cfg of [{}, { profile_name: " " }, { ...good, profile_name: " " },
+    { ...good, bloodbank: {} }, { ...good, bloodbank: [] },
+    { ...good, bloodbank: { ...good.bloodbank, gateway_scope: "single" } },
+    { ...good, bloodbank: { ...good.bloodbank, target_agent_id: "b" } }]) {
+    assert.equal(registryMemoRoutable("a", cfg), false);
+  }
 });

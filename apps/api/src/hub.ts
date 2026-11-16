@@ -14,6 +14,8 @@ import {
   declaredAgents,
   normalizePath,
   projectTickets,
+  buildPadActivity,
+  registryMemoRoutable,
   type AsmRow,
   type Component,
   type InvocationEvent,
@@ -76,7 +78,8 @@ function readRegistry(): { rows: RegistryRow[]; source: Source } {
       boardIdentifier: text(plane.identifier),
       reportsTo: text(cfg.reports_to),
       gatewayUnit: text(systemd.gateway_unit),
-      provisionedAt: text(cfg.provisioned_at)
+      provisionedAt: text(cfg.provisioned_at),
+      memoRoutable: registryMemoRoutable(agentId, cfg)
     } satisfies RegistryRow;
   });
   const age = Math.round((Date.now() - statSync(REGISTRY_PATH).mtimeMs) / 1000);
@@ -349,7 +352,7 @@ function ticketOf(row: CollectedEvent): TicketEvent | undefined {
 
 // ---------------------------------------------------------------- assembly
 
-type Snapshot = { at: number; agents: ReturnType<typeof buildAgents>; projects: ProjectRecord[]; tickets: ReturnType<typeof projectTickets>; sources: Source[] };
+type Snapshot = { at: number; agents: ReturnType<typeof buildAgents>; routableIds: Set<string>; projects: ProjectRecord[]; tickets: ReturnType<typeof projectTickets>; sources: Source[] };
 let cached: Snapshot | undefined;
 let inflight: Promise<Snapshot> | undefined;
 
@@ -402,7 +405,8 @@ async function snapshot(store: EventStore): Promise<Snapshot> {
       projects.source,
       { name: "events", ...(lastEvent ? { ageSeconds: Math.max(0, Math.round((Date.now() - Date.parse(lastEvent)) / 1000)), maxSeconds: 120 } : { down: true, detail: "no events collected yet" }) }
     ];
-    const snap: Snapshot = { at: nowMs, agents, projects: projects.projects, tickets, sources };
+    const routableIds = new Set(registry.rows.filter((r) => r.memoRoutable).map((r) => r.agentId));
+    const snap: Snapshot = { at: nowMs, agents, routableIds, projects: projects.projects, tickets, sources };
     cached = snap;
     return snap;
   })().finally(() => {
@@ -417,6 +421,11 @@ export async function getHubAgents(store: EventStore) {
   const avatars = avatarUrls();
   const agents = snap.agents.agents.map((a) => (avatars.has(a.id) ? { ...a, avatar: avatars.get(a.id) } : a));
   return { generatedAt: new Date(snap.at).toISOString(), sources: snap.sources, ...snap.agents, agents };
+}
+
+export async function getPadActivity(store: EventStore) {
+  const snap = await snapshot(store);
+  return buildPadActivity(snap.at, snap.agents, snap.routableIds, snap.sources);
 }
 
 export async function getHubProjects(store: EventStore) {
