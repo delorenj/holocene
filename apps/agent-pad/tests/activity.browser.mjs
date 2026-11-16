@@ -116,7 +116,7 @@ try {
     }
   })
   const parked = await layout()
-  await page.evaluate(() => window.__hnHost({ driving: true, noVideo: true, noText: true, maxItems: 0 }))
+  await page.evaluate(() => window.__hnHost({ driving: true, noVideo: true, noText: false, maxItems: 0 }))
   await status('3 thinking')
   const driving = await layout()
   assert.equal(driving.heroCount, 0, 'driving adds no oversized header')
@@ -131,6 +131,15 @@ try {
     }
   }
   console.log('PASS same-viewport parked/driving grid density, tile/header/record geometry and full roster', JSON.stringify({ parked, driving }))
+  const statusDisplay = () => page.locator('.status').evaluate((el) => getComputedStyle(el).display)
+  assert.notEqual(await statusDisplay(), 'none', 'driving without NO_TEXT keeps permitted status visible')
+  await page.evaluate(() => window.__hnHost({ driving: true, noVideo: true, noText: true, maxItems: 0, maxLabel: 0 }))
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.status')).display === 'none')
+  assert.equal(await statusDisplay(), 'none', 'NO_TEXT hides idle, diagnostic and memo/reply status text')
+  assert.match(await page.locator('.status').textContent(), /\S/, 'hidden status contains text, not an empty-state false positive')
+  await page.evaluate(() => window.__hnHost({ driving: true, noVideo: true, noText: false, maxItems: 0, maxLabel: 0 }))
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.status')).display !== 'none')
+  console.log('PASS driving status visible without NO_TEXT, hidden with NO_TEXT, restored when cleared')
   assert.deepEqual(await cues(), Array.from({ length: 3 }, () => ({ animation: 'thinking-pulse', label: 'Thinking', visible: true })))
   // Exercise the real cascade without playing audio or beginning a recording.
   const otherAnimations = await page.evaluate(() => {

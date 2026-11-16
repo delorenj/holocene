@@ -1957,7 +1957,7 @@ function App() {
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
 
   return (
-    <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}`}>
+    <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}${host.noText ? ' no-text' : ''}`}>
       <style>{CSS}</style>
       {!soundUnlocked && !host.driving && (
         <button className="unlock" onClick={unlockAudio}>
@@ -2093,6 +2093,7 @@ const CSS = `
 .rec.live { background:#e74c3c; }
 .rec .dot { width:20px; height:20px; border-radius:50%; background:#fff; animation:pulse 1s ease-in-out infinite; }
 .status { flex:1 1 240px; font-size:clamp(20px,2.4vw,28px); font-weight:600; line-height:1.2; opacity:.85; }
+.pad.no-text .status { display:none; }
 .status small { display:block; margin-top:6px; font-size:clamp(18px,2vw,24px); font-weight:500; opacity:.9; color:#b8c2d6; overflow-wrap:anywhere; }
 .status small.warn { color:#ffb454; font-weight:700; }
 .meterwrap { flex:0 0 auto; display:flex; align-items:center; gap:clamp(12px,2vw,24px); flex-wrap:wrap; }
