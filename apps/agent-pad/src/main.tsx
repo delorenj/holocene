@@ -5,6 +5,7 @@ import { type Capture, meter01, normCapture, round1, silenceAction, toDb } from 
 import { InFlight, UploadRejected, isFinalRefusal, rejectionCode, rejectionReason, rejectionText, replyExt, retryable, stripDataUrl, REJECTED_RETRY_MS } from './flight'
 import { type Agent, type RosterMeta, type SpeakEvent, type Speaking, ROSTER_URL, avatarRetryDelay, driveTiles, normRoster, replyPollMs, restoreSelection, rosterGeneratedAt, rosterStaleness, sameRoster, savedAgentId, serverClockOffset, speakNext, step, stalenessText } from './roster'
 import { type Conv, type MemoStatus, elapsedSeconds, isFinal, keyDay, mayPlayProgress, newestProgress, normStatus, progressPrefix, statusKey, statusLine } from './status'
+import { displayStatus, limitLabel } from './display'
 import { convReplyUnit, noteConv, onDeferred } from './convo'
 import { type ReplyRef, type Unit, addRef, newUnit, nextUnit, parseReplyKey, readyChunks } from './replies'
 import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLeaveToPhone, memoOfReply, mergeLedgers, newDeviceId, normLedger, openUnit, own, parkUnit, takeBackFromPhone, validDeviceId } from './ledger'
@@ -1918,12 +1919,13 @@ function App() {
   const progressMax = host.noText ? 0 : host.driving ? (host.maxLabel > 0 ? Math.min(28, host.maxLabel) : 28) : 60
   const workLine = (agentId: string): string | null => {
     const v = flightView[agentId]
-    return v ? statusLine(v.status, elapsedSeconds(v.status, v.fetchedAt, v.sentAt, tick), progressMax) : null
+    const line = v ? statusLine(v.status, elapsedSeconds(v.status, v.fetchedAt, v.sentAt, tick), progressMax) : null
+    return line === null ? null : limitLabel(line, host.maxLabel)
   }
   const workingAgent = Object.entries(flightView).sort((x, y) => y[1].sentAt - x[1].sentAt)[0]?.[0]
   const canRecord = !!selected
-  const label = (n: string) => (host.maxLabel > 0 && n.length > host.maxLabel ? n.slice(0, host.maxLabel) : n)
-  const statusText = recording ? `Recording for ${selected?.name ?? ''}…` : status
+  const label = (n: string) => limitLabel(n, host.maxLabel)
+  const statusText = displayStatus(recording, selected?.name, status, host.maxLabel)
   const tiles = !rosterReady ? [] : host.maxItems > 0 ? driveTiles(ordered, selected?.id, host.maxItems, speaking?.agent ?? workingAgent) : ordered
   const busyCount = ordered.filter((a) => activity?.get(a.id)?.working).length
   const hiddenBusy = hiddenWorking(ordered, visibleTileIds.map((id) => ({ id })), activity)
@@ -1963,7 +1965,7 @@ function App() {
         </button>
       )}
       <div className="fleet-status" role="status">
-        {activity ? `${busyCount} thinking${hiddenBusy ? ` · ${hiddenBusy} off-screen` : ''}` : 'Thinking status unknown'}
+        {label(activity ? `${busyCount} thinking${hiddenBusy ? ` · ${hiddenBusy} off-screen` : ''}` : 'Thinking status unknown')}
       </div>
       <div className="tiles" role="radiogroup" aria-label="Agent" ref={tilesRef}>
         {tiles.map((a) => {
@@ -1982,7 +1984,7 @@ function App() {
             >
               <Swatch a={a} />
               <span className="name">{label(a.name)}</span>
-              {activity?.get(a.id)?.working && <span className="thinking-label" aria-label="Thinking">Thinking</span>}
+              {activity?.get(a.id)?.working && <span className="thinking-label" aria-label="Thinking">{label('Thinking')}</span>}
               {work && <span className="work">{work}</span>}
               {on && <span className="check" aria-hidden="true">✓</span>}
             </button>
@@ -2019,15 +2021,15 @@ function App() {
           style={{ ['--c' as string]: selected?.color ?? '#444' }}
         >
           {recording && <span className="dot" />}
-          {recording ? 'Stop & Send' : phase === 'arming' ? 'Starting…' : selected ? `Record for ${label(selected.name)}` : 'Pick an agent'}
+          {recording ? label('Stop & Send') : phase === 'arming' ? label('Starting…') : selected ? label(`Record for ${selected.name}`) : label('Pick an agent')}
         </button>
         <div className="status" aria-live="polite">
           {statusText}
-          {outboxCount > 0 && <small className="warn">{outboxCount} recording{outboxCount > 1 ? 's' : ''} waiting to upload</small>}
-          {rejectedCount > 0 && <small className="warn">{rejectedText}</small>}
-          {stale && <small className="warn">{stalenessText(stale)}</small>}
-          {memoShort && <small>memo {memoShort} · mise run memo:trace {memoShort}</small>}
-          {lastReply && <small>last reply: {lastReply.split('/').pop()}</small>}
+          {outboxCount > 0 && <small className="warn">{label(`${outboxCount} recording${outboxCount > 1 ? 's' : ''} waiting to upload`)}</small>}
+          {rejectedCount > 0 && <small className="warn">{label(rejectedText)}</small>}
+          {stale && <small className="warn">{label(stalenessText(stale))}</small>}
+          {memoShort && <small>{label(`memo ${memoShort} · mise run memo:trace ${memoShort}`)}</small>}
+          {lastReply && <small>{label(`last reply: ${lastReply.split('/').pop()}`)}</small>}
         </div>
       </div>
       <audio
