@@ -54,6 +54,9 @@ class AgentPadPolicyTest {
         )
         val json = AgentPadPolicy.hostJson(PadMode.DRIVING, HostUx(true, HostUx.FULLY_RESTRICTED, 120, 6, 3))
         assertTrue(json, json.startsWith("{\"driving\":true,\"noVideo\":true,\"noText\":true,\"maxLabel\":120,"))
+        assertTrue(json, json.contains("\"maxItems\":6"))
+        assertTrue(AgentPadPolicy.hostJson(PadMode.DRIVING, HostUx(true, HostUx.NO_VIDEO, maxItems = 6)).contains("\"maxItems\":0"))
+        assertTrue(AgentPadPolicy.hostJson(PadMode.PARKED, HostUx(false, HostUx.LIMIT_CONTENT, maxItems = 4)).contains("\"maxItems\":4"))
     }
 }
 

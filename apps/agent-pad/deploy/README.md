@@ -48,9 +48,11 @@ are measured from the actual clipped thinking-label viewport (including user
 scroll), not merely which agents are rendered. The fixed fleet line reports all
 thinking agents and how many cues are off-screen.
 
-Driving remains capped at five tiles or the host's smaller limit. Selected and
-reply targets retain their slots when possible (one slot: selected wins; the hero
-still names the reply). Every visible thinking label pulses independently until
+Driving uses the same compact, scrollable grid and record toggle as parked, without
+an oversized header or arbitrary five-tile cap. The full roster stays available
+unless the host supplies `maxItems`; a host `maxLabel` limits all displayed labels
+and statuses. Selected and reply targets retain slots when a host cap is present
+(one slot: selected wins). Every visible thinking label pulses independently until
 its own state settles. **Only** the thinking label overrides driving's `.still`
 animation ban: reply bounce, record dot, meter, and transitions stay disabled.
 Reduced-motion retains the same static labelled “Thinking” cue. A non-driving

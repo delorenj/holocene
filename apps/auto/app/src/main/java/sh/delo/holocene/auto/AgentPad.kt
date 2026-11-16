@@ -82,7 +82,7 @@ object AgentPadPolicy {
     /** The JSON the page reads (HoloceneNative.hostState / window.__hnHost) to choose its layout. */
     fun hostJson(mode: PadMode, ux: HostUx): String =
         "{\"driving\":${mode == PadMode.DRIVING},\"noVideo\":${mode == PadMode.DRIVING || ux.noVideo}," +
-            "\"noText\":${ux.noText},\"maxLabel\":${ux.maxLabel},\"maxItems\":${ux.maxItems},\"mask\":${ux.mask}}"
+            "\"noText\":${ux.noText},\"maxLabel\":${ux.maxLabel},\"maxItems\":${if (ux.limitContent) ux.maxItems else 0},\"mask\":${ux.mask}}"
 }
 
 /**

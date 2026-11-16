@@ -89,9 +89,12 @@ The utterance must be under 5 s (a longer one is refused). If the emulator proce
 Agent Pad is never torn down for driving. `CarHost` (the only `android.car.*` file) hands the UX restrictions to
 `MainActivity` as a plain `HostUx`; `PadModes.of` turns that into PARKED or DRIVING and a car host that is not
 provably parked (or not connected yet) is DRIVING. Driving shows only the pad: tabs hidden, Diagnostics unreachable,
-the page switches to its driving layout (`window.__hnHost`, or `?driving=1` in a normal browser): five big tiles with
-the selection highlighted, one giant record toggle, a banner with the agent and the state in capitals, no scrolling,
-no text beyond agent names, no animation (NO_VIDEO), no mic meter.
+the page switches to the same compact, scrollable agent grid and normal-sized record toggle in driving
+mode (`window.__hnHost`, or `?driving=1` in a normal browser). Every agent stays available unless the host
+sets `maxItems`; host `maxLabel` limits displayed labels and statuses. Driving keeps the selected tile
+highlighted and suppresses the mic meter and reply/record animation. Restricted text (NO_TEXT)
+remains hidden; only the labelled thinking cue may pulse in driving, even under NO_VIDEO, unless
+reduced-motion is requested. Non-driving NO_VIDEO still disables all animation.
 
 `MainActivity` carries `<meta-data android:name="distractionOptimized" android:value="true"/>`, which is the only
 reason the OS keeps it in front while the car moves. AAOS honours the tag only for apps installed by a trusted source
