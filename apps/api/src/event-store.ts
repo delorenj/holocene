@@ -21,6 +21,12 @@ class InvalidProjection extends Error {}
 const record = (value: unknown): value is Json => !!value && typeof value === "object" && !Array.isArray(value);
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const timestamp = (value: unknown): value is string => typeof value === "string" && Number.isFinite(Date.parse(value));
+/** [prefix, upper) covering every string that starts with `prefix` under SQLite's binary collation. */
+export function typeRange(prefix: string): [string, string] | null {
+  if (!prefix) return null;
+  const last = prefix.charCodeAt(prefix.length - 1);
+  return [prefix, prefix.slice(0, -1) + String.fromCharCode(last + 1)];
+}
 
 /** Rebuildable read model. Events, projection and transport checkpoint commit together. */
 export class EventStore {
@@ -292,6 +298,27 @@ export class EventStore {
     return this.db.prepare(`SELECT * FROM events WHERE type IN (${typeMarks}) AND cursor>=? AND json_extract(envelope,'$.correlationid') IN (${idMarks}) ORDER BY cursor LIMIT ?`)
       .all(...types, Math.max(0, after), ...ids, Math.max(1, Math.min(limit, 20000)))
       .map(row => ({ cursor: Number(row.cursor), stream: String(row.stream), sequence: Number(row.sequence), subject: String(row.subject), collected_at: String(row.collected_at), envelope: JSON.parse(String(row.envelope)) }));
+  }
+  /**
+   * Newest events whose type starts with `prefix`, newest first. A half-open range on the type
+   * (prefix <= type < prefix-with-its-last-character-bumped) walks the (type,cursor) index, so a new
+   * type under the prefix appears with no code change and without scanning the whole collection.
+   * `before`/`after` bound the cursor (exclusive) for paging and change detection.
+   */
+  byTypePrefix(prefix: string, opts: { limit?: number; before?: number; after?: number } = {}): CollectedEvent[] {
+    const range = typeRange(prefix);
+    if (!range) return [];
+    const limit = Math.max(1, Math.min(opts.limit ?? 100, 5000));
+    return this.db.prepare(`SELECT * FROM events INDEXED BY events_type_cursor
+        WHERE type>=? AND type<? AND cursor>? AND cursor<? ORDER BY cursor DESC LIMIT ?`)
+      .all(range[0], range[1], Math.max(0, opts.after ?? 0), opts.before ?? Number.MAX_SAFE_INTEGER, limit)
+      .map(row => ({ cursor: Number(row.cursor), stream: String(row.stream), sequence: Number(row.sequence), subject: String(row.subject), collected_at: String(row.collected_at), envelope: JSON.parse(String(row.envelope)) }));
+  }
+  /** Highest cursor among events whose type starts with `prefix` (0 when none): cheap change detection. */
+  latestCursorWithPrefix(prefix: string): number {
+    const range = typeRange(prefix);
+    if (!range) return 0;
+    return Number(this.db.prepare("SELECT COALESCE(MAX(cursor),0) AS n FROM events INDEXED BY events_type_cursor WHERE type>=? AND type<?").get(range[0], range[1])!.n);
   }
   recent(types: string[], limit = 500): CollectedEvent[] {
     if (!types.length) return [];

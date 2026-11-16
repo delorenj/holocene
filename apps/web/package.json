@@ -9,7 +9,7 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next dist",
-    "test": "node --import tsx --test \"app/candybar/*.test.ts\""
+    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\""
   },
   "dependencies": {
     "@holocene/module-sdk": "workspace:*",

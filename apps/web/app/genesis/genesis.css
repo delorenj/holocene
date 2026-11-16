@@ -1,0 +1,328 @@
+/* The Genesis tab, in the Ledger theme from ../hub/hub.css. Every rule is prefixed .hub-root (to outrank the legacy
+   globals) and gn- (to stay clear of other tabs). Only tokens hub.css defines are used, plus the two below. The
+   vermilion --pop marks what needs you (a pending approval, a warning alert) and focus; approved is --cleared,
+   declined --ink-3, expired and lapsed --stuck, a critical alert a true red. */
+
+.hub-root[data-theme="ledger"] {
+  --gn-fail: #c4161c;
+  --gn-fail-soft: #fbe3e0;
+}
+.hub-root[data-theme="ledger-night"] {
+  --gn-fail: #ff7b72;
+  --gn-fail-soft: #3d1f1c;
+}
+
+.hub-root .gn-body {
+  max-width: 980px;
+}
+
+.hub-root .gn-section {
+  margin: 0 0 28px;
+}
+.hub-root .gn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.hub-root .gn-count {
+  font: 600 12px/16px var(--font-mono);
+  color: var(--ink-3);
+}
+.hub-root .gn-empty {
+  padding: 14px 16px;
+  border: 2px dashed var(--line);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ink-3);
+}
+
+/* ---- timeline controls ------------------------------------------------ */
+
+.hub-root .gn-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 0 0 10px;
+}
+.hub-root .gn-timeline-head .gn-head {
+  margin: 0;
+}
+.hub-root .gn-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+.hub-root .gn-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  border: 2px solid var(--line-strong);
+}
+.hub-root .gn-seg {
+  height: 28px;
+  padding: 0 10px;
+  font: 600 11px/28px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.hub-root .gn-seg:hover { color: var(--ink); background: var(--wash); }
+.hub-root .gn-seg[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+.hub-root .gn-seg-count { font-weight: 400; letter-spacing: 0; opacity: 0.85; }
+.hub-root .gn-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.hub-root .gn-check input { accent-color: var(--pop); }
+
+/* ---- cards ------------------------------------------------------------ */
+
+.hub-root .gn-cards,
+.hub-root .gn-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hub-root .gn-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  border-left-width: 6px;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.hub-root .gn-card.is-pending { border-left-color: var(--pop); }
+.hub-root .gn-card.is-approved { border-left-color: var(--cleared); }
+.hub-root .gn-card.is-declined { border-left-color: var(--ink-3); }
+.hub-root .gn-card.is-expired,
+.hub-root .gn-card.is-lapsed { border-left-color: var(--stuck); }
+.hub-root .gn-card.is-alert.is-critical { border-left-color: var(--gn-fail); background: var(--gn-fail-soft); }
+.hub-root .gn-card.is-alert.is-warning { border-left-color: var(--pop); }
+.hub-root .gn-card.is-alert.is-info { border-left-color: var(--working); }
+.hub-root .gn-card.is-acked { background: var(--surface); border-left-style: dashed; box-shadow: none; }
+.hub-root .gn-card.is-generic { border-left-color: var(--line); }
+.hub-root .gn-card.is-resolution { box-shadow: none; padding: 8px 14px; }
+
+.hub-root .gn-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font: 600 12px/16px var(--font-mono);
+}
+.hub-root .gn-kind {
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.hub-root .gn-type {
+  overflow-wrap: anywhere;
+}
+.hub-root .gn-who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 400;
+}
+.hub-root .gn-client {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.hub-root .gn-when {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.hub-root .gn-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  font: 600 10px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hub-root .gn-chip.is-pending { color: var(--pop); }
+.hub-root .gn-chip.is-approved { color: var(--cleared); }
+.hub-root .gn-chip.is-declined { color: var(--ink-3); }
+.hub-root .gn-chip.is-expired,
+.hub-root .gn-chip.is-lapsed { color: var(--stuck); }
+.hub-root .gn-chip.is-sev-critical { color: var(--gn-fail); }
+.hub-root .gn-chip.is-sev-warning { color: var(--pop); }
+.hub-root .gn-chip.is-sev-info { color: var(--working); }
+.hub-root .gn-chip.is-test { color: var(--working); border-style: dashed; }
+
+.hub-root .gn-summary {
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.hub-root .gn-question,
+.hub-root .gn-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.hub-root .gn-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 18px;
+}
+.hub-root .gn-fields dt {
+  font: 600 11px/18px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .gn-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hub-root .gn-preview {
+  white-space: pre-wrap;
+}
+
+.hub-root .gn-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font: 400 12px/17px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .gn-expiry { font-weight: 600; color: var(--pop); }
+.hub-root .gn-lapsed { font-weight: 600; color: var(--stuck); }
+
+.hub-root .gn-more > summary {
+  cursor: pointer;
+  font: 600 11px/18px var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+.hub-root .gn-more[open] > summary { margin-bottom: 6px; }
+.hub-root .gn-more > :not(summary) + :not(summary) { margin-top: 8px; }
+.hub-root .gn-json {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 400 12px/17px var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hub-root .gn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.hub-root .gn-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.hub-root .gn-btn:disabled { opacity: 0.55; cursor: default; }
+.hub-root .gn-btn.is-send { background: var(--ink); color: var(--ground); }
+.hub-root .gn-result {
+  font: 400 12px/17px var(--font-mono);
+  color: var(--cleared);
+}
+.hub-root .gn-result.is-error { color: var(--gn-fail); }
+
+/* ---- reply and proposals ---------------------------------------------- */
+
+.hub-root .gn-reply,
+.hub-root .gn-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 2px solid var(--line-strong);
+  background: var(--ground);
+}
+.hub-root .gn-textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 2px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 14px/20px var(--font-sans);
+  resize: vertical;
+}
+.hub-root .gn-textarea:focus-visible { outline: 2px solid var(--pop); outline-offset: 2px; }
+.hub-root .gn-confirm { font-size: 13px; line-height: 19px; }
+.hub-root .gn-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--pop);
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hub-root .gn-proposals-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hub-root .gn-proposal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 18px;
+}
+.hub-root .gn-proposal-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 4px 6px;
+  min-width: 0;
+}
+.hub-root .gn-proposal-list li.is-this { box-shadow: inset 0 0 0 2px var(--pop); }
+.hub-root .gn-proposal-subject { font-weight: 600; overflow-wrap: anywhere; }
+.hub-root .gn-proposal-to { color: var(--ink-3); overflow-wrap: anywhere; }
+.hub-root .gn-proposal-error { color: var(--gn-fail); font-family: var(--font-mono); font-size: 12px; }
+
+@media (max-width: 600px) {
+  .hub-root .gn-card { padding: 10px 10px 10px 10px; box-shadow: 2px 2px 0 var(--shadow); }
+  .hub-root .gn-when { margin-left: 0; }
+  .hub-root .gn-fields { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+  .hub-root .gn-fields dd + dt { margin-top: 6px; }
+}
