@@ -651,6 +651,8 @@ class OperatorCall:
                     and (st.get("call") is None or _call_kind(st.get("call")))):
                 since = st.get("since") if isinstance(st.get("since"), (int, float)) else None
                 self._dev[d[:80]] = {"call": st.get("call"), "since": since if st.get("call") else None, "at": float(st["at"])}
+                if isinstance(st.get("sent"), (int, float)):
+                    self._dev[d[:80]]["sent"] = float(st["sent"])   # a late beat after a restart is still late
         return len(self._dev)
 
     def _save(self) -> None:
@@ -699,15 +701,24 @@ class OperatorCall:
             except Exception as e:  # noqa: BLE001 - the pad also reads GET /upload/operator on every (re)connect
                 log("operator_call_notify_failed", error=f"{type(e).__name__}: {e}"[:200])
 
-    def heartbeat(self, device: str, call, now: float | None = None) -> dict:
-        """An Earshot heartbeat from `device`: call is the kind of call (a clean snake_case word) or None (off a call)."""
-        now = time.time() if now is None else now
+    def heartbeat(self, device: str, call, now: float | None = None, sent: float | None = None) -> dict:
+        """An Earshot heartbeat from `device`: call is the kind of call (a clean snake_case word) or None (off a call).
+        sent: the beacon's own `at` (the phone's clock), used only to order this device's beats against each other."""
         call = _call_kind(call)
         with self._order:
-            return self._heartbeat(device, call, now)
+            # read the clock inside _order: two callers decide in the order they announce, never a later `now` first
+            return self._heartbeat(device, call, time.time() if now is None else now, sent)
 
-    def _heartbeat(self, device: str, call, now: float) -> dict:
+    def _heartbeat(self, device: str, call, now: float, sent: float | None = None) -> dict:
         with self._lock:
+            last_sent = (self._dev.get(device) or {}).get("sent")
+            # A beat that left the phone before the one already applied is late (a periodic off-call beat stalled on
+            # the network while the ring beat went through): applying it would announce off in the middle of the
+            # ring. Only within CALL_FRESH_S: a phone clock stepped back further than that is a reset, not a late beat.
+            if sent is not None and last_sent is not None and last_sent - self.fresh_s <= sent < last_sent:
+                view = self._eval(now)
+                log("operator_call_late_beat", device=device, call=call, sent=sent, last_sent=last_sent)
+                return view
             prev = self._dev.pop(device, None) or {"call": None, "since": None}
             # ringing -> in_call is one call: its start (and with it CALL_HOLD_MAX_S) runs from the first beat of it. Only
             # while the previous beat is still fresh: a call whose off-call beat never arrived (the phone died or went
@@ -716,6 +727,8 @@ class OperatorCall:
             cont = bool(prev["call"] and prev["since"] is not None and now - (prev.get("at") or 0) <= self.fresh_s)
             since = (prev["since"] if cont else now) if call else None
             self._dev[device] = {"call": call, "since": since, "at": now}
+            if sent is not None:
+                self._dev[device]["sent"] = sent
             while len(self._dev) > CALL_DEVICES:
                 self._dev.pop(next(iter(self._dev)))
             self._save()
@@ -726,12 +739,16 @@ class OperatorCall:
 
     def check(self, now: float | None = None) -> dict:
         """The state now, announcing a transition that happened without a beacon (a stale heartbeat, the hold cap)."""
-        now = time.time() if now is None else now
         with self._order:
+            now = time.time() if now is None else now   # inside _order, as in heartbeat()
             with self._lock:
                 view, changed = self._transition(now)
+                capped = not view["on_call"] and any(
+                    st["call"] and st["since"] is not None and now - st["at"] <= self.fresh_s
+                    and now - st["since"] > self.hold_max_s for st in self._dev.values())
             if changed:
-                self._announce(view, "stale" if not view["on_call"] else "check")
+                # hold_cap: the phone still says call but CALL_HOLD_MAX_S ran out; stale: the phone stopped reporting
+                self._announce(view, ("hold_cap" if capped else "stale") if not view["on_call"] else "check")
         return view
 
     def refuses(self, now: float | None = None) -> bool:
@@ -1059,6 +1076,14 @@ def persist_heard(rec: dict) -> None:
 
 def earshot_event_id(key: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{EARSHOT_BUCKET}/{key}"))
+
+
+def _epoch(v: str) -> float | None:
+    """An RFC 3339 timestamp (already validated) as epoch seconds, or None."""
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+    except (AttributeError, ValueError):
+        return None
 
 
 def _rfc3339(v) -> bool:
@@ -1773,7 +1798,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             print(json.dumps(rec, separators=(",", ":"), default=str), flush=True)
             persist_heard(rec)
             # the operator-on-call signal: a heartbeat with `call` is on a call, one without it is off (OperatorCall)
-            OPERATOR_CALL.heartbeat(beacon["device"], beacon.get("call"))
+            OPERATOR_CALL.heartbeat(beacon["device"], beacon.get("call"), sent=_epoch(beacon["at"]))
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()

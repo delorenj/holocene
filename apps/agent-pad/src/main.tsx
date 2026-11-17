@@ -605,10 +605,14 @@ function App() {
   const callState = useRef<CallState>(CALL_UNKNOWN)
   const callHeld = useRef(false) // the last evaluated holding(): its flips are the call's start and end
   const callAsked = useRef(0) // last read of the endpoint
+  const callEventAt = useRef(0) // last push `call` event or on_call refusal applied: a read sent before it is old news
+  const callReadAsked = useRef(0) // send time of the newest read applied: an older read landing later is not
   const progressHanded = useRef<Map<string, number>>(new Map()) // memo -> its newest progress clip went to the host
   const [onCall, setOnCall] = useState(false)
   const onCallNow = () => holding(callState.current, Date.now())
   const applyCallRef = useRef<(next: CallState) => void>(() => {})
+  // A push `call` event or an on_call refusal: newer than any endpoint read sent before it (askOperator)
+  const callEvent = (next: CallState) => { callEventAt.current = Date.now(); applyCallRef.current(next) }
   const holdFor = (key: string): Promise<ClaimAnswer> => {
     const cur = holdInflight.current.get(key)
     if (cur) return cur
@@ -629,7 +633,7 @@ function App() {
     // The proxy says the operator is on a call (it refused this hold or start for that alone): the pad holds everything
     // too, even when the push stream has not said so yet.
     // A refusal sent before a newer "off the call" report (the hang-up crossed it) is old news and is not applied.
-    if (answer === 'call' && (callState.current.onCall || sent > callState.current.at)) applyCallRef.current(noteCallRefusal(callState.current, Date.now()))
+    if (answer === 'call' && (callState.current.onCall || sent > callState.current.at)) callEvent(noteCallRefusal(callState.current, Date.now()))
     if (action === 'release') { // gave the reply up before any audio: no hold of ours is left to count on
       claims.current.delete(key)
       return answer
@@ -1332,8 +1336,13 @@ function App() {
     const asked = callAsked.current = Date.now()
     try {
       const info = await fetchWithin('/upload/operator', CALL_FETCH_MS, async (r) => parseCall(await r.json()), { cache: 'no-store' })
-      // In order: a push event or a claim refusal that landed while this read was out is newer than its answer.
-      if (info && callState.current.at <= asked) applyCallRef.current(noteCall(callState.current, info, Date.now()))
+      // In order: a push event or a claim refusal that landed while this read was out is newer than its answer, and so
+      // is a read sent after this one that already answered. Two reads overlapping (hello, resync, the recheck) are
+      // ordered by when they were sent, not by which landed first.
+      if (info && asked >= callEventAt.current && asked > callReadAsked.current) {
+        callReadAsked.current = asked
+        applyCallRef.current(noteCall(callState.current, info, Date.now()))
+      }
     } catch { /* fail-open: an older proxy (404) or no answer changes nothing; a believed call fades after CALL_TRUST_MS */ }
   }
   const askOperatorRef = useRef(askOperator)
@@ -1482,7 +1491,7 @@ function App() {
       es.addEventListener('call', (e) => {
         heard()
         const info = parseCall((e as MessageEvent).data)
-        if (info) { try { applyCallRef.current(noteCall(callState.current, info, Date.now())) } catch { /* never stop the stream */ } }
+        if (info) { try { callEvent(noteCall(callState.current, info, Date.now())) } catch { /* never stop the stream */ } }
       })
       // CONNECTING: the browser retries by itself (retry: 3000). CLOSED: an error status, start again with a backoff.
       es.onerror = () => { if (es && es.readyState === EventSource.CLOSED) { close(); schedule() } }

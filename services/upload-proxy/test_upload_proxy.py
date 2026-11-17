@@ -4,6 +4,7 @@ import sys
 import time
 import tempfile
 import unittest
+from unittest import mock
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1684,6 +1685,49 @@ class OperatorOnCall(unittest.TestCase):
         self.assertTrue(oc.check(now=1100)["on_call"])
         self.assertFalse(oc.check(now=1101)["on_call"], "a mode stuck for hours does not silence the car for good")
 
+    def test_the_hold_cap_is_logged_as_hold_cap_not_stale(self):
+        oc = self.oc(hold_max_s=1000)
+        for t in range(100, 1101, 60):
+            oc.heartbeat("S26", "in_communication", now=t)
+        with mock.patch.object(up, "log") as lg:
+            oc.check(now=1101)
+        calls = [c for c in lg.call_args_list if c.args and c.args[0] == "operator_call"]
+        self.assertEqual(calls[-1].kwargs["reason"], "hold_cap", "the phone still says call: the cap released it")
+        oc2 = self.oc()
+        oc2.heartbeat("S26", "in_call", now=100)
+        with mock.patch.object(up, "log") as lg:
+            oc2.check(now=251)
+        calls = [c for c in lg.call_args_list if c.args and c.args[0] == "operator_call"]
+        self.assertEqual(calls[-1].kwargs["reason"], "stale")
+
+    def test_a_late_off_call_beat_never_ends_a_call_the_phone_reported_after_it(self):
+        # a periodic off-call beat stalls on the network; the ring beat (sent later) arrives first
+        oc = self.oc()
+        oc.heartbeat("S26", None, now=99, sent=90)
+        oc.heartbeat("S26", "ringing", now=100, sent=99)
+        v = oc.heartbeat("S26", None, now=101, sent=95)
+        self.assertTrue(v["on_call"], "the late beat is dropped: still ringing")
+        self.assertEqual([e["on_call"] for e in self.sent], [True], "no off-then-on flap")
+        self.assertFalse(oc.heartbeat("S26", None, now=130, sent=129)["on_call"], "the real hang-up still ends it")
+
+    def test_a_phone_clock_stepped_back_far_is_a_reset_not_a_late_beat(self):
+        oc = self.oc()
+        oc.heartbeat("S26", "in_call", now=100, sent=10_000)
+        self.assertFalse(oc.heartbeat("S26", None, now=110, sent=5_000)["on_call"],
+                         "more than CALL_FRESH_S behind: the clock moved, the beat is applied")
+
+    def test_the_late_beat_guard_survives_a_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = str(Path(d) / "operator-call.json")
+            t = time.time()
+            self.oc(state_file=f).heartbeat("S26", "ringing", now=t - 5, sent=t - 5)
+            back = self.oc(state_file=f, now=t)
+            self.assertTrue(back.heartbeat("S26", None, now=t, sent=t - 20)["on_call"])
+
+    def test_a_beacon_time_reads_as_epoch_seconds(self):
+        self.assertAlmostEqual(up._epoch("2026-11-17T03:03:00.537Z"), 1794884580.537, places=3)
+        self.assertIsNone(up._epoch("nope"))
+
     def test_a_malformed_call_is_off_and_garbage_never_mutes(self):
         oc = self.oc()
         self.assertFalse(oc.heartbeat("S26", "In Call!", now=100)["on_call"])
@@ -1853,6 +1897,15 @@ class OperatorCallHttp(unittest.TestCase):
         self.assertEqual(self.call(f"/upload/claim?memo={memo}")[1]["car"], "started", "a played beacon is still recorded")
         self.assertEqual(self.call("/upload/heard", HEARTBEAT)[0], 200)
         self.assertFalse(self.call("/upload/operator")[1]["on_call"], "hung up")
+
+    def test_a_late_beacon_is_ordered_by_its_own_time(self):
+        def at(s):
+            return {"at": f"2026-11-17T03:00:{s:02d}.000Z"}
+        self.assertEqual(self.call("/upload/heard", {**HEARTBEAT, **at(10), "call": "ringing"})[0], 200)
+        self.assertEqual(self.call("/upload/heard", {**HEARTBEAT, **at(5)})[0], 200, "accepted, recorded, not applied")
+        self.assertTrue(self.call("/upload/operator")[1]["on_call"], "the stalled off-call beat does not end the ring")
+        self.call("/upload/heard", {**HEARTBEAT, **at(20)})
+        self.assertFalse(self.call("/upload/operator")[1]["on_call"])
 
     def stream(self, after=(), headers=""):
         import socket, threading, time as t

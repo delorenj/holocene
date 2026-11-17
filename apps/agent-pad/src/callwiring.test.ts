@@ -27,7 +27,7 @@ const code = stripTypeScriptTypes([
   cut('const playFailed = ', '  // The host\'s native player reports'),
   cut(';(window as any).__hnPlayback = ', '    return () => { delete (window as any).__hnPlayback }'),
   cut('const callStopped = ', '  const askOperatorRef = '),
-  'globalThis.api = { claimReply, passGate, playFailed, callStopped, muteForCall, evalCall, askOperator, applyCallRef, onCallNow };',
+  'globalThis.api = { claimReply, passGate, playFailed, callStopped, muteForCall, evalCall, askOperator, applyCallRef, callEvent, onCallNow };',
 ].join('\n'), { mode: 'strip' })
 
 const A = 'replies/2026/11/16/aaaa.ogg'
@@ -70,6 +70,7 @@ function sandbox(host: 'car' | 'browser' = 'car') {
     },
     // refs
     callState: { current: CALL_UNKNOWN }, callHeld: { current: false }, callAsked: { current: 0 },
+    callEventAt: { current: 0 }, callReadAsked: { current: 0 },
     playingKey: { current: '' }, playingProgress: { current: false }, streaming: { current: null },
     startedKeys: { current: new Set<string>() }, units: { current: new Map([[A, {}], [B, {}]]) },
     queue: { current: [B] }, progressQ: { current: [] }, progressHanded: { current: new Map() },
@@ -98,10 +99,10 @@ function sandbox(host: 'car' | 'browser' = 'car') {
   const api = ctx.api as {
     claimReply: (k: string, a: string) => Promise<string>; passGate: (k: string, g: unknown) => Promise<boolean>
     callStopped: (k: string) => void; muteForCall: () => void; evalCall: () => void; askOperator: () => Promise<void>
-    applyCallRef: { current: (s: unknown) => void }; onCallNow: () => boolean; playFailed: (k: string, t: string, d?: string) => void
+    applyCallRef: { current: (s: unknown) => void }; callEvent: (s: unknown) => void; onCallNow: () => boolean; playFailed: (k: string, t: string, d?: string) => void
   }
   const r = <T,>(name: string) => (ctx[name] as { current: T })
-  const call = (onCall: boolean) => api.applyCallRef.current(callhold.noteCall(r<callhold.CallState>('callState').current, { onCall, call: onCall ? 'in_call' : null, since: onCall ? 1 : null }, now))
+  const call = (onCall: boolean) => api.callEvent(callhold.noteCall(r<callhold.CallState>('callState').current, { onCall, call: onCall ? 'in_call' : null, since: onCall ? 1 : null }, now))
   const flush = () => new Promise((res) => setImmediate(res))
   return {
     ctx, api, r, log, realPump, sent, timers, native, audio, proxy, call, flush,
@@ -266,4 +267,39 @@ test('an endpoint read that a newer push report overtook is not applied', async 
   s.proxy.operator = () => ({ on_call: true, call: 'ringing', since: 2, gate: true })
   await s.api.askOperator()
   assert.equal(s.api.onCallNow(), true)
+})
+
+test('two endpoint reads overlapping are applied in the order they were sent, not the order they landed', async () => {
+  const s = sandbox()
+  s.proxy.operator = () => ({ on_call: true, call: 'in_call', since: 1, gate: true })
+  const openOld = s.holdOperator()
+  s.advance(10)
+  const older = s.api.askOperator() // R1: asked while the call was on
+  s.advance(10)
+  s.proxy.operator = () => ({ on_call: false, call: null, since: null, gate: true })
+  const openNew = s.holdOperator()
+  const newer = s.api.askOperator() // R2: asked after the hang-up
+  openNew()
+  await newer
+  assert.equal(s.api.onCallNow(), false, 'the newer read says off')
+  s.proxy.operator = () => ({ on_call: true, call: 'in_call', since: 1, gate: true })
+  openOld()
+  await older
+  assert.equal(s.api.onCallNow(), false, 'the older read landing last does not bring the call back')
+  // and the reverse: the older lands first and is applied, the newer still lands after it and is applied too
+  const t = sandbox()
+  const g1 = t.holdOperator()
+  const r1 = t.api.askOperator()
+  t.advance(10)
+  const g2 = t.holdOperator()
+  const r2 = t.api.askOperator()
+  t.proxy.operator = () => ({ on_call: true, call: 'in_call', since: 1, gate: true })
+  g1()
+  await r1
+  assert.equal(t.api.onCallNow(), true)
+  t.advance(10)
+  t.proxy.operator = () => ({ on_call: false, call: null, since: null, gate: true })
+  g2()
+  await r2
+  assert.equal(t.api.onCallNow(), false, 'a read sent after an applied one is applied even though callState moved')
 })
