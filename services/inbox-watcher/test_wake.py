@@ -103,7 +103,15 @@ class PushHint(unittest.TestCase):
 
 class WakeListener(MemoHarness, unittest.TestCase):
     def serve(self):
-        srv = iw.start_wake_listener(self.w, port=18697)
+        # a free port, not a fixed one: two suites running at once (an agent's rerun beside the normal run) both bound
+        # 18697 and the second logged wake_listener_unavailable [Errno 98] (HOLOC-33). Port 0 means "off" to the
+        # listener, so ask the OS for a free one first.
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        srv = iw.start_wake_listener(self.w, port=port)
+        self.assertIsNotNone(srv, f"wake listener could not bind {port}")
         self.addCleanup(srv.shutdown)
         self.addCleanup(srv.server_close)
         return f"http://127.0.0.1:{srv.server_address[1]}"
