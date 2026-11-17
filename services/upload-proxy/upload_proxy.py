@@ -627,6 +627,7 @@ class OperatorCall:
         # never off-then-on. Order is always _order -> _lock -> push hub; nothing takes them the other way round.
         self._order = threading.Lock()
         self._dev: dict = {}   # device -> {"call": kind | None, "since": call start | None, "at": last heartbeat}
+        self._checked = 0.0    # the latest time check() decided at: it never decides earlier (see check)
         self.fresh_s, self.hold_max_s, self.gate = fresh_s, hold_max_s, gate
         self.state_file = state_file or None
         self.notify = notify
@@ -741,6 +742,9 @@ class OperatorCall:
         """The state now, announcing a transition that happened without a beacon (a stale heartbeat, the hold cap)."""
         with self._order:
             now = time.time() if now is None else now   # inside _order, as in heartbeat()
+            # never decide at an earlier time than the last decision: a claim reads its clock before it reaches _order
+            # (ReplyClaims passes `now` down), and evaluating it after a later check would announce off-then-on
+            now = self._checked = max(now, self._checked)
             with self._lock:
                 view, changed = self._transition(now)
                 capped = not view["on_call"] and any(

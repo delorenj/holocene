@@ -1710,6 +1710,13 @@ class OperatorOnCall(unittest.TestCase):
         self.assertEqual([e["on_call"] for e in self.sent], [True], "no off-then-on flap")
         self.assertFalse(oc.heartbeat("S26", None, now=130, sent=129)["on_call"], "the real hang-up still ends it")
 
+    def test_a_check_with_an_earlier_clock_than_the_last_one_never_flaps_the_call_back_on(self):
+        oc = self.oc()
+        oc.heartbeat("S26", "in_call", now=0)
+        self.assertFalse(oc.check(now=150.001)["on_call"], "the SSE loop's check: stale, off")
+        self.assertFalse(oc.check(now=149.999)["on_call"], "a claim that read its clock just before: still off")
+        self.assertEqual([e["on_call"] for e in self.sent], [True, False], "off once, never back on")
+
     def test_a_phone_clock_stepped_back_far_is_a_reset_not_a_late_beat(self):
         oc = self.oc()
         oc.heartbeat("S26", "in_call", now=100, sent=10_000)
