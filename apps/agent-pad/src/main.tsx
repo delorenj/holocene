@@ -1471,7 +1471,8 @@ function App() {
       // catch up on what a gap missed (the call state too: a hang-up may have happened while the stream was down)
       es.addEventListener('hello', (e) => { failures = 0; heard(data(e)?.nats); pollNow.current(); void askOperatorRef.current() })
       es.addEventListener('beat', (e) => heard(data(e)?.nats))
-      es.addEventListener('resync', () => { heard(); pollNow.current() })
+      // an overflow may have dropped a `call` event too: re-read the call state, not only the replies
+      es.addEventListener('resync', () => { heard(); pollNow.current(); void askOperatorRef.current() })
       es.addEventListener('memo', (e) => {
         heard()
         const ev = parsePush((e as MessageEvent).data)

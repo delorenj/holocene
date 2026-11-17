@@ -600,7 +600,7 @@ class ReplyClaims:
 # - Gate: while on a call the claims refuse the phone's take and the car's hold / start (ReplyClaims, on_call True).
 #   OPERATOR_CALL_GATE=0 keeps recording and reporting the call (gate False on the answers) but never refuses.
 CALL_FRESH_S = float(os.environ.get("CALL_FRESH_S", "150"))
-CALL_HOLD_MAX_S = float(os.environ.get("CALL_HOLD_MAX_S", "10800"))
+CALL_HOLD_MAX_S = float(os.environ.get("CALL_HOLD_MAX_S", "3600"))   # = the watcher's MEMO_CALL_HOLD_MAX_S and Earshot's CallHold.MAX_HOLD_MS
 CALL_STATE_FILE = os.environ.get("CALL_STATE_FILE") or (
     os.path.join(os.path.dirname(CLAIM_STATE_FILE), "operator-call.json") if CLAIM_STATE_FILE else "")  # empty: memory only
 OPERATOR_CALL_GATE = os.environ.get("OPERATOR_CALL_GATE", "1") != "0"
@@ -620,6 +620,10 @@ class OperatorCall:
     def __init__(self, fresh_s: float = CALL_FRESH_S, hold_max_s: float = CALL_HOLD_MAX_S, state_file: str | None = None,
                  gate: bool = OPERATOR_CALL_GATE, notify=None, now: float | None = None):
         self._lock = threading.Lock()
+        # Held across a transition AND its announcement (outside _lock, so notify may take the push hub's lock): two
+        # beats handled on two threads (ring, then an instant decline) are announced in the order they were decided,
+        # never off-then-on. Order is always _order -> _lock -> push hub; nothing takes them the other way round.
+        self._order = threading.Lock()
         self._dev: dict = {}   # device -> {"call": kind | None, "since": call start | None, "at": last heartbeat}
         self.fresh_s, self.hold_max_s, self.gate = fresh_s, hold_max_s, gate
         self.state_file = state_file or None
@@ -697,6 +701,10 @@ class OperatorCall:
         """An Earshot heartbeat from `device`: call is the kind of call (a clean snake_case word) or None (off a call)."""
         now = time.time() if now is None else now
         call = _call_kind(call)
+        with self._order:
+            return self._heartbeat(device, call, now)
+
+    def _heartbeat(self, device: str, call, now: float) -> dict:
         with self._lock:
             prev = self._dev.pop(device, None) or {"call": None, "since": None}
             # ringing -> in_call is one call: its start (and with it CALL_HOLD_MAX_S) runs from the first beat of it. Only
@@ -717,10 +725,11 @@ class OperatorCall:
     def check(self, now: float | None = None) -> dict:
         """The state now, announcing a transition that happened without a beacon (a stale heartbeat, the hold cap)."""
         now = time.time() if now is None else now
-        with self._lock:
-            view, changed = self._transition(now)
-        if changed:
-            self._announce(view, "stale" if not view["on_call"] else "check")
+        with self._order:
+            with self._lock:
+                view, changed = self._transition(now)
+            if changed:
+                self._announce(view, "stale" if not view["on_call"] else "check")
         return view
 
     def refuses(self, now: float | None = None) -> bool:
