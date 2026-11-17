@@ -12,6 +12,7 @@ import { type Ledger, closeUnit, forThisDevice, isOpen, leaveToPhone as ledgerLe
 import { type PushEvent, PUSH_STALE_MS, parsePush, pushBackoff, pushLive } from './push'
 import { PLAY_STRIKES, isFocusFailure, retryPlan, stopAckName } from './pace'
 import { type Claim, type ClaimAction, type ClaimAnswer, CLAIM_RENEW_MS, CLAIM_WAIT_MS, claimAnswer, confirmDue, holdDue, noteClaim, PHONE_RECHECK_MAX_MS, phoneRecheckDue, phoneStillHas, startPlan, startVerdict } from './claim'
+import { type CallState, CALL_FETCH_MS, CALL_UNKNOWN, callShift, failsToForgive, holding, noteCall, noteCallRefusal, onCallStart, parseCall, progressToCut, recheckDue, requeueHead } from './callhold'
 import { ACTIVITY_POLL_MS, type ActivitySnapshot, fetchActivity, liveActivity, activityOrder, hiddenWorking, cueVisible } from './roster'
 
 // First-start fallback only: the live list is the roster (see roster.ts), cached across cold starts.
@@ -552,6 +553,7 @@ function App() {
   const enqueued = useRef<Set<string>>(new Set())
   const loadFails = useRef<Record<string, number>>({})
   const focusFails = useRef<Record<string, number>>({}) // audio-focus refusals in a row, per reply (pace.ts)
+  const failedAt = useRef<Record<string, number>>({}) // a reply's last play failure: one just before a call is the call's
   const playingKey = useRef<string>('') // reply loaded in the audio element ('' while the silent unlock clip plays)
   const beaconsSent = useRef<Set<string>>(new Set())
   const pump = useRef<() => void>(() => {})
@@ -596,6 +598,17 @@ function App() {
   const phoneTook = useRef<Map<string, { at: number; checkedAt: number }>>(new Map())
   // The hold made when a reply joined the queue, while its answer is out: the pump reuses it instead of asking again.
   const holdInflight = useRef<Map<string, Promise<ClaimAnswer>>>(new Map())
+  // ---- quiet on a call (callhold.ts): the operator's phone rings or is in a call, so nothing starts, what plays is
+  // muted (a reply goes back to the head of the queue, a progress clip is dropped), and the queue resumes at the hang-up.
+  // Fed by the push stream's `call` event, GET /upload/operator (at boot, on every (re)connect, and every few seconds
+  // while a call lasts) and the proxy's on_call claim refusals. Fail-open: nothing known is "not on a call".
+  const callState = useRef<CallState>(CALL_UNKNOWN)
+  const callHeld = useRef(false) // the last evaluated holding(): its flips are the call's start and end
+  const callAsked = useRef(0) // last read of the endpoint
+  const progressHanded = useRef<Map<string, number>>(new Map()) // memo -> its newest progress clip went to the host
+  const [onCall, setOnCall] = useState(false)
+  const onCallNow = () => holding(callState.current, Date.now())
+  const applyCallRef = useRef<(next: CallState) => void>(() => {})
   const holdFor = (key: string): Promise<ClaimAnswer> => {
     const cur = holdInflight.current.get(key)
     if (cur) return cur
@@ -613,6 +626,10 @@ function App() {
         body: JSON.stringify({ by: 'car', action, reply_key: key, ...(DEVICE.id ? { device: DEVICE.id } : {}) }),
       })
     } catch { /* no answer is no yes: the proxy is down, or the network */ }
+    // The proxy says the operator is on a call (it refused this hold or start for that alone): the pad holds everything
+    // too, even when the push stream has not said so yet.
+    // A refusal sent before a newer "off the call" report (the hang-up crossed it) is old news and is not applied.
+    if (answer === 'call' && (callState.current.onCall || sent > callState.current.at)) applyCallRef.current(noteCallRefusal(callState.current, Date.now()))
     if (action === 'release') { // gave the reply up before any audio: no hold of ours is left to count on
       claims.current.delete(key)
       return answer
@@ -620,8 +637,12 @@ function App() {
     if (action === 'start') {
       // The start is claimed when the audio really starts. One the proxy never answered (it was down) is re-sent until it
       // has it, so the phone cannot take the lapsed hold once the proxy is back.
-      if (answer !== 'none') unconfirmed.current.delete(key)
-      else if (!unconfirmed.current.has(key)) unconfirmed.current.set(key, Date.now())
+      // An on-call refusal ('call') settles nothing: the proxy recorded nothing, so a start already owed stays owed (the
+      // beacons are fire-and-forget: this re-send may be the only record that the car said it). A start refused for the
+      // call is owed too while its audio still plays (the pad had not heard of the call, or the refusal crossed the
+      // hang-up); a reply the call cut (callStopped forgot its start) is said again and claims its replay's start itself.
+      if (answer === 'car' || answer === 'phone') unconfirmed.current.delete(key)
+      else if (!unconfirmed.current.has(key) && (answer === 'none' || startedKeys.current.has(key))) unconfirmed.current.set(key, Date.now())
     }
     if (units.current.has(key)) { // a reply this page is done with keeps no claim
       const c = noteClaim(claims.current.get(key), answer, sent)
@@ -714,6 +735,7 @@ function App() {
   const sayProgress = async (f: Flight, pick: { key: string; seq: number; hold?: true }) => {
     if (pick.seq <= f.progressSeq) return
     f.progressSeq = pick.seq
+    if (onCallNow()) return // on a call: narration about a moment the driver did not hear is dropped (the number is spent)
     // A hold cue ("One sec.") is never said over the driver's own note, and not after it either: dropped here (the number is
     // spent, the next clip is newer). Real progress narration is deferred by the speech queue as before.
     if (!mayPlayProgress(pick, { recording: recordingRef.current, arming: arming.current })) return
@@ -723,9 +745,11 @@ function App() {
     const b64 = n ? await blobToBase64(blob) : ''
     // The driver may have pressed record (or the reply landed) while the clip downloaded and was encoded: a hold cue is gated
     // again here, right before it reaches the queue, so the drop-while-recording rule holds for the whole of the await.
-    if (f.finalAt || !mayPlayProgress(pick, { recording: recordingRef.current, arming: arming.current })) return
-    if (n) n.speechProgress(f.memoId, pick.seq, b64, replyExt(pick.key))
-    else {
+    if (f.finalAt || onCallNow() || !mayPlayProgress(pick, { recording: recordingRef.current, arming: arming.current })) return
+    if (n) {
+      n.speechProgress(f.memoId, pick.seq, b64, replyExt(pick.key))
+      progressHanded.current.set(f.memoId, Date.now()) // a call starting now cuts it (muteForCall)
+    } else {
       // Newest wins: an older clip for the same memo that has not played yet is dropped.
       progressQ.current = [...progressQ.current.filter((p) => p.memoId !== f.memoId), { memoId: f.memoId, seq: pick.seq, key: pick.key, blob }]
       pump.current()
@@ -742,12 +766,14 @@ function App() {
   const report = useCallback((phase: Phase, extra: { seconds?: number; error?: string } = {}) => {
     const key = playingKey.current
     if (key && phase === 'started') speak({ t: 'started', key }) // before the dedupe: a replay after a note bounces again
-    if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
-    beaconsSent.current.add(`${key}:${phase}`)
-    if (phase === 'started') { // the audio really started: only now is the reply claimed as spoken
+    // The audio really started: only now is the reply claimed as spoken. Before the beacon's dedupe: a reply a call cut
+    // off (its start refused, or forgotten by muteForCall) claims its replay's start again after the hang-up.
+    if (key && phase === 'started' && !startedKeys.current.has(key)) {
       startedKeys.current.add(key)
       void claimReply(key, 'start')
     }
+    if (!key || beaconsSent.current.has(`${key}:${phase}`)) return
+    beaconsSent.current.add(`${key}:${phase}`)
     const st = streaming.current
     beacon(key, phase, st && st.unit === key ? { ...extra, chunks: units.current.get(key)?.n } : extra)
   }, [])
@@ -768,6 +794,7 @@ function App() {
     claims.current.delete(key)
     startedKeys.current.delete(key)
     delete focusFails.current[key]
+    delete failedAt.current[key]
     playingKey.current = ''
     const u = units.current.get(key)
     if (u) for (const ck of Object.values(u.chunks)) chunkBlobs.current.delete(ck)
@@ -905,7 +932,7 @@ function App() {
             blob = await getBlob(`${BUCKET_BASE}/${ck}`)
             chunkBlobs.current.set(ck, blob)
           }
-          if (streaming.current !== st || recordingRef.current || arming.current) return // stopped meanwhile
+          if (streaming.current !== st || recordingRef.current || arming.current || onCallNow()) return // stopped meanwhile
           if (st.gate) { // chunk 1: the start claimed on the live hold is answered before any audio
             const gate = st.gate
             st.gate = null
@@ -914,7 +941,7 @@ function App() {
           const b64 = await blobToBase64(blob)
           // Looked at again after the encode: a focus retry (playFailed -> pump) may have started a new stream for this reply
           // meanwhile, and this older one must not hand the host the same chunk a second time.
-          if (streaming.current !== st || recordingRef.current || arming.current) return
+          if (streaming.current !== st || recordingRef.current || arming.current || onCallNow()) return
           host.playReplyChunk(st.unit, i, u.n, b64, 'opus')
           st.offered.add(i)
           st.fails = 0
@@ -936,6 +963,8 @@ function App() {
     if (!el || playingKey.current) return
     // A reply must never play into the microphone: wait until the note is done.
     if (recordingRef.current || arming.current) return
+    // Nor over the operator's phone call: everything waits for the hang-up, which pumps the queue again.
+    if (onCallNow()) return
     if (queue.current.length === 0) { playProgress(el); return }
     // The head, or (while the head still waits for its first chunk or its full file) the first later reply that is ready.
     const pick = nextUnit(queue.current, (k) => units.current.get(k), !!nativeChunks(), Date.now())
@@ -986,6 +1015,7 @@ function App() {
       replyBytes.current = blob.size
       if (gate && !(await passGate(key, gate))) { if (playingKey.current === key) playingKey.current = ''; return }
       if (recordingRef.current || arming.current) { playingKey.current = ''; return } // a note began while it downloaded
+      if (onCallNow()) { if (playingKey.current === key) playingKey.current = ''; return } // a call began: it waits at the head
       setLastReply(key)
       const np = nativeReply()
       if (np) {
@@ -995,13 +1025,17 @@ function App() {
       el.src = URL.createObjectURL(blob)
       await el.play()
     } catch (e) {
+      // The call paused it while play() was still resolving (AbortError), or took the download: muteForCall already put
+      // it back at the head (or does so now). Not a failure: no strike, no 'play failed' line.
+      if (playingKey.current !== key) return
+      if (onCallNow()) { callStopped(key); return }
       playFailed(key, `play failed: ${String((e as Error)?.message || e)}`)
     }
   }
 
   // Browser (no host speech queue): a progress clip plays in the same audio element, only when no reply is waiting.
   const playProgress = (el: HTMLAudioElement) => {
-    if (!unlockedRef.current || nativeReply()) return
+    if (!unlockedRef.current || nativeReply() || onCallNow()) return
     const p = progressQ.current.shift()
     if (!p) return
     if (flights.current.get(p.memoId)?.finalAt) { pump.current(); return }
@@ -1077,20 +1111,30 @@ function App() {
     const answer = await gate.answer
     const v = startVerdict(gate.plan, answer)
     if (v === 'skip') { leaveToPhone(key); return false }
+    if (v === 'call') { // the operator is on a call (claimReply noted it): at the head of the queue until the hang-up
+      if (streaming.current?.unit === key) streaming.current = null
+      if (playingKey.current === key) playingKey.current = ''
+      // The hang-up pumps the queue (evalCall). A refusal the pad did not take as a call (it crossed the hang-up: a hold
+      // shared from before the proxy flipped back) has no hang-up still to come: asked again shortly, as a 'wait' is.
+      if (!onCallNow()) window.setTimeout(() => pump.current(), CLAIM_RENEW_MS / 2)
+      return false
+    }
     if (v === 'wait') { // 'claim' plan, no answer and no live hold: stays at the head of the queue, asked again shortly
       if (streaming.current?.unit === key) streaming.current = null
       waitForProxy(key)
       return false
     }
-    return playingKey.current === key && !recordingRef.current && !arming.current
+    return playingKey.current === key && !recordingRef.current && !arming.current && !onCallNow()
   }
 
   // A waiting reply renews this car's hold, so the phone copy stays out while the car still means to say it. A car that
   // was switched off stops renewing, and the phone takes it once the lease lapses.
   useEffect(() => {
     if (HOST_KIND !== 'car') return
+    let tick = Date.now()
     const t = window.setInterval(() => {
       const now = Date.now()
+      const quiet = onCallNow() // the proxy refuses every start until the hang-up: an owed start's clock stops meanwhile
       for (const key of queue.current) {
         // A reply handed to the host keeps its hold until the audio really starts: the host's speech queue may hold it
         // back (another utterance, a recording), and the start is what claims it for good.
@@ -1102,9 +1146,11 @@ function App() {
         else if (phoneRecheckDue(t.at, t.checkedAt, now)) void lookAtPhoneTake(key)
       }
       for (const [key, since] of [...unconfirmed.current]) {
-        if (confirmDue(since, now)) void claimReply(key, 'start')
+        if (quiet) unconfirmed.current.set(key, since + (now - tick)) // a call longer than CLAIM_CONFIRM_MAX_MS ages nothing out
+        else if (confirmDue(since, now)) void claimReply(key, 'start')
         else unconfirmed.current.delete(key)
       }
+      tick = now
     }, CLAIM_RENEW_MS / 2)
     return () => window.clearInterval(t)
   }, [])
@@ -1113,6 +1159,7 @@ function App() {
   // or lost audio focus (`detail` focus_denied / focus_lost) is retried within a fraction of a second and is not a
   // strike, for a bounded number of tries (pace.ts): the reply was fine, the car's audio was busy for a moment.
   const playFailed = (key: string, text: string, detail = '') => {
+    failedAt.current[key] = Date.now()
     const focus = isFocusFailure(detail)
     const tries = focus ? (focusFails.current[key] = (focusFails.current[key] || 0) + 1) : 0
     if (!focus) delete focusFails.current[key]
@@ -1151,6 +1198,7 @@ function App() {
         speak({ t: 'interrupted' })
         return
       }
+      if (phase === 'error' && onCallNow()) { callStopped(key); return } // the call took the audio: not a failure
       if (phase === 'started') { delete focusFails.current[key]; report('started'); setStatus('playing reply') }
       else if (phase === 'ended') { report('ended', { seconds: Number(detail) || undefined }); setStatus('reply played'); finish(key) }
       else playFailed(key, `play failed: ${detail || 'host player'}`, detail || '')
@@ -1221,6 +1269,86 @@ function App() {
     if (dropBarged(key, 'stopped')) return
     speak({ t: 'interrupted' })
   }
+
+  // A reply the operator's call stopped (muteForCall, or the host's player failed while on the call): back at the head of
+  // the queue, said again from the start after the hang-up. Not a failure (no strike, no release to the phone, nothing
+  // marked heard), and the speaking tile clears, which also disarms the play watchdog. Its start is forgotten, so the
+  // replay claims its start again (report). Its failure counts start over: the ring takes the car's audio before the call
+  // event reaches the pad, so the host's focus_lost / error for it usually lands first and was counted as an ordinary
+  // failure (playFailed); a call is not the reply's fault, and the replay after the hang-up gets its full tries.
+  const callStopped = (key: string) => {
+    if (playingKey.current === key) playingKey.current = ''
+    if (streaming.current?.unit === key) streaming.current = null
+    startedKeys.current.delete(key)
+    delete focusFails.current[key]
+    delete loadFails.current[key]
+    delete failedAt.current[key]
+    if (units.current.has(key)) queue.current = requeueHead(queue.current, key)
+    speak({ t: 'interrupted' })
+    setStatus('on a call: the reply waits for the hang-up')
+  }
+  // The call began: mute. A reply is stopped and requeued at the head; a progress or hold-cue clip is cut and dropped
+  // (in the host: its memo-final drop, the only cut it has for one clip; in the page: its queue and the audio element).
+  const muteForCall = () => {
+    progressQ.current = []
+    const n = nativeSpeech()
+    for (const memo of progressToCut(progressHanded.current, Date.now())) {
+      try { n?.speechMemoFinal(memo) } catch { /* host bridge absent */ }
+      progressHanded.current.delete(memo)
+    }
+    // A reply that failed just before (the ring took the audio first: playFailed counted it and waits to retry, so it is
+    // not playing now) gets its tries back too, as one the call stops below does.
+    for (const k of failsToForgive(failedAt.current, Date.now())) {
+      delete focusFails.current[k]
+      delete loadFails.current[k]
+      delete failedAt.current[k]
+    }
+    const key = playingKey.current
+    const what = onCallStart(!key ? null : playingProgress.current ? 'progress' : 'reply')
+    if (what === 'drop') {
+      try { audioRef.current?.pause() } catch { /* nothing playing */ }
+      playingKey.current = ''
+      playingProgress.current = false
+    } else if (what === 'requeue') {
+      try { nativeReply()?.stopReply?.() } catch { /* host bridge absent */ }
+      try { audioRef.current?.pause() } catch { /* nothing playing */ }
+      callStopped(key)
+    }
+    setStatus('on a call: replies wait for the hang-up')
+  }
+  // A new view of the call: its start mutes, its end resumes the queue. Also re-evaluated on a timer, so a call the pad
+  // stopped hearing about (CALL_TRUST_MS) ends there too.
+  const evalCall = () => {
+    const now = holding(callState.current, Date.now())
+    const shift = callShift(callHeld.current, now)
+    callHeld.current = now
+    if (!shift) return
+    setOnCall(now)
+    if (shift === 'start') muteForCall()
+    else { setStatus('call ended'); pump.current() }
+  }
+  applyCallRef.current = (next: CallState) => { callState.current = next; evalCall() }
+  const askOperator = async () => {
+    const asked = callAsked.current = Date.now()
+    try {
+      const info = await fetchWithin('/upload/operator', CALL_FETCH_MS, async (r) => parseCall(await r.json()), { cache: 'no-store' })
+      // In order: a push event or a claim refusal that landed while this read was out is newer than its answer.
+      if (info && callState.current.at <= asked) applyCallRef.current(noteCall(callState.current, info, Date.now()))
+    } catch { /* fail-open: an older proxy (404) or no answer changes nothing; a believed call fades after CALL_TRUST_MS */ }
+  }
+  const askOperatorRef = useRef(askOperator)
+  askOperatorRef.current = askOperator
+  // Once at boot, then every few seconds: re-read while a call is believed (a missed hang-up event, a proxy gone quiet),
+  // and while the push stream is not live (its `call` event cannot arrive: the read is what catches a call starting).
+  useEffect(() => {
+    void askOperatorRef.current()
+    const t = window.setInterval(() => {
+      const now = Date.now()
+      if (recheckDue(callState.current, callAsked.current, now, pushLive(push.current.heardAt, push.current.nats, now))) void askOperatorRef.current().then(() => applyCallRef.current(callState.current))
+      else applyCallRef.current(callState.current)
+    }, 2_500)
+    return () => window.clearInterval(t)
+  }, [])
 
   // Unlock audio on first user gesture (browser autoplay policy)
   const unlockAudio = useCallback(async () => {
@@ -1340,13 +1468,20 @@ function App() {
       const url = `/upload/events?device=${encodeURIComponent(DEVICE.id)}&host=${HOST_KIND}`
       try { es = new EventSource(url) } catch { schedule(); return }
       openedAt = Date.now()
-      es.addEventListener('hello', (e) => { failures = 0; heard(data(e)?.nats); pollNow.current() }) // catch up on what a gap missed
+      // catch up on what a gap missed (the call state too: a hang-up may have happened while the stream was down)
+      es.addEventListener('hello', (e) => { failures = 0; heard(data(e)?.nats); pollNow.current(); void askOperatorRef.current() })
       es.addEventListener('beat', (e) => heard(data(e)?.nats))
       es.addEventListener('resync', () => { heard(); pollNow.current() })
       es.addEventListener('memo', (e) => {
         heard()
         const ev = parsePush((e as MessageEvent).data)
         if (ev) { try { onPushRef.current(ev) } catch { /* never let one event stop the stream */ } }
+      })
+      // The operator's phone call began or ended (callhold.ts): its own event, so the memo parser above is untouched.
+      es.addEventListener('call', (e) => {
+        heard()
+        const info = parseCall((e as MessageEvent).data)
+        if (info) { try { applyCallRef.current(noteCall(callState.current, info, Date.now())) } catch { /* never stop the stream */ } }
       })
       // CONNECTING: the browser retries by itself (retry: 3000). CLOSED: an error status, start again with a backoff.
       es.onerror = () => { if (es && es.readyState === EventSource.CLOSED) { close(); schedule() } }
@@ -2028,6 +2163,7 @@ function App() {
           {outboxCount > 0 && <small className="warn">{label(`${outboxCount} recording${outboxCount > 1 ? 's' : ''} waiting to upload`)}</small>}
           {rejectedCount > 0 && <small className="warn">{label(rejectedText)}</small>}
           {stale && <small className="warn">{label(stalenessText(stale))}</small>}
+          {onCall && <small className="warn">{label('on a call: replies wait for the hang-up')}</small>}
           {memoShort && <small>{label(`memo ${memoShort} · mise run memo:trace ${memoShort}`)}</small>}
           {lastReply && <small>{label(`last reply: ${lastReply.split('/').pop()}`)}</small>}
         </div>

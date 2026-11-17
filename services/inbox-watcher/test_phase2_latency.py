@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 os.environ["MEMO_PUSH_HINT_URL"] = ""   # never the live upload proxy from a test
+os.environ.setdefault("MEMO_PAD_CLAIM_URL", "http://127.0.0.1:9/upload/claim")   # nor its claims / operator call state
 os.environ["MEMO_WAKE_PORT"] = "0"
 os.environ.setdefault("MEMO_CONVERSE_HOLD_CUE_S", "0")   # the hold cue has its own tests (test_hold_cue.py)
 

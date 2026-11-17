@@ -283,6 +283,63 @@ class DeskWait(HoldHarness, unittest.TestCase):
         self.assertEqual((self.holds(key), self.llm_calls()), ([], 0))
 
 
+class OperatorOnCall(HoldHarness, unittest.TestCase):
+    """Quiet on a call (2026-11-16): a hold cue or keep-alive that meets the operator on a phone call is DROPPED."""
+
+    def calling(self, on=True):
+        self.call = {"on": on}
+        p = unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": self.call["on"]})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_no_desk_wait_cue_is_said_on_a_call(self):
+        self.calling()
+        self.slow(1.5)
+        key, m = self.say("What's Holocene working on?")
+        self.assertEqual(m["status"], "done")
+        time.sleep(0.2)
+        self.assertEqual(self.holds(key), [])
+        self.assertEqual({(d["reason"], d["stage"]) for d in self.dropped()}, {("operator_on_call", "claim")})
+        self.assertEqual(len(self.dropped()), 2, "both marks were dropped, not held for later")
+
+    def test_a_cue_rendered_when_the_call_begins_is_dropped_and_one_uploaded_is_removed(self):
+        self.calling(False)
+        key, m = self.say("What's Holocene working on?")
+        answers = iter([False, True])
+        self.call = {"on": None}
+        with unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": next(answers)}):
+            with self.w.mu:
+                self.w.narrating.add(m["key"])
+            self.w._hold_run(m, 77, "One sec.", "hold_cue", lambda mm: None, since=time.time(), cid=None)
+        d = [kw for ev, kw in self.logs if ev == "hold_cue_dropped"]
+        self.assertEqual([(x["reason"], x["stage"]) for x in d], [("operator_on_call", "uploaded")])
+        self.assertTrue(d[0]["removed"])
+        self.assertFalse((BUCKET_DIR / d[0]["progress_key"]).exists())
+        with unittest.mock.patch.object(iw, "call_state", return_value={"on_call": True}):
+            with self.w.mu:
+                self.w.narrating.add(m["key"])
+            self.w._hold_run(m, 78, "One sec.", "hold_cue", lambda mm: None, since=time.time(), cid=None)
+        self.assertEqual([x["stage"] for ev, x in self.logs if ev == "hold_cue_dropped"][-1], "rendered")
+        self.assertEqual(self.holds(key), [])
+
+    def test_a_keepalive_due_on_a_call_is_dropped_and_its_slot_spent(self):
+        self.fall_through()
+        key, m = self.say("What's Holocene working on?")
+        self.wait_for(lambda: len(self.holds(key)) >= 2, "the desk-wait cues")
+        n0 = len(self.holds(key))
+        self.calling()
+        m["dispatched_ts"] = time.time() - (iw.HOLD_FALL_FIRST_S + 1)
+        self.w.poll_progress()
+        time.sleep(0.3)
+        self.assertEqual(len(self.holds(key)), n0)
+        self.assertEqual(self.dropped()[-1]["reason"], "operator_on_call")
+        self.assertEqual(m["hold_ka"]["n"], 1, "dropped, not deferred: the slot is spent")
+        self.call["on"] = False
+        m["hold_ka"]["last"] = time.time() - iw.HOLD_FALL_GAP_S - 1
+        self.w.poll_progress()
+        self.wait_for(lambda: len(self.holds(key)) == n0 + 1, "the next keep-alive after the hang-up")
+
+
 class FallThrough(HoldHarness, unittest.TestCase):
     def go(self):
         self.fall_through()

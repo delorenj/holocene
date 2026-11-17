@@ -247,6 +247,21 @@ EARSHOT_POLL_S = float(os.environ.get("MEMO_EARSHOT_POLL_S", "1"))
 # while the proxy was out of reach re-sends its start every 2.5 s (and a waiting car renews its holds every 5 s), so
 # those land first. The proxy itself refuses every take for its CLAIM_SETTLE_S after a restart.
 EARSHOT_SETTLE_S = float(os.environ.get("MEMO_EARSHOT_SETTLE_S", "10"))
+# Quiet on a call (Jarad, 2026-11-16: "if the phone is on a call, mute, then defer until I hang up"). The upload proxy
+# holds the one operator-on-call signal (Earshot's heartbeat names the call; GET /upload/operator, same base as the claim
+# calls). While he is on a call: the Earshot phone copy is DEFERRED (handed to the persisted phone retry, which waits
+# for the hang-up without spending its EARSHOT_RETRY_TOTAL_S budget, at most CALL_HOLD_MAX_S of call), and the car-only
+# cues (narration, hold cues, keep-alive) are DROPPED (a progress line after the call is noise). Unknown is not a call:
+# a proxy that cannot be asked never holds anything back (the proxy's claims refuse a take on a call anyway).
+# MEMO_CALL_GATE=0 turns all of it off.
+CALL_GATE = os.environ.get("MEMO_CALL_GATE", "1") != "0"
+CALL_URL = (CLAIM_URL[: -len("/claim")] if CLAIM_URL.endswith("/claim") else CLAIM_URL.rsplit("/", 1)[0]) + "/operator"
+CALL_TIMEOUT_S = 1.5
+CALL_CACHE_S = 2.0          # one GET serves every check for this long
+CALL_CACHED_MAX_S = 30.0    # a lock-held check reads the cache only: older than this, it says "not on a call"
+CALL_RECHECK_S = 5.0        # a deferred phone copy looks again this often while the call goes on
+CALL_RESUME_S = 5.0         # after the hang-up, before the phone takes: a live car's renewed hold lands first
+CALL_HOLD_MAX_S = float(os.environ.get("MEMO_CALL_HOLD_MAX_S", "3600"))
 # Reply chunks carry this object tag; the holocene-auto lifecycle rule for it expires them after a day.
 CHUNK_TAGS = "kind=chunk"
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")
@@ -862,6 +877,7 @@ class Watcher:
         # 45 s (or 20 min) transcription no longer stops discovery, polling and the heartbeat.
         self.mu = threading.RLock()
         self.running: set[str] = set()
+        self._release_due: list[tuple[str, str]] = []   # (memo, reply_key) takes to give back, outside the lock (_drain_release_due)
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
                       "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io"),
                       "speak": concurrent.futures.ThreadPoolExecutor(3, thread_name_prefix="speak"),
@@ -3244,10 +3260,11 @@ class Watcher:
                 # why the phone copy was left out: car_spoke (the car that sent the memo started or finished it) |
                 # car_holds (it still held it, live, after MEMO_EARSHOT_HOLD_MAX_S) | no_answer (the upload proxy could
                 # not be asked for MEMO_EARSHOT_HOLD_MAX_S: left to the car) | car_released (the phone took it, its
-                # Earshot drop failed on every try, and the take was given back so the car may play it); null when mirrored
+                # Earshot drop failed on every try, and the take was given back so the car may play it) | on_call (the
+                # operator was on a phone call: the phone retry drops it after the hang-up); null when mirrored
                 "earshot_skipped": m.get("earshot_skipped"),
                 # why it went the way it did (phone_copy_decision): car_started | car_holds | claim_failed (left out) or
-                # no_car_claim | car_let_go | browser_sender | skip_off (mirrored) | drop_failed (released)
+                # no_car_claim | car_let_go | browser_sender | skip_off (mirrored) | drop_failed (released) | on_call
                 "earshot_reason": m.get("earshot_reason"),
                 # the car's copy was up at reply_up_at; this fact waits for the phone decision (a car that holds it)
                 "reply_up_at": up["up_at"], "earshot_wait_seconds": round(time.time() - up["uploaded_ts"], 2),
@@ -3413,6 +3430,9 @@ class Watcher:
                 if skip == "delegation_readback":
                     # not decided: the car was offered the line; the phone copy follows if nobody claims it
                     self.arm_readback_phone_copy(m, rkey, t_up, chunked, offered=why == "delegation_readback")
+                elif skip == "on_call":
+                    # not decided either: the operator is on a call; the phone copy follows the hang-up
+                    self.arm_readback_phone_copy(m, rkey, t_up, chunked, offered=True, before="on_call")
                 self.s.save()
                 return None
             m["earshot_attempted"] = want
@@ -3444,7 +3464,25 @@ class Watcher:
             # if an earlier attempt already left it there.
             with self.mu:
                 send_text = None if m.get("earshot_text_key") else reply_text
-            ekey = mirror_to_earshot(path, stamp, agent, mid, key, send_text, record_text)
+            try:
+                ekey = mirror_to_earshot(path, stamp, agent, mid, key, send_text, record_text)
+            except OperatorOnCall:
+                # The call began between the decision and the drop: deferred, not failed (no retry burned, no release).
+                # The phone keeps its take; the phone retry drops a fresh object after the hang-up.
+                log("earshot_deferred", memo_id=mid, key=key, reason="on_call", earshot_key=want,
+                    note=EARSHOT_REASONS["on_call"])
+                with self.mu:
+                    m["earshot_skipped"], m["earshot_reason"] = "on_call", "on_call"
+                    self.arm_readback_phone_copy(m, rkey, t_up, chunked, offered=True, before="on_call")
+                    rr = self._retry_for(m, rkey)
+                    if rr is not None:
+                        rr["took"] = True   # the phone owns it: a retry that ends without a drop gives the take back
+                    self.s.save()
+                if rr is None:
+                    # No retry (MEMO_EARSHOT_RETRY_TOTAL_S=0) will ever drop it: the phone's take goes back to the car,
+                    # which speaks the reply after the hang-up (the proxy refuses it nothing then).
+                    self._release_claim(mid, rkey, EARSHOT_RELEASE_BUDGET_S)
+                return None
             if ekey:
                 break
         if not ekey and tries and earshot_exists(want):
@@ -3522,7 +3560,8 @@ class Watcher:
                 return
             # One retry per memo: the follow-up's own reply was released while the quick answer's retry still runs. The
             # newer reply takes the slot (the older one had its rounds; both failing to drop is an S3 outage).
-            self._retry_finish(m, "superseded", f"the memo's newer reply {rkey} was released and needs the phone retry")
+            self._retry_finish(m, "superseded", f"the memo's newer reply {rkey} was released and needs the phone retry",
+                               promote=False)
         old = m.get("phone_retry") if isinstance(m.get("phone_retry"), dict) else {}
         now = time.time()
         text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
@@ -3535,24 +3574,46 @@ class Watcher:
                  f"given back to the car; the phone is tried again in {EARSHOT_RETRY_FIRST_S:g} s if no car claims it, "
                  f"for {EARSHOT_RETRY_TOTAL_S:g} s{again}"}]}
 
-    def arm_readback_phone_copy(self, m: dict, rkey: str, t_up: float, chunked: bool, offered: bool) -> None:
+    def arm_readback_phone_copy(self, m: dict, rkey: str, t_up: float, chunked: bool, offered: bool,
+                                before: str = "delegation_readback") -> None:
         """Lock held. The "Sending to ..." read-back of a delegation went out without a phone decision (it must not hold the
         dispatch): the phone retry takes over, so the line is heard somewhere. First round when the car's grace window ends
         (EARSHOT_CAR_GRACE_S after the first audio was up); a car that holds or starts it meanwhile keeps it. An offer the
-        proxy could not take is made again by the first round."""
+        proxy could not take is made again by the first round.
+        before "on_call": the same hand-off for a reply that met the operator on a phone call (phone_copy_decision, or the
+        last-moment check in mirror_to_earshot). Its first round is CALL_RECHECK_S away; each round waits while the call
+        goes on without spending the retry budget (_retry_call_wait), and the phone takes it after the hang-up unless a
+        car speaks it first."""
         if EARSHOT_RETRY_TOTAL_S <= 0:
             return
         now = time.time()
-        first = max(1.0, EARSHOT_CAR_GRACE_S - (now - t_up))
+        call = before == "on_call"
+        first = CALL_RECHECK_S if call else max(1.0, EARSHOT_CAR_GRACE_S - (now - t_up))
         text = None if m.get("earshot_text_key") else (m.get("reply_text") or "")[:EARSHOT_TEXT_MAX_BYTES]
+        why = (f"the operator is on a phone call: the phone copy waits for the hang-up (checked every {CALL_RECHECK_S:g} s; "
+               f"the {EARSHOT_RETRY_TOTAL_S:g} s retry budget is paused for at most {CALL_HOLD_MAX_S:g} s of call)") if call else (
+            f"the delegation's read-back does not wait for the phone decision: the phone is tried in {first:.0f} s if no "
+            f"car claims it, for {EARSHOT_RETRY_TOTAL_S:g} s")
+        old = {}
+        if call and isinstance(m.get("phone_retry"), dict):
+            if self._retry_for(m, rkey) is not None:
+                return   # already waiting for this reply (a stage re-run): its clock and decisions stand
+            if self.phone_retry_pending(m):
+                # One slot per memo, but a call makes two replies of one memo routine (the quick answer and its live
+                # follow-up both finish during it): the older one is not given up, it WAITS in the queue (phone_retry_queue)
+                # and is promoted into the slot when the newer one is done (_retry_finish). Superseding it would leave a
+                # reply heard nowhere (and, if the phone had taken it, the car refused it for good).
+                self._retry_note(m, "queued", f"the memo's newer reply {rkey} met the operator on a call too: this reply's "
+                                 "phone copy follows once the newer one is done")
+                m.setdefault("phone_retry_queue", []).append(m["phone_retry"])
+            else:
+                old = m["phone_retry"]
         m["phone_retry"] = {
             "state": "pending", "since_ts": now, "deadline_ts": now + EARSHOT_RETRY_TOTAL_S, "next_at": now + first,
-            "rounds": 0, "rkey": rkey, "reply_text": text or None, "stamp": m.get("reply_stamp"), "before": "delegation_readback",
+            "rounds": 0, "rkey": rkey, "reply_text": text or None, "stamp": m.get("reply_stamp"), "before": before,
             "offer": None if offered else {"by": "watcher", "action": "offer", "reply_key": rkey, "key": m["key"],
                                            "announce": not chunked},
-            "decisions": [{"at": iso(now_utc()), "decision": "deferred", "why": (
-                f"the delegation's read-back does not wait for the phone decision: the phone is tried in {first:.0f} s if no "
-                f"car claims it, for {EARSHOT_RETRY_TOTAL_S:g} s")}]}
+            "decisions": (old.get("decisions") or [])[-30:] + [{"at": iso(now_utc()), "decision": "deferred", "why": why}]}
 
     @staticmethod
     def phone_retry_pending(m: dict) -> bool:
@@ -3573,13 +3634,55 @@ class Watcher:
         log("phone_retry_decision", "warn" if decision in ("drop_failed", "release_failed", "gave_up") else "info",
             memo_id=m["memo_id"], key=m["key"], decision=decision, why=why, round=r.get("rounds"), **extra)
 
-    def _retry_finish(self, m: dict, outcome: str, why: str, **extra) -> None:
+    @classmethod
+    def _retry_for(cls, m: dict, rkey: str) -> dict | None:
+        """The pending phone retry of this reply: the memo's slot, or one waiting in phone_retry_queue."""
+        r = m.get("phone_retry")
+        if cls.phone_retry_pending(m) and r.get("rkey") == rkey:
+            return r
+        return next((q for q in m.get("phone_retry_queue") or [] if q.get("rkey") == rkey), None)
+
+    def _retry_finish(self, m: dict, outcome: str, why: str, promote: bool = True, **extra) -> None:
+        """End the slot's retry. promote: an earlier reply queued behind it (a call held two replies of the memo) takes the
+        slot now, with a fresh budget; a cancelled memo drops the queue instead. A retry that holds the phone's take
+        (`took`: a call interrupted its drop) and ends without a drop gives the take back (_drain_release_due)."""
         r = m["phone_retry"]
         self._retry_note(m, outcome, why, **extra)
         r.update(state="done", outcome=outcome, ended_at=iso(now_utc()))
         r.pop("reply_text", None)
         log("phone_retry_done", "warn" if outcome == "gave_up" else "info", memo_id=m["memo_id"], key=m["key"], outcome=outcome,
             rounds=r.get("rounds"), after_s=round(time.time() - r["since_ts"], 1), note=why)
+        if r.get("took") and outcome in ("gave_up", "cancelled"):
+            self._release_due.append((m["memo_id"], r["rkey"]))
+        queue = m.get("phone_retry_queue")
+        if outcome == "cancelled":
+            for q in queue or []:
+                if q.get("took"):
+                    self._release_due.append((m["memo_id"], q["rkey"]))
+            m.pop("phone_retry_queue", None)
+        elif promote and queue:
+            nxt = queue.pop(0)
+            if not queue:
+                m.pop("phone_retry_queue", None)
+            now = time.time()
+            for k in ("call_since", "call_seen", "call_capped"):
+                nxt.pop(k, None)
+            nxt.update(state="pending", rounds=0, deadline_ts=now + EARSHOT_RETRY_TOTAL_S, next_at=now + CALL_RECHECK_S)
+            nxt["decisions"] = (r.get("decisions") or [])[-15:] + (nxt.get("decisions") or [])
+            m["phone_retry"] = nxt
+            self._retry_note(m, "promoted", f"the memo's newer reply's retry ended ({outcome}): this earlier reply's phone "
+                             "copy is tried now (the call hold applies again if he is still on one)")
+
+    def _drain_release_due(self) -> None:
+        """Outside the lock: give back the phone's take of every reply whose retry ended without dropping it, so the car can
+        still speak it (the proxy's release leaves a reply the phone does not own alone)."""
+        with self.mu:
+            due, self._release_due = self._release_due, []
+        for mid, rkey in due:
+            try:
+                self._release_claim(mid, rkey, EARSHOT_RELEASE_BUDGET_S)
+            except WatcherStopping:
+                return
 
     @staticmethod
     def _retry_got(m: dict, r: dict, ekey: str, same: bool) -> None:
@@ -3605,6 +3708,43 @@ class Watcher:
         """When the next round is due: at its backoff, but never later than the deadline, so a long backoff cannot hold
         a retry that is out of budget open (the round that finds the deadline passed ends it with gave_up)."""
         return min(r.get("next_at", 0), r.get("deadline_ts", float("inf")))
+
+    def _retry_call_wait(self, m: dict, r: dict, calling: bool, now: float) -> bool:
+        """Lock held. True: this round only waits for the operator's phone call (next round set). While he is on a call
+        the round neither takes nor drops, every second of the call is credited back to deadline_ts (the budget is for
+        devices that fail, not for a call) and the next look is CALL_RECHECK_S away; at most CALL_HOLD_MAX_S of one call
+        is waited out like that (call_capped: then the budget runs again, and the proxy, which refuses a take on a call,
+        still decides). The first round after the hang-up waits CALL_RESUME_S more, so a live car that resumes its queue
+        holds the reply again before the phone may take it."""
+        if calling and not r.get("call_capped"):
+            if r.get("call_since") is None:
+                r["call_since"] = r["call_seen"] = now
+                self._retry_note(m, "on_call", "the operator is on a phone call: nothing is dropped for the phone until he "
+                                 "hangs up (the retry budget is paused)")
+            r["deadline_ts"] = r["deadline_ts"] + max(0.0, now - r["call_seen"])
+            r["call_seen"] = now
+            if now - r["call_since"] < CALL_HOLD_MAX_S:
+                r["next_at"] = now + CALL_RECHECK_S
+                return True
+            waited = now - r.pop("call_since")
+            r.pop("call_seen", None)
+            r["call_capped"] = True
+            r["call_waited_s"] = round(r.get("call_waited_s", 0) + waited, 1)
+            self._retry_note(m, "call_hold_max", f"still on a call after {waited:.0f} s (MEMO_CALL_HOLD_MAX_S): the retry "
+                             "budget runs again; the upload proxy still refuses a take while the call lasts")
+            return False
+        if calling:
+            return False   # capped: the budget runs, the proxy decides
+        r.pop("call_capped", None)
+        if r.get("call_since") is None:
+            return False
+        r["deadline_ts"] = r["deadline_ts"] + max(0.0, now - r.pop("call_seen", now))
+        waited = now - r.pop("call_since")
+        r["call_waited_s"] = round(r.get("call_waited_s", 0) + waited, 1)
+        self._retry_note(m, "call_ended", f"the call ended after {waited:.0f} s: the phone is tried in {CALL_RESUME_S:g} s "
+                         "unless a car speaks the reply first")
+        r["next_at"] = now + CALL_RESUME_S
+        return True
 
     def schedule_phone_retries(self) -> None:
         """Tick, lock held: start the round of every due phone retry on the decide pool."""
@@ -3639,11 +3779,14 @@ class Watcher:
             with self.mu:
                 self.running.discard(tag)
                 self.s.save()
+            self._drain_release_due()
 
     def phone_retry_step(self, m: dict) -> None:
         """One round: look at who has the reply, and if no car does, take it for the phone and drop it again. Stops with
         an outcome as soon as either device has it. A failed drop gives the take back (the car may then claim it) and
-        schedules the next round after a longer wait; the deadline ends it with `gave_up` and the reason."""
+        schedules the next round after a longer wait; the deadline ends it with `gave_up` and the reason. While the
+        operator is on a phone call it only waits (_retry_call_wait): no take, no drop, no budget spent."""
+        calling = on_call()   # outside the lock: an HTTP call (cached a couple of seconds)
         with self.mu:
             if not self.phone_retry_pending(m):
                 return
@@ -3669,6 +3812,8 @@ class Watcher:
                 return self._retry_finish(
                     m, "gave_up", f"no device played the reply in {EARSHOT_RETRY_TOTAL_S:g} s after the release: the car never "
                     f"claimed it and {r['rounds']} phone drop(s) failed (last failure: {fail[:130]}){tail}")
+            if self._retry_call_wait(m, r, calling, now):
+                return
         want = earshot_key_for(stamp, agent, mid)
         if earshot_exists(want):
             # An earlier drop landed (despite its error): the phone has it, and a second drop would play it twice.
@@ -3709,6 +3854,8 @@ class Watcher:
             return
         if not got.get("ok"):
             with self.mu:
+                if got.get("on_call") and self._retry_call_wait(m, r, True, time.time()):
+                    return   # the proxy saw the call this round's own check could not (cache, a blip)
                 self._retry_note(m, "take_refused", "a car's hold or start landed first: looking again")
                 r["next_at"] = time.time() + 5
             return
@@ -3717,7 +3864,7 @@ class Watcher:
             n = r["rounds"]
             text = r.get("reply_text")
             self._retry_note(m, "take_granted", f"no car claimed the reply: the phone took it (round {n})")
-        ekey, err = None, ""
+        ekey, err, deferred = None, "", False
         tmp = Path(tempfile.mkdtemp(prefix="memo-phone-retry-"))
         try:
             out = tmp / "reply.ogg"
@@ -3732,13 +3879,26 @@ class Watcher:
                             m["earshot_text_key"] = tkey
                         r["reply_text"] = None
                         self.s.save()
-                ekey = mirror_to_earshot(out, stamp, agent, mid, key, text, record_text)
-                if not ekey and earshot_exists(want):
+                try:
+                    ekey = mirror_to_earshot(out, stamp, agent, mid, key, text, record_text)
+                except OperatorOnCall:
+                    deferred = True
+                if not ekey and not deferred and earshot_exists(want):
                     ekey = want  # landed despite its error
-                if not ekey:
+                if not ekey and not deferred:
                     err = "the Earshot drop failed again"
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+        if deferred:
+            # A call began between the take and the drop: not a failed round (no release: the phone keeps its take, and
+            # the next round after the hang-up drops it).
+            with self.mu:
+                r["rounds"] -= 1
+                r["took"] = True
+                if not self._retry_call_wait(m, r, True, time.time()):
+                    self._retry_note(m, "on_call", "the operator is on a phone call: the drop waits for the hang-up")
+                    r["next_at"] = time.time() + CALL_RECHECK_S
+            return
         if ekey:
             with self.mu:
                 self._retry_got(m, r, ekey, m.get("reply_key") == rkey)
@@ -3752,6 +3912,7 @@ class Watcher:
         ok, rerr = self._release_claim(mid, rkey, EARSHOT_RELEASE_BUDGET_S)
         with self.mu:
             if ok:
+                r.pop("took", None)
                 self._retry_note(m, "drop_failed", f"{err} (round {n}); the take was given back to the car")
                 r["next_at"] = time.time() + EARSHOT_RETRY_BACKOFF_S[min(n - 1, len(EARSHOT_RETRY_BACKOFF_S) - 1)]
             else:
@@ -3875,6 +4036,8 @@ class Watcher:
                      memo_lane(m) == "interactive" and not detached_now(m)
                      and time.time() - float(m.get("dispatched_ts") or time.time()) >= DETACH_PROBE_AFTER_S)
                     for m in self.active() if m.get("stage") == "await_agent" and m.get("command_id")]
+        if work:
+            call_state()   # refresh the call cache outside the lock: narration_due / maybe_keepalive read it under it
         for key, mid, cid, probe_detach in work:
             try:
                 events = mc_.progress_events(mid)  # outside the lock: an HTTP call
@@ -3928,7 +4091,8 @@ class Watcher:
         if m["key"] in self.narrating:
             return "render_in_flight"
         if (m.get("narr_pending") or {}).get("cid") == m.get("command_id") and m.get("command_id"):
-            return None  # a one-off line (the detach notice) goes out as soon as nothing else is rendering
+            # a one-off line (the detach notice) goes out as soon as nothing else is rendering, never into a phone call
+            return "operator_on_call" if on_call(cached=True) else None
         if live_followup(m) is not None:
             return "followup"   # background work after the quick answer: nobody is waiting on it, and the car drops it
         if detached_now(m):
@@ -3943,7 +4107,23 @@ class Watcher:
             return "too_early"
         if now < float(m.get("narr_last_ts") or 0) + NARRATE_GAP_S:
             return "too_soon"
+        if on_call(cached=True):
+            # Due right now, but the operator is on a phone call: maybe_narrate DROPS this line (a progress update
+            # after the call is noise; the next one is spoken in its own time). Cache only: this runs under the lock,
+            # poll_progress refreshed it a moment ago.
+            return "operator_on_call"
         return None
+
+    @staticmethod
+    def _drop_narration_for_call(m: dict) -> None:
+        """Under the lock: the narration due now met the operator on a phone call. Dropped, not deferred: the one-off
+        line is discarded and the progress line is marked as spoken (it is never said after the hang-up; a newer one is,
+        in its own time)."""
+        pend = m.pop("narr_pending", None)
+        if pend is None:
+            m["narr_cmd"], m["narr_src_seq"] = m.get("progress_cmd"), m.get("progress_seq")
+        log("narration_dropped", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], seq=m.get("progress_seq"),
+            reason="operator_on_call", tag=(pend or {}).get("tag"), note="the operator is on a phone call: nothing is said in the car")
 
     def narrate_line(self, m: dict, text: str, tag: str) -> None:
         """Under the lock: say one fixed line in the car for the memo's current command (as a progress clip, the next in
@@ -3953,7 +4133,10 @@ class Watcher:
 
     def maybe_narrate(self, m: dict) -> bool:
         """Under the lock: start one narration render for this memo if one is due. True when it started."""
-        if self.narration_due(m) is not None:
+        why = self.narration_due(m)
+        if why == "operator_on_call":
+            self._drop_narration_for_call(m)
+        if why is not None:
             return False
         n = m.get("narr_count", 0) + 1
         name = m.get("display_name") or mc_.spoken_name(m["agent"])
@@ -4008,10 +4191,17 @@ class Watcher:
             audio, engine, choice, _ = result
             voice = choice["voice"]
             tts_s = time.time() - t0
+            calling = on_call()   # outside the lock: the render may have taken seconds, a call may have started
             with self.mu:
-                why = self._still_working(self.s.memos.get(key), job)
+                mm = self.s.memos.get(key)
+                why = self._still_working(mm, job) or ("operator_on_call" if calling else None)
+                if why == "operator_on_call" and mm is not None and "tag" not in job:
+                    # dropped, not deferred: the progress line is marked as spoken (as _drop_narration_for_call does), or a
+                    # call shorter than NARRATE_GAP_S would see the same stale line rendered and said after the hang-up
+                    mm["narr_cmd"], mm["narr_src_seq"] = job["cid"], job["seq"]
             if why:
                 # Nothing is spoken once the turn is done: the reply is next, and a progress line after it is noise.
+                # Nor into a phone call (dropped: the next line is spoken in its own time).
                 log("narration_dropped", memo_id=mid, key=key, agent=job["agent"], n=job["n"], seq=job["seq"], reason=why,
                     tts_ms=int(tts_s * 1000))
                 return
@@ -4124,11 +4314,15 @@ class Watcher:
         return done
 
     def _hold_claim(self, m: dict, still) -> int | None:
-        """Under no lock: claim the memo's render slot for one hold cue (None: dropped, nothing claimed). n is the clip number."""
+        """Under no lock: claim the memo's render slot for one hold cue (None: dropped, nothing claimed). n is the clip number.
+        A cue that meets the operator on a phone call is dropped (operator_on_call), never held for later."""
+        calling = on_call()
         with self.mu:
             why = still(m)
             if why is None and m["key"] in self.narrating:
                 why = "render_in_flight"
+            if why is None and calling:
+                why = "operator_on_call"
             if why:
                 log("hold_cue_dropped", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], reason=why, stage="claim")
                 return None
@@ -4155,11 +4349,12 @@ class Watcher:
                     clip_s=round(clip_s, 2), max_s=HOLD_MAX_CLIP_S, text=text,
                     note="a long cue holds the pad's speech queue: dropped, and this line is not used again until restart")
                 return
+            calling = on_call()
             with self.mu:
-                why = still(m)
+                why = still(m) or ("operator_on_call" if calling else None)
             if why:
                 log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="rendered", tts_ms=int(tts_s * 1000),
-                    note="the answer is ready: a stale cue is never uploaded")
+                    note="the answer is ready (or the operator is on a call): a stale cue is never uploaded")
                 return
             pkey = mc_.progress_key_for(key, n, mid, hold=True)
             r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(audio), mc_.s3_url(pkey), timeout=30)
@@ -4170,8 +4365,9 @@ class Watcher:
             shutil.rmtree(tmp, ignore_errors=True)
             with self.mu:
                 self.narrating.discard(key)
+        calling = on_call()
         with self.mu:
-            why = still(m)
+            why = still(m) or ("operator_on_call" if calling else None)
             if why:
                 removed = False
                 try:   # the decision landed during the upload: the object must not stay listed for the pad to pick up
@@ -4218,6 +4414,12 @@ class Watcher:
             return False
         ka["n"] += 1
         ka["last"] = now
+        if on_call(cached=True):
+            # due, but the operator is on a phone call: this keep-alive is DROPPED (its slot is spent; the next one comes
+            # HOLD_FALL_GAP_S later, if the turn is still quiet then). Cache only: the caller holds the lock.
+            log("hold_cue_dropped", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], reason="operator_on_call",
+                stage="claim", tag="hold_keepalive", note="the operator is on a phone call: nothing is said in the car")
+            return False
         dispatched = float(m.get("dispatched_ts") or now)
 
         def still(mm: dict) -> str | None:
@@ -4318,8 +4520,64 @@ def claim_call(memo_id: str, body: dict | None = None, reply_key: str | None = N
     return ans
 
 
+_CALL = {"at": None, "state": {"on_call": False}}   # monotonic time of the last answer (or failure), and that answer
+_CALL_LOCK = threading.Lock()
+
+
+def fetch_operator() -> dict:
+    """GET the upload proxy's /upload/operator (is the operator on a phone call). Raises on failure."""
+    req = urllib.request.Request(CALL_URL, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=CALL_TIMEOUT_S) as r:
+        ans = json.loads(r.read().decode("utf-8", "replace"))
+    if not isinstance(ans, dict):
+        raise ValueError("operator answer is not an object")
+    return ans
+
+
+def call_state(cached: bool = False) -> dict:
+    """The operator's call state ({on_call, call, since, ...}), fail-open: a proxy that cannot be asked answers
+    {"on_call": False}. One GET per CALL_CACHE_S (a failure is cached too, so a dead proxy costs one refused connect).
+    cached=True never touches the network (a caller under the watcher's lock): the last answer while it is under
+    CALL_CACHED_MAX_S old, else not on a call. MEMO_CALL_GATE=0: never on a call."""
+    if not CALL_GATE:
+        return {"on_call": False}
+    now = time.monotonic()
+    with _CALL_LOCK:
+        at, state = _CALL["at"], _CALL["state"]
+    if cached:
+        return state if at is not None and now - at <= CALL_CACHED_MAX_S else {"on_call": False}
+    if at is not None and now - at <= CALL_CACHE_S:
+        return state
+    try:
+        ans = fetch_operator()
+        # the proxy's own switch (OPERATOR_CALL_GATE=0: gate false) turns the whole cabin's quiet off, this one too
+        state, err = {**ans, "on_call": ans.get("on_call") is True and ans.get("gate") is not False}, None
+    except Exception as e:  # noqa: BLE001 - fail-open: unknown is not a call
+        state, err = {"on_call": False, "unknown": True}, f"{type(e).__name__}: {e}"[:160]
+    with _CALL_LOCK:
+        prev, prev_err = _CALL["state"], _CALL.get("err")
+        _CALL.update(at=time.monotonic(), state=state, err=err)
+    if err and not prev_err:
+        log("call_state_failed", "warn", url=CALL_URL, error=err,
+            note="the operator's call state is unknown: treated as not on a call")
+    if state["on_call"] != (prev.get("on_call") is True):
+        log("operator_call", on_call=state["on_call"], call=state.get("call"), since=state.get("since"))
+    return state
+
+
+def on_call(cached: bool = False) -> bool:
+    """True while the operator is on a phone call (see call_state)."""
+    return call_state(cached).get("on_call") is True
+
+
+class OperatorOnCall(Exception):
+    """The Earshot drop was about to happen while the operator is on a phone call: it is deferred, not failed."""
+
+
 # Why the phone copy went the way it did, as memo:trace and /voice word it.
 EARSHOT_REASONS = {
+    "on_call": ("the operator was on a phone call: nothing is dropped into it, the phone copy waits for the hang-up "
+                "(phone_retry, its budget paused for the call)"),
     "car_started": "the car that sent the memo started (or finished) it",
     "car_holds": f"the car that sent the memo still held it, live, {int(EARSHOT_HOLD_MAX_S)} s after it was up",
     "no_car_claim": f"no car claimed it within {EARSHOT_CAR_GRACE_S:g} s of its first audio being up",
@@ -4362,7 +4620,11 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
     after this, so nothing here may hold it for a grace window, a hold or a proxy that cannot be asked (2026-10-22: the
     agent started 22.6 s after "Send it" behind the 20 s grace). The caller (_phone_copy) hands the rest of the decision
     to the phone retry (arm_readback_phone_copy), which waits the grace and the holds in the background, so the
-    read-back is never heard nowhere. The delegated RESULT is a reply of its own and is mirrored the usual way."""
+    read-back is never heard nowhere. The delegated RESULT is a reply of its own and is mirrored the usual way.
+
+    skip "on_call" (why on_call): the operator is on a phone call at the moment the phone would take the reply (or the
+    proxy refused the take with on_call). Not a verdict either: the caller hands it to the phone retry like a read-back
+    (arm_readback_phone_copy, before "on_call"), which drops it after the hang-up unless a car speaks it first."""
     if not EARSHOT_SKIP_CAR:
         return None, "skip_off"
     link = {"down_at": None, "back_at": None, "fails": 0}
@@ -4420,6 +4682,8 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
         sleep(EARSHOT_POLL_S)
         st = ask(offer)
     if st.get("sender_host") == "browser" and not st.get("car"):
+        if on_call():
+            return done("on_call", "on_call", st)
         return done(None, "browser_sender", st)
     while True:
         if (h := halted()) is not None:
@@ -4437,9 +4701,16 @@ def phone_copy_decision(mid: str, key: str, rkey: str, t_up: float, chunked: boo
                 return done("car_holds", "car_holds", st)
         if (live and settled() and not st.get("car_holds") and not st.get("settling_s")
                 and (st.get("held_ever") or waited >= EARSHOT_CAR_GRACE_S)):
+            # On a call the phone does not take it at all: the decision is handed to the phone retry, which waits for the
+            # hang-up in the background (the stage is not held for the length of a call). The proxy refuses the take on
+            # a call too (on_call), for a call this check could not see.
+            if on_call():
+                return done("on_call", "on_call", st)
             nxt = ask({"by": "watcher", "action": "take"})
             if nxt is not None and nxt.get("ok"):
                 return done(None, "car_let_go" if nxt.get("held_ever") else "no_car_claim", nxt)
+            if nxt is not None and nxt.get("on_call"):
+                return done("on_call", "on_call", nxt)
             if nxt is not None:
                 st = nxt  # a car's hold or start landed first, or the proxy is settling: look again
                 if st.get("car") in ("started", "ended"):
@@ -4454,9 +4725,20 @@ def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: s
                       text: str | None = None, on_text=None) -> str | None:
     """Drop the reply into the Earshot channel: the full text first (when given), then the audio. Fail-open: the car's
     replies/ object is the reply of record, so a mirror failure is logged and never fails the memo. A text that
-    uploaded is reported through on_text(key) at once, so it is recorded even if the audio then fails."""
+    uploaded is reported through on_text(key) at once, so it is recorded even if the audio then fails. Raises
+    OperatorOnCall (the audio not dropped) when the operator is on a phone call before the text or right before the audio."""
     if not EARSHOT_CHANNEL:
         return None
+
+    def quiet(at: str) -> None:
+        # Last moment before the phone gets anything (defense in depth behind the decision and the proxy's claims): a
+        # call that began since is never rung through. Deferred, not failed: OperatorOnCall, and the caller hands the
+        # drop to the phone retry. Asked before the text and again right before the audio (the cache makes it ~free).
+        if on_call():
+            log("earshot_drop_deferred", memo_id=mid, key=key, earshot_key=earshot_key_for(stamp, agent, mid), at=at,
+                reason="on_call", note="the operator is on a phone call: the drop waits for the hang-up")
+            raise OperatorOnCall(at)
+    quiet("text" if text else "audio")
     if text:
         tkey = upload_earshot_text(text, stamp, agent, mid, key)
         if tkey and on_text is not None:
@@ -4465,6 +4747,8 @@ def mirror_to_earshot(audio: Path, stamp: datetime, agent: str, mid: str, key: s
             except Exception as e:  # noqa: BLE001 - bookkeeping must not stop the audio
                 log("earshot_text_unrecorded", "warn", memo_id=mid, key=key, earshot_key=tkey, error=str(e)[:200])
     ekey = earshot_key_for(stamp, agent, mid)
+    if text:
+        quiet("audio")
     t0 = time.time()
     try:
         r = mc_.mc("cp", "--quiet", str(audio), f"{mc_.S3_ALIAS}/{EARSHOT_BUCKET}/{ekey}", timeout=60)

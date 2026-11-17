@@ -16,6 +16,9 @@
 // a yes: the proxy refuses the phone while it lives, so the car plays on it, looks at its start's answer before the
 // audio starts, and re-sends a start the proxy never answered (it was down) until it has it, so the phone cannot take
 // the lapsed hold after the outage (the proxy and the watcher also wait a settle window then). Pure rules, so tested.
+// Quiet on a call (callhold.ts): while the operator's phone rings or is in a call the proxy refuses the car's holds and
+// starts with {ok:false, on_call:true}, even on a live lease, and the phone's take too. That refusal is 'call': the reply
+// waits at the head of the queue for the hang-up. It is never a strike, never a skip, and never forgets the phone's take.
 
 /** The proxy's hold lease (its CLAIM_LEASE_S). */
 export const CLAIM_LEASE_MS = 20_000
@@ -33,21 +36,29 @@ export const CLAIM_CONFIRM_MAX_MS = 10 * 60_000
 /** How long a claim may take before the car goes ahead without its answer. */
 export const CLAIM_WAIT_MS = 2_500
 
-/** car: this car holds (or started) the reply. phone: the phone took it, leave it. none: no answer. */
-export type ClaimAnswer = 'car' | 'phone' | 'none'
+/** car: this car holds (or started) the reply. phone: the phone took it, leave it. call: the operator is on a call,
+ *  nobody speaks it now (wait for the hang-up). none: no answer. */
+export type ClaimAnswer = 'car' | 'phone' | 'call' | 'none'
 export type Claim = { answer: ClaimAnswer; at: number }
 
 /** The proxy's answer to a claim: HTTP status and JSON body. */
 export function claimAnswer(status: number, body: unknown): ClaimAnswer {
-  const b = (body && typeof body === 'object' ? body : {}) as { ok?: unknown; owner?: unknown }
+  const b = (body && typeof body === 'object' ? body : {}) as { ok?: unknown; owner?: unknown; on_call?: unknown }
   if (status !== 200) return 'none'
   if (b.ok === true) return 'car'
+  // Before the owner: an on-call refusal carries the reply's status fields, and a phone owner there is settled after the
+  // hang-up (the next answer says so), not now.
+  if (b.ok === false && b.on_call === true) return 'call'
   return b.ok === false && b.owner === 'phone' ? 'phone' : 'none'
 }
 
-/** A newer answer replaces the old one; no answer never forgets a refusal or a live hold. */
+/**
+ * A newer answer replaces the old one; no answer never forgets a refusal or a live hold. An on-call refusal replaces a
+ * live hold (the proxy did not renew it: no start is made on it) but never the phone's take.
+ */
 export function noteClaim(prev: Claim | undefined, answer: ClaimAnswer, now: number): Claim | undefined {
   if (answer === 'none') return prev
+  if (answer === 'call' && prev?.answer === 'phone') return prev
   return { answer, at: now }
 }
 
@@ -71,9 +82,11 @@ export function holdDue(c: Claim | undefined, now: number): boolean {
 /**
  * The start's answer, before the audio starts. skip: the phone has it (on a hold: the proxy lost the hold). play: the
  * proxy said yes, or gave no answer to a start on a live hold (the hold keeps the phone out; the start is re-sent until
- * answered). wait: no answer and no live hold: the reply stays at the head of the queue and is asked again.
+ * answered). wait: no answer and no live hold: the reply stays at the head of the queue and is asked again. call: the
+ * operator is on a call: it stays at the head of the queue until the hang-up (on a live hold too: the proxy refused it).
  */
-export function startVerdict(plan: 'play' | 'claim', answer: ClaimAnswer): 'play' | 'skip' | 'wait' {
+export function startVerdict(plan: 'play' | 'claim', answer: ClaimAnswer): 'play' | 'skip' | 'wait' | 'call' {
+  if (answer === 'call') return 'call'
   if (answer === 'phone') return 'skip'
   if (answer === 'car') return 'play'
   return plan === 'play' ? 'play' : 'wait'

@@ -203,6 +203,8 @@ EARSHOT_SKIPPED = {
                             "not wait for the phone decision, and the result is mirrored on its own"),
     "car_released": ("the phone took it, but its Earshot drop failed on every try, so the take was given back: the car may "
                      "play it (look for the car's played hop)"),
+    "on_call": ("the operator was on a phone call when the phone would have got it: nothing is dropped into a call; the "
+                "phone retry drops it after the hang-up unless the car speaks it first (see phone_retry)"),
 }
 EARSHOT_MIRRORED = {
     "no_car_claim": "no car claimed it within the grace window after its first audio was up (switched off, or out of reach)",
@@ -244,7 +246,8 @@ def earshot_hops(ekey: str | None, tkey: str | None = None, skipped: str | None 
     if not ekey and skipped:
         why = EARSHOT_SKIPPED.get(skipped, skipped)
         # no_answer: nobody knows whether the car spoke it, so the hop does not say OK
-        if skipped == "car_released":
+        if skipped in ("car_released", "on_call"):
+            # not a verdict: the phone retry (its own hops below) or the car's played hop says how it ended
             return [Hop("phone_object", UNKNOWN, detail=f"not mirrored to the phone: {why}", optional=True)]
         return [Hop("phone_object", UNKNOWN if skipped == "no_answer" else OK, detail=f"not mirrored to the phone: {why} (a paired phone plays through the car's "
                                                "speakers: the same reply twice, or into a recording)", optional=True)]

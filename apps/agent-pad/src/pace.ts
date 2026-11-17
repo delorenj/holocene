@@ -8,6 +8,8 @@
 // SpeechArbiter still serialises every offer, so a retry can never overlap a recording or another utterance. After
 // FOCUS_FREE_TRIES refusals in a row (about a minute and a half of refusals) a focus failure counts as a strike again,
 // so a car whose focus never comes back still gives the reply up (and the phone may take it).
+// The operator's own phone call is not a focus failure at all once the pad knows of it (callhold.ts: Earshot's call
+// signal through the upload proxy): a playback error while on a call requeues the reply at the head, no try counted.
 
 /** Retry delays after an audio-focus refusal; the last one repeats. */
 export const FOCUS_RETRY_MS = [300, 1000, 2000, 4000, 8000, 10_000]

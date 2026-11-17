@@ -1641,3 +1641,263 @@ class EarlyPush(unittest.TestCase):
     def test_a_key_outside_replies_is_not_pushed(self):
         ev = up.hint_push(self.body(data={"chunk_s3_key": "inbox/x/2026/10/22/a.ogg", "chunk": 1}), self.hub)
         self.assertNotIn("chunk_s3_key", ev)
+
+
+class OperatorOnCall(unittest.TestCase):
+    """Quiet on a call (2026-11-16): Earshot's heartbeat names the call; the proxy keeps ONE operator-on-call signal and
+    the claims refuse every new start (the phone's take, the car's hold / start) while it is on."""
+    DEV = "6f1c2a9e-1b2c-4d5e-8f90-0a1b2c3d4e5f"
+    RKEY = f"replies/2026/10/21/101500Z-holocene-pm-{PUSH_MEMO}.ogg"
+
+    def oc(self, **kw):
+        self.sent = []
+        return up.OperatorCall(**{"fresh_s": 150, "hold_max_s": 10800, "notify": self.sent.append, "now": 0, **kw})
+
+    def test_a_fresh_heartbeat_with_a_call_is_on_a_call_and_one_without_is_off(self):
+        oc = self.oc()
+        self.assertFalse(oc.check(now=1)["on_call"], "nothing heard: not on a call")
+        v = oc.heartbeat("S26", "ringing", now=100)
+        self.assertEqual((v["on_call"], v["call"], v["since"], v["device"], v["gate"]), (True, "ringing", 100, "S26", True))
+        v = oc.heartbeat("S26", "in_call", now=110)
+        self.assertEqual((v["call"], v["since"]), ("in_call", 100), "ringing then answered is one call, from its first beat")
+        self.assertEqual(self.sent, [{"on_call": True, "call": "ringing", "since": 100, "gate": True}],
+                         "one transition, not one event per beat")
+        v = oc.heartbeat("S26", None, now=200)
+        self.assertEqual((v["on_call"], v["call"], v["since"], v["device"], v["age_s"]), (False, None, None, "S26", 0.0))
+        self.assertEqual(self.sent[-1], {"on_call": False, "call": None, "since": None, "gate": True})
+
+    def test_a_stale_heartbeat_is_not_a_call_and_the_staleness_is_announced(self):
+        oc = self.oc()
+        oc.heartbeat("S26", "in_call", now=100)
+        self.assertTrue(oc.check(now=250)["on_call"], "150 s: still fresh (2.5 beats)")
+        v = oc.check(now=251)
+        self.assertEqual((v["on_call"], v["device"], v["age_s"]), (False, "S26", 151.0))
+        self.assertEqual(self.sent[-1]["on_call"], False, "the phone went silent: the car may talk again, and is told so")
+        self.assertEqual(len(self.sent), 2)
+        oc.check(now=260)
+        self.assertEqual(len(self.sent), 2, "no transition, no event")
+
+    def test_a_call_longer_than_the_hold_max_no_longer_mutes(self):
+        oc = self.oc(hold_max_s=1000)
+        for t in range(100, 1101, 60):
+            oc.heartbeat("S26", "in_communication", now=t)
+        self.assertTrue(oc.check(now=1100)["on_call"])
+        self.assertFalse(oc.check(now=1101)["on_call"], "a mode stuck for hours does not silence the car for good")
+
+    def test_a_malformed_call_is_off_and_garbage_never_mutes(self):
+        oc = self.oc()
+        self.assertFalse(oc.heartbeat("S26", "In Call!", now=100)["on_call"])
+        self.assertFalse(oc.heartbeat("S26", 7, now=101)["on_call"])
+
+    def test_any_devices_fresh_call_counts(self):
+        oc = self.oc()
+        oc.heartbeat("old-phone", None, now=100)
+        oc.heartbeat("S26", "in_call", now=101)
+        oc.heartbeat("old-phone", None, now=102)
+        v = oc.check(now=103)
+        self.assertEqual((v["on_call"], v["device"]), (True, "S26"))
+
+    def test_a_call_whose_hangup_beat_never_came_does_not_hand_its_start_to_the_next(self):
+        oc = self.oc()
+        oc.heartbeat("S26", "in_call", now=0)
+        v = oc.heartbeat("S26", "in_call", now=4 * 3600)   # the phone was dark for hours: this is another call
+        self.assertEqual((v["on_call"], v["since"]), (True, 4 * 3600))
+        v = oc.heartbeat("S26", "in_call", now=4 * 3600 + 60)
+        self.assertEqual(v["since"], 4 * 3600, "a fresh previous beat still continues the same call")
+
+    def test_the_state_survives_a_restart_mid_call(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = str(Path(d) / "operator-call.json")
+            oc = self.oc(state_file=f)
+            oc.heartbeat("S26", "in_call", now=time.time() - 30)
+            back = self.oc(state_file=f, now=time.time())
+            self.assertEqual(back.loaded, 1)
+            v = back.check()
+            self.assertEqual((v["on_call"], v["call"]), (True, "in_call"))
+            self.assertEqual(self.sent, [], "a restart mid-call starts quiet without announcing a transition")
+            Path(f).write_text("{nope")
+            broken = self.oc(state_file=f)
+            self.assertIsNone(broken.loaded)
+            self.assertFalse(broken.check()["on_call"], "an unreadable file is not a call (fail-open)")
+
+    def test_the_call_file_defaults_beside_the_claims_file(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            here = Path(up.__file__).resolve().parent
+            r = subprocess.run([sys.executable, "-B", "-c", "import upload_proxy as up; print(up.CALL_STATE_FILE)"],
+                               cwd=here, env={**__import__("os").environ, "CLAIM_STATE_FILE": f"{d}/claims.json"},
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr[-800:])
+            self.assertEqual(r.stdout.strip().splitlines()[-1], f"{d}/operator-call.json")
+
+    def test_the_gate_off_reports_the_call_but_refuses_nothing(self):
+        oc = self.oc(gate=False)
+        oc.heartbeat("S26", "in_call", now=time.time())
+        self.assertTrue(oc.check()["on_call"])
+        self.assertFalse(oc.check()["gate"])
+        self.assertFalse(oc.refuses())
+        c = up.ReplyClaims(boot_at=0, quiet=oc.refuses)
+        self.assertTrue(c.take(PUSH_MEMO)["ok"])
+
+    def claims(self):
+        oc = self.oc()
+        return oc, up.ReplyClaims(lease_s=20, boot_at=0, quiet=oc.refuses)
+
+    def test_the_phones_take_is_refused_on_a_call_and_nothing_moves(self):
+        oc, c = self.claims()
+        c.offer(PUSH_MEMO, now=100, reply_key=self.RKEY)
+        oc.heartbeat("S26", "in_call", now=110)
+        ans = c.take(PUSH_MEMO, now=130, reply_key=self.RKEY)
+        self.assertEqual((ans["ok"], ans.get("on_call"), ans["owner"], ans["offered"]), (False, True, None, True))
+        self.assertIsNone(c.view(PUSH_MEMO, now=130, reply_key=self.RKEY)["owner"], "no ownership moved to the phone")
+        oc.heartbeat("S26", None, now=140)
+        self.assertTrue(c.take(PUSH_MEMO, now=141, reply_key=self.RKEY)["ok"], "hung up: the take goes through")
+        oc.heartbeat("S26", "in_call", now=150)
+        self.assertEqual(c.take(PUSH_MEMO, now=151, reply_key=self.RKEY).get("on_call"), True,
+                         "even a reply the phone already took is not dropped into a call")
+
+    def test_the_cars_hold_start_and_renew_are_refused_on_a_call_but_played_and_release_are_not(self):
+        oc, c = self.claims()
+        self.assertTrue(c.car(PUSH_MEMO, "hold", self.DEV, now=100, reply_key=self.RKEY)["ok"])
+        oc.heartbeat("S26", "in_call", now=101)
+        renew = c.car(PUSH_MEMO, "hold", self.DEV, now=105, reply_key=self.RKEY)
+        self.assertEqual((renew["ok"], renew.get("on_call"), renew["lease_left_s"]), (False, True, 15.0),
+                         "a renew is refused: the live lease is not extended for the length of the call")
+        start = c.car(PUSH_MEMO, "start", self.DEV, now=106, reply_key=self.RKEY)
+        self.assertEqual((start["ok"], start.get("on_call"), start["car"]), (False, True, "held"), "nothing was started")
+        other = "0c7effbf-a048-5aa3-84f4-0d12650848cc"
+        self.assertEqual(c.car(other, "hold", self.DEV, now=107).get("on_call"), True)
+        self.assertIsNone(c.view(other, now=107)["owner"], "a refused first hold claims nothing")
+        # what already happened is recorded on a call too
+        self.assertTrue(c.played(PUSH_MEMO, "start", self.DEV, now=108, reply_key=self.RKEY))
+        self.assertEqual(c.view(PUSH_MEMO, now=108, reply_key=self.RKEY)["car"], "started")
+        rk2 = f"replies/2026/10/21/102800Z-holocene-pm-{PUSH_MEMO}.ogg"
+        oc.heartbeat("S26", None, now=109)
+        c.car(PUSH_MEMO, "hold", self.DEV, now=110, reply_key=rk2)
+        oc.heartbeat("S26", "in_call", now=111)
+        rel = c.car(PUSH_MEMO, "release", self.DEV, now=112, reply_key=rk2)
+        self.assertEqual((rel["ok"], rel["car"], rel["owner"]), (True, None, None), "a release is never refused")
+        self.assertTrue(c.car(PUSH_MEMO, "end", self.DEV, now=113, reply_key=self.RKEY)["ok"])
+        self.assertTrue(c.release(PUSH_MEMO, now=114, reply_key=rk2)["ok"], "the watcher's release neither")
+
+    def test_a_reply_the_phone_took_stays_the_phones_and_the_car_is_refused_as_before(self):
+        oc, c = self.claims()
+        c.take(PUSH_MEMO, now=100, reply_key=self.RKEY)
+        oc.heartbeat("S26", "in_call", now=101)
+        ans = c.car(PUSH_MEMO, "hold", self.DEV, now=102, reply_key=self.RKEY)
+        self.assertEqual((ans["ok"], ans.get("on_call"), ans["owner"]), (False, None, "phone"),
+                         "the phone's take is final: the car leaves it, call or not")
+
+    def test_claim_request_carries_on_call(self):
+        oc, c = self.claims()
+        oc.heartbeat("S26", "in_call", now=time.time())
+        code, ans = up.claim_request({"by": "car", "action": "start", "reply_key": self.RKEY}, c)
+        self.assertEqual((code, ans["ok"], ans["on_call"]), (200, False, True))
+        code, ans = up.claim_request({"by": "watcher", "action": "take", "reply_key": self.RKEY}, c)
+        self.assertEqual((code, ans["ok"], ans["on_call"]), (200, False, True))
+
+
+class OperatorCallHttp(unittest.TestCase):
+    """GET /upload/operator, the heartbeat feeding it, the claims refusing over HTTP, and the SSE `call` event."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        cls.old = (up.OPERATOR_CALL, up.CLAIMS, up.PUSH, up.EMIT_FACTS, up.EARSHOT_JSONL, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S)
+        cls._t = tempfile.TemporaryDirectory()
+        up.EARSHOT_JSONL = str(Path(cls._t.name) / "beacons.jsonl")
+        up.EMIT_FACTS = False
+        up.PUSH = up.PushHub()
+        up.PUSH_HEARTBEAT_S = 0.3
+        up.PUSH_MAX_AGE_S = 1.5
+        cls.srv = up.ThreadedServer(("127.0.0.1", 0), up.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        (up.OPERATOR_CALL, up.CLAIMS, up.PUSH, up.EMIT_FACTS, up.EARSHOT_JSONL, up.PUSH_HEARTBEAT_S, up.PUSH_MAX_AGE_S) = cls.old
+        cls._t.cleanup()
+
+    def setUp(self):
+        up.OPERATOR_CALL = up.OperatorCall(fresh_s=150, notify=up._publish_call)
+        up.CLAIMS = up.ReplyClaims(boot_at=0, quiet=up.OPERATOR_CALL.refuses)
+
+    def call(self, path, body=None):
+        import urllib.request, urllib.error
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method="POST" if body is not None else "GET",
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                raw = r.read()
+                return r.status, json.loads(raw) if raw else None
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    def test_the_operator_route_follows_the_heartbeats(self):
+        code, v = self.call("/upload/operator")
+        self.assertEqual((code, v["on_call"], v["call"], v["since"], v["gate"]), (200, False, None, None, True))
+        self.assertEqual(set(v), {"on_call", "call", "since", "device", "age_s", "gate"})
+        self.assertEqual(self.call("/upload/heard", {**HEARTBEAT, "call": "in_call"})[0], 200)
+        code, v = self.call("/upload/operator?x=1")
+        self.assertEqual((v["on_call"], v["call"], v["device"]), (True, "in_call", "S26"))
+        self.assertIsInstance(v["since"], float)
+        memo = "a1b2c3d4-0000-5000-8000-0000000000c1"
+        rkey = f"replies/2026/10/21/101500Z-holocene-pm-{memo}.ogg"
+        code, ans = self.call("/upload/claim", {"by": "car", "action": "hold", "reply_key": rkey})
+        self.assertEqual((code, ans["ok"], ans["on_call"]), (200, False, True))
+        self.assertEqual(self.call("/upload/claim", {"by": "watcher", "action": "take", "reply_key": rkey})[1]["on_call"], True)
+        self.assertEqual(self.call("/upload/played", {"reply_key": rkey, "phase": "started"})[0], 200)
+        self.assertEqual(self.call(f"/upload/claim?memo={memo}")[1]["car"], "started", "a played beacon is still recorded")
+        self.assertEqual(self.call("/upload/heard", HEARTBEAT)[0], 200)
+        self.assertFalse(self.call("/upload/operator")[1]["on_call"], "hung up")
+
+    def stream(self, after=(), headers=""):
+        import socket, threading, time as t
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        s.sendall(f"GET /upload/events HTTP/1.1\r\nHost: x\r\n{headers}\r\n".encode())
+
+        def later():
+            t.sleep(0.3)
+            for fn in after:
+                fn()
+                t.sleep(0.1)
+        threading.Thread(target=later, daemon=True).start()
+        out = b""
+        while True:
+            d = s.recv(65536)
+            if not d:
+                break
+            out += d
+        s.close()
+        return out.decode()
+
+    def call_events(self, out):
+        return [json.loads(block.split("data: ", 1)[1]) for block in out.split("\n\n") if block.startswith("event: call\n")]
+
+    def test_a_stream_gets_the_state_on_connect_and_every_transition(self):
+        out = self.stream(after=[lambda: self.call("/upload/heard", {**HEARTBEAT, "call": "ringing"}),
+                                 lambda: self.call("/upload/heard", {**HEARTBEAT, "call": "in_call"}),
+                                 lambda: self.call("/upload/heard", HEARTBEAT)])
+        evs = self.call_events(out)
+        self.assertEqual([e["on_call"] for e in evs], [False, True, False], "connect, then one event per transition")
+        self.assertEqual(evs[1]["call"], "ringing")
+        self.assertLess(out.index("event: hello"), out.index("event: call"))
+        self.assertNotRegex(out, r"id: [^\n]+\nevent: call", "state, not a fact: no id, never replayed")
+
+    def test_the_call_state_comes_before_a_replayed_backlog(self):
+        first = up.PUSH.publish({"fact": "received", "memo_id": PUSH_MEMO})
+        up.PUSH.publish({"fact": "progress", "memo_id": PUSH_MEMO})
+        up.OPERATOR_CALL.heartbeat("S26", "in_call", now=time.time())
+        out = self.stream(headers=f"Last-Event-ID: {first}\r\n")
+        self.assertIn('"fact":"progress"', out)
+        self.assertLess(out.index("event: call"), out.index('"fact":"progress"'),
+                        "a reconnect mid-call: the pad is told before the backlog's clips can start")
+
+    def test_a_call_that_goes_stale_is_announced_on_the_beat(self):
+        up.OPERATOR_CALL.heartbeat("S26", "in_call", now=time.time() - 149.6)
+        out = self.stream()
+        self.assertEqual([e["on_call"] for e in self.call_events(out)], [True, False],
+                         "no beacon at all: the stream's own beat finds the stale call and says so")

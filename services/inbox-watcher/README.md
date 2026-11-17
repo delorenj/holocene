@@ -204,6 +204,34 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
   shows "mirrored to the phone late" from it, and the ntfy router mutes it). `gave_up` quotes the last failed drop (not a
   proxy blip that came after it) and the last decision. A manual `memo:retry` that runs the mirror stage again after a
   `gave_up` and fails the drop again arms a fresh retry (the old decisions stay in front); a retry still pending is kept.
+- **Quiet on a call (2026-11-16).** "If the phone is on a call, mute, then defer until I hang up." Earshot's heartbeat
+  (`POST /upload/heard`, phase `heartbeat`) names the call (`call`: in_call, in_communication, ringing, ...) while the
+  phone is on one, and sends one at once on every on/off change; the upload proxy keeps that as the ONE
+  operator-on-call signal (`OperatorCall`: `GET /upload/operator` -> `{on_call, call, since, device, age_s, gate}`, and an
+  SSE `call` event on `/upload/events` on every transition and when a stream opens). Fresh means a heartbeat under
+  `CALL_FRESH_S` (150) old, and a call older than `CALL_HOLD_MAX_S` (3 h) no longer counts; unknown or stale is NOT a
+  call (fail-open). It is written to `operator-call.json` beside the claims file, so a restart mid-call stays quiet.
+  While he is on a call:
+  - the proxy refuses the phone's take and the car's hold and start (`ok: false, on_call: true`), even a renew of a live
+    hold; `played`, `end`, `release` and reads are not refused, and nothing changes owner;
+  - the watcher never drops the Earshot phone copy: `phone_copy_decision` returns `on_call` where it would take the reply
+    (or when the proxy refused the take with `on_call`), and the reply goes to the phone retry (`phone_retry.before:
+    on_call`, the replied fact says `earshot_skipped: on_call`), whose rounds only look every 5 s while the call lasts,
+    credit the call back to the retry budget (at most `MEMO_CALL_HOLD_MAX_S`, 3600, of one call), and after the hang-up
+    wait 5 s more (a live car resumes its queue and holds the reply first), then take and drop a fresh object
+    (`audio.memo.mirrored`, `earshot_skipped_before: on_call`). A last-moment check in `mirror_to_earshot` (before the
+    text and right before the audio) defers instead of failing a drop that a call started under; the phone keeps its
+    take then (it is given back to the car if the retry ends without a drop, or is switched off). Two replies of one
+    memo held by one call are both kept: the older waits in `m.phone_retry_queue` and takes the slot when the newer
+    one's retry ends (decision `queued`, then `promoted`), never superseded;
+  - the car-only cues are DROPPED, never said later: a narration that is due (`narration_dropped`, reason
+    `operator_on_call`; the line counts as spoken), a hold cue at any of its checkpoints and a keep-alive (its slot is
+    spent) (`hold_cue_dropped`, reason `operator_on_call`).
+  memo:trace shows `on_call` on the phone hop and `phone_retry:on_call` / `call_ended` decisions. The watcher asks the
+  proxy at most every 2 s (1.5 s timeout; a failure is cached too and means "not on a call"). Kill switches:
+  `MEMO_CALL_GATE=0` (the watcher), `OPERATOR_CALL_GATE=0` on the proxy (still recorded and reported with `gate: false`;
+  the watcher then holds nothing back either, and the SSE `call` event carries `gate: false` for the pad). Earshot alarms
+  keep playing over a call, as designed.
 - **One-file replies announce themselves too.** A reply spoken as one file publishes `audio.memo.voiced` with chunk 1 of
   chunks 1 (its `chunk_s3_key` is the reply file) when it is up, before the `replied` fact that waits for the phone-or-car
   decision. /voice and memo:trace use it as "first audio up", so a one-file reply a live car holds behind a recording for

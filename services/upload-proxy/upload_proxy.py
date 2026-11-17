@@ -85,6 +85,13 @@ when no car holds it after a grace window. Exactly one of them speaks it (a pair
 speakers: the same reply twice, or a reply into the next recording), and a car switched off right after the agent
 finished lets go within the lease, so the phone still speaks it. Neither speaks without the proxy's yes, so the claims
 are written through to CLAIM_STATE_FILE and read back at start, and every take waits CLAIM_SETTLE_S after a start.
+
+Quiet on a call (Jarad, 2026-11-16: "if the phone is on a call, mute, then defer until I hang up"): Earshot's heartbeat
+names the call (`call`) while the phone is on one, and the proxy keeps that as the ONE operator-on-call signal
+(OperatorCall below; GET /upload/operator, an SSE `call` event on /upload/events on every transition and on connect).
+While he is on a call the claims refuse the phone's take and the car's hold and start (on_call true): nothing new is
+spoken to him until he hangs up. Unknown or stale is not a call (fail-open); OPERATOR_CALL_GATE=0 reports it but
+refuses nothing.
 """
 import re
 
@@ -372,7 +379,7 @@ class ReplyClaims:
     memo's newest claim (see CLAIM_FIELDS)."""
 
     def __init__(self, lease_s: float = CLAIM_LEASE_S, memos_max: int = CLAIM_MEMOS, state_file: str | None = None,
-                 settle_s: float = CLAIM_SETTLE_S, boot_at: float | None = None):
+                 settle_s: float = CLAIM_SETTLE_S, boot_at: float | None = None, quiet=None):
         self._lock = threading.Lock()
         self._m: dict = {}   # reply key (or, for a memo-only claim, memo id) -> state (insertion ordered, bounded)
         self.lease_s = lease_s
@@ -380,6 +387,9 @@ class ReplyClaims:
         self.state_file = state_file or None
         self.settle_s = settle_s
         self.boot_at = time.time() if boot_at is None else boot_at
+        # quiet(now) -> True while the operator is on a phone call and the gate is on (OperatorCall.refuses): nobody may
+        # START speaking a reply then. None (a bare arbiter, every test that is not about calls): never quiet.
+        self.quiet = quiet
         self.loaded = self._load()  # claims read back (0: no file yet), None: the file could not be read
 
     @staticmethod
@@ -472,13 +482,29 @@ class ReplyClaims:
         with self._lock:
             return self._view(memo_id, self._find(memo_id, reply_key, prefer_phone)[1], now, reply_key)
 
-    def car(self, memo_id: str, action: str, device=None, now: float | None = None, reply_key: str | None = None) -> dict:
-        """The car holds (renews its lease), starts or ends the reply. ok False: the phone took it, the car leaves it."""
+    def _quiet(self, now: float) -> bool:
+        try:
+            return bool(self.quiet and self.quiet(now))
+        except Exception as e:  # noqa: BLE001 - fail-open: a broken call signal never silences the cabin for good
+            log("operator_call_check_failed", error=f"{type(e).__name__}: {e}"[:200])
+            return False
+
+    def car(self, memo_id: str, action: str, device=None, now: float | None = None, reply_key: str | None = None,
+            gate: bool = True) -> dict:
+        """The car holds (renews its lease), starts or ends the reply. ok False: the phone took it, the car leaves it.
+        ok False with on_call True: the operator is on a phone call, so the car may neither hold nor start the reply,
+        not even renew a live lease (a lease that runs on would keep the phone out for the whole call, and its start
+        would speak into the call); nothing is recorded, and the car keeps the reply at the head of its queue until the
+        call ends. gate False (the car's played beacon / speech start: it already played, refusing it changes nothing
+        but the record) bypasses that."""
         now = time.time() if now is None else now
+        quiet = gate and action in ("hold", "start") and self._quiet(now)
         with self._lock:
             st = self._state(memo_id, reply_key)
             if st["owner"] == "phone":
                 return {**self._view(memo_id, st, now), "ok": False}
+            if quiet:
+                return {**self._view(memo_id, st, now), "ok": False, "on_call": True}
             st["owner"] = "car"
             st["device"] = device or st["device"]
             st["held_at"] = st["held_at"] or now
@@ -512,7 +538,9 @@ class ReplyClaims:
             st = self._find(memo_id, reply_key)[1]
             if st is not None and st["owner"] == "phone":
                 return False
-        return self.car(memo_id, phase, device, now, reply_key)["ok"]
+        # a played report is a fact, not a request: it is recorded on a call too (the call gate holds back what is to
+        # come, it never rewrites what was heard)
+        return self.car(memo_id, phase, device, now, reply_key, gate=False)["ok"]
 
     def offer(self, memo_id: str, now: float | None = None, reply_key: str | None = None) -> dict:
         now = time.time() if now is None else now
@@ -536,10 +564,16 @@ class ReplyClaims:
 
     def take(self, memo_id: str, now: float | None = None, reply_key: str | None = None) -> dict:
         """The phone takes the reply: granted unless the car holds a live lease on it, or started (or ended) it, and
-        never while the arbiter is settling after a start (a car's re-sent start or hold may still be on its way)."""
+        never while the arbiter is settling after a start (a car's re-sent start or hold may still be on its way).
+        Never while the operator is on a phone call either (on_call True): the Earshot copy would ring through the call.
+        That refusal transfers nothing and holds even for a reply the phone already took: the watcher waits for the
+        hang-up and asks again."""
         now = time.time() if now is None else now
+        quiet = self._quiet(now)
         with self._lock:
             st = self._state(memo_id, reply_key)
+            if quiet:
+                return {**self._view(memo_id, st, now), "ok": False, "on_call": True}
             if st["owner"] != "phone":
                 if st["car"] in ("started", "ended") or (st["car"] == "held" and (st["lease_until"] or 0) > now):
                     return {**self._view(memo_id, st, now), "ok": False}
@@ -548,6 +582,157 @@ class ReplyClaims:
                 st["owner"], st["phone_at"], st["touched"] = "phone", now, now
                 self._save()
             return {**self._view(memo_id, st, now), "ok": True}
+
+
+# ---------------------------------------------------------------- the operator is on a phone call: nobody talks to him
+
+# "If the phone is on a call, mute, then defer until I hang up" (Jarad, 2026-11-16). ONE signal, sourced from his phone,
+# that every Holocene voice surface honours: the watcher's Earshot phone copy and car cues, and the car's replies.
+# - Source: Earshot's heartbeat beacon (POST /upload/heard, phase heartbeat) carries `call` (in_call, in_communication,
+#   ringing, ...) while the phone is on a call and omits it when not; Earshot sends one every 60 s plus one at once on
+#   every on/off transition. Only heartbeats feed this: an alarm item's `call` describes the call that alarm met.
+# - on_call: some device's LATEST heartbeat names a call, it arrived within CALL_FRESH_S (2.5 beats: one lost beacon is
+#   not a hang-up, a dead phone is not a call for ever), and that call started within CALL_HOLD_MAX_S (a stuck mode
+#   cannot mute the car for a day). Anything unknown or stale is NOT on a call: fail-open, the car still talks.
+# - Written through to CALL_STATE_FILE (beside the claims) so a proxy restart mid-call keeps quiet.
+# - Read: GET /upload/operator. Pushed: one SSE `call` event on every transition (and the current state when a stream
+#   opens); a transition that only staleness causes (no beacon at all) is found by the streams' 15 s beat (check()).
+# - Gate: while on a call the claims refuse the phone's take and the car's hold / start (ReplyClaims, on_call True).
+#   OPERATOR_CALL_GATE=0 keeps recording and reporting the call (gate False on the answers) but never refuses.
+CALL_FRESH_S = float(os.environ.get("CALL_FRESH_S", "150"))
+CALL_HOLD_MAX_S = float(os.environ.get("CALL_HOLD_MAX_S", "10800"))
+CALL_STATE_FILE = os.environ.get("CALL_STATE_FILE") or (
+    os.path.join(os.path.dirname(CLAIM_STATE_FILE), "operator-call.json") if CLAIM_STATE_FILE else "")  # empty: memory only
+OPERATOR_CALL_GATE = os.environ.get("OPERATOR_CALL_GATE", "1") != "0"
+CALL_DEVICES = 16   # heartbeat devices remembered (one phone in practice; a reinstall mints a new id)
+CALL_KIND_RE = re.compile(r"^[a-z][a-z_]{0,31}$")   # the kind of call: in_call, in_communication, ringing, ...
+
+
+def _call_kind(v):
+    """A clean call kind, or None (absent or malformed: not a call)."""
+    return v if isinstance(v, str) and CALL_KIND_RE.fullmatch(v) else None
+
+
+class OperatorCall:
+    """Is the operator on a phone call, from the newest Earshot heartbeat of each device. Thread-safe; notify(view) is
+    called (outside the lock) on every on_call transition with {on_call, call, since}."""
+
+    def __init__(self, fresh_s: float = CALL_FRESH_S, hold_max_s: float = CALL_HOLD_MAX_S, state_file: str | None = None,
+                 gate: bool = OPERATOR_CALL_GATE, notify=None, now: float | None = None):
+        self._lock = threading.Lock()
+        self._dev: dict = {}   # device -> {"call": kind | None, "since": call start | None, "at": last heartbeat}
+        self.fresh_s, self.hold_max_s, self.gate = fresh_s, hold_max_s, gate
+        self.state_file = state_file or None
+        self.notify = notify
+        self.loaded = self._load()
+        # what was last announced: a restart mid-call starts quiet without a spurious transition
+        self._last = self._eval(time.time() if now is None else now)["on_call"]
+
+    def _load(self) -> int | None:
+        if not self.state_file:
+            return 0
+        try:
+            with open(self.state_file, encoding="utf-8") as f:
+                doc = json.load(f)
+        except FileNotFoundError:
+            return 0
+        except (OSError, ValueError) as e:
+            log("operator_call_load_failed", file=self.state_file, error=str(e)[:200], note="starting as not on a call")
+            return None
+        devs = doc.get("devices") if isinstance(doc, dict) else None
+        for d, st in (devs.items() if isinstance(devs, dict) else ()):
+            if (isinstance(d, str) and isinstance(st, dict) and isinstance(st.get("at"), (int, float))
+                    and (st.get("call") is None or _call_kind(st.get("call")))):
+                since = st.get("since") if isinstance(st.get("since"), (int, float)) else None
+                self._dev[d[:80]] = {"call": st.get("call"), "since": since if st.get("call") else None, "at": float(st["at"])}
+        return len(self._dev)
+
+    def _save(self) -> None:
+        if not self.state_file:
+            return
+        tmp = f"{self.state_file}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"v": 1, "saved_at": time.time(), "devices": self._dev}, f, separators=(",", ":"))
+            os.replace(tmp, self.state_file)
+        except OSError as e:
+            log("operator_call_save_failed", file=self.state_file, error=str(e)[:200])
+
+    def _eval(self, now: float) -> dict:
+        """The answer of GET /upload/operator (lock held or not needed: reads only). Off a call, device / age_s still
+        name the freshest heartbeat, so "is Earshot reporting at all" is answerable from the same route."""
+        live = [(st["at"], d, st) for d, st in self._dev.items()
+                if st["call"] and now - st["at"] <= self.fresh_s and st["since"] is not None
+                and now - st["since"] <= self.hold_max_s]
+        if live:
+            at, d, st = max(live, key=lambda x: x[0])
+            return {"on_call": True, "call": st["call"], "since": round(st["since"], 3), "device": d,
+                    "age_s": round(max(0.0, now - at), 1), "gate": self.gate}
+        newest = max(((st["at"], d) for d, st in self._dev.items()), default=None)
+        return {"on_call": False, "call": None, "since": None, "device": newest[1] if newest else None,
+                "age_s": round(max(0.0, now - newest[0]), 1) if newest else None, "gate": self.gate}
+
+    @staticmethod
+    def event(view: dict) -> dict:
+        """The SSE `call` event's data for a state (gate rides along: the pad holds nothing when the proxy's gate is off)."""
+        return {"on_call": view["on_call"], "call": view["call"], "since": view["since"], "gate": view["gate"]}
+
+    def _transition(self, now: float):
+        """Lock held: the view, and whether on_call changed since it was last announced."""
+        view = self._eval(now)
+        changed = view["on_call"] != self._last
+        self._last = view["on_call"]
+        return view, changed
+
+    def _announce(self, view: dict, why: str) -> None:
+        log("operator_call", on_call=view["on_call"], call=view["call"], device=view["device"], since=view["since"],
+            gate=view["gate"], reason=why)
+        if self.notify:
+            try:
+                self.notify(self.event(view))
+            except Exception as e:  # noqa: BLE001 - the pad also reads GET /upload/operator on every (re)connect
+                log("operator_call_notify_failed", error=f"{type(e).__name__}: {e}"[:200])
+
+    def heartbeat(self, device: str, call, now: float | None = None) -> dict:
+        """An Earshot heartbeat from `device`: call is the kind of call (a clean snake_case word) or None (off a call)."""
+        now = time.time() if now is None else now
+        call = _call_kind(call)
+        with self._lock:
+            prev = self._dev.pop(device, None) or {"call": None, "since": None}
+            # ringing -> in_call is one call: its start (and with it CALL_HOLD_MAX_S) runs from the first beat of it. Only
+            # while the previous beat is still fresh: a call whose off-call beat never arrived (the phone died or went
+            # dark) must not hand its start to the next call, or that one would begin already past the hold cap and
+            # nothing would be gated for the whole of it.
+            cont = bool(prev["call"] and prev["since"] is not None and now - (prev.get("at") or 0) <= self.fresh_s)
+            since = (prev["since"] if cont else now) if call else None
+            self._dev[device] = {"call": call, "since": since, "at": now}
+            while len(self._dev) > CALL_DEVICES:
+                self._dev.pop(next(iter(self._dev)))
+            self._save()
+            view, changed = self._transition(now)
+        if changed:
+            self._announce(view, "heartbeat")
+        return view
+
+    def check(self, now: float | None = None) -> dict:
+        """The state now, announcing a transition that happened without a beacon (a stale heartbeat, the hold cap)."""
+        now = time.time() if now is None else now
+        with self._lock:
+            view, changed = self._transition(now)
+        if changed:
+            self._announce(view, "stale" if not view["on_call"] else "check")
+        return view
+
+    def refuses(self, now: float | None = None) -> bool:
+        """True while the claims must refuse: on a call and the gate on."""
+        return self.gate and self.check(now)["on_call"]
+
+
+def _publish_call(data: dict) -> None:
+    PUSH.signal("call", data)   # PUSH is built further down; resolved when a transition happens
+
+
+OPERATOR_CALL = OperatorCall(state_file=CALL_STATE_FILE, notify=_publish_call)
 
 
 # CLAIMS (the live arbiter) is built below parse_reply_key: reading a v2 state file back needs it.
@@ -687,7 +872,7 @@ def parse_reply_key(key: str):
 
 
 # The live arbiter, read back from CLAIM_STATE_FILE: built here, after parse_reply_key, which reading its keys needs.
-CLAIMS = ReplyClaims(state_file=CLAIM_STATE_FILE)
+CLAIMS = ReplyClaims(state_file=CLAIM_STATE_FILE, quiet=OPERATOR_CALL.refuses)
 
 
 def _envelope(action: str, memo_id: str, data: dict) -> dict:
@@ -891,7 +1076,7 @@ EARSHOT_RINGER_MODES = ("normal", "vibrate", "silent")
 EARSHOT_INTERRUPTION_FILTERS = ("all", "priority", "alarms", "none", "unknown")
 EARSHOT_AUDIO_STREAMS = ("ring", "notification", "alarm", "music", "voice_call")
 EARSHOT_INCALL_PATHS = ("speaker", "route_only", "failed")   # how loud an alarm that met a phone call managed to be
-EARSHOT_CALL_RE = re.compile(r"^[a-z][a-z_]{0,31}$")        # the kind of call: in_call, in_communication, ...
+EARSHOT_CALL_RE = CALL_KIND_RE                              # the kind of call: in_call, in_communication, ...
 MAX_STREAM_INDEX = 1000          # AudioManager indexes are single or double digits; this only rejects garbage
 MAX_FOLLOWED_CHANNELS = 16
 
@@ -1188,6 +1373,15 @@ class PushClient:
         self.overflow = False   # events were dropped: the client is told to re-poll
 
 
+class PushSignal:
+    """A named SSE event that is state, not a memo fact (the operator's `call`): no id, not in the replay ring (a stream
+    that opens gets the current state instead), and the pad's memo parser never sees it."""
+    __slots__ = ("name", "data")
+
+    def __init__(self, name: str, data: dict):
+        self.name, self.data = name, data
+
+
 class PushHub:
     """Fan-out of push events to every open stream, plus a short replay ring."""
 
@@ -1215,6 +1409,18 @@ class PushHub:
                 except Exception:  # noqa: BLE001 - full: drop, the client re-polls
                     c.overflow = True
         return ev_id
+
+    def signal(self, name: str, data: dict) -> int:
+        """Send a named state event (PushSignal) to every open stream now. The number of streams it was queued for."""
+        n = 0
+        with self._lock:
+            for c in self._clients:
+                try:
+                    c.q.put_nowait((None, PushSignal(name, data)))
+                    n += 1
+                except Exception:  # noqa: BLE001 - full: the client re-polls, and its reconnect gets the state
+                    c.overflow = True
+        return n
 
     def subscribe(self, last_id: str | None):
         """(client, backlog) or None when the hub is full. The backlog is what a reconnect with Last-Event-ID missed."""
@@ -1555,6 +1761,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if beacon.get("phase") == HEARTBEAT_PHASE:
             print(json.dumps(rec, separators=(",", ":"), default=str), flush=True)
             persist_heard(rec)
+            # the operator-on-call signal: a heartbeat with `call` is on a call, one without it is off (OperatorCall)
+            OPERATOR_CALL.heartbeat(beacon["device"], beacon.get("call"))
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -1616,7 +1824,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         b = body if isinstance(body, dict) else {}
         log("claim", status=code, memo_id=ans.get("memo_id"), reply_key=ans.get("reply_key"), by=str(b.get("by"))[:10],
             action=str(b.get("action"))[:10],
-            ok=ans.get("ok"), owner=ans.get("owner"), car=ans.get("car"), lease_left_s=ans.get("lease_left_s"),
+            ok=ans.get("ok"), on_call=ans.get("on_call"), owner=ans.get("owner"), car=ans.get("car"),
+            lease_left_s=ans.get("lease_left_s"),
             device=ans.get("device"), sender_host=ans.get("sender_host"), announced=ans.get("announced"),
             error=ans.get("error"), remote=self.client_address[0])
         self._json_reply(code, ans)
@@ -1683,6 +1892,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._presence()
         if self.path.startswith("/upload/claim?"):
             return self._claim()
+        if self.path == "/upload/operator" or self.path.startswith("/upload/operator?"):
+            # Is the operator on a phone call (OperatorCall): the pad at boot and on every stream reconnect, the watcher
+            # before an Earshot drop or a car cue. Not logged: the transitions are (operator_call).
+            return self._json_reply(200, OPERATOR_CALL.check())
         if self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -1738,6 +1951,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"retry: 3000\n: " + b" " * 2048 + b"\n\n")
             self.wfile.write(sse_frame("hello", {"boot": PUSH.boot, "nats": PUSH.nats_up, "replayed": len(backlog),
                                                  "beat_s": PUSH_HEARTBEAT_S}))
+            # the operator's call state, now, BEFORE the backlog: the pad mutes before it plays anything this stream
+            # brings (a replayed progress / hold-cue clip is not claim-gated). No id: it is state, and a reconnect gets
+            # it afresh here.
+            self.wfile.write(sse_frame("call", OperatorCall.event(OPERATOR_CALL.check())))
             for ev_id, ev in backlog:
                 self.wfile.write(sse_frame("memo", ev, ev_id))
                 sent += 1
@@ -1746,10 +1963,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             while time.time() - t0 < PUSH_MAX_AGE_S:
                 try:
                     ev_id, ev = client.q.get(timeout=PUSH_HEARTBEAT_S)
-                    self.wfile.write(sse_frame("memo", ev, ev_id))
-                    sent += 1
+                    if isinstance(ev, PushSignal):
+                        self.wfile.write(sse_frame(ev.name, ev.data))
+                    else:
+                        self.wfile.write(sse_frame("memo", ev, ev_id))
+                        sent += 1
                 except queue.Empty:
                     self.wfile.write(sse_frame("beat", {"nats": PUSH.nats_up, "t": now_iso()}))
+                # A call that ended with no beacon (the phone died, Earshot was killed) is over once its heartbeat is
+                # stale: found here (every event, at the latest every beat) and pushed to every stream by the transition.
+                OPERATOR_CALL.check()
                 if client.overflow:
                     client.overflow = False
                     self.wfile.write(sse_frame("resync", {"reason": "overflow"}))
@@ -1773,7 +1996,9 @@ class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 if __name__ == "__main__":
     log("starting", port=PORT, nats=f"{NATS_HOST}:{NATS_PORT}", emit_facts=EMIT_FACTS, push_boot=PUSH.boot,
-        claims_file=CLAIM_STATE_FILE or None, claims_loaded=CLAIMS.loaded, claims_settle_s=CLAIMS.settle_s)
+        claims_file=CLAIM_STATE_FILE or None, claims_loaded=CLAIMS.loaded, claims_settle_s=CLAIMS.settle_s,
+        call_file=CALL_STATE_FILE or None, call_loaded=OPERATOR_CALL.loaded, call_gate=OPERATOR_CALL_GATE,
+        on_call=OPERATOR_CALL.check()["on_call"])
     threading.Thread(target=nats_subscribe_forever, name="push-nats", daemon=True).start()
     with ThreadedServer(("", PORT), Handler) as srv:
         srv.serve_forever()

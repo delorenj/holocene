@@ -37,6 +37,7 @@ test('actual page closures keep transcript-only acknowledgements silent without 
   for (const origin of ['car-feedback-off', 'quiet-browser', 'unknown']) {
     const calls: unknown[][] = []
     let withProgress = false
+    let onCall = false
     const bridge = {
       speechEcho: (...args: unknown[]) => calls.push(['native-echo-attempt', ...args]),
       speechProgress: (...args: unknown[]) => calls.push(['progress', ...args]),
@@ -53,6 +54,8 @@ test('actual page closures keep transcript-only acknowledgements silent without 
       getBlob: async () => { calls.push(['fetch-progress']); return new Blob(['INERT FIXTURE NOT AUDIO']) },
       BUCKET_BASE: 'http://fixture.invalid', blobToBase64: async () => 'SU5FUlQ=', replyExt: () => 'ogg',
       progressQ: { current: [] }, pump: { current() { calls.push(['browser-progress']) } },
+      // quiet on a call (callhold.ts): off a call here; the on-call drop is checked below
+      onCallNow: () => onCall, progressHanded: { current: new Map() },
     }
     const context = vm.createContext(ctx)
     vm.runInContext(code, context)
@@ -64,6 +67,16 @@ test('actual page closures keep transcript-only acknowledgements silent without 
       await (context.run as (f: typeof flight) => Promise<void>)(flight)
       assert.equal(calls.filter(([kind]) => kind === 'progress').length, 1, 'ordinary progress is not muted')
       assert.equal(calls.filter(([kind]) => kind === 'native-echo-attempt').length, 0)
+      assert.equal((ctx.progressHanded.current as Map<string, number>).has(memo), true, 'a clip handed to the host is remembered for a call cut')
+      // On the operator's phone call a newer clip is dropped before it is downloaded, and its number is spent.
+      onCall = true
+      calls.length = 0
+      const key2 = `progress/2026/11/12/${memo}-2.ogg`
+      ctx.listPage = async () => ({ keys: [key, key2] })
+      ctx.readStatus = async () => normStatus({ memo_id: memo, stage: 'working', heard: 'x', heard_delivery: 'text_only', spoken_seq: 2 }, memo)
+      await (context.run as (f: typeof flight) => Promise<void>)(flight)
+      assert.deepEqual(calls, [], 'on a call: no download, no speech')
+      assert.equal(flight.progressSeq, 2, 'the dropped clip is not replayed after the hang-up')
     }
   }
 })

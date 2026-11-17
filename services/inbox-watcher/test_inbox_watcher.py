@@ -2924,6 +2924,57 @@ class CarStatus(MemoHarness, unittest.TestCase):
         self.assertTrue(mc_.s3_url(mc_.progress_key_for(key, 1)).startswith(f"delo/{mc_.BUCKET}/progress/"))
 
 
+    def test_a_progress_line_due_on_a_phone_call_is_dropped_not_said_after_the_hang_up(self):
+        key, m = self.working("status-call")
+        cid = m["command_id"]
+        call = {"on": True}
+        logs = []
+        real_log = iw.log
+        with unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": call["on"]}), \
+                unittest.mock.patch.object(iw, "log", side_effect=lambda ev, *a, **kw: (logs.append((ev, kw)), real_log(ev, *a, **kw))):
+            self.events = [progress_fact(cid, 1, "Checking the date.")]
+            self.w.poll_progress()
+            self.wait_narration()
+            self.assertEqual(self.of_type("narrated", key), [], "nothing is said in the car on a call")
+            self.assertEqual(self.w.status_writer.last(mc_.status_key_for(key))["progress_seq"], 1, "still shown")
+            dropped = [kw for ev, kw in logs if ev == "narration_dropped"]
+            self.assertEqual([(d["reason"], d["seq"]) for d in dropped], [("operator_on_call", 1)])
+            self.assertEqual(self.w.narration_due(m), "already_spoken", "dropped, not deferred")
+            # the one-off notice is dropped as well
+            with self.w.mu:
+                self.w.narrate_line(m, "Still on it, I will tell you when it is done.", "detached")
+            self.assertNotIn("narr_pending", m)
+            self.wait_narration()
+            self.assertEqual(self.of_type("narrated", key), [])
+            # hung up: the line said during the call stays unsaid; the next one is spoken in its own time
+            call["on"] = False
+            self.w.poll_progress()
+            self.wait_narration()
+            self.assertEqual(self.of_type("narrated", key), [])
+            self.events.append(progress_fact(cid, 2, "Writing the answer."))
+            self.w.poll_progress()
+            self.wait_narration()
+        (narr,) = self.of_type("narrated", key)
+        self.assertEqual(narr["seq"], 2)
+        (BUCKET_DIR / narr["progress_s3_key"]).unlink(missing_ok=True)
+
+    def test_a_progress_line_rendered_when_a_call_begins_is_never_uploaded(self):
+        key, m = self.working("status-call-render")
+        call = {"on": False}
+        real = iw.synthesize
+
+        def ringing(text, tmp, **kw):
+            call["on"] = True   # the phone rang while the line was being voiced
+            return real(text, tmp, **kw)
+        self.events = [progress_fact(m["command_id"], 1, "Looking it up.")]
+        with unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": call["on"]}), \
+                unittest.mock.patch.object(iw, "synthesize", side_effect=ringing):
+            self.w.poll_progress()
+            self.wait_narration()
+        self.assertEqual(self.of_type("narrated", key), [])
+        self.assertFalse((BUCKET_DIR / mc_.progress_key_for(key, 1, m["memo_id"])).exists())
+
+
 class EarshotMirror(unittest.TestCase):
     """Agent replies also play on the phone (Earshot); the phone's beacons become memo:trace hops."""
 
@@ -3253,6 +3304,101 @@ class EarshotMirror(unittest.TestCase):
         import memo_trace as mt
         (h,) = mt.earshot_hops(None)
         self.assertTrue(h.optional and h.status == mt.UNKNOWN)
+
+
+class OperatorCallState(unittest.TestCase):
+    """Quiet on a call (2026-11-16): the watcher asks the upload proxy (GET /upload/operator) whether the operator is on a
+    phone call, fail-open, cached; the decision and the drop defer the Earshot phone copy while he is."""
+
+    def setUp(self):
+        self.reset()
+        self.addCleanup(self.reset)
+
+    @staticmethod
+    def reset():
+        iw._CALL.update(at=None, state={"on_call": False}, err=None)
+
+    def test_the_operator_route_is_the_claim_routes_sibling(self):
+        self.assertEqual(iw.CALL_URL, "http://127.0.0.1:9/upload/operator")
+
+    def test_a_proxy_that_cannot_be_asked_is_not_a_call_and_is_asked_once_per_cache_window(self):
+        t0 = time.time()
+        st = iw.call_state()
+        self.assertEqual((st["on_call"], st.get("unknown")), (False, True))
+        self.assertLess(time.time() - t0, 1.0, "a dead proxy is a refused connect, not a timeout")
+        with unittest.mock.patch.object(iw, "fetch_operator", side_effect=AssertionError("cached")):
+            self.assertFalse(iw.on_call(), "the failure is cached too: one refused connect per window")
+
+    def test_a_call_is_read_cached_and_a_lock_held_read_never_fetches(self):
+        with unittest.mock.patch.object(iw, "fetch_operator", side_effect=AssertionError("no fetch under the lock")):
+            self.assertFalse(iw.on_call(cached=True), "nothing known yet: not on a call")
+        got = []
+
+        def fetch():
+            got.append(1)
+            return {"on_call": True, "call": "in_call", "since": 1.0, "gate": True}
+        with unittest.mock.patch.object(iw, "fetch_operator", side_effect=fetch):
+            self.assertTrue(iw.on_call())
+            self.assertTrue(iw.on_call())
+            self.assertTrue(iw.on_call(cached=True))
+        self.assertEqual(len(got), 1)
+        with unittest.mock.patch.object(iw, "CALL_CACHED_MAX_S", 0.0):
+            self.assertFalse(iw.on_call(cached=True), "a cache too old to trust says not on a call")
+
+    def test_either_kill_switch_turns_it_off(self):
+        with unittest.mock.patch.object(iw, "fetch_operator", return_value={"on_call": True, "call": "in_call", "gate": False}):
+            self.assertFalse(iw.on_call(), "the proxy's OPERATOR_CALL_GATE=0 turns the cabin's quiet off")
+        self.reset()
+        with unittest.mock.patch.object(iw, "CALL_GATE", False), \
+                unittest.mock.patch.object(iw, "fetch_operator", side_effect=AssertionError("never asked")):
+            self.assertFalse(iw.on_call())
+
+    def test_the_last_moment_check_defers_the_drop_and_drops_nothing(self):
+        from datetime import datetime, timezone
+        with unittest.mock.patch.object(iw, "call_state", return_value={"on_call": True}), \
+                unittest.mock.patch.object(iw.mc_, "mc", side_effect=AssertionError("nothing reaches Earshot")):
+            with self.assertRaises(iw.OperatorOnCall):
+                iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k", "full text")
+            with self.assertRaises(iw.OperatorOnCall):
+                iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k")
+        # the call begins while the text goes up: the audio is still held back
+        answers = iter([False, True])
+        ok = __import__("subprocess").CompletedProcess([], 0, "", "")
+        with unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": next(answers)}), \
+                unittest.mock.patch.object(iw.mc_, "mc", return_value=ok) as mc:
+            with self.assertRaises(iw.OperatorOnCall):
+                iw.mirror_to_earshot(Path("/dev/null"), datetime.now(timezone.utc), "a", "m", "k", "full text")
+        self.assertEqual(mc.call_count, 1, "the text only: the audio was never copied")
+        self.assertTrue(mc.call_args[0][-1].endswith(".txt"))
+
+    def test_the_decision_hands_a_reply_to_the_phone_retry_on_a_call_and_never_takes_it(self):
+        em = EarshotMirror()
+        took = []
+
+        def idle(b):
+            if b and b["action"] == "take":
+                took.append(1)
+                return {"ok": True, "owner": "phone"}
+            return {"car": None, "owner": None, "car_holds": False, "held_ever": False, "sender_host": "car"}
+        with unittest.mock.patch.object(iw, "call_state", return_value={"on_call": True}):
+            out, seen, waited = em.decide(idle)
+            self.assertEqual(out, ("on_call", "on_call"))
+            self.assertEqual(took, [], "the phone never takes a reply on a call")
+            self.assertGreaterEqual(waited, iw.EARSHOT_CAR_GRACE_S, "a live car still gets its grace window first")
+            self.assertEqual(em.decide(lambda b: {"car": None, "sender_host": "browser"})[0], ("on_call", "on_call"))
+            # a car that already started it keeps its verdict, call or not
+            self.assertEqual(em.decide(lambda b: {"car": "started", "sender_host": "car"})[0], ("car_spoke", "car_started"))
+        # a call this check could not see: the proxy refuses the take with on_call, and that is the same deferral
+        refused = lambda b: ({"ok": False, "on_call": True, "car": None, "car_holds": False}
+                             if b and b["action"] == "take" else idle(b))
+        self.assertEqual(em.decide(refused, clock_start=1030.0)[0], ("on_call", "on_call"))
+        self.assertIn("on_call", iw.EARSHOT_REASONS)
+
+    def test_the_trace_names_a_reply_held_back_for_a_call(self):
+        import memo_trace as mt
+        [h] = mt.earshot_hops(None, None, "on_call", "on_call")
+        self.assertEqual(h.status, mt.UNKNOWN, "not a verdict: the phone retry says how it ended")
+        self.assertIn("phone call", h.detail)
 
 
 class ChunkedSpeech(MemoHarness, unittest.TestCase):
@@ -3975,6 +4121,200 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         pending = mt.phone_retry_hops({"phone_retry": {**base, "state": "pending", "deadline_ts": time.time() + 100}})
         self.assertEqual(pending[0].status, mt.UNKNOWN)
         self.assertEqual(mt.phone_retry_hops({}), [])
+
+
+class PhoneRetryOnCall(MemoHarness, unittest.TestCase):
+    """A reply that meets the operator on a phone call is never dropped into it: the phone retry holds it (its budget
+    paused) and drops a fresh Earshot object after the hang-up, unless a car speaks it first."""
+
+    def reply_ready(self, name, reply="A short reply."):
+        key, m = self.to_await(name)
+        journal(m["command_id"], "holocene-pm")
+        hermes_session("holocene-pm", m["memo_id"], reply, ts=time.time())
+        return key, m
+
+    def deferred(self, name, world):
+        key, m = self.reply_ready(name)
+        self.world = world
+        for k, v in (("call", True), ("car", None), ("holds", False), ("calls", []), ("owner", None), ("call_on_take", False)):
+            world.setdefault(k, v)
+
+        def script(mid, body=None, reply_key=None):
+            body = body or {}
+            action = body.get("action") or "get"
+            world["calls"].append(action)
+            if action == "take":
+                if world["call"]:
+                    return {"ok": False, "on_call": True, "owner": world["owner"], "car": world["car"], "car_holds": world["holds"]}
+                if world["owner"] != "phone" and (world["car"] in ("started", "ended") or world["holds"]):
+                    return {"ok": False, "owner": "car", "car": world["car"], "car_holds": world["holds"]}
+                world["owner"] = "phone"
+                if world["call_on_take"]:
+                    world["call"], world["call_on_take"] = True, False   # the phone rings right after the take
+                return {"ok": True, "owner": "phone", "held_ever": False}
+            if action == "release":
+                world["owner"] = None
+                return {"ok": True, "owner": None}
+            return {"car": world["car"], "car_holds": world["holds"], "held_ever": False, "sender_host": "car", "settling_s": 0,
+                    "owner": world["owner"], "device": "pad"}
+        self.patches = [unittest.mock.patch.object(iw, n, v) for n, v in (
+            ("EARSHOT_SKIP_CAR", True), ("EARSHOT_CAR_GRACE_S", 0.0), ("EARSHOT_POLL_S", 0.01), ("EARSHOT_SETTLE_S", 0.0),
+            ("EARSHOT_RETRY_TOTAL_S", world.get("total", 30.0)), ("EARSHOT_RELEASE_BUDGET_S", 0.0),
+            ("CALL_RECHECK_S", 0.05), ("CALL_RESUME_S", 0.05))]
+        self.patches += [unittest.mock.patch.object(iw, "claim_call", side_effect=script),
+                         unittest.mock.patch.object(iw, "call_state", side_effect=lambda cached=False: {"on_call": world["call"]})]
+        for p in self.patches:
+            p.start()
+        self.tick_until(lambda: m["status"] == "done")
+        return key, m
+
+    def tearDown(self):
+        for p in getattr(self, "patches", []):
+            p.stop()
+        self.patches = []
+        super().tearDown()
+
+    def settle(self, m, key, n=300):
+        self.tick_until(lambda: m["phone_retry"]["state"] == "done" and f"phone:{key}" not in self.w.running, n=n)
+        return m["phone_retry"]
+
+    def ekey(self, m):
+        return iw.earshot_key_for(mc_.parse_iso(m["reply_stamp"]), "holocene-pm", m["memo_id"])
+
+    def test_a_reply_on_a_call_waits_without_spending_its_budget_and_reaches_the_phone_after_the_hang_up(self):
+        key, m = self.deferred("call-wait", {"total": 0.5})
+        replied = self.of_type("replied", key)[-1]
+        self.assertEqual((replied["earshot_skipped"], replied["earshot_reason"], replied["earshot_key"]), ("on_call", "on_call", None))
+        r = m["phone_retry"]
+        self.assertEqual((r["state"], r["before"], r["rounds"]), ("pending", "on_call", 0))
+        self.assertNotIn("take", self.world["calls"], "the phone never took it on the call")
+        t0 = time.time()
+        while time.time() - t0 < 1.3:   # longer than the whole 0.5 s budget
+            self.w.tick(discover=False)
+            time.sleep(0.05)
+        self.assertEqual(r["state"], "pending", "the call does not spend the retry budget")
+        self.assertGreater(r["deadline_ts"], time.time(), "every second of the call was credited back")
+        self.assertNotIn("take", self.world["calls"])
+        self.assertFalse((BUCKET_DIR / self.ekey(m)).exists(), "nothing was dropped into the call")
+        self.assertIn("on_call", [d["decision"] for d in r["decisions"]])
+        self.world["call"] = False   # hung up
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "phone_dropped")
+        kinds = [d["decision"] for d in r["decisions"]]
+        self.assertEqual(kinds[0], "deferred")
+        self.assertLess(kinds.index("on_call"), kinds.index("call_ended"))
+        self.assertLess(kinds.index("call_ended"), kinds.index("take_granted"))
+        self.assertGreater(r["call_waited_s"], 1.0)
+        self.assertTrue((BUCKET_DIR / m["earshot_key"]).exists(), "a fresh object after the hang-up")
+        (mirrored,) = self.of_type("mirrored", key)
+        self.assertEqual((mirrored["earshot_key"], mirrored["earshot_skipped_before"]), (m["earshot_key"], "on_call"))
+        self.keys.append(m["earshot_key"])
+
+    def test_a_call_that_starts_between_the_take_and_the_drop_defers_the_drop_without_failing_it(self):
+        key, m = self.deferred("call-late", {"call": False, "call_on_take": True})
+        replied = self.of_type("replied", key)[-1]
+        self.assertEqual((replied["earshot_skipped"], replied["earshot_reason"]), ("on_call", "on_call"))
+        self.assertEqual(self.world["owner"], "phone", "the phone keeps its take: the car is not handed a reply mid-call")
+        self.assertNotIn("release", self.world["calls"])
+        self.assertFalse((BUCKET_DIR / self.ekey(m)).exists())
+        self.assertEqual(m["phone_retry"]["before"], "on_call")
+        self.ticks(6)
+        self.assertEqual(m["phone_retry"]["state"], "pending")
+        self.world["call"] = False
+        r = self.settle(m, key)
+        self.assertEqual((r["outcome"], r["rounds"]), ("phone_dropped", 1))
+        self.assertTrue((BUCKET_DIR / m["earshot_key"]).exists())
+        self.assertNotIn("drop_failed", [d["decision"] for d in r["decisions"]], "a deferral is not a failed drop")
+        self.keys.append(m["earshot_key"])
+
+    def test_a_car_that_speaks_it_after_the_hang_up_keeps_it_from_the_phone(self):
+        key, m = self.deferred("call-car", {})
+        self.ticks(4)
+        self.world.update(call=False, car="started")
+        r = self.settle(m, key)
+        self.assertEqual(r["outcome"], "car_heard")
+        self.assertNotIn("take", self.world["calls"])
+        self.assertFalse((BUCKET_DIR / self.ekey(m)).exists())
+
+    def test_a_call_that_interrupts_the_drop_with_the_retry_off_gives_the_take_back(self):
+        key, m = self.deferred("call-noretry", {"call": False, "call_on_take": True, "total": 0.0})
+        self.assertEqual(self.world["owner"], None, "nothing will ever drop it for the phone: the car gets it back")
+        self.assertIn("release", self.world["calls"])
+        self.assertFalse(self.w.phone_retry_pending(m))
+
+    def test_a_narration_dropped_after_its_render_is_marked_spoken_so_it_is_not_said_after_the_hang_up(self):
+        key, m = self.to_await("call-narr")
+        job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["command_id"], "seq": 7, "n": 1,
+               "spoken": "Holocene, working.", "line": "working"}
+        fake = (Path("/dev/null"), "vox", {"voice": "v"}, None)
+        with unittest.mock.patch.object(self.w, "_synth_cue", return_value=fake), \
+                unittest.mock.patch.object(iw, "call_state", return_value={"on_call": True}), \
+                unittest.mock.patch.object(iw.mc_, "mc", side_effect=AssertionError("nothing is uploaded on a call")):
+            self.w._narrate(job)
+        self.assertEqual((m.get("narr_cmd"), m.get("narr_src_seq")), (job["cid"], 7))
+        self.assertFalse(m.get("narr_key"), "dropped, nothing uploaded")
+
+    def memo_stub(self):
+        return {"memo_id": "mq", "key": "kq", "reply_text": "text", "reply_stamp": "2026-11-16T10:00:00Z"}
+
+    def test_two_replies_held_by_one_call_both_reach_the_phone_in_turn(self):
+        m = self.memo_stub()
+        arm = lambda rk: self.w.arm_readback_phone_copy(m, rk, time.time(), False, offered=True, before="on_call")
+        with unittest.mock.patch.object(iw, "EARSHOT_RETRY_TOTAL_S", 100.0):
+            arm("replies/a.ogg")
+            arm("replies/b.ogg")
+            self.assertEqual((m["phone_retry"]["rkey"], [q["rkey"] for q in m["phone_retry_queue"]]),
+                             ("replies/b.ogg", ["replies/a.ogg"]), "the older reply waits, it is not superseded")
+            arm("replies/a.ogg")
+            arm("replies/b.ogg")
+            self.assertEqual(len(m["phone_retry_queue"]), 1, "a stage re-run of either reply queues nothing twice")
+            self.w._retry_finish(m, "phone_dropped", "b is on the phone")
+            self.assertEqual((m["phone_retry"]["rkey"], m["phone_retry"]["state"]), ("replies/a.ogg", "pending"))
+            self.assertNotIn("phone_retry_queue", m)
+            self.assertIn("promoted", [d["decision"] for d in m["phone_retry"]["decisions"]])
+            self.w._retry_finish(m, "phone_dropped", "a is on the phone")
+            self.assertEqual(m["phone_retry"]["state"], "done")
+
+    def test_a_retry_holding_the_phones_take_that_gives_up_or_is_cancelled_releases_it(self):
+        m = self.memo_stub()
+        with unittest.mock.patch.object(iw, "EARSHOT_RETRY_TOTAL_S", 100.0), \
+                unittest.mock.patch.object(iw, "claim_call", return_value={"ok": True}) as cc:
+            self.w.arm_readback_phone_copy(m, "replies/a.ogg", time.time(), False, offered=True, before="on_call")
+            m["phone_retry"]["took"] = True
+            self.w.arm_readback_phone_copy(m, "replies/b.ogg", time.time(), False, offered=True, before="on_call")
+            m["phone_retry_queue"][0]["took"] = True
+            self.w._retry_finish(m, "cancelled", "the memo was cancelled")
+            self.assertNotIn("phone_retry_queue", m)
+            self.w._drain_release_due()
+            self.assertEqual([c.args[1]["action"] for c in cc.call_args_list], ["release"], "b never took; a did")
+            self.assertEqual(cc.call_args_list[0].kwargs["reply_key"], "replies/a.ogg")
+            m["phone_retry"] = {"state": "pending", "rkey": "replies/c.ogg", "took": True, "decisions": [], "rounds": 1,
+                                "since_ts": time.time()}
+            self.w._retry_finish(m, "gave_up", "out of budget")
+            self.w._drain_release_due()
+            self.assertEqual(cc.call_args_list[-1].kwargs["reply_key"], "replies/c.ogg")
+
+    def test_the_call_wait_credits_the_budget_and_is_capped(self):
+        m = {"memo_id": "x", "key": "k"}
+        r = m["phone_retry"] = {"state": "pending", "deadline_ts": 100.0, "decisions": [], "rounds": 0}
+        wait = self.w._retry_call_wait
+        with unittest.mock.patch.object(iw, "CALL_HOLD_MAX_S", 10.0), unittest.mock.patch.object(iw, "CALL_RECHECK_S", 5.0), \
+                unittest.mock.patch.object(iw, "CALL_RESUME_S", 2.0):
+            self.assertTrue(wait(m, r, True, 50.0))
+            self.assertEqual((r["call_since"], r["next_at"], r["deadline_ts"]), (50.0, 55.0, 100.0))
+            self.assertTrue(wait(m, r, True, 55.0))
+            self.assertEqual(r["deadline_ts"], 105.0, "the call's seconds are credited back")
+            self.assertFalse(wait(m, r, True, 61.0), "past MEMO_CALL_HOLD_MAX_S: the budget runs again")
+            self.assertEqual((r["deadline_ts"], r["call_capped"]), (111.0, True))
+            self.assertFalse(wait(m, r, True, 70.0))
+            self.assertEqual(r["deadline_ts"], 111.0, "capped: no more credit")
+            self.assertFalse(wait(m, r, False, 80.0))
+            self.assertNotIn("call_capped", r, "hung up: the next call is waited out again")
+            self.assertTrue(wait(m, r, True, 90.0))
+            self.assertTrue(wait(m, r, False, 93.0), "the round after the hang-up still waits, for the car")
+            self.assertEqual((r["deadline_ts"], r["next_at"]), (114.0, 95.0))
+            self.assertFalse(wait(m, r, False, 95.0))
+        self.assertEqual([d["decision"] for d in r["decisions"]], ["on_call", "call_hold_max", "on_call", "call_ended"])
 
 
 class FakeWhisper(BaseHTTPRequestHandler):
