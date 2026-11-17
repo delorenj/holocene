@@ -38,9 +38,8 @@ HOLOC-34; 15/15 isolated), Earshot 253 at 0.1.8.
 - **#5/#6 live proof → Jarad (operator-only).** Needs a real call with a memo
   reply in flight, after restarting Holocene Auto in the car. Not simulated
   overnight: a synthetic run would make the operator's phone speak unannounced.
-- **Earshot 0.1.9 → Jarad (parked release).** Phone-side `CallCredit` caps at
-  1 h; on a >1 h call, audio queued on the phone may age out as stale rather
-  than play. Server side already holds 3 h.
+- **Earshot 0.1.9: SHIPPED 2026-11-17** on Jarad's instruction. `CallCredit` cap is now 3 h,
+  matching the server (earshot `7389a6e`, release `3e7afec`, hub run 44109689905; S26 reports 0.1.9).
 - Not HOLOC-23/HOLOC-27 scope (voice identity/delegation); no overlap.
 
 ## Follow-up review of 563d317 + b526ed2 (independent, 2026-11-17)
@@ -51,8 +50,7 @@ Round 1 — PASS-WITH-FINDINGS, no deadlock, suites green:
    beats ordered by the beacon's own `at` (`sent`, persisted), late beats within
    CALL_FRESH_S dropped; clock read inside `_order`.
 2. Earshot `CallCredit` caps at 1 h vs the server's 3 h: on a >~90 min call an item
-   already on the phone ages out `missed`. **Parked** (phone allowance + release, Jarad);
-   stale comment fixed in earshot `574ad97`.
+   already on the phone ages out `missed`. **Fixed in Earshot 0.1.9** (`7389a6e`), shipped 2026-11-17.
 3. Pad: two overlapping operator reads could drop the newer answer. **Fixed `afad526`**
    (`callEventAt` / `callReadAsked`, applied in send order).
 4. Cap release logged as `stale`. **Fixed `afad526`** (`hold_cap`).
