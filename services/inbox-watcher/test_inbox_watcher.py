@@ -4045,6 +4045,16 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
         self.assertEqual(order, ["voiced", "replied"], "voiced is up before the (possibly delayed) replied fact")
         self.assertIsNotNone(v["since_agent_done_seconds"])
         self.assertEqual(m["voiced_one"], replied["reply_s3_key"])  # kept once done: it is what stops a second announcement
+        # Completion is published before the mirror worker releases its running slot. A retry while that slot is held is refused.
+        deadline = time.monotonic() + 10
+        while True:
+            with self.w.mu:
+                if key not in self.w.running:
+                    break
+                stage, status = m["stage"], m["status"]
+            self.assertLess(time.monotonic(), deadline,
+                            f"mirror worker still owns {key} after done (stage={stage}, status={status})")
+            time.sleep(0.01)
         # memo:retry of the finished memo speaks the reply again under the same key: voiced is not announced twice
         m.update(status="failed", failed_stage="reply_upload", failed_code="x", failed_message="x", resume_stage="speak")
         self.control("retry", m)
