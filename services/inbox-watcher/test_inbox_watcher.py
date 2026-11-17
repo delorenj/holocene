@@ -4097,7 +4097,18 @@ class PhoneRetry(MemoHarness, unittest.TestCase):
     def test_gave_up_quotes_the_failed_drop_not_a_proxy_blip_that_came_after(self):
         key, m = self.released("s1-gave-up-why", {"total": 30.0})
         self.tick_until(lambda: any(d["decision"] == "drop_failed" for d in m["phone_retry"]["decisions"]))
+        # Only tick() schedules a round, and the tick that saw the first drop_failed may also have started round 2 (the
+        # backoff is 0.05 s, the same as tick_until's step). Stop ticking and let any round in flight finish, so the
+        # blip is injected after the last drop_failed there will be, not while a round could still land one behind it.
+        deadline = time.time() + 10
+        while True:
+            with self.w.mu:
+                if f"phone:{key}" not in self.w.running:
+                    break
+            self.assertLess(time.time(), deadline, "a phone retry round is still in flight")
+            time.sleep(0.01)
         with self.w.mu:
+            self.assertNotIn(f"phone:{key}", self.w.running)
             self.w.phone_retry_pending(m) and self.w._retry_note(m, "proxy_unreachable", "the upload proxy could not be asked: HTTP 404")
             m["phone_retry"]["deadline_ts"] = time.time() - 1
             m["phone_retry"]["next_at"] = 0
