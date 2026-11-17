@@ -209,7 +209,7 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
   phone is on one, and sends one at once on every on/off change; the upload proxy keeps that as the ONE
   operator-on-call signal (`OperatorCall`: `GET /upload/operator` -> `{on_call, call, since, device, age_s, gate}`, and an
   SSE `call` event on `/upload/events` on every transition and when a stream opens). Fresh means a heartbeat under
-  `CALL_FRESH_S` (150) old, and a call older than `CALL_HOLD_MAX_S` (1 h, matching `MEMO_CALL_HOLD_MAX_S` and Earshot) no longer counts; unknown or stale is NOT a
+  `CALL_FRESH_S` (150) old, and a call older than `CALL_HOLD_MAX_S` (3 h, matching `MEMO_CALL_HOLD_MAX_S`; 1 h cut the first real call short) no longer counts; unknown or stale is NOT a
   call (fail-open). It is written to `operator-call.json` beside the claims file, so a restart mid-call stays quiet.
   While he is on a call:
   - the proxy refuses the phone's take and the car's hold and start (`ok: false, on_call: true`), even a renew of a live
@@ -217,7 +217,7 @@ car's push stream open for minutes). The upload proxy decides who, atomically (`
   - the watcher never drops the Earshot phone copy: `phone_copy_decision` returns `on_call` where it would take the reply
     (or when the proxy refused the take with `on_call`), and the reply goes to the phone retry (`phone_retry.before:
     on_call`, the replied fact says `earshot_skipped: on_call`), whose rounds only look every 5 s while the call lasts,
-    credit the call back to the retry budget (at most `MEMO_CALL_HOLD_MAX_S`, 3600, of one call), and after the hang-up
+    credit the call back to the retry budget (at most `MEMO_CALL_HOLD_MAX_S`, 10800, of one call), and after the hang-up
     wait 5 s more (a live car resumes its queue and holds the reply first), then take and drop a fresh object
     (`audio.memo.mirrored`, `earshot_skipped_before: on_call`). A last-moment check in `mirror_to_earshot` (before the
     text and right before the audio) defers instead of failing a drop that a call started under; the phone keeps its

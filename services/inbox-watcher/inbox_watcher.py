@@ -261,7 +261,7 @@ CALL_CACHE_S = 2.0          # one GET serves every check for this long
 CALL_CACHED_MAX_S = 30.0    # a lock-held check reads the cache only: older than this, it says "not on a call"
 CALL_RECHECK_S = 5.0        # a deferred phone copy looks again this often while the call goes on
 CALL_RESUME_S = 5.0         # after the hang-up, before the phone takes: a live car's renewed hold lands first
-CALL_HOLD_MAX_S = float(os.environ.get("MEMO_CALL_HOLD_MAX_S", "3600"))
+CALL_HOLD_MAX_S = float(os.environ.get("MEMO_CALL_HOLD_MAX_S", "10800"))   # = the proxy's CALL_HOLD_MAX_S (3 h)
 # Reply chunks carry this object tag; the holocene-auto lifecycle rule for it expires them after a day.
 CHUNK_TAGS = "kind=chunk"
 EARSHOT_CHANNEL = os.environ.get("MEMO_EARSHOT_CHANNEL", "phone")

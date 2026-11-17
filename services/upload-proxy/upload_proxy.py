@@ -600,7 +600,9 @@ class ReplyClaims:
 # - Gate: while on a call the claims refuse the phone's take and the car's hold / start (ReplyClaims, on_call True).
 #   OPERATOR_CALL_GATE=0 keeps recording and reporting the call (gate False on the answers) but never refuses.
 CALL_FRESH_S = float(os.environ.get("CALL_FRESH_S", "150"))
-CALL_HOLD_MAX_S = float(os.environ.get("CALL_HOLD_MAX_S", "3600"))   # = the watcher's MEMO_CALL_HOLD_MAX_S and Earshot's CallHold.MAX_HOLD_MS
+# 3 h = the watcher's MEMO_CALL_HOLD_MAX_S. Was 1 h: the first real call (2026-11-17, Groundwire, ringing at 01:43 UTC,
+# hung up 02:48) outlived it, and the cap let speech back in 4.5 min before the hang-up. A stuck mode costs 3 h of quiet.
+CALL_HOLD_MAX_S = float(os.environ.get("CALL_HOLD_MAX_S", "10800"))
 CALL_STATE_FILE = os.environ.get("CALL_STATE_FILE") or (
     os.path.join(os.path.dirname(CLAIM_STATE_FILE), "operator-call.json") if CLAIM_STATE_FILE else "")  # empty: memory only
 OPERATOR_CALL_GATE = os.environ.get("OPERATOR_CALL_GATE", "1") != "0"
