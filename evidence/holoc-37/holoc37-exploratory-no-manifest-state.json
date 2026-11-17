@@ -1,0 +1,152 @@
+{
+  "name": "alarm-appops-allow-no-manifest",
+  "key": "alarm/holoc37-appops-allow.wav",
+  "commands": [
+    {
+      "command": "adb -s emulator-5580 shell cmd appops set sh.delo.earshot SCHEDULE_EXACT_ALARM allow",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "adb -s emulator-5580 shell cmd appops get sh.delo.earshot SCHEDULE_EXACT_ALARM",
+      "exit": 0,
+      "stdout": "SCHEDULE_EXACT_ALARM: default",
+      "stderr": ""
+    },
+    {
+      "command": "adb -s emulator-5580 shell dumpsys power",
+      "exit": 0,
+      "stdout": "  mWakefulness=Asleep\nmWakefulness=0",
+      "stderr": ""
+    },
+    {
+      "command": "adb -s emulator-5580 shell dumpsys activity services sh.delo.earshot",
+      "exit": 0,
+      "stdout": "getFgsAllowWiu_forStart=PROC_STATE_TOP\ngetFgsAllowWiu_forCapabilities=PROC_STATE_TOP\ninfoAllowStartForeground=[callingPackage: sh.delo.earshot; callingUid: 10234; uidState: TOP ; uidBFSL: [BFSL]; BFGS denied: false; intent: Intent { xflg=0x4 cmp=sh.delo.earshot/.EarshotService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null; isBindService:false]\nisForeground=true foregroundId=1 types=0x40000002 foregroundNoti=Notification(channel=earshot_listener shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=ONGOING_EVENT|ONLY_ALERT_ONCE|NO_CLEAR|FOREGROUND_SERVICE|NO_DISMISS color=0x00000000 category=service actions=1 vis=PUBLIC)",
+      "stderr": ""
+    },
+    {
+      "command": "adb -s emulator-5580 logcat -c",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "write fixture /home/delorenj/.hermes/profiles/holocene-pm/cache/scratch/holoc37-items.json: alarm/holoc37-appops-allow.wav with current UTC LastModified",
+      "exit": 0,
+      "stdout": "2026-11-17T18:52:21.723Z",
+      "stderr": ""
+    }
+  ],
+  "beacons": [
+    {
+      "channel": "alarm",
+      "key": "alarm/holoc37-appops-allow.wav",
+      "phase": "detected",
+      "at": "2026-11-17T18:52:24.491Z",
+      "last_modified": "2026-11-17T18:52:21.723Z",
+      "device": "sdk_gphone64_x86_64",
+      "app_version": "0.1.9",
+      "clock_skew_ms": 1491,
+      "audio": {
+        "ringer_mode": "normal",
+        "interruption_filter": "all",
+        "streams": {
+          "ring": {
+            "cur": 5,
+            "max": 7
+          },
+          "notification": {
+            "cur": 5,
+            "max": 7
+          },
+          "alarm": {
+            "cur": 6,
+            "max": 7
+          },
+          "music": {
+            "cur": 5,
+            "max": 15
+          },
+          "voice_call": {
+            "cur": 3,
+            "max": 15
+          }
+        }
+      }
+    },
+    {
+      "channel": "alarm",
+      "key": "alarm/holoc37-appops-allow.wav",
+      "phase": "started",
+      "at": "2026-11-17T18:52:24.500Z",
+      "last_modified": "2026-11-17T18:52:21.723Z",
+      "device": "sdk_gphone64_x86_64",
+      "app_version": "0.1.9",
+      "clock_skew_ms": 1491,
+      "audio": {
+        "ringer_mode": "normal",
+        "interruption_filter": "all",
+        "streams": {
+          "ring": {
+            "cur": 5,
+            "max": 7
+          },
+          "notification": {
+            "cur": 5,
+            "max": 7
+          },
+          "alarm": {
+            "cur": 7,
+            "max": 7
+          },
+          "music": {
+            "cur": 5,
+            "max": 15
+          },
+          "voice_call": {
+            "cur": 3,
+            "max": 15
+          }
+        }
+      }
+    },
+    {
+      "channel": "alarm",
+      "key": "alarm/holoc37-appops-allow.wav",
+      "phase": "finished",
+      "at": "2026-11-17T18:52:32.281Z",
+      "last_modified": "2026-11-17T18:52:21.723Z",
+      "device": "sdk_gphone64_x86_64",
+      "app_version": "0.1.9",
+      "clock_skew_ms": 984,
+      "audio": {
+        "ringer_mode": "normal",
+        "interruption_filter": "all",
+        "streams": {
+          "ring": {
+            "cur": 5,
+            "max": 7
+          },
+          "notification": {
+            "cur": 5,
+            "max": 7
+          },
+          "alarm": {
+            "cur": 6,
+            "max": 7
+          },
+          "music": {
+            "cur": 5,
+            "max": 15
+          },
+          "voice_call": {
+            "cur": 3,
+            "max": 15
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+diff --git a/app/src/main/java/sh/delo/earshot/Config.kt b/app/src/main/java/sh/delo/earshot/Config.kt
+--- a/app/src/main/java/sh/delo/earshot/Config.kt
++++ b/app/src/main/java/sh/delo/earshot/Config.kt
+@@ -2,10 +2,10 @@
+ 
+ object Config {
+     /** Anonymous read and list; objects are `<BUCKET_URL>/<channel>/<anything>.<ext>`. */
+-    const val BUCKET_URL = "https://s3.delo.sh/earshot"
++    const val BUCKET_URL = "http://10.0.2.2:18737/earshot"
+ 
+     /** The upload proxy's beacon endpoint. Fail-open: playback never waits for it. */
+-    const val BEACON_URL = "https://agents.delo.sh/upload/heard"
++    const val BEACON_URL = "http://10.0.2.2:18737/upload/heard"
+ 
+     const val DEFAULT_CHANNEL = "phone"
+ 
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ 
++    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
+@@ -14,6 +15,7 @@
+     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+ 
+     <application
++        android:usesCleartextTraffic="true"
+         android:allowBackup="false"
+         android:fullBackupContent="false"
+         android:dataExtractionRules="@xml/data_extraction_rules"
