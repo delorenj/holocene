@@ -502,10 +502,21 @@ class Lexicons(unittest.TestCase):
     def test_the_permission_clamp_follows_the_drivers_own_words(self):
         self.assertEqual(cv.clamp_perm("deploy_ok", ["look into why the spool is disabled"]), "read_only")
         self.assertEqual(cv.clamp_perm("deploy_ok", ["yes but let it change the code"]), "changes_ok")
-        self.assertEqual(cv.clamp_perm("deploy_ok", ["fix it", "and deploy it when green"]), "deploy_ok")
+        self.assertEqual(cv.clamp_perm("deploy_ok", ["fix it", "and deploy it when green"]), "changes_ok")  # a detached fragment is not a new instruction
         self.assertEqual(cv.clamp_perm("read_only", ["fix it and deploy"]), "read_only")  # a ceiling, never a raise
         self.assertEqual(cv.clamp_perm("bogus", ["fix it"]), "read_only")
 
+
+    def test_permission_words_need_affirmative_authorization_not_a_topic(self):
+        for text in ("Investigate the deploy failure.", "Review the code changes and deployment logs.",
+                     "Why did it restart?", "Could you deploy it?", "If it works, deploy it.",
+                     'The log says "deploy it now".', "Someone wrote 'fix it and deploy it'.",
+                     "Check whether we should restart the service", "Fix the deploy failure?", "Do not deploy it"):
+            self.assertEqual(cv.clamp_perm("deploy_ok", [text]), "read_only", text)
+        for text, allowed in (("Fix it and deploy it.", "deploy_ok"), ("Please deploy it when green.", "deploy_ok"),
+                              ("Fix the spool bug and commit it", "changes_ok"),
+                              ("Yes but let it change the code", "changes_ok")):
+            self.assertEqual(cv.clamp_perm("deploy_ok", [text]), allowed, text)
 
 REG = {"holocene-pm": "Holocene PM", "flume-pm": "Flume PM", "ghost-pm": "Ghost PM"}
 
@@ -596,18 +607,58 @@ class Guard(unittest.TestCase):
 
     def test_handoff_needs_the_agent_named_and_routable(self):
         sess = session()
-        final, reasons = g({**PROPOSE, "target": "flume-pm"}, sess, "send that to the other agent instead")
-        self.assertEqual(final["draft"]["target"], "holocene-pm")
-        self.assertIn("handoff_not_named", reasons)
-        final, reasons = g({**PROPOSE, "target": "ghost-pm"}, sess, "send that to Ghost instead")
-        self.assertEqual(final["draft"]["target"], "holocene-pm")
-        self.assertIn("unroutable_target", reasons)
-        final, reasons = g({**PROPOSE, "target": "flume-pm"}, sess, "Send that to Flume PM instead", handoff="off")
-        self.assertIn("handoff_off", reasons)
+        for dec, said, handoff, reason, target in (
+            ({**PROPOSE, "target": "flume-pm"}, "send that to the other agent instead", "named", "handoff_not_named", "Flume PM"),
+            ({**PROPOSE, "target": "ghost-pm"}, "Send it to Ghost PM and check queue", "named", "unroutable_target", "Ghost PM"),
+            ({**PROPOSE, "target": "flume-pm"}, "Send that to Flume PM instead", "off", "handoff_off", "Flume PM"),
+        ):
+            final, reasons = g(dec, sess, said, handoff=handoff)
+            self.assertEqual((final["action"], final["draft"], final["send"]), ("reply", None, None))
+            self.assertIn(reason, reasons)
+            self.assertIn(f"can't send this to {target}", final["say"])
+            self.assertIn("new draft for Holocene PM", final["say"])
+            self.assertIsNone(g({"action": "confirm"}, sess, "send it")[0]["send"])
         final, reasons = g({**PROPOSE, "target": "flume-pm"}, sess, "Send that to Flume PM instead")
         self.assertEqual(reasons, [])
         self.assertEqual(final["draft"]["target"], "flume-pm")
         self.assertTrue(final["say"].startswith("Draft for Flume PM: "))
+
+    def test_refused_retarget_drops_previous_pending_and_never_sends_it(self):
+        for action in ("propose", "confirm"):
+            sess = session()
+            old = sess["pending"] = g(PROPOSE, sess, "look into the spool")[0]["draft"]
+            dec = {"action": action, "target": "ghost-pm", "title": old["title"], "brief": old["brief"], "perm": old["perm"]}
+            final, reasons = g(dec, sess, "Send it to Ghost PM and check queue")
+            self.assertIn("unroutable_target", reasons)
+            self.assertTrue(final["drop"])
+            self.assertIsNone(final["draft"])
+            self.assertIsNone(final["send"])
+            self.assertIn("Ghost PM", final["say"])
+            # The watcher applies drop under the session lock; no old target remains confirmable.
+            sess["pending"] = None
+            followup, _ = g({"action": "confirm"}, sess, "send it")
+            self.assertIsNone(followup["send"])
+            self.assertEqual(followup["say"], cv.NOTHING_PENDING_LINE)
+            alternative, _ = g(PROPOSE, sess, "Have Holocene PM check queue instead")
+            self.assertEqual(alternative["draft"]["target"], "holocene-pm")
+            sess["pending"] = alternative["draft"]
+            confirmed, _ = g({"action": "confirm"}, sess, "send it")
+            self.assertIs(confirmed["send"], alternative["draft"])
+
+    def test_investigation_permission_stays_read_only_through_confirmation(self):
+        sess = session()
+        proposed, reasons = g({**PROPOSE, "title": "Investigate incident", "perm": "deploy_ok"}, sess,
+                              "Investigate the deploy failure.")
+        self.assertEqual(proposed["draft"]["perm"], "read_only")
+        self.assertIn("Read-only", proposed["say"])
+        self.assertNotIn("Changes and deploy OK", proposed["say"])
+        self.assertIn(cv.PERM_RULE["read_only"], proposed["draft"]["body"])
+        self.assertIn("perm_clamped:deploy_ok->read_only", reasons)
+        sess["pending"] = proposed["draft"]
+        confirmed, _ = g({"action": "confirm"}, sess, "send it")
+        self.assertIs(confirmed["send"], proposed["draft"])
+        self.assertEqual(confirmed["send"]["perm"], "read_only")
+
 
     def test_a_retarget_on_confirm_is_read_back_not_sent(self):
         sess = session()

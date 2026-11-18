@@ -530,6 +530,261 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertIn("unless the Permission section below allows it", prompt)
         self.assertEqual(m["followups"][0]["brief_sha256"], draft["brief_sha256"])
 
+    def assert_permission_pipeline(self, text, permission, target):
+        self.propose(text, dec={**PROPOSE, "perm": "deploy_ok", "target": target})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], permission)
+        self.assertIn(cv.PERM_TEXT[permission], self.last_said)
+        self.assertIn(cv.PERM_RULE[permission], draft["body"])
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        key, _ = self.say("Send it.")
+        (command_type, cmd), = self.cmds(key)
+        self.assertEqual(command_type, "bloodbank.cmd.agent.invocation.start")
+        self.assertEqual(cmd["data"]["target_agent_id"], target)
+        self.assertEqual(cmd["data"]["context"]["perm"], permission)
+        self.assertIn(draft["body"], cmd["data"]["prompt"])
+
+    def test_incident_coordination_stays_read_only(self):
+        self.assert_permission_pipeline("Review the deploy and restart logs.", "read_only", "holocene-pm")
+
+    def test_negated_coordination_stays_read_only(self):
+        self.assert_permission_pipeline("Do not fix it and deploy it.", "read_only", "holocene-pm")
+
+    def test_unpunctuated_question_stays_read_only(self):
+        self.assert_permission_pipeline("Why did it fail and restart the service", "read_only", "holocene-pm")
+
+    def test_curly_quoted_command_stays_read_only(self):
+        self.assert_permission_pipeline("The log says ‘fix it and deploy it’.", "read_only", "holocene-pm")
+
+    def test_reported_runbook_command_stays_read_only(self):
+        self.assert_permission_pipeline("Explain why the runbook says check logs, then restart the service.", "read_only", "holocene-pm")
+
+    def test_subordinate_denial_stays_read_only(self):
+        self.assert_permission_pipeline("Inspect the incident. Ask them not to fix it and deploy it.", "read_only", "holocene-pm")
+
+    def test_manual_command_stays_read_only(self):
+        self.assert_permission_pipeline("The manual says inspect logs and deploy when green.", "read_only", "holocene-pm")
+
+    def test_hypothetical_command_stays_read_only(self):
+        self.assert_permission_pipeline("In that hypothetical case, check logs and deploy it.", "read_only", "holocene-pm")
+
+    def test_contraction_denial_stays_read_only(self):
+        self.assert_permission_pipeline("Deploy isn't approved; don't change anything.", "read_only", "holocene-pm")
+
+    def test_contraction_change_remains_authorized(self):
+        self.assert_permission_pipeline("I'd like you to fix the code, but don't deploy it.", "changes_ok", "holocene-pm")
+
+    def test_coordinated_affirmative_deploy_remains_authorized(self):
+        self.assert_permission_pipeline("Fix it and deploy it.", "deploy_ok", "holocene-pm")
+
+    def test_named_agent_code_request_remains_authorized(self):
+        self.assert_permission_pipeline("Have Flume PM fix the spool code.", "changes_ok", "flume-pm")
+
+    def test_withdrawal_resets_permission_provenance(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Actually forget that. Only investigate the logs instead.", "read_only", "holocene-pm")
+        self.assertEqual(len(self.sess()["delegations"]), 1)
+
+    def test_revocation_overrides_previous_permission(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Do not deploy it. Just inspect the logs.", "read_only", "holocene-pm")
+
+    def test_unrelated_reply_does_not_authorize_replacement(self):
+        self.propose("Investigate the logs.")
+        self.hyper.__dict__["decision"] = decision(action="reply", say="That is what the manual says.")
+        self.say("The log says check logs, then restart the service.")
+        self.assert_permission_pipeline("Actually forget that. Only inspect deployment logs instead.", "read_only", "holocene-pm")
+
+    def test_revocation_after_readback_and_unrelated_edit_stays_read_only(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.propose("Do not deploy it. Just inspect the logs.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "read_only")
+        self.propose("Also include timestamps in the report.", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "read_only")
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "read_only")
+
+    def test_independent_denial_before_report_condition_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Do not deploy it. Just inspect the logs and tell me if anything failed.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_report_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("The manual says inspect logs. Do not deploy it. Just inspect the logs.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_hypothetical_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("If the logs fail, report that. Do not deploy it. Just inspect the logs.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_quoted_denial_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline('The runbook says "Do not deploy it." Do not deploy it. Just inspect the logs.',
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_before_report_condition_revokes_reply(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "deploy_ok")
+        self.hyper.__dict__["decision"] = decision(action="reply", say="Okay, only inspecting logs.")
+        key, _ = self.say("Do not deploy it. Just inspect the logs and tell me if anything failed.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("old draft was dropped", self.last_said)
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def assert_non_driver_denial_keeps_pending(self, text):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.hyper.__dict__["decision"] = decision(action="reply", say="That is what it says.")
+        key, _ = self.say(text)
+        self.assertEqual(self.cmds(key), [])
+        self.assertEqual(self.sess()["pending"]["brief_id"], draft["brief_id"])
+        self.assertEqual(self.sess()["pending"]["perm"], "deploy_ok")
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.assertEqual(self.sess()["pending"]["brief_sha256"], draft["brief_sha256"])
+        key, _ = self.say("Send it.")
+        (typ, cmd), = self.cmds(key)
+        self.assertEqual(typ, "bloodbank.cmd.agent.invocation.start")
+        self.assertEqual(cmd["data"]["context"]["perm"], "deploy_ok")
+        self.assertEqual(cmd["data"]["target_agent_id"], "holocene-pm")
+        self.assertIn(draft["body"], cmd["data"]["prompt"])
+
+    def test_reported_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('The manual says do not deploy it.')
+
+    def test_hypothetical_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('If this were hypothetical, do not deploy it.')
+
+    def test_quoted_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('The log says "Do not deploy it."')
+
+    def test_reply_classification_cannot_preserve_revoked_permission(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.hyper.__dict__["decision"] = decision(action="reply", say="Okay, only inspecting logs.")
+        self.say("Do not deploy it. Just inspect the logs.")
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def test_reported_semicolon_command_stays_read_only(self):
+        self.assert_permission_pipeline("Explain why the runbook says check logs; restart the service.", "read_only", "holocene-pm")
+
+    def test_manual_semicolon_command_stays_read_only(self):
+        self.assert_permission_pipeline("The manual says inspect logs; deploy when green.", "read_only", "holocene-pm")
+
+    def test_cross_turn_affirmative_deploy_uses_new_readback(self):
+        self.propose("Fix the spool code.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "changes_ok")
+        self.propose("and deploy it when green", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "deploy_ok")
+        self.assertIn(cv.PERM_TEXT["deploy_ok"], self.last_said)
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "deploy_ok")
+
+    def test_unnamed_alternative_redirects_never_send_old_tile(self):
+        for text in ("Send it to a different agent.", "Send it to someone else."):
+            self.propose("Investigate the logs.")
+            self.hyper.__dict__["decision"] = decision(action="confirm", target="flume-pm")
+            key, _ = self.say(text)
+            self.assertEqual(self.cmds(key), [])
+            self.assertIsNone(self.sess()["pending"])
+            self.assertIn("Nothing was sent", self.last_said)
+
+    def test_disabled_handoff_after_readback_refuses_other_target(self):
+        self.propose("Have Flume PM investigate the logs.", dec={**PROPOSE, "target": "flume-pm"})
+        self.flag(handoff="off")
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("can't send this", self.last_said)
+
+    def test_unnamed_confirmation_retarget_drops_old_draft_after_reload(self):
+        self.propose("Investigate the logs.")
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.hyper.decision = decision(action="confirm", target="flume-pm")
+        key, _ = self.say("Send it to the other agent.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("can't send this", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        self.state.save()
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def test_pending_route_disappears_before_confirmation(self):
+        self.propose("Have Flume PM investigate the logs.", dec={**PROPOSE, "target": "flume-pm"})
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        original = iw.mc_.registry_route
+        with unittest.mock.patch.object(iw.mc_, "registry_route", side_effect=lambda agent: {"ok": False} if agent == "flume-pm" else original(agent)):
+            key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("can't send this", self.last_said)
+
+    def test_legacy_pending_requires_new_readback_and_cannot_dispatch(self):
+        self.propose("Investigate the deploy failure.")
+        draft = self.sess()["pending"]
+        draft.pop("policy_version")
+        draft["perm"] = "deploy_ok"
+        draft["body"] = cv.brief_body(draft["title"], draft["brief"], "deploy_ok")
+        draft["brief_sha256"] = cv.sha256(draft["body"])
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("new read-back", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def test_investigating_a_deploy_failure_remains_read_only_when_confirmed(self):
+        self.propose("Investigate the deploy failure.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertIn("Read-only", self.last_said)
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "read_only")
+        self.assertIn(cv.PERM_RULE["read_only"], draft["body"])
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "read_only")
+        self.assertIn(cv.PERM_RULE["read_only"], cmd["data"]["prompt"])
+
     def test_a_named_handoff_goes_to_that_agent_and_its_result_is_named(self):
         dec = {**PROPOSE, "target": "flume-pm"}
         self.propose("Have Flume PM look into why the audio spool is disabled", dec=dec)
@@ -542,12 +797,26 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.finish_delegation(m, "Nothing is wrong on the Flume side.", profile="flume-pm")
         self.assertEqual(self.last_said, "Flume PM, follow-up on Why the audio spool is disabled. Nothing is wrong on the Flume side.")
 
-    def test_an_unnamed_handoff_stays_with_the_tile(self):
+    def test_an_unnamed_handoff_is_refused_without_substituting_the_tile(self):
         self.propose("Send that to the other agent instead", dec={**PROPOSE, "target": "flume-pm"})
-        self.assertTrue(self.last_said.startswith("Draft for Holocene PM: "))
-        self.assertEqual(self.sess()["pending"]["target"], "holocene-pm")
+        self.assertIn("can't send this to Flume PM", self.last_said)
+        self.assertIn("new draft for Holocene PM", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
         r, = [x for x in self.of_type("routed", self.keys[-1])]
         self.assertIn("handoff_not_named", r["guard"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("nothing waiting to send", self.last_said)
+
+    def test_unroutable_named_handoff_is_spoken_and_never_retargets_to_tile(self):
+        self.propose("Send it to Ghost PM and check queue", dec={**PROPOSE, "target": "ghost-pm"})
+        self.assertIn("can't send this to ghost pm", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        routed, = self.of_type("routed", self.keys[-1])
+        self.assertIn("unroutable_target", routed["guard"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("nothing waiting to send", self.last_said)
 
     def test_follow_up_max_zero_still_delegates(self):
         with unittest.mock.patch.object(iw, "FOLLOWUP_MAX", 0):

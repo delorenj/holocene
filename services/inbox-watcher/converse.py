@@ -823,12 +823,6 @@ NEGATION_RE = re.compile(r"\b(?:don't|dont|do not|not|never|no|nope|stop|wait|ho
                          r"except|without|later)\b")
 _NEG_CUE_RE = re.compile(r"\b(?:don't|dont|do not|doesn't|never|no|not|without|nothing|avoid|n't|skip|except)\b|n't\b")
 _QUESTION_START_RE = re.compile(r"^\s*(?:why|what|when|how|did|does|is|was|were|has|had|who|where|which)\b")
-# "change" alone is how a driver edits a draft ("change the title"), so it only counts next to code
-CHANGE_WORDS_RE = re.compile(r"\b(?:fix|fixes|edit|modify|implement|commit|patch|refactor|code changes?|changes? (?:the )?code|"
-                             r"make (?:the|a|those) changes?|update (?:the )?code|write (?:the |a |some )?(?:code|fix|patch|tests?|"
-                             r"feature|script|function))\b")
-DEPLOY_WORDS_RE = re.compile(r"\b(?:deploy|deployed|deploying|redeploy|restart|release|roll ?out|push (?:it|to (?:prod|"
-                             r"production|main)))\b")
 # A reply that claims work was sent or started when nothing was (only a confirmed draft is ever sent).
 SENT_CLAIM_RE = re.compile(r"\b(?:i(?:'ve| have)? (?:sent|started|kicked off|delegated|dispatched|handed (?:it|that) (?:off|over))|"
                            r"(?:sending|starting) (?:it|that|this) now|(?:it|that)(?:'s| is| has been) (?:been )?(?:sent|started)|"
@@ -908,31 +902,99 @@ def negated(text: str) -> bool:
     return NEGATION_RE.search(norm(text)) is not None
 
 
-def _perm_text(words: list[str]) -> str:
-    """What the driver's own words ask for, minus what they forbid: clauses with a negation ("don't change any code", "do not
-    deploy") and clauses that are questions ("why did it restart?") grant nothing."""
+# Permission is an authorization boundary, not a topic classifier: a deploy incident can be discussed read-only.
+_PERM_LEAD_RE = re.compile(r"^(?:(?:yes|okay|ok|please|now|also|just|go ahead and|i want (?:you|it|them) to|"
+                           r"i'd like (?:you|it|them) to|let (?:it|them|the agent)|have (?:the )?(?:pm|agent)|"
+                           r"you can|you may)\s+)*")
+_CHANGE_REQUEST_RE = re.compile(r"^(?:fix|edit|modify|implement|commit|patch|refactor|change (?:the )?code|"
+                                r"make (?:the|a|those) changes?|update (?:the )?code|"
+                                r"write (?:the |a |some )?(?:code|fix|patch|tests?|feature|script|function))\b")
+_DEPLOY_REQUEST_RE = re.compile(r"^(?:deploy|redeploy|restart|release|roll ?out|push (?:it|to (?:prod|production|main)))\b")
+_HYPOTHETICAL_RE = re.compile(r"\b(?:if|whether|would|should|could|might|maybe|suppose|imagine|hypothetically)\b")
+_QUOTED_DATA_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|(?<![a-z0-9])\'[^\'\n]*\'(?![a-z0-9])|‘[^’\n]*’')
+_REPORTED_LEAD_RE = re.compile(r"^(?:explain|describe|summarize|quote|read|review)\b.*\b(?:says?|said|reads?)\b|"
+                               r"^(?:the|a|this|that)\s+[^;,.!?]+\b(?:says?|said|reads?)\b")
+_DENY_CHANGE_RE = re.compile(r"\b(?:don't|dont|do not|never|not|without|avoid|skip)\s+(?:\w+\s+){0,2}"
+                             r"(?:fix|edit|modify|implement|commit|patch|change|write)\b")
+_DENY_DEPLOY_RE = re.compile(r"\b(?:don't|dont|do not|never|not|without|avoid|skip)\s+(?:\w+\s+){0,2}"
+                             r"(?:deploy|redeploy|restart|release|roll ?out|push)\b")
+_READ_ONLY_RE = re.compile(r"\b(?:only|just)\s+(?:inspect|investigate|check|look|review|report|explain|read)\b")
+
+def permission_cap(text: str) -> str | None:
+    """An explicit driver withdrawal limits inherited authority until a new affirmative instruction."""
+    unquoted = _QUOTED_DATA_RE.sub(' ', text or '')
+    cap = None
+    for sentence in re.split(r"[.!?\n]+", unquoted.replace("\u2019", "'")):
+        n = norm(sentence)
+        if not n or _REPORTED_LEAD_RE.match(n) or _QUESTION_START_RE.match(n):
+            continue
+        hypothetical = _HYPOTHETICAL_RE.search(n)
+        if hypothetical:
+            n = n[:hypothetical.start()].strip()
+        if _READ_ONLY_RE.search(n) or _DENY_CHANGE_RE.search(n):
+            cap = "read_only"
+        elif _DENY_DEPLOY_RE.search(n) and cap != "read_only":
+            cap = "changes_ok"
+    return cap
+
+def effective_permission(words: list[str], agent_tokens: list[str] | None = None) -> str:
+    """Replay authorized instructions in order, so a revoked grant cannot reappear on an unrelated edit."""
+    current = "read_only"
+    for index, text in enumerate(words):
+        # A coordinated follow-up to an existing draft is a fresh, explicit instruction.
+        continuation = re.sub(r"^\s*and\s+", "", text, flags=re.I) if index else text
+        grant = perm_allowed([continuation], agent_tokens)
+        cap = permission_cap(text)
+        if cap is not None:
+            current = PERMS[min(PERMS.index(current), PERMS.index(cap))]
+            grant = PERMS[min(PERMS.index(grant), PERMS.index(cap))]
+        current = PERMS[max(PERMS.index(current), PERMS.index(grant))]
+    return current
+
+
+def _perm_text(words: list[str], agent_tokens: list[str] | None = None) -> list[str]:
+    """Accept only an affirmative instruction lead; coordinated actions inherit that lead's scope."""
     kept: list[str] = []
     for w in words:
-        for clause in re.split(r"[.!?;,\n]+|\b(?:but|and then|then|and)\b", (w or "").lower().replace("\u2019", "'")):
-            if not clause.strip() or _NEG_CUE_RE.search(clause) or _QUESTION_START_RE.match(clause):
+        unquoted = _QUOTED_DATA_RE.sub(' ', (w or '').lower())
+        for sentence in re.split(r"[.!?\n]+", unquoted.replace("\u2019", "'")):
+            if ("?" in unquoted or not sentence.strip() or _HYPOTHETICAL_RE.search(sentence)
+                    or _QUESTION_START_RE.match(sentence) or _REPORTED_LEAD_RE.match(sentence.strip())):
                 continue
-            kept.append(clause)
-    return norm(" ".join(kept))
+            # A semicolon does not turn a quoted/reported instruction into driver authorization.
+            for segment in re.split(r"\bbut\b|[;]+", sentence):
+                if _NEG_CUE_RE.search(segment):
+                    continue
+                normalized = norm(segment)
+                lead = _PERM_LEAD_RE.sub('', normalized)
+                if agent_tokens:
+                    for token in agent_tokens:
+                        match = re.match(rf"have (?:the )?{re.escape(norm(token))}\b\s+", lead)
+                        if match:
+                            lead = lead[match.end():]
+                            break
+                if not (_CHANGE_REQUEST_RE.match(lead) or _DEPLOY_REQUEST_RE.match(lead)):
+                    continue
+                kept.append(lead)
+                # Only a proven imperative lead can authorize coordinated actions.
+                kept.extend(norm(c) for c in re.split(r"\b(?:and then|and|then)\b|,", lead)[1:]
+                         if not _NEG_CUE_RE.search(c))
+    return kept
 
 
-def perm_allowed(words: list[str]) -> str:
-    """The highest permission the driver's own words allow."""
-    text = _perm_text(words)
-    if DEPLOY_WORDS_RE.search(text):
+def perm_allowed(words: list[str], agent_tokens: list[str] | None = None) -> str:
+    """The highest permission explicitly requested by the driver, never inferred from task subject matter."""
+    clauses = _perm_text(words, agent_tokens)
+    if any(_DEPLOY_REQUEST_RE.match(c) for c in clauses):
         return "deploy_ok"
-    if CHANGE_WORDS_RE.search(text):
+    if any(_CHANGE_REQUEST_RE.match(c) for c in clauses):
         return "changes_ok"
     return "read_only"
 
 
-def clamp_perm(requested: str, words: list[str]) -> str:
+def clamp_perm(requested: str, words: list[str], agent_tokens: list[str] | None = None) -> str:
     req = requested if requested in PERMS else "read_only"
-    return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words)))]
+    return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words, agent_tokens)))]
 
 
 # ---------------------------------------------------------------- per-tile voice and model: names and phrases (no LLM)
@@ -1141,6 +1203,15 @@ def named(text: str, tokens: list[str]) -> bool:
 
 # ---------------------------------------------------------------- speech templates (deterministic)
 
+def unnamed_redirect(text: str) -> bool:
+    """A send addressed to an unspecified alternate recipient is never approval for the read-back target."""
+    redirect = norm(text)
+    return re.search(r"\b(?:send|route|forward|give|hand)\b.*\b(?:to|over to)\s+"
+                     r"(?:(?:the|a)\s+)?(?:other|another|different)\s+(?:agent|pm|model|one|person)\b|"
+                     r"\b(?:send|route|forward|give|hand)\b.*\b(?:to|over to)\s+"
+                     r"(?:someone|anyone|somebody)\s+else\b", redirect) is not None
+
+
 def readback(draft: dict) -> str:
     return (f"Draft for {draft['target_name']}: {draft['title']}. {PERM_TEXT.get(draft.get('perm'), 'Read-only')}. "
             "Say send it, or tell me what to change.")
@@ -1160,6 +1231,8 @@ NOTHING_TO_CANCEL_LINE = "Okay. Nothing was waiting to send."
 END_LINE = "Okay. Talk soon."
 EXPIRED_LINE = "That draft timed out, so nothing was sent. Tell me again what you want done."
 DRAFT_CHANGED_LINE = "That draft changed since I read it back, so nothing was sent. Tell me again what you want done."
+DRAFT_POLICY_LINE = "That draft needs a new read-back before it can be sent. Nothing was sent. Tell me again what you want done."
+DRAFT_POLICY_VERSION = 3
 DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 
 # The hold cue (HOLOC-23): while the desk's answer is slow the car hears one of these, in the tile's voice. Each is about a
@@ -1363,8 +1436,10 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     reasons: list[str] = []
     action = dec.get("action") or "reply"
     pend = pending_draft(sess, now, draft_ttl_s)
-    # What the driver's own words grant a permission: this turn, plus the turn before it while a draft is being edited.
-    words = ([t.get("user") or "" for t in driver_turns(sess)[-1:]] if pend is not None else []) + [transcript]
+    # The permission chain is exactly the provenance of this draft, never an arbitrary previous reply.
+    prior = (draft_turns(sess, pend) if pend is not None and pend.get("policy_version") == DRAFT_POLICY_VERSION
+             and not withdraws_draft(transcript) else [])
+    words = [t.get("user") or "" for t in prior] + [transcript]
     # "I've sent it" is a true thing to say while a confirmed delegation is on the board: only a claim with nothing sent is filtered
     board = recent_delegation(sess, now, dedupe_s) if pend is None else None
     about = f"{board.get('title') or ''} {board.get('target_name') or board.get('target') or ''}" if board else ""
@@ -1372,11 +1447,22 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
            "already": None, "cancel_sending": None}
     resolve = getattr(names_fn, "resolve", None)
 
+    def refuse_target(target: str, reason: str) -> None:
+        reasons.append(reason)
+        name = names_fn.display(target) if hasattr(names_fn, "display") else target
+        out.update(action="reply", draft=None, send=None, drop=pend is not None and pend.get("state") == "proposed",
+                   say=f"I can't send this to {name}. Nothing was sent. "
+                       + ("The old draft was dropped. " if pend is not None else "")
+                       + f"Ask for a new draft for {tile_name} instead.")
+
     def propose_from(src: dict, base: dict | None = None) -> None:
         target = (src.get("target") or (base or {}).get("target") or tile).strip()
         if resolve is not None:
             target = resolve(target)
         pend_target = (base or {}).get("target")
+        if target != tile and handoff != "named":
+            refuse_target(target, "handoff_off")
+            return
         if target != tile and target != pend_target:
             # another agent than the tile (and not the one the pending draft already named and read back): only if the
             # driver said its name in THIS turn
@@ -1384,20 +1470,23 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             tokens = names_fn(target) if ok_named else []
             route = route_fn(target) if ok_named else {"ok": None}
             if handoff != "named":
-                reasons.append("handoff_off")
-                target = pend_target or tile
-            elif not tokens or not named(transcript, tokens):
-                reasons.append("handoff_not_named")
-                target = pend_target or tile
-            elif route.get("ok") is not True:
-                reasons.append("unroutable_target")
-                target = pend_target or tile
+                refuse_target(target, "handoff_off")
+                return
+            if not tokens or not named(transcript, tokens):
+                refuse_target(target, "handoff_not_named")
+                return
+            if route.get("ok") is not True:
+                refuse_target(target, "unroutable_target")
+                return
         said = (transcript or "").strip()
         title = (src.get("title") or (base or {}).get("title") or "").strip() or title_from_words(said) or "Untitled request"
         brief = src.get("brief") if (src.get("brief") or {}).get("goal") else (base or {}).get("brief") or src.get("brief") or {}
         if not brief.get("goal"):
             brief = {**brief, "goal": said[:1500] or title}  # a model that gave no brief: the driver's own words are the goal
-        perm = clamp_perm(src.get("perm") or (base or {}).get("perm") or "read_only", words)
+        tokens = names_fn(target) if target == tile or target == pend_target or handoff == "named" else []
+        requested = src.get("perm") or (base or {}).get("perm") or "read_only"
+        perm = PERMS[min(PERMS.index(requested if requested in PERMS else "read_only"),
+                         PERMS.index(effective_permission(words, tokens)))]
         if perm != (src.get("perm") or "read_only"):
             reasons.append(f"perm_clamped:{src.get('perm')}->{perm}")
         body = brief_body(title, brief, perm)
@@ -1412,12 +1501,28 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             chain.append(memo_id)
         draft = {"brief_id": bid, "brief_sha256": body_sha, "title": title, "target": target, "target_name": name,
                  "perm": perm, "brief": brief, "body": body, "memo_id": memo_id, "at": now, "state": "proposed",
-                 "built_by": chain}
+                 "built_by": chain, "policy_version": DRAFT_POLICY_VERSION}
         out.update(action="propose", draft=draft, say=readback(draft))
 
     def busy() -> None:
         reasons.append("edit_while_sending")
         out.update(action="reply", say=SENDING_BUSY_LINE.format(target=pend.get("target_name") or pend.get("target")))
+
+    if (pend is not None and pend.get("state") == "proposed" and action not in ("cancel", "end")
+            and unnamed_redirect(transcript)):
+        refuse_target("the other agent", "unnamed_retarget")
+        return out, reasons
+
+    # Withdrawal is a state transition, even when the model calls this turn a reply.
+    # The prior read-back cannot authorize the old scope after an intervening denial.
+    if (pend is not None and pend.get("state") == "proposed" and action not in ("cancel", "end")
+            and permission_cap(transcript) is not None
+            and PERMS.index(permission_cap(transcript)) < PERMS.index(pend.get("perm", "read_only"))
+            and action != "propose"):
+        reasons.append("permission_revoked")
+        out.update(action="reply", say="That permission was withdrawn. The old draft was dropped. Nothing was sent. "
+                   "Ask for a new draft and read-back.", drop=True)
+        return out, reasons
 
     if action == "confirm":
         if pend is None or pend.get("state") == "sending":
@@ -1436,16 +1541,33 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("no_pending_draft")
             out.update(action="reply", say=NOTHING_PENDING_LINE)
             return out, reasons
+        if pend.get("policy_version") != DRAFT_POLICY_VERSION:
+            reasons.append("legacy_draft_policy")
+            out.update(action="reply", say=DRAFT_POLICY_LINE, drop=True)
+            return out, reasons
         want = resolve(dec["target"]) if (resolve is not None and dec.get("target")) else dec.get("target")
-        if want and want != pend.get("target") and want != tile:
-            # the model names another agent on a confirm: a retarget only if the driver said that agent's name just now;
-            # otherwise the model merely echoed an id and the draft keeps the target that was read back
-            tokens = names_fn(want) if handoff == "named" else []
+        # A spoken redirect to a different roster name outranks a stale model target echo.
+        roster_ids = ([r["id"] for r in names_fn.roster()] if hasattr(names_fn, "roster") else [])
+        other_named = [agent for agent in roster_ids if agent != pend.get("target")
+                       and named(transcript, names_fn(agent))]
+        if other_named:
+            if len(other_named) != 1:
+                refuse_target("another agent", "ambiguous_retarget")
+                return out, reasons
+            want = other_named[0]
+        if want and want != pend.get("target"):
+            # A target change on confirmation needs its own read-back, including a return to the tile. Never send the
+            # old pending target on the same turn as an attempted named retarget.
+            tokens = names_fn(want)
             if tokens and named(transcript, tokens):
                 reasons.append("retarget_needs_readback")
-                propose_from({"target": want, "title": pend["title"], "brief": pend["brief"], "perm": pend["perm"]})
+                if want != tile and handoff != "named":
+                    refuse_target(want, "handoff_off")
+                else:
+                    propose_from({"target": want, "title": pend["title"], "brief": pend["brief"], "perm": pend["perm"]})
                 return out, reasons
             reasons.append("confirm_target_ignored")
+        # An unnamed redirect was already refused independently of model classification above.
         if not send_affirmed(transcript, sess, pend):
             reasons.append("not_affirmed")
             out.update(action="propose", say=readback(pend) + NOT_CONFIRMED_SUFFIX if bare_yes(transcript) or is_question(transcript)
@@ -1455,6 +1577,12 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("draft_changed")
             out.update(action="reply", say=DRAFT_CHANGED_LINE,
                        drop=True)
+            return out, reasons
+        if pend.get("target") != tile and handoff != "named":
+            refuse_target(pend.get("target") or tile, "handoff_off")
+            return out, reasons
+        if route_fn(pend.get("target")).get("ok") is not True:
+            refuse_target(pend.get("target") or tile, "unroutable_pending_target")
             return out, reasons
         dup = recent_delegation(sess, now, dedupe_s, sha=pend["brief_sha256"], target=pend.get("target"))
         if dup is not None:
