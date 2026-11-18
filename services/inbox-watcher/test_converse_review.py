@@ -270,12 +270,13 @@ class PipelineReview(ConverseHarness, unittest.TestCase):
             said = " ".join(VOX_TEXTS[before:])
             self.assertEqual(m["status"], "done")
         self.assertEqual(self.cmds(key), [])
-        self.assertIn("nothing was sent", said)
+        self.assertIn("Nothing was sent", said)
         sess = self.sess()
-        self.assertEqual(sess["pending"]["state"], "proposed")
-        self.assertEqual(sess["delegations"][-1]["state"], "not_sent")
+        self.assertIsNone(sess["pending"])
+        self.assertEqual(sess["delegations"], [])
         key2, m2 = self.say("Send it.")
-        self.assertNotIn("Already sent", self.last_said)
+        self.assertEqual(self.cmds(key2), [])
+        self.assertIn("nothing waiting", self.last_said)
 
     def test_cancel_during_the_read_back_stops_the_delegation(self):
         self.propose()

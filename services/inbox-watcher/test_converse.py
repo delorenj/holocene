@@ -502,7 +502,7 @@ class Lexicons(unittest.TestCase):
     def test_the_permission_clamp_follows_the_drivers_own_words(self):
         self.assertEqual(cv.clamp_perm("deploy_ok", ["look into why the spool is disabled"]), "read_only")
         self.assertEqual(cv.clamp_perm("deploy_ok", ["yes but let it change the code"]), "changes_ok")
-        self.assertEqual(cv.clamp_perm("deploy_ok", ["fix it", "and deploy it when green"]), "deploy_ok")
+        self.assertEqual(cv.clamp_perm("deploy_ok", ["fix it", "and deploy it when green"]), "changes_ok")  # a detached fragment is not a new instruction
         self.assertEqual(cv.clamp_perm("read_only", ["fix it and deploy"]), "read_only")  # a ceiling, never a raise
         self.assertEqual(cv.clamp_perm("bogus", ["fix it"]), "read_only")
 

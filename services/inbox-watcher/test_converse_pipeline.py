@@ -530,6 +530,128 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertIn("unless the Permission section below allows it", prompt)
         self.assertEqual(m["followups"][0]["brief_sha256"], draft["brief_sha256"])
 
+    def assert_permission_pipeline(self, text, permission, target):
+        self.propose(text, dec={**PROPOSE, "perm": "deploy_ok", "target": target})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], permission)
+        self.assertIn(cv.PERM_TEXT[permission], self.last_said)
+        self.assertIn(cv.PERM_RULE[permission], draft["body"])
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        key, _ = self.say("Send it.")
+        (command_type, cmd), = self.cmds(key)
+        self.assertEqual(command_type, "bloodbank.cmd.agent.invocation.start")
+        self.assertEqual(cmd["data"]["target_agent_id"], target)
+        self.assertEqual(cmd["data"]["context"]["perm"], permission)
+        self.assertIn(draft["body"], cmd["data"]["prompt"])
+
+    def test_incident_coordination_stays_read_only(self):
+        self.assert_permission_pipeline("Review the deploy and restart logs.", "read_only", "holocene-pm")
+
+    def test_negated_coordination_stays_read_only(self):
+        self.assert_permission_pipeline("Do not fix it and deploy it.", "read_only", "holocene-pm")
+
+    def test_unpunctuated_question_stays_read_only(self):
+        self.assert_permission_pipeline("Why did it fail and restart the service", "read_only", "holocene-pm")
+
+    def test_curly_quoted_command_stays_read_only(self):
+        self.assert_permission_pipeline("The log says ‘fix it and deploy it’.", "read_only", "holocene-pm")
+
+    def test_reported_runbook_command_stays_read_only(self):
+        self.assert_permission_pipeline("Explain why the runbook says check logs, then restart the service.", "read_only", "holocene-pm")
+
+    def test_subordinate_denial_stays_read_only(self):
+        self.assert_permission_pipeline("Inspect the incident. Ask them not to fix it and deploy it.", "read_only", "holocene-pm")
+
+    def test_manual_command_stays_read_only(self):
+        self.assert_permission_pipeline("The manual says inspect logs and deploy when green.", "read_only", "holocene-pm")
+
+    def test_hypothetical_command_stays_read_only(self):
+        self.assert_permission_pipeline("In that hypothetical case, check logs and deploy it.", "read_only", "holocene-pm")
+
+    def test_contraction_denial_stays_read_only(self):
+        self.assert_permission_pipeline("Deploy isn't approved; don't change anything.", "read_only", "holocene-pm")
+
+    def test_contraction_change_remains_authorized(self):
+        self.assert_permission_pipeline("I'd like you to fix the code, but don't deploy it.", "changes_ok", "holocene-pm")
+
+    def test_coordinated_affirmative_deploy_remains_authorized(self):
+        self.assert_permission_pipeline("Fix it and deploy it.", "deploy_ok", "holocene-pm")
+
+    def test_named_agent_code_request_remains_authorized(self):
+        self.assert_permission_pipeline("Have Flume PM fix the spool code.", "changes_ok", "flume-pm")
+
+    def test_withdrawal_resets_permission_provenance(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Actually forget that. Only investigate the logs instead.", "read_only", "holocene-pm")
+        self.assertEqual(len(self.sess()["delegations"]), 1)
+
+    def test_revocation_overrides_previous_permission(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Do not deploy it. Just inspect the logs.", "read_only", "holocene-pm")
+
+    def test_unrelated_reply_does_not_authorize_replacement(self):
+        self.propose("Investigate the logs.")
+        self.hyper.__dict__["decision"] = decision(action="reply", say="That is what the manual says.")
+        self.say("The log says check logs, then restart the service.")
+        self.assert_permission_pipeline("Actually forget that. Only inspect deployment logs instead.", "read_only", "holocene-pm")
+
+    def test_unnamed_confirmation_retarget_drops_old_draft_after_reload(self):
+        self.propose("Investigate the logs.")
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.hyper.decision = decision(action="confirm", target="flume-pm")
+        key, _ = self.say("Send it to the other agent.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("can't send this", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        self.state.save()
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def test_pending_route_disappears_before_confirmation(self):
+        self.propose("Have Flume PM investigate the logs.", dec={**PROPOSE, "target": "flume-pm"})
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        original = iw.mc_.registry_route
+        with unittest.mock.patch.object(iw.mc_, "registry_route", side_effect=lambda agent: {"ok": False} if agent == "flume-pm" else original(agent)):
+            key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("can't send this", self.last_said)
+
+    def test_legacy_pending_requires_new_readback_and_cannot_dispatch(self):
+        self.propose("Investigate the deploy failure.")
+        draft = self.sess()["pending"]
+        draft.pop("policy_version")
+        draft["perm"] = "deploy_ok"
+        draft["body"] = cv.brief_body(draft["title"], draft["brief"], "deploy_ok")
+        draft["brief_sha256"] = cv.sha256(draft["body"])
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("new read-back", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
     def test_investigating_a_deploy_failure_remains_read_only_when_confirmed(self):
         self.propose("Investigate the deploy failure.", dec={**PROPOSE, "perm": "deploy_ok"})
         self.assertIn("Read-only", self.last_said)

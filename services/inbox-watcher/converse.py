@@ -911,26 +911,41 @@ _CHANGE_REQUEST_RE = re.compile(r"^(?:fix|edit|modify|implement|commit|patch|ref
                                 r"write (?:the |a |some )?(?:code|fix|patch|tests?|feature|script|function))\b")
 _DEPLOY_REQUEST_RE = re.compile(r"^(?:deploy|redeploy|restart|release|roll ?out|push (?:it|to (?:prod|production|main)))\b")
 _HYPOTHETICAL_RE = re.compile(r"\b(?:if|whether|would|should|could|might|maybe|suppose|imagine|hypothetically)\b")
+_QUOTED_DATA_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|(?<![a-z0-9])\'[^\'\n]*\'(?![a-z0-9])|‘[^’\n]*’')
 
-def _perm_text(words: list[str]) -> list[str]:
-    """Only unquoted, affirmative instruction clauses in the driver's own words can grant authority."""
+
+def _perm_text(words: list[str], agent_tokens: list[str] | None = None) -> list[str]:
+    """Accept only an affirmative instruction lead; coordinated actions inherit that lead's scope."""
     kept: list[str] = []
     for w in words:
-        # Reported speech and examples are data, not instructions (including quoted imperatives).
-        unquoted = re.sub(r'"[^"\n]*"|“[^”\n]*”|\'[^\'\n]*\'', ' ', w or "")
-        for sentence in re.split(r"[.!\n]+", unquoted.lower().replace("\u2019", "'")):
-            if "?" in sentence or _HYPOTHETICAL_RE.search(sentence):
+        unquoted = _QUOTED_DATA_RE.sub(' ', (w or '').lower())
+        for sentence in re.split(r"[.!?\n]+", unquoted.replace("\u2019", "'")):
+            if "?" in unquoted or not sentence.strip() or _HYPOTHETICAL_RE.search(sentence) or _QUESTION_START_RE.match(sentence):
                 continue
-            for clause in re.split(r"[;,]+|\b(?:but|and then|then|and)\b", sentence):
-                if not clause.strip() or _NEG_CUE_RE.search(clause) or _QUESTION_START_RE.match(clause):
+            # 'but' may delimit a separate denial, but 'and/then/comma' do not grant a fresh imperative.
+            for segment in re.split(r"\bbut\b|[;]+", sentence):
+                if _NEG_CUE_RE.search(segment):
                     continue
-                kept.append(_PERM_LEAD_RE.sub("", norm(clause)))
+                normalized = norm(segment)
+                lead = _PERM_LEAD_RE.sub('', normalized)
+                if agent_tokens:
+                    for token in agent_tokens:
+                        match = re.match(rf"have (?:the )?{re.escape(norm(token))}\b\s+", lead)
+                        if match:
+                            lead = lead[match.end():]
+                            break
+                if not (_CHANGE_REQUEST_RE.match(lead) or _DEPLOY_REQUEST_RE.match(lead)):
+                    continue
+                kept.append(lead)
+                # Only a proven imperative lead can authorize coordinated actions.
+                kept.extend(norm(c) for c in re.split(r"\b(?:and then|and|then)\b|,", lead)[1:]
+                         if not _NEG_CUE_RE.search(c))
     return kept
 
 
-def perm_allowed(words: list[str]) -> str:
+def perm_allowed(words: list[str], agent_tokens: list[str] | None = None) -> str:
     """The highest permission explicitly requested by the driver, never inferred from task subject matter."""
-    clauses = _perm_text(words)
+    clauses = _perm_text(words, agent_tokens)
     if any(_DEPLOY_REQUEST_RE.match(c) for c in clauses):
         return "deploy_ok"
     if any(_CHANGE_REQUEST_RE.match(c) for c in clauses):
@@ -938,9 +953,9 @@ def perm_allowed(words: list[str]) -> str:
     return "read_only"
 
 
-def clamp_perm(requested: str, words: list[str]) -> str:
+def clamp_perm(requested: str, words: list[str], agent_tokens: list[str] | None = None) -> str:
     req = requested if requested in PERMS else "read_only"
-    return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words)))]
+    return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words, agent_tokens)))]
 
 
 # ---------------------------------------------------------------- per-tile voice and model: names and phrases (no LLM)
@@ -1168,6 +1183,8 @@ NOTHING_TO_CANCEL_LINE = "Okay. Nothing was waiting to send."
 END_LINE = "Okay. Talk soon."
 EXPIRED_LINE = "That draft timed out, so nothing was sent. Tell me again what you want done."
 DRAFT_CHANGED_LINE = "That draft changed since I read it back, so nothing was sent. Tell me again what you want done."
+DRAFT_POLICY_LINE = "That draft needs a new read-back before it can be sent. Nothing was sent. Tell me again what you want done."
+DRAFT_POLICY_VERSION = 2
 DIDNT_CATCH_LINE = "Sorry, I didn't catch that. Say it again?"
 
 # The hold cue (HOLOC-23): while the desk's answer is slow the car hears one of these, in the tile's voice. Each is about a
@@ -1371,8 +1388,12 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
     reasons: list[str] = []
     action = dec.get("action") or "reply"
     pend = pending_draft(sess, now, draft_ttl_s)
-    # What the driver's own words grant a permission: this turn, plus the turn before it while a draft is being edited.
-    words = ([t.get("user") or "" for t in driver_turns(sess)[-1:]] if pend is not None else []) + [transcript]
+    # The permission chain is exactly the provenance of this draft, never an arbitrary previous reply.
+    prior = (draft_turns(sess, pend) if pend is not None and pend.get("policy_version") == DRAFT_POLICY_VERSION
+             and not withdraws_draft(transcript) else [])
+    words = [t.get("user") or "" for t in prior] + [transcript]
+    # A current denial overrides any earlier grant, including a denied deploy after an authorized edit.
+    denied = _NEG_CUE_RE.search(norm(transcript)) is not None
     # "I've sent it" is a true thing to say while a confirmed delegation is on the board: only a claim with nothing sent is filtered
     board = recent_delegation(sess, now, dedupe_s) if pend is None else None
     about = f"{board.get('title') or ''} {board.get('target_name') or board.get('target') or ''}" if board else ""
@@ -1413,7 +1434,19 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
         brief = src.get("brief") if (src.get("brief") or {}).get("goal") else (base or {}).get("brief") or src.get("brief") or {}
         if not brief.get("goal"):
             brief = {**brief, "goal": said[:1500] or title}  # a model that gave no brief: the driver's own words are the goal
-        perm = clamp_perm(src.get("perm") or (base or {}).get("perm") or "read_only", words)
+        tokens = names_fn(target) if target == tile or target == pend_target or handoff == "named" else []
+        perm = clamp_perm(src.get("perm") or (base or {}).get("perm") or "read_only", words, tokens)
+        if denied:
+            # Denials in this turn limit both the current instruction and any earlier grant.
+            current = norm(transcript)
+            if re.search(r"(?:don't|dont|do not|never|not|without)\s+(?:\w+\s+){0,2}"
+                         r"(?:fix|edit|modify|implement|commit|patch|change|write)\b", current):
+                perm = "read_only"
+            elif re.search(r"(?:don't|dont|do not|never|not|without)\s+(?:\w+\s+){0,2}"
+                           r"(?:deploy|redeploy|restart|release|roll ?out|push)\b", current):
+                perm = PERMS[min(PERMS.index(perm), PERMS.index("changes_ok"))]
+            if prior:
+                perm = PERMS[min(PERMS.index(perm), PERMS.index(perm_allowed([transcript], tokens)))]
         if perm != (src.get("perm") or "read_only"):
             reasons.append(f"perm_clamped:{src.get('perm')}->{perm}")
         body = brief_body(title, brief, perm)
@@ -1428,7 +1461,7 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             chain.append(memo_id)
         draft = {"brief_id": bid, "brief_sha256": body_sha, "title": title, "target": target, "target_name": name,
                  "perm": perm, "brief": brief, "body": body, "memo_id": memo_id, "at": now, "state": "proposed",
-                 "built_by": chain}
+                 "built_by": chain, "policy_version": DRAFT_POLICY_VERSION}
         out.update(action="propose", draft=draft, say=readback(draft))
 
     def busy() -> None:
@@ -1452,6 +1485,10 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("no_pending_draft")
             out.update(action="reply", say=NOTHING_PENDING_LINE)
             return out, reasons
+        if pend.get("policy_version") != DRAFT_POLICY_VERSION:
+            reasons.append("legacy_draft_policy")
+            out.update(action="reply", say=DRAFT_POLICY_LINE, drop=True)
+            return out, reasons
         want = resolve(dec["target"]) if (resolve is not None and dec.get("target")) else dec.get("target")
         if want and want != pend.get("target"):
             # A target change on confirmation needs its own read-back, including a return to the tile. Never send the
@@ -1465,6 +1502,10 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
                     propose_from({"target": want, "title": pend["title"], "brief": pend["brief"], "perm": pend["perm"]})
                 return out, reasons
             reasons.append("confirm_target_ignored")
+        # A spoken but unnamed redirect is not confirmation of the previous target.
+        if re.search(r"\b(?:send|route|forward|give|hand)\b.*\b(?:to|over to)\s+(?:the\s+)?(?:other|another|different)\s+(?:agent|pm|model)\b", norm(transcript)):
+            refuse_target("the other agent", "unnamed_retarget")
+            return out, reasons
         if not send_affirmed(transcript, sess, pend):
             reasons.append("not_affirmed")
             out.update(action="propose", say=readback(pend) + NOT_CONFIRMED_SUFFIX if bare_yes(transcript) or is_question(transcript)
@@ -1474,6 +1515,9 @@ def guard(dec: dict, sess: dict, transcript: str, *, tile: str, tile_name: str, 
             reasons.append("draft_changed")
             out.update(action="reply", say=DRAFT_CHANGED_LINE,
                        drop=True)
+            return out, reasons
+        if route_fn(pend.get("target")).get("ok") is not True:
+            refuse_target(pend.get("target") or tile, "unroutable_pending_target")
             return out, reasons
         dup = recent_delegation(sess, now, dedupe_s, sha=pend["brief_sha256"], target=pend.get("target"))
         if dup is not None:
