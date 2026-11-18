@@ -530,6 +530,17 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.assertIn("unless the Permission section below allows it", prompt)
         self.assertEqual(m["followups"][0]["brief_sha256"], draft["brief_sha256"])
 
+    def test_investigating_a_deploy_failure_remains_read_only_when_confirmed(self):
+        self.propose("Investigate the deploy failure.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertIn("Read-only", self.last_said)
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "read_only")
+        self.assertIn(cv.PERM_RULE["read_only"], draft["body"])
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "read_only")
+        self.assertIn(cv.PERM_RULE["read_only"], cmd["data"]["prompt"])
+
     def test_a_named_handoff_goes_to_that_agent_and_its_result_is_named(self):
         dec = {**PROPOSE, "target": "flume-pm"}
         self.propose("Have Flume PM look into why the audio spool is disabled", dec=dec)
@@ -542,12 +553,26 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.finish_delegation(m, "Nothing is wrong on the Flume side.", profile="flume-pm")
         self.assertEqual(self.last_said, "Flume PM, follow-up on Why the audio spool is disabled. Nothing is wrong on the Flume side.")
 
-    def test_an_unnamed_handoff_stays_with_the_tile(self):
+    def test_an_unnamed_handoff_is_refused_without_substituting_the_tile(self):
         self.propose("Send that to the other agent instead", dec={**PROPOSE, "target": "flume-pm"})
-        self.assertTrue(self.last_said.startswith("Draft for Holocene PM: "))
-        self.assertEqual(self.sess()["pending"]["target"], "holocene-pm")
+        self.assertIn("can't send this to Flume PM", self.last_said)
+        self.assertIn("new draft for Holocene PM", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
         r, = [x for x in self.of_type("routed", self.keys[-1])]
         self.assertIn("handoff_not_named", r["guard"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("nothing waiting to send", self.last_said)
+
+    def test_unroutable_named_handoff_is_spoken_and_never_retargets_to_tile(self):
+        self.propose("Send it to Ghost PM and check queue", dec={**PROPOSE, "target": "ghost-pm"})
+        self.assertIn("can't send this to ghost pm", self.last_said)
+        self.assertIsNone(self.sess()["pending"])
+        routed, = self.of_type("routed", self.keys[-1])
+        self.assertIn("unroutable_target", routed["guard"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIn("nothing waiting to send", self.last_said)
 
     def test_follow_up_max_zero_still_delegates(self):
         with unittest.mock.patch.object(iw, "FOLLOWUP_MAX", 0):

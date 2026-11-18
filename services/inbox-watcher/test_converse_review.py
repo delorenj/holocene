@@ -124,7 +124,9 @@ class GuardReview(unittest.TestCase):
 
     def test_a_common_word_stem_does_not_name_an_agent(self):
         f, r = self.turn("Check the monitoring for the spool", {**self.BASE, "target": "monitoring-pm"}, "m1")
-        self.assertEqual(f["draft"]["target"], "holocene-pm")
+        self.assertIsNone(f["draft"])
+        self.assertEqual(f["action"], "reply")
+        self.assertIn("monitoring-pm", f["say"])
         self.assertIn("handoff_not_named", r)
 
     # -- cancel / redirect while the read-back is being spoken

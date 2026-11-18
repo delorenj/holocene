@@ -2057,7 +2057,7 @@ class Watcher:
         for r in reasons:
             if r in ("handoff_off", "handoff_not_named", "unroutable_target"):
                 log("converse_retarget_refused", "warn", memo_id=mid, key=key, agent=agent, conv_id=sess["conv_id"],
-                    asked=dec.get("target"), reason=r, note="the work stays with the tile's agent")
+                    asked=dec.get("target"), reason=r, note="the requested target was refused; no substitute draft is sent")
         pend = sess.get("pending")
         cs = final.get("cancel_sending")
         if cs is not None:
