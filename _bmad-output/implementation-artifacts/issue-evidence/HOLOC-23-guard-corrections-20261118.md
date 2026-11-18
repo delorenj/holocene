@@ -41,4 +41,13 @@ Only after that external dependency is resolved can current-release Honda accept
 11. Existing trace/projection/schema/ntfy behavior unchanged; no fresh bus/schema/ntfy integration proof.
 12. All changes are watcher Python/tests/docs. No credential contents written and no Kotlin change in this patch. No new pad bundle is required for these server-side guard changes.
 
-Full HOLOC-23 must remain open with a dependency hold rather than closing on these bounded corrections. Deployment receipt, integration revision and checks are appended after actual execution.
+## Landed and deployed receipt
+
+- Integrated via `git pull --no-rebase origin main` and a merge of the independently reviewed branch; pushed main revision `0dc468186e7dc1fa28d238cd410d7ea09aa49c9c`. Origin main was independently read back with `git ls-remote`.
+- Verified watcher idle (`active=[]`, zero open conversations), restarted the existing production `holocene-inbox-watcher.service`. It is active with PID **2134527**, start **2026-11-18 17:47:20 EST**. Current heartbeat **2026-11-18T22:47:35.759Z** belongs to that PID and reports `active=[]`, scope `unsafe`. This establishes activation/source selection, not a live interaction pass.
+- Served watcher source matches committed main bytes: `converse.py` SHA-256 `409914da48cd257a4080620a01142b4fc50d492847345138394275c0633488b1`; `inbox_watcher.py` SHA-256 `41a06d2ecdbadae416764f764004775c7db996fe7d10f3c87d985c025a94be07`.
+- Existing API `/health` returned `{"ok":true,"service":"holocene-api"}`. No frontend/API source changed, so their services and pad bundle were not rebuilt.
+- Required API and web typechecks were attempted separately: **both exit 2**, reporting unavailable dependencies/type declarations (`fastify`, Node types, Next/React types). No TypeScript source/dependency changes are part of this patch; these checks are not green and dependency repair was not smuggled into this ticket.
+- Attempt to resolve the existing cross-board dependency with `px link add AAI-53 HOLOC-23 --blocks --dry-run --json` was refused: AAI-53 is not in workspace 33god. No relation was written and no default-workspace retry was made. The dependency remains named in the hold comment until its provider-bound identity is available.
+
+Full HOLOC-23 remains open with a dependency hold rather than closing on these bounded corrections. After the gateway owner restores safe scope, resume current-release simulator validation. No live synthetic memo, speech, physical phone operation or provider model request was made in this turn.
