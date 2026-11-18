@@ -611,6 +611,75 @@ class Delegation(ConverseHarness, unittest.TestCase):
         (_, cmd), = self.cmds(key)
         self.assertEqual(cmd["data"]["context"]["perm"], "read_only")
 
+    def test_independent_denial_before_report_condition_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("Do not deploy it. Just inspect the logs and tell me if anything failed.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_report_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("The manual says inspect logs. Do not deploy it. Just inspect the logs.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_hypothetical_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline("If the logs fail, report that. Do not deploy it. Just inspect the logs.",
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_after_quoted_denial_revokes_proposal(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assert_permission_pipeline('The runbook says "Do not deploy it." Do not deploy it. Just inspect the logs.',
+                                        "read_only", "holocene-pm")
+
+    def test_independent_denial_before_report_condition_revokes_reply(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "deploy_ok")
+        self.hyper.__dict__["decision"] = decision(action="reply", say="Okay, only inspecting logs.")
+        key, _ = self.say("Do not deploy it. Just inspect the logs and tell me if anything failed.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("old draft was dropped", self.last_said)
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def assert_non_driver_denial_keeps_pending(self, text):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.hyper.__dict__["decision"] = decision(action="reply", say="That is what it says.")
+        key, _ = self.say(text)
+        self.assertEqual(self.cmds(key), [])
+        self.assertEqual(self.sess()["pending"]["brief_id"], draft["brief_id"])
+        self.assertEqual(self.sess()["pending"]["perm"], "deploy_ok")
+        self.state.save()
+        self.w.shutdown(wait=True)
+        self.state = iw.State(self.state.dir)
+        self.w = iw.Watcher(self.state)
+        self.w.desk.keys = cv.KeyCache(reader=lambda ref: SECRET)
+        self.w.desk.cards = cv.CardCache(REGISTRY, HERMES, ROSTER, recall=None)
+        self.assertEqual(self.sess()["pending"]["brief_sha256"], draft["brief_sha256"])
+        key, _ = self.say("Send it.")
+        (typ, cmd), = self.cmds(key)
+        self.assertEqual(typ, "bloodbank.cmd.agent.invocation.start")
+        self.assertEqual(cmd["data"]["context"]["perm"], "deploy_ok")
+        self.assertEqual(cmd["data"]["target_agent_id"], "holocene-pm")
+        self.assertIn(draft["body"], cmd["data"]["prompt"])
+
+    def test_reported_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('The manual says do not deploy it.')
+
+    def test_hypothetical_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('If this were hypothetical, do not deploy it.')
+
+    def test_quoted_denial_does_not_revoke_existing_draft(self):
+        self.assert_non_driver_denial_keeps_pending('The log says "Do not deploy it."')
+
     def test_reply_classification_cannot_preserve_revoked_permission(self):
         self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
         self.hyper.__dict__["decision"] = decision(action="reply", say="Okay, only inspecting logs.")

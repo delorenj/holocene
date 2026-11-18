@@ -923,14 +923,19 @@ _READ_ONLY_RE = re.compile(r"\b(?:only|just)\s+(?:inspect|investigate|check|look
 def permission_cap(text: str) -> str | None:
     """An explicit driver withdrawal limits inherited authority until a new affirmative instruction."""
     unquoted = _QUOTED_DATA_RE.sub(' ', text or '')
-    if _HYPOTHETICAL_RE.search(norm(unquoted)) or _REPORTED_LEAD_RE.match(unquoted.strip().lower()):
-        return None
-    n = norm(unquoted)
-    if _READ_ONLY_RE.search(n) or _DENY_CHANGE_RE.search(n):
-        return "read_only"
-    if _DENY_DEPLOY_RE.search(n):
-        return "changes_ok"
-    return None
+    cap = None
+    for sentence in re.split(r"[.!?\n]+", unquoted.replace("\u2019", "'")):
+        n = norm(sentence)
+        if not n or _REPORTED_LEAD_RE.match(n) or _QUESTION_START_RE.match(n):
+            continue
+        hypothetical = _HYPOTHETICAL_RE.search(n)
+        if hypothetical:
+            n = n[:hypothetical.start()].strip()
+        if _READ_ONLY_RE.search(n) or _DENY_CHANGE_RE.search(n):
+            cap = "read_only"
+        elif _DENY_DEPLOY_RE.search(n) and cap != "read_only":
+            cap = "changes_ok"
+    return cap
 
 def effective_permission(words: list[str], agent_tokens: list[str] | None = None) -> str:
     """Replay authorized instructions in order, so a revoked grant cannot reappear on an unrelated edit."""
