@@ -15,5 +15,8 @@
       "role_dir": "agents/hermes/pm"
     }
   },
-  "project_id": "holocene"
+  "project_id": "holocene",
+  "crank": {
+    "enabled": true
+  }
 }
