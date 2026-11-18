@@ -346,6 +346,77 @@ class PipelineReview(ConverseHarness, unittest.TestCase):
         self.assertEqual(self.sess()["delegations"][-1]["state"], "not_sent")
 
 
+class PermissionStateReview(unittest.TestCase):
+    """Exercise the draft contract through guard transitions, including model reply misclassification."""
+    setUp = GuardReview.setUp
+    turn = GuardReview.turn
+    BASE = GuardReview.BASE
+    s: dict
+    now: float
+
+    def propose(self, text, mid, perm="deploy_ok", target="holocene-pm"):
+        f, _ = self.turn(text, {**self.BASE, "perm": perm, "target": target}, mid)
+        self.assertIsNotNone(f["draft"])
+        return f["draft"]
+
+    def test_denial_survives_a_later_unrelated_edit(self):
+        self.propose("Fix the car code and deploy it.", "m1")
+        self.assertEqual(self.propose("Do not deploy it. Just inspect the logs.", "m2")["perm"], "read_only")
+        self.assertEqual(self.propose("Also include timestamps in the report.", "m3")["perm"], "read_only")
+        f, _ = self.turn("Send it.", {"action": "confirm"}, "m4")
+        self.assertEqual(f["send"]["perm"], "read_only")
+
+    def test_reply_denial_invalidates_the_old_readback(self):
+        self.propose("Fix the car code and deploy it.", "m1")
+        f, r = self.turn("Do not deploy it. Just inspect the logs.", {"action": "reply", "say": "Okay."}, "m2")
+        self.assertTrue(f["drop"])
+        self.assertIn("permission_revoked", r)
+        self.s["pending"] = None
+        f, _ = self.turn("Send it.", {"action": "confirm"}, "m3")
+        self.assertIsNone(f["send"])
+
+    def test_reported_semicolon_does_not_grant_permission(self):
+        for text in ("Explain why the runbook says check logs; restart the service.",
+                     "The manual says inspect logs; deploy when green."):
+            self.s["pending"] = None
+            self.assertEqual(self.propose(text, f"m-{text}")["perm"], "read_only")
+            f, _ = self.turn("Send it.", {"action": "confirm"}, f"c-{text}")
+            self.assertEqual(f["send"]["perm"], "read_only")
+
+    def test_explicit_followup_authorizes_deploy_after_a_new_readback(self):
+        self.assertEqual(self.propose("Fix the spool code.", "m1")["perm"], "changes_ok")
+        self.assertEqual(self.propose("and deploy it when green", "m2")["perm"], "deploy_ok")
+        f, _ = self.turn("Send it.", {"action": "confirm"}, "m3")
+        self.assertEqual(f["send"]["perm"], "deploy_ok")
+
+    def test_unnamed_redirects_drop_old_target(self):
+        for i, text in enumerate(("Send it to a different agent.", "Send it to someone else.",
+                                   "Send it to the other agent.")):
+            self.s["pending"] = None
+            self.propose("Inspect the spool.", f"p{i}", perm="read_only")
+            f, _ = self.turn(text, {"action": "confirm", "target": "flume-pm"}, f"r{i}")
+            self.assertIsNone(f["send"])
+            self.assertTrue(f["drop"])
+            self.assertIn("Nothing was sent", f["say"])
+
+    def test_handoff_revoked_between_readback_and_confirmation(self):
+        self.propose("Have Flume PM inspect the spool.", "m1", perm="read_only", target="flume-pm")
+        self.now += 20
+        f, r = cv.guard({"action": "confirm"}, self.s, "Send it.", tile="holocene-pm", tile_name="Holocene PM",
+                        handoff="off", route_fn=route, names_fn=Names(), now=self.now, memo_id="m2")
+        self.assertIsNone(f["send"])
+        self.assertTrue(f["drop"])
+        self.assertIn("handoff_off", r)
+
+    def test_old_policy_draft_requires_a_new_readback(self):
+        draft = self.propose("Fix the spool code.", "m1")
+        draft["policy_version"] = cv.DRAFT_POLICY_VERSION - 1
+        f, r = self.turn("Send it.", {"action": "confirm"}, "m2")
+        self.assertIsNone(f["send"])
+        self.assertTrue(f["drop"])
+        self.assertIn("legacy_draft_policy", r)
+
+
 def time_ago(s):
     import time
     return time.time() - s

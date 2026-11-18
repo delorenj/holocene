@@ -600,6 +600,59 @@ class Delegation(ConverseHarness, unittest.TestCase):
         self.say("The log says check logs, then restart the service.")
         self.assert_permission_pipeline("Actually forget that. Only inspect deployment logs instead.", "read_only", "holocene-pm")
 
+    def test_revocation_after_readback_and_unrelated_edit_stays_read_only(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.propose("Do not deploy it. Just inspect the logs.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "read_only")
+        self.propose("Also include timestamps in the report.", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "read_only")
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "read_only")
+
+    def test_reply_classification_cannot_preserve_revoked_permission(self):
+        self.propose("Fix the car code and deploy it.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.hyper.__dict__["decision"] = decision(action="reply", say="Okay, only inspecting logs.")
+        self.say("Do not deploy it. Just inspect the logs.")
+        self.assertIsNone(self.sess()["pending"])
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+
+    def test_reported_semicolon_command_stays_read_only(self):
+        self.assert_permission_pipeline("Explain why the runbook says check logs; restart the service.", "read_only", "holocene-pm")
+
+    def test_manual_semicolon_command_stays_read_only(self):
+        self.assert_permission_pipeline("The manual says inspect logs; deploy when green.", "read_only", "holocene-pm")
+
+    def test_cross_turn_affirmative_deploy_uses_new_readback(self):
+        self.propose("Fix the spool code.", dec={**PROPOSE, "perm": "deploy_ok"})
+        self.assertEqual(self.sess()["pending"]["perm"], "changes_ok")
+        self.propose("and deploy it when green", dec={**PROPOSE, "perm": "deploy_ok"})
+        draft = self.sess()["pending"]
+        self.assertEqual(draft["perm"], "deploy_ok")
+        self.assertIn(cv.PERM_TEXT["deploy_ok"], self.last_said)
+        key, _ = self.say("Send it.")
+        (_, cmd), = self.cmds(key)
+        self.assertEqual(cmd["data"]["context"]["perm"], "deploy_ok")
+
+    def test_unnamed_alternative_redirects_never_send_old_tile(self):
+        for text in ("Send it to a different agent.", "Send it to someone else."):
+            self.propose("Investigate the logs.")
+            self.hyper.__dict__["decision"] = decision(action="confirm", target="flume-pm")
+            key, _ = self.say(text)
+            self.assertEqual(self.cmds(key), [])
+            self.assertIsNone(self.sess()["pending"])
+            self.assertIn("Nothing was sent", self.last_said)
+
+    def test_disabled_handoff_after_readback_refuses_other_target(self):
+        self.propose("Have Flume PM investigate the logs.", dec={**PROPOSE, "target": "flume-pm"})
+        self.flag(handoff="off")
+        key, _ = self.say("Send it.")
+        self.assertEqual(self.cmds(key), [])
+        self.assertIsNone(self.sess()["pending"])
+        self.assertIn("can't send this", self.last_said)
+
     def test_unnamed_confirmation_retarget_drops_old_draft_after_reload(self):
         self.propose("Investigate the logs.")
         self.state.save()
