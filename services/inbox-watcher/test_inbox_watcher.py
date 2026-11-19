@@ -368,6 +368,8 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(cmd["data"]["prompt"], iw.VOICE_PREFIX + "Summarize recent work.")
         self.assertTrue(iw.VOICE_PREFIX)
         self.assertEqual(cmd["data"]["context"]["memo_id"], mid)
+        self.assertEqual(cmd["data"]["context"]["source"], "HOLOCENE-AUTO:Agent:Holocene PM")
+        self.assertEqual(cmd["data"]["context"]["reason"], "voice-inbox")
         self.assertEqual(cmd["data"]["thread_id"], mid)
         self.assertTrue(m["reply_key"].startswith("replies/") and m["reply_key"].endswith(f"-holocene-pm-{mid}.ogg"))
         self.assertTrue((BUCKET_DIR / m["reply_key"]).exists())
@@ -1689,6 +1691,8 @@ class Escalation(MemoHarness, unittest.TestCase):
         self.assertEqual(a[a.index("--command-id") + 1], cid2)
         self.assertEqual(a[a.index("--causation") + 1], env1)  # caused by the command that timed out
         self.assertEqual(second["data"]["context"]["escalated_from_command_id"], cid1)
+        self.assertEqual(first["data"]["context"]["source"], "HOLOCENE-AUTO:Agent:Holocene PM")
+        self.assertEqual(second["data"]["context"]["source"], first["data"]["context"]["source"])
         # the new command id (and the prompt hash) were on disk BEFORE the publish
         self.assertEqual([c for c, _ in seen], [cid2])
         self.assertEqual((seen[0][1]["command_id"], seen[0][1]["prompt_sha256"]), (cid2, sha))
