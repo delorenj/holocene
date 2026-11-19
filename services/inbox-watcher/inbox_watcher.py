@@ -2388,8 +2388,12 @@ class Watcher:
             m["thread_id"] = m["memo_id"]  # unique per memo: the agent session's chat_id (exact reply lookup)
             prompt = self._prompt_for_send(m)
             escalated = memo_escalated(m)
+            # The source names the selected pad tile, not the confirmed delegation target. Resolve its trusted
+            # registry display name independently when a delegation runs on another profile.
+            tile_route = route if target == m["agent"] else mc_.registry_route(m["agent"])
             context = {"memo_id": m["memo_id"], "memo_key": m["key"],
-                       "source": "holocene-auto:inbox-watcher", "repo": "holocene", "reason": "voice-inbox"}
+                       "source": f"HOLOCENE-AUTO:Agent:{mc_.spoken_name(m['agent'], tile_route)}",
+                       "repo": "holocene", "reason": "voice-inbox"}
             if escalated:
                 context["escalated_from_command_id"] = m.get("escalated_from_command_id")
             if delegation:

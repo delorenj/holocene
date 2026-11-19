@@ -182,6 +182,8 @@ class AnswerThenBackground(MemoHarness, unittest.TestCase):
         assert_role_workflow(self, c2["data"]["prompt"])
         ctx = c2["data"]["context"]
         self.assertEqual((ctx["reason"], ctx["followup_of"], ctx["followup_depth"]), ("voice-followup", cid1, 1))
+        self.assertEqual(c1["data"]["context"]["source"], "HOLOCENE-AUTO:Agent:Holocene PM")
+        self.assertEqual(ctx["source"], c1["data"]["context"]["source"])
         self.assertNotIn("model", c2["data"])  # the profile's own model: Sol stays for the voice turns
         self.assertEqual(c1["data"]["model"], iw.VOICE_MODEL)
         a = c2["argv"]
