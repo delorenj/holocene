@@ -61,9 +61,9 @@
 
 .hub-root .live-ribbon {
   position: absolute;
-  top: 18px;
-  right: -44px;
-  width: 190px;
+  top: 30px;
+  right: -58px;
+  width: 230px;
   padding: 3px 0;
   transform: rotate(35deg);
   text-align: center;
@@ -177,7 +177,7 @@
   .hub-root .live-name { font-size: 46px; line-height: 50px; }
   .hub-root .live-tagline { font-size: 18px; line-height: 26px; }
   .hub-root .live-metric-value { font-size: 36px; line-height: 40px; }
-  .hub-root .live-ribbon { right: -54px; top: 14px; }
+  .hub-root .live-ribbon { right: -64px; top: 26px; }
 }
 
 /* ---------- source chips ---------- */
