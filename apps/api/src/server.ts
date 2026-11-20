@@ -2,6 +2,7 @@ import { config } from "dotenv";
 config({ path: new URL("../../../.env", import.meta.url) });
 
 import Fastify from "fastify";
+import { registerArtifactRoutes } from "./artifacts.js";
 import { registerHookHubRoutes } from "./hook-hub.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
 import { registerGenesisRoutes } from "./genesis-routes.js";
@@ -55,6 +56,7 @@ registerWaxRoutes(app);
 registerTranscriptRoutes(app, eventCollector.store);
 registerCandybarRoutes(app);
 registerAvatarRoutes(app);
+registerArtifactRoutes(app);
 registerPadActivityRoute(app, () => getPadActivity(eventCollector.store));
 eventCollector.start();
 // Without retention the store grew ~0.9 GiB/day; prune hourly (HOLOCENE_RETENTION_* to tune, =off to disable).

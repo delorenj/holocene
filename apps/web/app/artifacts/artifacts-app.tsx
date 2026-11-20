@@ -1,0 +1,100 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { HubTabs } from "../hub/ui";
+import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
+
+type Category = "all" | "images" | "videos" | "audio" | "pdfs" | "other";
+type Item = { id: string; source: string; project?: string; title: string; description?: string; filenames: string[]; category: Category; originalUrl: string; mediaUrl?: string; posterUrl?: string; date?: string; dateKind: string; gallery?: string; galleryUrl?: string; variant?: string };
+type ResponseData = { items: Item[]; total: number; page: number; limit: number; retryAfterMs: number; excludedUnknownDates: number; complete: boolean; sources: Record<string, { ok: boolean; stale: boolean; fetchedAt?: string }> };
+const types: Array<[Category, string]> = [["all", "All files"], ["images", "Images"], ["videos", "Videos"], ["audio", "Audio"], ["pdfs", "PDFs"], ["other", "Other"]];
+
+function Preview({ item }: { item: Item }) {
+  const [broken, setBroken] = useState(false);
+  if (!item.mediaUrl || broken) return <div className="artifact-fallback">Preview unavailable. Open the published original below.</div>;
+  if (item.category === "images") return <img loading="lazy" src={item.mediaUrl} alt={item.title} onError={() => setBroken(true)} />;
+  if (item.category === "videos") return <video controls preload="none" poster={item.posterUrl} src={item.mediaUrl} onError={() => setBroken(true)} />;
+  if (item.category === "audio") return <audio controls preload="none" src={item.mediaUrl} onError={() => setBroken(true)} />;
+  if (item.category === "pdfs") return <div className="artifact-fallback">PDF · Open the published original to view the document.</div>;
+  return <div className="artifact-fallback">Open the published original to view this file.</div>;
+}
+
+export function ArtifactsApp() {
+  const [theme, toggleTheme] = useTheme();
+  const [search, setSearch] = useState("");
+  const [type, setType] = useState<Category>("all");
+  const [mode, setMode] = useState<"files" | "pictures" | "video">("files");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [retry, setRetry] = useState(0);
+  const [data, setData] = useState<ResponseData>();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [zone, setZone] = useState<{ name: string; fallback: boolean }>({ name: "UTC", fallback: true });
+  useEffect(() => {
+    try {
+      const name = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (name) { new Intl.DateTimeFormat("en-US", { timeZone: name }); setZone({ name, fallback: false }); }
+    } catch { /* UTC is explicitly shown below */ }
+  }, []);
+  useEffect(() => {
+    if ((from && !to) || (!from && to)) { setError("Choose both start and end dates (the same date for one day)."); setLoading(false); return; }
+    if (from && to && from > to) { setError("The end date must not be before the start date."); setLoading(false); return; }
+    const controller = new AbortController();
+    setLoading(true); setError("");
+    const params = new URLSearchParams({ search, type: mode === "pictures" ? "images" : mode === "video" ? "videos" : type, page: String(page), zone: zone.name });
+    if (from && to) { params.set("from", from); params.set("to", to); }
+    if (retry) params.set("refresh", "1");
+    const timer = setTimeout(() => {
+      fetch(`/api/artifacts/catalog?${params}`, { cache: "no-store", signal: controller.signal })
+        .then(async (response) => { if (!response.ok) throw Error(response.status === 401 ? "Catalog access denied." : "Catalog unavailable. Try again."); return response.json() as Promise<ResponseData>; })
+        .then((result) => { setData(result); setLoading(false); })
+        .catch((reason: unknown) => { if (!controller.signal.aborted) { setError(reason instanceof Error ? reason.message : "Catalog unavailable. Try again."); setLoading(false); } });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, type, mode, from, to, page, zone.name, retry]);
+  useEffect(() => {
+    if (!data || data.complete || error || loading) return;
+    const timer = setTimeout(() => setRetry((v) => v + 1), Math.max(1000, data.retryAfterMs + 100));
+    return () => clearTimeout(timer);
+  }, [data, error, loading]);
+  const updateSearch = (v: string) => { setSearch(v); setPage(1); };
+  const changeMode = (v: "files" | "pictures" | "video") => { setMode(v); setPage(1); };
+  return <main className="hub-root artifacts-shell" data-theme={theme}>
+    <header className="hub-header"><Brand /><HubTabs current="artifacts" /><div className="hub-header-end"><ThemeToggle theme={theme} onToggle={toggleTheme} /></div></header>
+    <div className="artifact-content"><div className="artifact-heading"><p className="hub-label">Published library</p><h1>Artifacts</h1><p>Files in MinIO and video publications in R2, together.</p></div>
+    <section className="artifact-controls" aria-label="Browse artifacts">
+      <div className="artifact-modes" aria-label="Gallery mode">
+        {([["files", "All files"], ["pictures", "Picture gallery"], ["video", "Video gallery"]] as const).map(([id, text]) => <button key={id} type="button" aria-pressed={mode === id} onClick={() => changeMode(id)}>{text}</button>)}
+      </div>
+      <div className="artifact-filters">
+        <label>Search metadata<input value={search} placeholder="Title, filename or description" onChange={(event) => updateSearch(event.target.value)} /></label>
+        <label>Type<select disabled={mode !== "files"} value={mode === "files" ? type : mode === "pictures" ? "images" : "videos"} onChange={(event) => { setType(event.target.value as Category); setPage(1); }}>{types.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        <label>From<input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
+        <label>Through<input type="date" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
+        <button type="button" onClick={() => { setFrom(""); setTo(""); setPage(1); }}>Clear dates</button>
+      </div>
+      <p className="artifact-timezone">Dates use {zone.name}{zone.fallback ? " (UTC fallback; browser timezone unavailable)" : " (browser timezone)"}. Each selected day includes local midnight, excluding midnight of the following day. Items without a known date are excluded from date filters.</p>
+    </section>
+    <section className="artifact-results" aria-live="polite">
+      {error && <div className="artifact-alert" role="alert">{error} <button type="button" onClick={() => setRetry((v) => v + 1)}>Retry</button></div>}
+      {loading && <p>Loading catalog…</p>}
+      {!loading && data && !error && <>
+        <div className="artifact-status"><strong>{data.total} {data.total === 1 ? "result" : "results"}</strong><button type="button" onClick={() => setRetry((v) => v + 1)}>Refresh sources</button></div>
+        <ul className="artifact-sources">{Object.entries(data.sources).map(([name, state]) => <li key={name}>{name}: {state.ok ? "available" : state.stale ? "unavailable · showing cached snapshot" : "unavailable"}{state.fetchedAt ? ` · fetched ${new Date(state.fetchedAt).toLocaleString()}` : " · no snapshot"}</li>)}</ul>
+        {!data.complete && <p className="artifact-alert">{Object.values(data.sources).some((s) => s.ok || s.stale) ? "Results are incomplete. One or more sources are unavailable; cached items may be stale." : "All sources are unavailable. No current catalog could be loaded."} Retrying automatically while this page is open; Refresh sources retries now.</p>}
+        {data.excludedUnknownDates > 0 && <p>{data.excludedUnknownDates} undated items excluded by the date filter.</p>}
+        {!data.items.length && <p className="artifact-empty">{data.complete ? "No artifacts match these filters." : "No results from the available sources. Other sources may still contain matches."}</p>}
+        <div className={`artifact-grid ${mode !== "files" ? "is-gallery" : ""}`}>{data.items.map((item) => <article className="artifact-card" key={item.id}>
+          <div className="artifact-preview"><Preview key={item.id} item={item} /></div>
+          <div className="artifact-card-body"><p className="artifact-meta">{item.project ? `${item.project} · ` : ""}{item.source} · {item.category}{item.variant ? ` · variant ${item.variant}` : ""}</p>
+            <h2>{item.title}</h2>{item.description && <p>{item.description}</p>}{item.gallery && <p className="artifact-gallery-label">Gallery: {item.gallery}</p>}
+            <p className="artifact-date">{item.date ? `${item.dateKind === "published" ? "Published" : "Modified"} ${new Date(item.date).toLocaleString(undefined, { timeZone: zone.name })}` : "Date unknown"}</p>
+            <div className="artifact-links"><a href={item.originalUrl} target="_blank" rel="noopener noreferrer">Open original ↗</a>{item.galleryUrl && <a href={item.galleryUrl} target="_blank" rel="noopener noreferrer">Open gallery ↗</a>}</div>
+          </div></article>)}</div>
+        {data.total > data.limit && <nav className="artifact-pagination" aria-label="Result pages"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.limit)}</span><button disabled={page * data.limit >= data.total} onClick={() => setPage(page + 1)}>Next</button></nav>}
+      </>}
+    </section></div>
+  </main>;
+}
