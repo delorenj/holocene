@@ -9,7 +9,8 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next dist",
-    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\""
+    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\"",
+    "test:artifacts-browser": "node --test app/artifacts/artifacts.browser.mjs"
   },
   "dependencies": {
     "@holocene/module-sdk": "workspace:*",

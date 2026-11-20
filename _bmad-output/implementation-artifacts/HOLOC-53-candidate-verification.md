@@ -2,7 +2,14 @@
 
 Branch `holoc-53-artifacts-gallery` is an isolated implementation candidate. This report contains aggregate counts only; no private catalog, hub token, published object keys, signed requests, or secrets are recorded here.
 
-## Storage and route exercise
+## Repair verification (candidate only)
+
+- Independently reproduced defects repaired: one-shot UI refresh (manual and automatic), stale successful JSON response race, R2 member-published provenance/searchable metadata and malformed optional manifest, HTML entry enrichment beyond `index.html`, multi-page site grouping, valid IANA aliases, and DST midnight gaps/overlaps/skipped dates.
+- Focused real-entrypoint API tests: 10/10; external review oracle: 6/6. Python R2 adapter pagination/enrichment fixture: 1/1. Playwright against the **candidate production Next build** with intercepted catalog traffic: 3/3 (manual refresh and later filter/mode requests, automatic retry, delayed parsed JSON after query change). No real catalog fixture or secret was served to the browser test.
+- API regression suite: 274/274; web regression suite: 74/74. API and web typechecks passed; API build and Next production build passed. `git diff --check` passed. Browser harness: `PLAYWRIGHT_MODULE=<installed playwright/index.mjs> CHROMIUM_PATH=<standalone Chrome> pnpm --filter @holocene/web test:artifacts-browser`, with candidate `HOLOCENE_WEB_PORT=19454 pnpm --filter @holocene/web start` running on loopback.
+- The earlier real-storage and media-link exercise below belongs to the original candidate and **was not rerun against this repair**. No Plane writes, deployment, live authenticated browser verification, merge, or authorization to merge. Production requirements in `AGENTS.md` remain pending PM acceptance.
+
+## Storage and route exercise (original candidate, not repaired branch)
 
 - Live read-only MinIO recursive listing: 1,855 projects objects. Normalization returned 1,679 independently useful projects entries and 8 share entries. Older session-folder paths were present in the listing; loose three-segment files have their own filename fallback.
 - Live R2 paginated listing through the publisher's approved 1Password reference: 31 objects, 13 page/manifest enrichments, 2 gallery manifests, 0 enrichment failures. Normalization returned 9 playable video entries, 8 with gallery-variant labels, without standalone duplicates.
@@ -10,7 +17,7 @@ Branch `holoc-53-artifacts-gallery` is an isolated implementation candidate. Thi
 - Fastify candidate route injection with actual storage: anonymous direct API returned 401, fresh signed request returned 200; projects, share and R2 all reported healthy. The candidate Next handler, run against an isolated API port, returned 1,696 total with two entries at `limit=2`; candidate `/artifacts` returned 200.
 - Representative published image, video, audio, PDF and HTML originals returned HEAD 200 with appropriate media types. R2 playback returned HTTP 206 and `Content-Range` for `bytes=0-1023`; its share page returned 200. Browser checks on candidate page found picture thumbnails, native audio, PDF open-original fallback, video elements, nine gallery-search results, timezone `America/New_York`, 24 initial cards. Browser console had only an unrelated `/favicon.ico` 404.
 
-## Checks
+## Checks (original candidate, superseded above)
 
 - API focused tests: 6/6. API regression suite: 270/270. Web regression suite: 74/74.
 - API and web typechecks: pass after building existing workspace package declarations. API build and Next production build: pass; `/artifacts` and `/api/artifacts/catalog` present in Next route output.

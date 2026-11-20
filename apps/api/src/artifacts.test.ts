@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import Fastify from "fastify";
-import { authorizeArtifacts, boundaries, createArtifactCatalog, normalizeMinio, normalizeR2, queryArtifacts, registerArtifactRoutes, safePublishedUrl } from "./artifacts.js";
+import { authorizeArtifacts, boundaries, createArtifactCatalog, listMinio, normalizeMinio, normalizeR2, queryArtifacts, registerArtifactRoutes, safePublishedUrl } from "./artifacts.js";
 import type { Artifact } from "./artifacts.js";
 
 const row = (key: string, modified = "2026-11-20T12:00:00Z") => ({ key, modified });
@@ -56,6 +56,65 @@ test("full catalog search/date/type before pagination, stable ties and categorie
   assert.throws(() => queryArtifacts(items, { page: "0" }));
   assert.throws(() => queryArtifacts(items, { zone: "not-a-zone" }));
   assert.throws(() => queryArtifacts(items, { from: "2026-11-19" }));
+});
+
+test("multiple HTML pages attach to one site while useful documents remain separate", () => {
+  const items = normalizeMinio("projects", ["demo/2026-11-20/site/index.html", "demo/2026-11-20/site/about.html", "demo/2026-11-20/site/style.css", "demo/2026-11-20/site/manual.pdf", "demo/2026-11-20/site/photos/cover.jpg"].map((key) => row(key)));
+  assert.equal(items.length, 3);
+  assert.ok(items[0].filenames.includes("about.html"));
+  assert.equal(queryArtifacts(items, { search: "about.html" }).total, 1);
+  assert.ok(items.some((item) => item.category === "pdfs"));
+});
+
+test("gallery variants inherit member provenance and retain all searchable metadata", () => {
+  const rows = [row("aaaabbbbccccdddd/campaign"), row("aaaabbbbccccdddd/gallery.json"), row("eeeeffffaaaabbbb/campaign-a", "2026-11-19T12:00:00Z"), row("eeeeffffaaaabbbb/clip.mp4")];
+  const member = { name: "campaign-a", label: "Cut A", notes: "Director notes", entry_url: "https://v.delo.sh/eeeeffffaaaabbbb/campaign-a", video_url: "https://v.delo.sh/eeeeffffaaaabbbb/clip.mp4" };
+  const enrichment = { "aaaabbbbccccdddd/gallery.json": { manifest: { title: "Campaign 2026", description: "Gallery synopsis", items: [member] } }, "eeeeffffaaaabbbb/campaign-a": { title: "Member title", description: "Member synopsis", published: "2026-11-18T12:00:00Z" } };
+  const items = normalizeR2(rows, enrichment);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].date, "2026-11-18T12:00:00.000Z");
+  assert.equal(items[0].dateKind, "published");
+  assert.ok(items[0].filenames.includes("clip.mp4"));
+  for (const search of ["Campaign 2026", "Gallery synopsis", "Member title", "Member synopsis", "Director notes", "clip.mp4"]) assert.equal(queryArtifacts(items, { search }).total, 1, search);
+  assert.equal((items[0].description ?? "").includes("Campaign 2026"), false, "gallery name has its own field");
+  const malformed = normalizeR2(rows, { "aaaabbbbccccdddd/gallery.json": { manifest: JSON.parse('{"title":{"toString":null},"items":[{}]}') } });
+  assert.ok(malformed.some((item) => item.id === "r2:eeeeffffaaaabbbb/campaign-a"));
+});
+
+test("IANA aliases and midnight transitions preserve local calendar days", () => {
+  for (const zone of ["Asia/Kolkata", "Europe/Kyiv", "America/Indiana/Indianapolis"]) assert.equal(queryArtifacts([], { zone }).total, 0);
+  for (const zone of ["Bad/Zone", "x".repeat(81)]) assert.throws(() => queryArtifacts([], { zone }));
+  assert.deepEqual(boundaries("2026-09-05", "2026-09-05", "America/Santiago").map((n) => new Date(n).toISOString()), ["2026-09-05T04:00:00.000Z", "2026-09-06T04:00:00.000Z"]);
+  assert.deepEqual(boundaries("2026-09-06", "2026-09-06", "America/Santiago").map((n) => new Date(n).toISOString()), ["2026-09-06T04:00:00.000Z", "2026-09-07T03:00:00.000Z"]);
+  const santiago = [fixture("last", "images", "2026-09-06T03:30:00Z"), fixture("next", "images", "2026-09-06T04:00:00Z")];
+  assert.deepEqual(queryArtifacts(santiago, { from: "2026-09-05", to: "2026-09-05", zone: "America/Santiago" }).items.map((i) => i.id), ["last"]);
+  assert.deepEqual(boundaries("2026-11-01", "2026-11-01", "America/Havana").map((n) => new Date(n).toISOString()), ["2026-11-01T04:00:00.000Z", "2026-11-02T05:00:00.000Z"]);
+  assert.deepEqual(boundaries("2011-12-30", "2011-12-30", "Pacific/Apia"), [Date.parse("2011-12-30T10:00:00Z"), Date.parse("2011-12-30T10:00:00Z")]);
+});
+
+test("recursive MinIO listing retains every object and isolates malformed optional HTML", async (t) => {
+  const prior = globalThis.fetch;
+  const fetched: string[] = [];
+  t.after(() => { globalThis.fetch = prior; });
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    fetched.push(url);
+    if (url.endsWith("/report.html")) return new Response("<title>Report title</title><meta name='description' content='Report summary'>");
+    if (url.endsWith("/broken.html")) throw Error("optional enrichment failed");
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const keys = ["demo/day/a/report.html", "demo/day/b/broken.html", ...Array.from({ length: 1004 }, (_, i) => `demo/day/files/${i}.pdf`)];
+  const lines = keys.map((key) => JSON.stringify({ type: "file", key, lastModified: "2026-11-20T12:00:00Z" })).join("\n");
+  const result = await listMinio("projects", async (cmd, args) => {
+    assert.equal(cmd, "mc"); assert.ok(args.includes("--recursive")); return lines;
+  });
+  assert.equal(result.length, 1006);
+  assert.equal(result.find((item) => item.originalUrl.endsWith("/report.html"))?.title, "Report title");
+  assert.equal(result.find((item) => item.originalUrl.endsWith("/report.html"))?.description, "Report summary");
+  assert.ok(result.some((item) => item.originalUrl.endsWith("/broken.html")));
+  assert.equal(fetched.length, 2);
+  await assert.rejects(listMinio("projects", async () => `${lines}\n${JSON.stringify({ status: "error" })}`));
+  await assert.rejects(listMinio("projects", async () => `${lines}\nnot-json`));
 });
 
 test("direct API denies anonymous requests and succeeds with fresh signed server request", async (t) => {
