@@ -433,3 +433,15 @@ export async function getHubProjects(store: EventStore) {
   const built = buildProjects({ rootPath: GOD_ROOT, components: readComponents(), projects: snap.projects, agents: snap.agents.agents, tickets: snap.tickets });
   return { generatedAt: new Date(snap.at).toISOString(), sources: snap.sources, rootPath: GOD_ROOT, ...built };
 }
+
+/** The registered pjangler projects, for the Live hub's discovery (same source and timeout as the hub views). */
+export async function getRegisteredProjects(): Promise<{ projects: ProjectRecord[]; down?: string }> {
+  const read = await readProjects([]);
+  return { projects: read.projects, down: read.source.down ? read.source.detail ?? "pjangler is not answering" : undefined };
+}
+
+/** Latest known state of each ticket the event collection has seen (the Live hub's board activity). */
+export function getRecentTickets(store: EventStore): Array<{ key: string; title: string; state?: string; updatedAt: string }> {
+  const tickets = projectTickets(store.recent(TICKET_TYPES, 3000).map(ticketOf).filter((e): e is TicketEvent => !!e));
+  return [...tickets.values()].map((t) => ({ key: t.key, title: t.title, state: t.state, updatedAt: t.updatedAt }));
+}

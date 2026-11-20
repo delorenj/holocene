@@ -25,7 +25,8 @@ import {
 } from "./containers.js";
 import { getDirectorSnapshot } from "./director.js";
 import { getOrgTree } from "./org.js";
-import { getHubAgents, getHubProjects, getPadActivity } from "./hub.js";
+import { getHubAgents, getHubProjects, getPadActivity, getRecentTickets, getRegisteredProjects } from "./hub.js";
+import { createLiveHub, defaultLiveDeps, registerLiveRoutes } from "./live.js";
 import { registerPadActivityRoute } from "./pad-activity.js";
 import {
   getToolingStat,
@@ -54,6 +55,7 @@ registerGenesisRoutes(app, eventCollector);
 registerWaxRoutes(app);
 registerTranscriptRoutes(app, eventCollector.store);
 registerCandybarRoutes(app);
+registerLiveRoutes(app, createLiveHub(defaultLiveDeps({ projects: getRegisteredProjects, tickets: () => getRecentTickets(eventCollector.store) })));
 registerAvatarRoutes(app);
 registerPadActivityRoute(app, () => getPadActivity(eventCollector.store));
 eventCollector.start();
