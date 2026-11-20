@@ -240,6 +240,13 @@ test("key-shaped strings are scrubbed from error text", () => {
   assert.ok(!/sk_live|rk_test|ops_Ab|abc\.def/.test(clean), clean);
 });
 
+test("buyer emails and Stripe object ids are scrubbed from error text, plain words are not", () => {
+  const dirty = "issuer refused: session cs_live_a1B2c3D4e5F6g7H8i9 for pat.buyer+x@example.co.uk (pi_3Qabcdefghijklmnop, cus_Rabcdefghijklmn) in_progress, re_read";
+  const clean = scrubSecrets(dirty);
+  assert.ok(!/cs_live_a1|pat\.buyer|example\.co|pi_3Q|cus_R|@/.test(clean), clean);
+  assert.match(clean, /in_progress, re_read/);
+});
+
 // ---------------------------------------------------------------- fulfilment
 
 test("outstanding is folded into due, overdue, clear and blocked counts with the urgency deadlines", () => {

@@ -231,6 +231,33 @@ test("pjangler down is reported on the source, and the request still answers", a
   assert.match(p.source.detail ?? "", /connection refused/);
 });
 
+test("a pjangler outage after a good read keeps the live app on the hub (it is reported down, not gone)", async () => {
+  let down = false;
+  const h = setup({ projects: async () => (down ? { projects: [], down: "connection refused" } : { projects: [project("earshot", "/repos/earshot")] }) });
+  assert.equal((await read(h)).apps.length, 1);
+  down = true;
+  h.clock.t += 16_000; // discovery TTL (15 s)
+  await read(h); // stale answer served, refresh runs behind it
+  await new Promise((r) => setTimeout(r, 20));
+  const p = await read(h);
+  assert.equal(p.source.down, true);
+  assert.match(p.source.detail ?? "", /connection refused/);
+  assert.equal(p.apps.length, 1, "the app does not vanish while pjangler is down");
+  assert.equal(p.apps[0].id, "earshot");
+});
+
+test("a throwing board source is one down chip; the request still answers", async () => {
+  const h = setup();
+  h.deps.tickets = () => {
+    throw new Error("event store closed for owner buyer@example.com");
+  };
+  const p = await createLiveHub(h.deps).read();
+  const a = p.apps[0];
+  assert.equal(a.sources.activity.status, "down");
+  assert.ok(!/@/.test(a.sources.activity.detail ?? ""));
+  assert.equal(a.sources.release.status, "ok");
+});
+
 // ---------------------------------------------------------------- failure modes, one source at a time
 
 test("release down: latest.json 500 is a down chip; the other sources are untouched", async () => {
@@ -387,6 +414,18 @@ test("reads are cached per source for a short TTL, refreshed on request (stale-w
   const again = h.calls.fetch.length;
   await read(h, true);
   assert.equal(h.calls.fetch.length, again, "but force cannot hammer a source inside 3 s");
+});
+
+test("an idle hub does not show a read older than its freshness window as current: it waits for the refresh", async () => {
+  const h = setup();
+  await read(h);
+  h.clock.t += 10 * 60_000; // ten minutes idle: every hit is past 3 TTLs
+  const p = await read(h);
+  const s = p.apps[0].sources;
+  assert.equal(s.release.ageSeconds, 0, "release was re-read, not served 10 minutes old");
+  assert.equal(s.sales.ageSeconds, 0);
+  assert.equal(s.fulfilment.ageSeconds, 0);
+  assert.ok(Object.values(s).every((x) => x.status === "ok"));
 });
 
 test("a cold source that is slow answers `pending` instead of hanging the request", async () => {

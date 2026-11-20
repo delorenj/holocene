@@ -319,9 +319,14 @@ export function summarizeSales(
   };
 }
 
-/** Strip anything key-shaped from an error before it is reported to the browser. */
+/**
+ * Strip anything key-shaped, and anything that names a buyer (an email, a Stripe object id), from an error
+ * before it is reported to the browser. Errors come from Stripe, `op` and the issuer's stderr.
+ */
 export function scrubSecrets(message: string): string {
   return message
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g, "[email]")
+    .replace(/\b(?:cs|pi|cus|ch|re|dp|sub|in|py|pm|evt|plink)_(?:live_|test_)?[A-Za-z0-9]{14,}/g, "[id]")
     .replace(/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9*_]+/g, "[key]")
     .replace(/\bops_[A-Za-z0-9_-]{8,}/g, "[token]")
     .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, "Bearer [token]")

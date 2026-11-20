@@ -141,6 +141,8 @@ const OP_TIMEOUT_MS = 10_000;
 const STRIPE_PAGES = 10;
 const STRIPE_LIST_PAGES = 5;
 const MIN_FORCE_AGE_MS = 3_000;
+/** A hit older than this many TTLs is past what the page calls fresh (view() derives maxSeconds from it), so a request waits for the refresh instead of showing it as current. */
+const STALE_TTLS = 3;
 
 // ---------------------------------------------------------------- caching
 
@@ -153,8 +155,8 @@ class Memo {
   constructor(private deps: Pick<LiveDeps, "now" | "waitMs">) {}
 
   /**
-   * Fresh hit: return it. Stale hit: return it and refresh behind the request. No hit: wait for the read, but at
-   * most `waitMs`. A thrown read is a `down` hit (the error message, scrubbed), never an exception.
+   * Fresh hit: return it. Stale hit (within STALE_TTLS TTLs): return it and refresh behind the request. No hit, or
+   * one older than that (an idle hub): wait for the read, but at most `waitMs`, then fall back to the old hit. A thrown read is a `down` hit (the error message, scrubbed), never an exception.
    */
   async get<T>(key: string, ttlMs: number, force: boolean, read: () => Promise<Probe<T>>): Promise<Hit<T> | undefined> {
     const now = this.deps.now();
@@ -176,7 +178,7 @@ class Memo {
       })().finally(() => this.inflight.delete(key));
       this.inflight.set(key, run);
     }
-    if (hit && !force) return hit;
+    if (hit && !force && age < ttlMs * STALE_TTLS) return hit;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const wait = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), this.deps.waitMs);
@@ -194,7 +196,7 @@ class Memo {
 }
 
 function view<T>(hit: Hit<T> | undefined, maxMs: number, now: number): LiveSource<T> {
-  const maxSeconds = Math.round((maxMs * 3) / 1000);
+  const maxSeconds = Math.round((maxMs * STALE_TTLS) / 1000);
   if (!hit) return { status: "pending", maxSeconds, detail: "first read still running; it will be here on the next refresh" };
   return {
     status: hit.status,
@@ -423,6 +425,8 @@ function evidenceLinks(deps: LiveDeps, repoPath: string, decl: LiveDecl): Array<
 
 export function createLiveHub(deps: LiveDeps) {
   const memo = new Memo(deps);
+  // The last discovery that pjangler actually answered. A pjangler outage must not make a live app vanish from the hub.
+  let lastGood: { found: Found[]; skipped: LiveSkipped[] } | undefined;
 
   async function discover(force: boolean) {
     const hit = await memo.get<{ found: Found[]; skipped: LiveSkipped[]; down?: string }>("discovery", TTL.discovery, force, async () => {
@@ -449,9 +453,11 @@ export function createLiveHub(deps: LiveDeps) {
           skipped.push({ id: project.id, name: project.name, problems: read.problems });
         }
       }
-      return { status: (down ? "warn" : "ok") as SourceStatus, detail: down, data: { found, skipped, down } };
+      if (down) return { status: "warn" as SourceStatus, detail: down, data: { found: lastGood?.found ?? found, skipped: lastGood?.skipped ?? skipped, down } };
+      lastGood = { found, skipped };
+      return { status: "ok" as SourceStatus, data: { found, skipped, down } };
     });
-    return hit?.data ?? { found: [], skipped: [], down: hit?.detail ?? "discovery is still reading" };
+    return hit?.data ?? { found: lastGood?.found ?? [], skipped: lastGood?.skipped ?? [], down: hit?.detail ?? "discovery is still reading" };
   }
 
   async function sources(f: Found, force: boolean): Promise<LiveApp["sources"]> {
@@ -472,12 +478,18 @@ export function createLiveHub(deps: LiveDeps) {
     ]);
     const storefront = judgeStorefront(storefrontRaw, release?.data);
     const prefix = `${decl.board}-`;
-    const recent = deps
-      .tickets()
-      .filter((t) => t.key.startsWith(prefix))
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .slice(0, 6);
-    const activity: Hit<ActivityView> = { at: now, status: "ok", data: { recent }, ...(recent.length ? {} : { detail: "no board events collected yet" }) };
+    let activity: Hit<ActivityView>;
+    try {
+      const recent = deps
+        .tickets()
+        .filter((t) => t.key.startsWith(prefix))
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+        .slice(0, 6);
+      activity = { at: now, status: "ok", data: { recent }, ...(recent.length ? {} : { detail: "no board events collected yet" }) };
+    } catch (error) {
+      // the event store is read in-process; if it throws, that is one down chip, not a failed request
+      activity = { at: now, status: "down", detail: scrubSecrets(error instanceof Error ? error.message : String(error)) };
+    }
     return {
       release: view(release, TTL.release, now),
       storefront: view(storefront, TTL.storefront, now),
