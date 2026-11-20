@@ -72,3 +72,21 @@ runtime:
 # Provenance — managed by the template, do not hand-edit.
 provisioned_at: "2026-06-01T14:38:43Z"
 provisioned_by: hermes-agent-template
+company_identity:
+  version: 1
+  subject: "8433618e-8125-46bd-8465-f3b7f670629f"
+  handle: "holocene-pm"
+  email: "holocene-pm@agents.delo.sh"
+  status: "active"
+  enrolled_at: "2026-11-20T02:26:08.499Z"
+  bindings:
+    cloudflare_access:
+      principal: "76900fc7f4e9d116c8bb468473679338.access"
+      instance: "https://delonet.cloudflareaccess.com"
+      credential_ref: "op://DeLoSecrets/kio7sckirmkzng3zu4ikkr7pl4/wrgtjzyxezmwpbjdrbjsfbwe3y"
+    plane:
+      principal: "6a5c1ab2-6309-4e88-833b-7f6f7e58c3c5"
+      instance: "https://plane.delo.sh/33god"
+      credential_ref: "op://DeLoSecrets/pb6nsb7pkehm6tmpyeah6lv7n4/credential"
+      attribution_mode: "native"
+      native_actor_id: "6a5c1ab2-6309-4e88-833b-7f6f7e58c3c5"
