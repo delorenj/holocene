@@ -2,7 +2,13 @@
 
 Branch `holoc-53-artifacts-gallery` is an isolated implementation candidate. This report contains aggregate counts only; no private catalog, hub token, published object keys, signed requests, or secrets are recorded here.
 
-## Repair verification (candidate only)
+## Final loose-HTML repair verification (candidate only)
+
+- Legacy `projects/<project>/<session>/` folders without an index retain each independently usable loose HTML original, filename fallback, and searchable link regardless of listing order. Identified multi-page site bundles still collapse to one publication.
+- Focused actual-helper API tests: 11/11; external review oracle: 6/6. API typecheck, API build, and `git diff --check` passed. The first root-level focused-test invocation could not resolve `tsx`; rerunning from `apps/api` passed. No full regression suite or storage/browser check was rerun for this narrow repair.
+- No Plane writes, deployment, live verification, or merge. Production propagation remains pending acceptance.
+
+## Prior repair verification (candidate only)
 
 - Independently reproduced defects repaired: one-shot UI refresh (manual and automatic), stale successful JSON response race, R2 member-published provenance/searchable metadata and malformed optional manifest, HTML entry enrichment beyond `index.html`, multi-page site grouping, valid IANA aliases, and DST midnight gaps/overlaps/skipped dates.
 - Focused real-entrypoint API tests: 10/10; external review oracle: 6/6. Python R2 adapter pagination/enrichment fixture: 1/1. Playwright against the **candidate production Next build** with intercepted catalog traffic: 3/3 (manual refresh and later filter/mode requests, automatic retry, delayed parsed JSON after query change). No real catalog fixture or secret was served to the browser test.
