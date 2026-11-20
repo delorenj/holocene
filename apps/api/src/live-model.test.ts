@@ -259,7 +259,9 @@ test("outstanding is folded into due, overdue, clear and blocked counts with the
       cs_live_d: "paid_unissued:overdue_by=7200s",
       cs_live_e: "clear:pending",
       cs_live_f: "blocked:email bounced for pat@example.com",
-      cs_live_g: "something-new"
+      cs_live_g: "something-new",
+      cs_live_h: "not_issuable:not_paid",
+      cs_live_i: "not_issuable:wrong_session_amount"
     },
     now,
     24
@@ -267,11 +269,12 @@ test("outstanding is folded into due, overdue, clear and blocked counts with the
   assert.equal(f.due, 2);
   assert.equal(f.overdue, 2);
   assert.equal(f.clear, 1);
-  assert.equal(f.blocked, 1);
+  assert.equal(f.blocked, 2);
+  assert.equal(f.unpaid, 1);
   assert.equal(f.other, 1);
   assert.equal(f.soonestDueAt, "2026-11-20T12:10:00.000Z");
   assert.equal(f.worstOverdueSeconds, 7200);
-  assert.deepEqual(f.blockedReasons, ["email"]);
+  assert.deepEqual(f.blockedReasons, ["email", "wrong_session_amount"]);
   assert.equal(f.promiseHours, 24);
   assert.equal(fulfilmentUrgency(f), "overdue");
   // Stripe session ids and the free text after the reason code are never returned.

@@ -342,6 +342,8 @@ export type FulfilmentData = {
   overdue: number;
   clear: number;
   blocked: number;
+  /** Checkouts opened on the payment link but never paid (`not_issuable:not_paid`): nothing is owed. */
+  unpaid: number;
   other: number;
   /** The soonest deadline among due keys, ISO. */
   soonestDueAt?: string;
@@ -353,12 +355,14 @@ export type FulfilmentData = {
 };
 
 /**
- * `outstanding` prints `{session: "paid_unissued:due_in=Ns" | "paid_unissued:overdue_by=Ns" | "clear:..." | "blocked:..."}`.
+ * `outstanding` prints `{session: "paid_unissued:due_in=Ns" | "paid_unissued:overdue_by=Ns" | "clear:..." | "blocked:..." |
+ * "not_issuable:<reason>"}`. `not_issuable:not_paid` is an open or abandoned checkout (nothing owed); any other
+ * not_issuable reason is a session the issuer refuses, so it counts as blocked with that reason.
  * Session ids are Stripe ids: they are counted here and never returned.
  */
 export function summarizeOutstanding(raw: unknown, nowMs: number, promiseHours?: number): FulfilmentData | undefined {
   if (!record(raw)) return undefined;
-  const out: FulfilmentData = { due: 0, overdue: 0, clear: 0, blocked: 0, other: 0, blockedReasons: [], promiseHours };
+  const out: FulfilmentData = { due: 0, overdue: 0, clear: 0, blocked: 0, unpaid: 0, other: 0, blockedReasons: [], promiseHours };
   let soonest: number | undefined;
   let worst: number | undefined;
   for (const status of Object.values(raw)) {
@@ -372,9 +376,10 @@ export function summarizeOutstanding(raw: unknown, nowMs: number, promiseHours?:
       out.overdue += 1;
       worst = Math.max(worst ?? 0, Number(m[1]));
     } else if (s.startsWith("clear:") || s === "clear") out.clear += 1;
-    else if (s.startsWith("blocked")) {
+    else if (s === "not_issuable:not_paid") out.unpaid += 1;
+    else if (s.startsWith("blocked") || s.startsWith("not_issuable:")) {
       out.blocked += 1;
-      const reason = s.slice("blocked".length).replace(/^[:\s]+/, "").match(/^[a-z][a-z0-9_-]{0,39}/i)?.[0];
+      const reason = s.slice(s.startsWith("blocked") ? "blocked".length : "not_issuable".length).replace(/^[:\s]+/, "").match(/^[a-z][a-z0-9_-]{0,39}/i)?.[0];
       if (reason && !out.blockedReasons.includes(reason)) out.blockedReasons.push(reason);
     } else out.other += 1;
   }

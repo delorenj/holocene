@@ -44,6 +44,8 @@ export type FulfilmentView = {
   soonestDueAt?: string;
   worstOverdueSeconds?: number;
   blockedReasons: string[];
+  /** Checkouts opened but never paid; nothing owed. */
+  unpaid?: number;
   promiseHours?: number;
   urgency: "overdue" | "owed" | "clear" | "unknown";
 };
