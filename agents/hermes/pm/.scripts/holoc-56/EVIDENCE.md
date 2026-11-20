@@ -60,9 +60,9 @@ Exit 1 means "partial": the generator refuses to overwrite the three locally-mod
 
 ### Reviewing the generated diff
 
-- `launch-pass.py`, `launch-pass.prompt.md`, `20-runtime-repo.sh` and `lib/voice-config.py` are now
-  byte-identical to `hermes-agent-template/template/.scripts/*` at `770fe8e` (checked with `cmp`).
-  Modes are unchanged at 755/664.
+- `launch-pass.py` and `launch-pass.prompt.md` are byte-identical to
+  `hermes-agent-template/template/.scripts/*` at `770fe8e` (checked with `cmp`). `sentinel.prompt.md` is
+  rendered from the template's `.jinja`. Modes are unchanged at 755/664.
 - `launch-pass.py` (+56/-45): `MODES = (launch, live, steady)`, and only `launch` is active. A quiet
   snapshot prints `launch-mode: <mode>`. `--brief` on live says `quiet: live`, and `--apply` refuses with
   `launch-mode: <mode>: apply refused`. It also adds an indent-nested `.launch.yaml` parser for the
@@ -70,16 +70,15 @@ Exit 1 means "partial": the generator refuses to overwrite the three locally-mod
 - `launch-pass.prompt.md` (+2/-1): the pass answers `quiet: live` with no tool calls.
 - `sentinel.prompt.md` (+1/-1), rendered from `sentinel.prompt.md.jinja`: `mode: live` keeps
   steady-state grooming.
-- `20-runtime-repo.sh` and `lib/voice-config.py` are not about launch mode. They are upstream
-  template commits `f2dac92` and `29cbb5f` (the fleet base is THE default voice, plus `--clear`), which
-  the same scripts-only refresh carries. They fall inside the scope (`.scripts/`, generator output, no
-  hand patch). Committing the launch files without them would leave the scaffold stale. Both were
-  reviewed:
-  - They are only invoked by provisioning step 20 and by `_lib.sh profile_config_delta_update ... voice`.
-  - Neither runs as part of this task, and no desk config was touched.
-  - The preserved `_lib.sh` still passes `--voice "$4"`, which the new CLI accepts. `--voice` is now
-    optional, and `voice or None` handles an empty value.
-  - `bash -n 20-runtime-repo.sh` passes, and `voice-config.py reconcile --help` parses.
+- `20-runtime-repo.sh` and `lib/voice-config.py` are NOT launch-mode changes. The scripts-only
+  generator also carried them: they come from upstream template commits `f2dac92` and `29cbb5f`
+  (voice provisioning: the fleet base as the default voice, plus `--clear`). The first commit,
+  `88f75c6`, landed them. The parent scope review then rejected them as unrelated voice
+  provisioning changes, outside the smallest launch-pass-only scope and the operator's
+  no-unrelated-voice-changes rule. They were reverted before closure: a new corrective commit
+  restored both files byte for byte from parent `9419a8a`, and the git blob and mode match that
+  commit. There was no reset, rebase or amend. This ticket therefore does NOT sync the full
+  scaffold.
 
 ## 3. Tests (isolated fixtures, real CLI)
 
@@ -145,8 +144,10 @@ $ flume audit . --rules hermes.launch-mode          # exit 0
 The JSON envelope shows `"ok": true` and rule status `pass`. Its `hostOk` is false only because no host
 rule was selected in a project-scoped run.
 
-`flume audit . --rules hermes.pm-scaffold` after the change dropped from 10 findings to 5. The 5 that
-remain are out of scope (next section).
+After the first commit, `flume audit . --rules hermes.pm-scaffold` dropped from 10 findings to 5.
+Once the voice files were reverted, the rule reports them as stale again, which is expected and out of
+scope. It does not pass, and this evidence does not claim the scaffold is fully synced. See section 8
+for the post-correction run.
 
 ## 6. Not done (out of scope, left for the parent)
 
@@ -154,6 +155,8 @@ remain are out of scope (next section).
   never shipped. The generator preserves them on purpose. Reconciling them is a separate decision, and it
   must not be a hand overwrite.
 - `SOUL.md` soul-drift, tracked and runtime: SOUL composition is explicitly out of scope.
+- Stale `20-runtime-repo.sh` and `lib/voice-config.py`, the voice-provisioning template changes,
+  were reverted under parent scope review. Taking them is a separate, voice-scoped decision.
 
 ## 7. Unrelated work preserved
 
@@ -161,8 +164,9 @@ remain are out of scope (next section).
   `agents/hermes/pm/.scripts/` hashed to `98a7955a…0b2e0`, identical to the baseline.
 - `bloodbank-events.jsonl` sha256 is unchanged at `07997e16…c7ae`.
 - Every file in `agents/hermes/pm` outside `.scripts/` and `runtime/` has the same sha256.
-- Inside `.scripts/`, exactly the 5 generated files changed. The new `holoc-56/` directory holds this file
-  and the test.
+- Inside `.scripts/`, the 5 generated files changed in `88f75c6`; the corrective commit then reverted 2
+  of them (the voice files). Net change against `9419a8a`: `launch-pass.py`, `launch-pass.prompt.md`,
+  `sentinel.prompt.md`, plus `holoc-56/` (this file and the test).
 - Commits use explicit paths only (`git add -- <paths>`, `git commit --only -- <paths>`).
 
 Tool-induced outside writes:
@@ -170,4 +174,38 @@ Tool-induced outside writes:
   `~/.hermes/profiles/holocene-pm/cache/scratch/holoc56-impl/`.
 - A `py_compile` check created gitignored `__pycache__/*.pyc` files under `.scripts/`. They were moved
   to `scratch/holoc56-impl/pycache-moved/`, and the directories were removed.
-- flume wrote only the 5 listed files.
+- flume wrote only the 5 listed files. The 2 voice files were later restored from `9419a8a`.
+
+## 8. Scope correction (parent review) and re-verification
+
+The parent review narrowed scope after `88f75c6`. Before restoring the two voice files, I checked
+`git log 9419a8a..origin/main` for both paths. Only `88f75c6` (this worker) touched them, they had no
+working-tree or staged changes, and `HEAD == origin/main == 88f75c6`. I restored both with
+`git show 9419a8a:<path> > <path>`, and `git diff 9419a8a -- <both>` is now empty. Unrelated
+`_bmad-output/` and `runtime/` changes were left alone.
+
+Re-verification after the correction (2026-11-20):
+
+```
+$ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -p no:cacheprovider -q --basetemp=<scratch> \
+    agents/hermes/pm/.scripts/holoc-56/test_launch_mode.py
+13 passed in 0.69s
+$ python3 agents/hermes/pm/.scripts/launch-pass.py --monitor          # exit 0
+launch-mode: steady
+$ flume audit . --rules hermes.launch-mode                            # exit 0
+  ✔ hermes.launch-mode  launch mode consistent (mode absent, 1 desk(s))
+$ flume audit . --rules hermes.pm-scaffold                            # fails, 7 findings, all out of scope
+  locally-modified 01-config.sh, _lib.sh, config.example.toml
+  stale 20-runtime-repo.sh, lib/voice-config.py   (reverted voice files, expected)
+  soul-drift SOUL.md (tracked + runtime)
+```
+
+## 9. Independent review summary
+
+- **Spec/quality reviewer (separate from this worker):**
+  - Reran the 13 scoped tests: 13 passed.
+  - Reran the 47 upstream `hermes-agent-template` `tests/test_launch_pass.py` tests: 47 passed.
+  - Reran `flume audit --rules hermes.launch-mode`: pass.
+  - Found no launch/live/steady mode defects and no live board writes.
+- **Parent review:** after that, it narrowed scope by rejecting the two unrelated voice-provisioning
+  files carried by the generator. They are reverted as described in section 8.
