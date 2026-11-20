@@ -1,0 +1,51 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+
+> @holocene/web@0.0.1 build /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web
+> next build
+
+  ▲ Next.js 15.0.0
+  - Experiments (use with caution):
+    · typedRoutes
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/18) ...
+   Generating static pages (4/18)
+   Generating static pages (8/18)
+   Generating static pages (13/18)
+ ✓ Generating static pages (18/18)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    193 B           126 kB
+├ ○ /_not-found                          898 B           100 kB
+├ ƒ /api/artifacts/catalog               153 B          99.4 kB
+├ ƒ /api/clock/[action]                  153 B          99.4 kB
+├ ○ /artifacts                           3 kB            129 kB
+├ ○ /auto/privacy                        260 B          99.5 kB
+├ ○ /candybar                            20.9 kB         147 kB
+├ ○ /genesis                             6.8 kB          133 kB
+├ ○ /hooks                               9.01 kB         117 kB
+├ ○ /hq                                  171 B           105 kB
+├ ƒ /hq/api/action                       153 B          99.4 kB
+├ ƒ /hq/api/org-tree                     153 B          99.4 kB
+├ ƒ /hq/api/snapshot                     153 B          99.4 kB
+├ ○ /legacy                              32.5 kB         153 kB
+├ ○ /live                                5.13 kB         131 kB
+├ ○ /mini                                172 B           105 kB
+├ ○ /products                            1.83 kB         128 kB
+├ ○ /settings                            3.47 kB         129 kB
+├ ○ /transcripts                         8.45 kB         134 kB
+├ ○ /voice                               9.75 kB         136 kB
+└ ○ /wax                                 4.89 kB         131 kB
++ First Load JS shared by all            99.3 kB
+  ├ chunks/333-b3b3fffaa993bd0b.js       44.6 kB
+  ├ chunks/c2b9d013-80e05034b4fbed70.js  52.6 kB
+  └ other shared chunks (total)          2.03 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand

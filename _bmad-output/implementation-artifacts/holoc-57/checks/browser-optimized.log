@@ -1,0 +1,16 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+
+> @holocene/web@0.0.1 test:products-browser /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web
+> node --test app/products/products.browser.mjs
+
+✔ real registered products: desktop and phone navigate every receipt dashboard and existing Earshot Live (4639.798457ms)
+✔ hub focus/history/native modified links and shared specialist sidebar (891.625152ms)
+✔ fixture-only failure states render explicitly and refresh retries without fabricating healthy emptiness (432.82501ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6141.681951

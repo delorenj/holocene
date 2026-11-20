@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
+import { CopyRef, Glyph, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Signal, Source } from "../hub/types";
 import { ActionBar, Announcer } from "./action-bar";
 import { actionStore } from "./action-store";
@@ -486,16 +487,15 @@ export function CandybarApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="candybar">
         <Brand />
-        <HubTabs current="candybar" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body">
+      <div className="hub-body" id="hub-content" role="main" tabIndex={-1}>
         <Announcer />
         <nav className="cb-modes" aria-label="Candybar views">
           {TABS.map((t) => (

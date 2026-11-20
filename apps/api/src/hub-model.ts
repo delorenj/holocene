@@ -48,7 +48,7 @@ export type ProjectRecord = {
   name: string;
   repoPath: string;
   /** Agents the project manifest declares, whether or not the Hermes registry has a row for them. */
-  agents?: Array<{ id: string; role?: string }>;
+  agents?: Array<{ id: string; role?: string; roleDir?: string }>;
   status?: string;
   board?: string;
   boardId?: string;

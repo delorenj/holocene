@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
-import { CopyRef, Glyph, HubTabs, SourceStrip } from "../hub/ui";
+import { CopyRef, Glyph, SourceStrip } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Signal, Source } from "../hub/types";
 import {
   celebrationKey, chips, confettiPieces, duration, metrics, overallState, promotedBadge, saleTimes, shouldCelebrate, statement,
@@ -236,9 +237,8 @@ export function LiveApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="live">
         <Brand />
-        <HubTabs current="live" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <button type="button" className="live-refresh" onClick={() => void refresh()} disabled={refreshing} aria-busy={refreshing}>
@@ -246,9 +246,9 @@ export function LiveApp() {
           </button>
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body live-body">
+      <div className="hub-body live-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">{statement(data, error, now)}</p>
           {error ? (

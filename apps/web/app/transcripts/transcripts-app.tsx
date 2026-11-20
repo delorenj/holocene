@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, HubTabs, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
+import { CopyRef, SourceStrip, formatDuration, sinceSeconds } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Source } from "../hub/types";
 import { postHarvest } from "./harvest-api";
 import type {
@@ -666,16 +667,15 @@ export function TranscriptsApp() {
   return (
     <HarvestContext.Provider value={harvestCtl}>
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="transcripts">
         <Brand />
-        <HubTabs current="transcripts" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body">
+      <div className="hub-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">
             {data ? statement(data) : list.error ? "The Holocene API is not answering." : "Reading the transcript store…"}

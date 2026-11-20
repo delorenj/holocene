@@ -105,10 +105,10 @@ function recordFromManifest(raw: Json, repoPath: string, indexed: boolean): Proj
   };
 }
 
-function manifestAgents(raw: unknown): Array<{ id: string; role?: string }> {
+function manifestAgents(raw: unknown): Array<{ id: string; role?: string; roleDir?: string }> {
   if (Array.isArray(raw)) return raw.map((a) => text(a)).filter((a): a is string => !!a).map((id) => ({ id }));
   if (!record(raw)) return [];
-  return Object.entries(raw).map(([id, cfg]) => ({ id, role: record(cfg) ? text(cfg.role) : undefined }));
+  return Object.entries(raw).map(([id, cfg]) => ({ id, role: record(cfg) ? text(cfg.role) : undefined, roleDir: record(cfg) ? text(cfg.role_dir) : undefined }));
 }
 
 function readManifest(repoPath: string): ProjectRecord | undefined {
@@ -128,10 +128,11 @@ async function readProjects(extraPaths: string[]): Promise<{ projects: ProjectRe
   try {
     const res = await fetch(`${PJ_REGISTRY_URL}/v1/registry`, { signal: AbortSignal.timeout(2500) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as Json;
-    const rows = record(body.projects) ? body.projects : {};
+    const body: unknown = await res.json();
+    if (!record(body) || !record(body.projects)) throw new Error("invalid registry response");
+    const rows = body.projects;
     for (const [key, snap] of Object.entries(rows)) {
-      if (!record(snap)) continue;
+      if (!record(snap) || !text(snap.repo_path)) throw new Error("invalid registry project");
       const rec = recordFromManifest({ ...snap, project_id: snap.project_id ?? key }, text(snap.repo_path) ?? "", true);
       if (rec) projects.set(rec.id, rec);
     }

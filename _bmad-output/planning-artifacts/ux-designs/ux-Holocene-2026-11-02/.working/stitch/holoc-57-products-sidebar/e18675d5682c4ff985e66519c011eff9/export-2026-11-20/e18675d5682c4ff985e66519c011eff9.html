@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>HOLOC-57 Mobile Phone Concept — Holocene /products</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:ital,wght@0,400..700;1,400..700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ground: #f1f0eb;
+      --paper: #fbfaf7;
+      --ink: #121210;
+      --rule: #23231f;
+      --rule-light: #dedcd4;
+      --meta: #57574f;
+      --focus-vermilion: #bb2d14;
+      --surface-inset: #edece5;
+    }
+    .theme-night {
+      --ground: #1c1a17;
+      --paper: #26231f;
+      --ink: #ede7dd;
+      --rule: #423d37;
+      --rule-light: #36322c;
+      --meta: #9e988f;
+      --focus-vermilion: #ff6a4d;
+      --surface-inset: #1f1c19;
+    }
+    body {
+      background-color: #e5e3db;
+      color: #121210;
+      font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 32px 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .font-newsreader {
+      font-family: 'Newsreader', serif;
+      font-feature-settings: "liga" 1, "kern" 1;
+    }
+    .font-mono-ledger {
+      font-family: 'Atkinson Hyperlegible Mono', monospace;
+    }
+    .touch-target {
+      min-height: 44px;
+    }
+    /* Safe-area padding simulation */
+    .notch-padding {
+      padding-top: max(14px, env(safe-area-inset-top));
+    }
+    .bottom-safe {
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start gap-10">
+
+  <!-- Overview Header for Canvas review -->
+  <header class="w-full max-w-5xl mx-auto border-b border-[#23231f] pb-4 px-2">
+    <div class="flex flex-wrap items-baseline justify-between gap-3">
+      <div>
+        <div class="font-mono-ledger text-[11px] tracking-wider uppercase text-[#57574f]">Specification Design Artifact // HOLOC-57</div>
+        <h1 class="font-newsreader text-2xl md:text-3xl text-[#121210] font-normal italic mt-0.5">Holocene Mobile Concept: /products Directory &amp; Navigation Drawer</h1>
+      </div>
+      <div class="flex items-center gap-4 text-xs font-mono-ledger text-[#57574f]">
+        <span>WIDTH: 390PX VIEWPORT</span>
+        <span class="text-[#23231f]">•</span>
+        <span>ATKINSON / NEWSREADER</span>
+        <span class="text-[#23231f]">•</span>
+        <span class="border border-[#23231f] px-2 py-0.5 bg-[#fbfaf7] text-[#121210]">LEDGER LIGHT SPEC</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Side-by-side or stacked phones demonstration -->
+  <main class="w-full max-w-5xl mx-auto flex flex-wrap items-start justify-center gap-12">
+
+    <!-- PHONE STATE 1: PRODUCTS DIRECTORY (CLOSED DRAWER) -->
+    <div class="flex flex-col items-center">
+      <div class="flex items-center justify-between w-[390px] px-2 mb-2 font-mono-ledger text-[11px] uppercase tracking-wide text-[#57574f]">
+        <span>State 01: Directory View</span>
+        <span>Viewport: 390px × 844px</span>
+      </div>
+
+      <!-- Device Frame 390px -->
+      <div class="w-[390px] bg-[var(--ground)] text-[var(--ink)] border-2 border-[var(--rule)] shadow-2xl relative flex flex-col min-h-[820px] select-text">
+
+        <!-- Top Status Bar & Safe Area simulation -->
+        <div class="notch-padding px-4 bg-[var(--ground)] border-b border-[var(--rule)] flex justify-between items-center text-[10px] font-mono-ledger text-[var(--meta)] select-none">
+          <div class="flex items-center gap-1">
+            <span class="font-bold text-[var(--ink)]">33GOD</span>
+            <span>HOLOCENE</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span>2026-11-18</span>
+            <span>UTC 14:42</span>
+            <!-- Persistent Day / Night switch -->
+            <button type="button" aria-label="Day or Night theme toggle" class="border border-[var(--rule)] px-1.5 py-0.5 bg-[var(--paper)] text-[var(--ink)] font-mono-ledger text-[9px] uppercase tracking-tight hover:bg-[var(--surface-inset)]">
+              Day / Night
+            </button>
+          </div>
+        </div>
+
+        <!-- Phone Header with Menu & Breadcrumb -->
+        <header class="px-4 py-2 bg-[var(--paper)] border-b-2 border-[var(--rule)] flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <button type="button" class="touch-target px-2.5 py-1 border border-[var(--rule)] bg-[var(--ground)] text-[var(--ink)] font-mono-ledger text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 hover:bg-[var(--surface-inset)] focus:outline-none focus:ring-2 focus:ring-[#bb2d14]">
+              <span class="inline-block w-3 text-center">≡</span>
+              <span>Menu</span>
+            </button>
+            <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 font-mono-ledger text-xs text-[var(--meta)]">
+              <span>/</span>
+              <span class="text-[var(--ink)] font-semibold underline decoration-[#bb2d14] decoration-2 underline-offset-4">Products</span>
+            </nav>
+          </div>
+
+          <div class="font-mono-ledger text-[10px] text-[var(--meta)] uppercase text-right leading-tight">
+            <span>HOLOCENE // 33GOD</span><br>
+            <span class="text-[var(--ink)]">DIR: 4 TOTAL</span>
+          </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="p-4 flex-1 flex flex-col gap-4 overflow-y-auto">
+
+          <!-- Editorial Statement -->
+          <div class="pt-1 pb-2 border-b border-[var(--rule)]">
+            <p class="font-newsreader text-2xl text-[var(--ink)] italic leading-tight">
+              Three preparing to launch. One live.
+            </p>
+            <p class="font-mono-ledger text-[11px] text-[var(--meta)] mt-1.5">
+              Production registry &amp; deployment manifests across cluster 33GOD.
+            </p>
+          </div>
+
+          <!-- Section: Preparing to launch (3 items) -->
+          <section aria-labelledby="heading-launch" class="flex flex-col">
+            <div class="flex items-center justify-between border-b-2 border-[var(--rule)] pb-1 mb-2">
+              <h2 id="heading-launch" class="font-mono-ledger text-xs font-bold uppercase tracking-wider text-[var(--ink)] flex items-center gap-2">
+                <span class="w-2 h-2 bg-[#bb2d14] inline-block"></span>
+                Preparing to launch [3]
+              </h2>
+              <span class="font-mono-ledger text-[10px] text-[var(--meta)]">STAGE: LAUNCH</span>
+            </div>
+
+            <!-- Product Rows (Vertically stacked compact rows, 44px+ touch friendly) -->
+            <div class="flex flex-col divide-y divide-[var(--rule-light)] border border-[var(--rule)] bg-[var(--paper)]">
+
+              <!-- Item 1: Tower of Lost Things -->
+              <article class="p-3 flex flex-col gap-1.5">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h3 class="font-newsreader text-base font-semibold text-[var(--ink)]">Tower of Lost Things</h3>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)] bg-[var(--ground)] px-1.5 py-0.5 border border-[var(--rule-light)]">STAGE 1</span>
+                </div>
+                <div class="font-mono-ledger text-[11px] text-[var(--meta)] leading-tight">
+                  <div class="text-[var(--ink)]">pjangler / committed .launch.yaml</div>
+                  <div class="text-[10px] text-[var(--meta)] mt-0.5 flex items-center gap-2">
+                    <span>age: 14m</span>
+                    <span>•</span>
+                    <span>receipt: 2026-11-18-a7c</span>
+                  </div>
+                </div>
+                <div class="pt-1 flex items-center justify-between">
+                  <a href="https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html" class="touch-target inline-flex items-center gap-1.5 text-xs font-mono-ledger text-[#bb2d14] font-semibold underline decoration-1 underline-offset-2 hover:text-[#121210]">
+                    <span>Open launch dashboard</span>
+                    <span class="text-[10px]" aria-hidden="true">↗ [ext]</span>
+                  </a>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)]">s3.delo.sh/tolt</span>
+                </div>
+              </article>
+
+              <!-- Item 2: Green In Between -->
+              <article class="p-3 flex flex-col gap-1.5">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h3 class="font-newsreader text-base font-semibold text-[var(--ink)]">Green In Between</h3>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)] bg-[var(--ground)] px-1.5 py-0.5 border border-[var(--rule-light)]">STAGE 2</span>
+                </div>
+                <div class="font-mono-ledger text-[11px] text-[var(--meta)] leading-tight">
+                  <div class="text-[var(--ink)]">pjangler / committed .launch.yaml</div>
+                  <div class="text-[10px] text-[var(--meta)] mt-0.5 flex items-center gap-2">
+                    <span>age: 1h 12m</span>
+                    <span>•</span>
+                    <span>receipt: 2026-11-18-9bf</span>
+                  </div>
+                </div>
+                <div class="pt-1 flex items-center justify-between">
+                  <a href="https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html" class="touch-target inline-flex items-center gap-1.5 text-xs font-mono-ledger text-[#bb2d14] font-semibold underline decoration-1 underline-offset-2 hover:text-[#121210]">
+                    <span>Open launch dashboard</span>
+                    <span class="text-[10px]" aria-hidden="true">↗ [ext]</span>
+                  </a>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)]">s3.delo.sh/greeninbetween</span>
+                </div>
+              </article>
+
+              <!-- Item 3: Gruvato -->
+              <article class="p-3 flex flex-col gap-1.5">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h3 class="font-newsreader text-base font-semibold text-[var(--ink)]">Gruvato</h3>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)] bg-[var(--ground)] px-1.5 py-0.5 border border-[var(--rule-light)]">STAGE 1</span>
+                </div>
+                <div class="font-mono-ledger text-[11px] text-[var(--meta)] leading-tight">
+                  <div class="text-[var(--ink)]">pjangler / committed .launch.yaml</div>
+                  <div class="text-[10px] text-[var(--meta)] mt-0.5 flex items-center gap-2">
+                    <span>age: 3h 48m</span>
+                    <span>•</span>
+                    <span>receipt: 2026-11-17-4e1</span>
+                  </div>
+                </div>
+                <div class="pt-1 flex items-center justify-between">
+                  <a href="https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html" class="touch-target inline-flex items-center gap-1.5 text-xs font-mono-ledger text-[#bb2d14] font-semibold underline decoration-1 underline-offset-2 hover:text-[#121210]">
+                    <span>Open launch dashboard</span>
+                    <span class="text-[10px]" aria-hidden="true">↗ [ext]</span>
+                  </a>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)]">s3.delo.sh/gruvato</span>
+                </div>
+              </article>
+
+            </div>
+          </section>
+
+          <!-- Section: Live (1 item) -->
+          <section aria-labelledby="heading-live" class="flex flex-col mt-2">
+            <div class="flex items-center justify-between border-b-2 border-[var(--rule)] pb-1 mb-2">
+              <h2 id="heading-live" class="font-mono-ledger text-xs font-bold uppercase tracking-wider text-[var(--ink)] flex items-center gap-2">
+                <span class="w-2 h-2 border border-[#23231f] bg-[var(--ground)] inline-block"></span>
+                Live [1]
+              </h2>
+              <span class="font-mono-ledger text-[10px] text-[var(--meta)]">STAGE: PRODUCTION</span>
+            </div>
+
+            <div class="border border-[var(--rule)] bg-[var(--paper)]">
+              <!-- Item 4: Earshot -->
+              <article class="p-3 flex flex-col gap-1.5">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h3 class="font-newsreader text-base font-semibold text-[var(--ink)]">Earshot</h3>
+                  <span class="font-mono-ledger text-[10px] text-[var(--ink)] bg-[var(--ground)] px-1.5 py-0.5 border border-[var(--rule)] font-bold">OPERATIONAL</span>
+                </div>
+                <div class="font-mono-ledger text-[11px] text-[var(--meta)] leading-tight">
+                  <div class="text-[var(--ink)]">earshot-core / published release v2.4.1</div>
+                  <div class="text-[10px] text-[var(--meta)] mt-0.5 flex items-center gap-2">
+                    <span>age: 4d 18h</span>
+                    <span>•</span>
+                    <span>receipt: 2026-11-14-live</span>
+                  </div>
+                </div>
+                <div class="pt-1 flex items-center justify-between">
+                  <a href="/live" class="touch-target inline-flex items-center gap-1.5 text-xs font-mono-ledger text-[#bb2d14] font-semibold underline decoration-1 underline-offset-2 hover:text-[#121210]">
+                    <span>Open Live management</span>
+                    <span class="text-[10px]" aria-hidden="true">→ [/live]</span>
+                  </a>
+                  <span class="font-mono-ledger text-[10px] text-[var(--meta)]">internal route</span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- Labelled Inset: Source Unavailable State (Design edge case without fake product) -->
+          <aside aria-labelledby="source-unavailable-label" class="mt-2 p-3 bg-[var(--surface-inset)] border border-dashed border-[var(--rule)]">
+            <div class="flex items-center justify-between mb-1">
+              <span id="source-unavailable-label" class="font-mono-ledger text-[11px] uppercase tracking-wide font-bold text-[#bb2d14]">
+                [Design Inset: Source Unavailable State]
+              </span>
+              <span class="font-mono-ledger text-[9px] text-[var(--meta)]">RECOVERY SPEC</span>
+            </div>
+            <p class="font-mono-ledger text-[11px] text-[var(--ink)] leading-snug">
+              When deployment receipt is missing or unverified, dashboard link is disabled.
+            </p>
+            <div class="mt-2 pt-2 border-t border-[var(--rule-light)] flex items-center justify-between text-[11px] font-mono-ledger">
+              <span class="text-[var(--meta)]">Launch action: <span class="text-[var(--rule)] line-through">Disabled</span></span>
+              <span class="text-[10px] text-[#bb2d14] bg-[var(--paper)] px-1.5 py-0.5 border border-[#bb2d14]">Missing receipt</span>
+            </div>
+          </aside>
+
+        </div>
+
+        <!-- Phone Footer with quiet provenance & safe area -->
+        <footer class="bottom-safe px-4 py-2 bg-[var(--ground)] border-t border-[var(--rule)] flex items-center justify-between text-[10px] font-mono-ledger text-[var(--meta)]">
+          <span>HOLOCENE LEDGER MOBILE</span>
+          <span>NO HORIZONTAL SCROLL</span>
+        </footer>
+
+      </div>
+    </div>
+
+
+    <!-- PHONE STATE 2: MOBILE NAVIGATION DRAWER OPEN STATE -->
+    <div class="flex flex-col items-center">
+      <div class="flex items-center justify-between w-[390px] px-2 mb-2 font-mono-ledger text-[11px] uppercase tracking-wide text-[#57574f]">
+        <span>State 02: Open Navigation Drawer</span>
+        <span>Modal Focus / Escape to Close</span>
+      </div>
+
+      <!-- Device Frame 390px with Open Drawer Overlay -->
+      <div class="w-[390px] bg-[var(--ground)] text-[var(--ink)] border-2 border-[var(--rule)] shadow-2xl relative flex flex-col min-h-[820px] overflow-hidden select-text">
+
+        <!-- Background Dimmed Directory (Partially visible behind drawer) -->
+        <div class="absolute inset-0 bg-[#121210]/60 z-10 flex flex-col pointer-events-none" aria-hidden="true">
+          <!-- Ghosted content for realistic backdrop occlusion -->
+          <div class="notch-padding px-4 py-3 bg-[var(--ground)]/20 border-b border-[var(--rule)] flex justify-between text-[10px] font-mono-ledger text-white/50">
+            <span>33GOD HOLOCENE</span>
+            <span>DAY/NIGHT</span>
+          </div>
+          <div class="p-4 flex-1 flex flex-col gap-4 opacity-15 filter blur-[1px]">
+            <div class="h-6 bg-white/20 w-3/4"></div>
+            <div class="h-20 bg-white/20 w-full"></div>
+            <div class="h-28 bg-white/20 w-full"></div>
+          </div>
+        </div>
+
+        <!-- Sliding Modal Drawer (Right or Left dock; here occupying full accessible mobile sheet w=320-350px) -->
+        <dialog open aria-label="Hierarchical Navigation Menu" class="relative z-20 m-0 w-[330px] h-full min-h-[820px] bg-[var(--paper)] border-r-2 border-[var(--rule)] flex flex-col p-0 text-[var(--ink)] shadow-2xl">
+
+          <!-- Drawer Header with labelled Close button -->
+          <div class="notch-padding px-4 py-3 bg-[var(--ground)] border-b-2 border-[var(--rule)] flex items-center justify-between">
+            <div class="flex flex-col">
+              <span class="font-mono-ledger text-[10px] uppercase text-[var(--meta)] tracking-wider">Navigation</span>
+              <span class="font-newsreader text-base italic font-semibold text-[var(--ink)]">Holocene IA</span>
+            </div>
+
+            <button type="button" class="touch-target px-2.5 py-1 border border-[var(--rule)] bg-[var(--paper)] text-[var(--ink)] font-mono-ledger text-xs font-bold uppercase tracking-wider flex items-center gap-1 hover:bg-[var(--surface-inset)] focus:ring-2 focus:ring-[#bb2d14]">
+              <span aria-hidden="true">✕</span>
+              <span>Close</span>
+            </button>
+          </div>
+
+          <!-- Drawer Navigation Hierarchy -->
+          <div class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-4 font-mono-ledger text-xs">
+
+            <!-- Products Section (Major and Expanded) -->
+            <div class="border border-[var(--rule)] bg-[var(--ground)]">
+              <div class="p-2 border-b border-[var(--rule)] flex items-center justify-between bg-[var(--paper)]">
+                <div class="flex items-center gap-2">
+                  <!-- Active marker indicator -->
+                  <span class="w-2 h-2 bg-[#bb2d14]" title="Current active primary route"></span>
+                  <a href="/products" class="font-bold text-[var(--ink)] underline decoration-[#bb2d14] decoration-2 underline-offset-4 touch-target flex items-center">
+                    Products
+                  </a>
+                  <span class="text-[10px] text-[var(--meta)]">(/products)</span>
+                </div>
+                <!-- Separate disclosure button -->
+                <button type="button" aria-expanded="true" aria-label="Collapse Products section" class="touch-target px-2 py-1 border border-[var(--rule)] bg-[var(--ground)] text-[11px] font-bold">
+                  ▼
+                </button>
+              </div>
+
+              <!-- Nested Subroutes under Products (44px touch rows) -->
+              <ul class="divide-y divide-[var(--rule-light)] bg-[var(--ground)] text-[11px]">
+                <li class="touch-target flex items-center justify-between px-3 pl-6 hover:bg-[var(--surface-inset)]">
+                  <a href="/products?stage=launch" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Preparing to launch</span>
+                    <span class="text-[10px] text-[var(--meta)] font-normal">?stage=launch</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center justify-between px-3 pl-6 hover:bg-[var(--surface-inset)]">
+                  <a href="/products?stage=live" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Live</span>
+                    <span class="text-[10px] text-[var(--meta)] font-normal">?stage=live</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Workspace Section -->
+            <div class="border border-[var(--rule-light)] bg-[var(--paper)]">
+              <div class="p-2 border-b border-[var(--rule-light)] flex items-center justify-between text-[var(--meta)]">
+                <span class="font-bold uppercase tracking-wider text-[10px] text-[var(--ink)]">Workspace</span>
+                <button type="button" aria-expanded="false" aria-label="Expand Workspace section" class="touch-target px-2 py-1 text-[10px] border border-[var(--rule-light)]">
+                  ▶
+                </button>
+              </div>
+              <ul class="divide-y divide-[var(--rule-light)] text-[11px]">
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/?view=agents" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Agents</span>
+                    <span class="text-[10px] text-[var(--meta)]">?view=agents</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/?view=projects" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Projects</span>
+                    <span class="text-[10px] text-[var(--meta)]">?view=projects</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/genesis" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Genesis</span>
+                    <span class="text-[10px] text-[var(--meta)]">/genesis</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Media Section -->
+            <div class="border border-[var(--rule-light)] bg-[var(--paper)]">
+              <div class="p-2 border-b border-[var(--rule-light)] flex items-center justify-between text-[var(--meta)]">
+                <span class="font-bold uppercase tracking-wider text-[10px] text-[var(--ink)]">Media</span>
+                <button type="button" aria-expanded="false" aria-label="Expand Media section" class="touch-target px-2 py-1 text-[10px] border border-[var(--rule-light)]">
+                  ▶
+                </button>
+              </div>
+              <ul class="divide-y divide-[var(--rule-light)] text-[11px]">
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/voice" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Voice</span>
+                    <span class="text-[10px] text-[var(--meta)]">/voice</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/wax" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Wax</span>
+                    <span class="text-[10px] text-[var(--meta)]">/wax</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/transcripts" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Transcripts</span>
+                    <span class="text-[10px] text-[var(--meta)]">/transcripts</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/artifacts" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Artifacts</span>
+                    <span class="text-[10px] text-[var(--meta)]">/artifacts</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <!-- System Section -->
+            <div class="border border-[var(--rule-light)] bg-[var(--paper)]">
+              <div class="p-2 border-b border-[var(--rule-light)] flex items-center justify-between text-[var(--meta)]">
+                <span class="font-bold uppercase tracking-wider text-[10px] text-[var(--ink)]">System</span>
+                <button type="button" aria-expanded="false" aria-label="Expand System section" class="touch-target px-2 py-1 text-[10px] border border-[var(--rule-light)]">
+                  ▶
+                </button>
+              </div>
+              <ul class="divide-y divide-[var(--rule-light)] text-[11px]">
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/candybar" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Candybar</span>
+                    <span class="text-[10px] text-[var(--meta)]">/candybar</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/settings" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Settings</span>
+                    <span class="text-[10px] text-[var(--meta)]">/settings</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/mini" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Mini</span>
+                    <span class="text-[10px] text-[var(--meta)]">/mini</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/hooks" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Hooks</span>
+                    <span class="text-[10px] text-[var(--meta)]">/hooks</span>
+                  </a>
+                </li>
+                <li class="touch-target flex items-center px-3 hover:bg-[var(--ground)]">
+                  <a href="/legacy" class="flex-1 py-2 text-[var(--ink)] flex items-center justify-between">
+                    <span>Legacy dashboard</span>
+                    <span class="text-[10px] text-[var(--meta)]">/legacy</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Drawer Footer Specs & Escape Info -->
+            <div class="p-2 border border-dashed border-[var(--rule-light)] bg-[var(--surface-inset)] text-[10px] text-[var(--meta)] leading-tight">
+              <div>• Modal focus trap active</div>
+              <div>• [Escape] closes drawer &amp; returns focus to Menu</div>
+              <div>• Selecting route closes drawer</div>
+            </div>
+
+          </div>
+
+          <!-- Drawer Bottom Safe Area Bar -->
+          <div class="bottom-safe px-4 py-2 bg-[var(--ground)] border-t border-[var(--rule)] flex items-center justify-between text-[10px] font-mono-ledger text-[var(--meta)]">
+            <span>DRAWER OPEN STATE</span>
+            <span class="text-[#bb2d14]">ESC TO DISMISS</span>
+          </div>
+
+        </dialog>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Technical Spec & Token Manifest Footer -->
+  <footer class="w-full max-w-5xl mx-auto border-t border-[#23231f] pt-4 px-2 font-mono-ledger text-[11px] text-[#57574f] flex flex-wrap justify-between gap-4">
+    <div>
+      <span class="font-bold text-[#121210]">LEDGER TOKENS:</span>
+      Ground #f1f0eb | Paper #fbfaf7 | Ink #121210 | Rule #23231f | Meta #57574f | Focus #bb2d14
+    </div>
+    <div>
+      <span class="font-bold text-[#121210]">NIGHT PAIR:</span>
+      Ground #1c1a17 | Surface #26231f | Text #ede7dd | Focus #ff6a4d
+    </div>
+  </footer>
+
+</body>
+</html>

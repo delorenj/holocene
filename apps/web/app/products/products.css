@@ -1,0 +1,28 @@
+.hub-root .products-content { max-width: 1180px; padding: 24px clamp(16px, 3vw, 40px) 48px; margin: 0 auto; }
+.hub-root .products-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.hub-root .products-heading h1 { margin: 0 0 8px; font: 550 32px/36px var(--font-display); color: var(--ink); }
+.hub-root .products-heading p { color: var(--ink-2); }
+.hub-root .products-filter { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 20px 0 16px; border-bottom: 2px solid var(--ink); }
+.hub-root .products-filter a { padding: 6px 0; color: var(--ink-2); text-underline-offset: 5px; }
+.hub-root .products-filter [aria-current="page"] { font-weight: 700; text-decoration-thickness: 3px; color: var(--pop); }
+.hub-root .products-source { margin: 16px 0 24px; color: var(--ink-3); font: 400 12px/18px var(--font-mono); overflow-wrap: anywhere; }
+.hub-root .products-section { margin-bottom: 28px; }
+.hub-root .products-section h2 { margin-bottom: 12px; font: 650 19px/26px var(--font-sans); color: var(--ink); }
+.hub-root .products-list { padding: 0; margin: 0; list-style: none; border-top: 2px solid var(--ink); }
+.hub-root .product-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 18px 16px; border-bottom: 1px solid var(--line-strong); background: var(--surface); }
+.hub-root .product-row h3 { margin: 0 0 5px; font: 650 18px/24px var(--font-sans); color: var(--ink); }
+.hub-root .product-provenance { color: var(--ink-3); font: 400 11px/18px var(--font-mono); overflow-wrap: anywhere; }
+.hub-root .product-issue { color: var(--broken); margin-top: 6px; overflow-wrap: anywhere; }
+.hub-root .product-action { display: inline-block; padding: 9px 12px; border: 2px solid var(--ink); color: var(--ink); font-weight: 650; text-decoration: none; box-shadow: 2px 2px 0 var(--shadow); }
+.hub-root .product-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+.hub-root .product-unavailable { color: var(--ink-3); }
+.hub-root .products-issues { padding-top: 12px; border-top: 1px solid var(--line-strong); }
+.hub-root .products-issues summary { cursor: pointer; font-weight: 650; padding: 8px 0; }
+.hub-root .products-issues summary:focus-visible { outline: 2px solid var(--pop); outline-offset: 2px; }
+.hub-root .products-issues ul { padding-left: 20px; color: var(--ink-2); }
+.hub-root .products-issues li { margin: 8px 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .hub-root .product-row { grid-template-columns: minmax(0, 1fr); padding: 16px 12px; }
+  .hub-root .product-action { justify-self: start; }
+  .hub-root .products-heading h1 { font-size: 28px; }
+}

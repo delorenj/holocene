@@ -5,8 +5,7 @@ import type { Signal, Source, Ticket } from "./types";
 
 // Small atoms from the 33GOD kit, ported for the Next app: the seven signal glyphs,
 // durations, the source strip, copyable machine words and the Plane band track.
-// HubTabs is the one nav strip every surface shares — a tab added here appears
-// everywhere; a surface marks itself with `current`.
+// HubShell provides the shared hierarchy for every Ledger surface.
 
 // Deckard's marks (docs/visual-language.md): amber ! needs you, red x failed, green pulsing > working,
 // solid green check finished a turn and ready for the next message, dark dot nothing known.
@@ -127,45 +126,6 @@ export function BoxIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-const HUB_TABS: Array<{ id: string; label: string; href: string }> = [
-  { id: "agents", label: "Agents", href: "/?view=agents" },
-  { id: "projects", label: "Projects", href: "/?view=projects" },
-  { id: "live", label: "Live", href: "/live" },
-  { id: "genesis", label: "Genesis", href: "/genesis" },
-  { id: "voice", label: "Voice", href: "/voice" },
-  { id: "wax", label: "Wax", href: "/wax" },
-  { id: "transcripts", label: "Transcripts", href: "/transcripts" },
-  { id: "artifacts", label: "Artifacts", href: "/artifacts" },
-  { id: "candybar", label: "Candybar", href: "/candybar" },
-  { id: "settings", label: "Settings", href: "/settings" },
-  { id: "mini", label: "Mini", href: "/mini" }
-];
-
-/**
- * The shared Holocene tab strip. `current` marks one tab aria-current="page".
- * `onSelect` lets the hub switch Agents/Projects in place: return true to
- * handle the click (the href is not followed).
- */
-export function HubTabs({ current, onSelect }: { current?: string; onSelect?: (id: string) => boolean }) {
-  return (
-    <nav className="hub-tabs" aria-label="Views">
-      {HUB_TABS.map((tab) => (
-        <a
-          key={tab.id}
-          className="hub-tab"
-          href={tab.href}
-          aria-current={current === tab.id ? "page" : undefined}
-          onClick={onSelect ? (e) => {
-            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-            if (onSelect(tab.id)) e.preventDefault();
-          } : undefined}
-        >
-          {tab.label}
-        </a>
-      ))}
-    </nav>
-  );
-}
 
 export function ComponentIcon() {
   return (

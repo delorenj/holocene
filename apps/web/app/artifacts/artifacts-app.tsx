@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { HubTabs } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 
 type Category = "all" | "images" | "videos" | "audio" | "pdfs" | "other";
@@ -66,8 +66,8 @@ export function ArtifactsApp() {
   const updateSearch = (v: string) => { setSearch(v); setPage(1); };
   const changeMode = (v: "files" | "pictures" | "video") => { setMode(v); setPage(1); };
   return <main className="hub-root artifacts-shell" data-theme={theme}>
-    <header className="hub-header"><Brand /><HubTabs current="artifacts" /><div className="hub-header-end"><ThemeToggle theme={theme} onToggle={toggleTheme} /></div></header>
-    <div className="artifact-content"><div className="artifact-heading"><p className="hub-label">Published library</p><h1>Artifacts</h1><p>Files in MinIO and video publications in R2, together.</p></div>
+    <HubShell current="artifacts"><Brand /><div className="hub-header-end"><ThemeToggle theme={theme} onToggle={toggleTheme} /></div></HubShell>
+    <div className="artifact-content" id="hub-content" tabIndex={-1}><div className="artifact-heading"><p className="hub-label">Published library</p><h1>Artifacts</h1><p>Files in MinIO and video publications in R2, together.</p></div>
     <section className="artifact-controls" aria-label="Browse artifacts">
       <div className="artifact-modes" aria-label="Gallery mode">
         {([["files", "All files"], ["pictures", "Picture gallery"], ["video", "Video gallery"]] as const).map(([id, text]) => <button key={id} type="button" aria-pressed={mode === id} onClick={() => changeMode(id)}>{text}</button>)}

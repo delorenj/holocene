@@ -1,0 +1,98 @@
+{
+  "success": true,
+  "data": {
+    "resource": "screen",
+    "id": "e18675d5682c4ff985e66519c011eff9",
+    "project": "14104283770497705087",
+    "title": "HOLOC-57 Mobile Phone Concept — Holocene Products & Drawer",
+    "device": "DESKTOP",
+    "screenType": "DESIGN",
+    "canvasUrl": "https://stitch.google.com/projects/14104283770497705087?node-id=e18675d5682c4ff985e66519c011eff9",
+    "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55:download",
+    "htmlCode": {
+      "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b:download",
+      "mimeType": "text/html",
+      "name": "projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b"
+    },
+    "rawScreen": {
+      "outputComponents": [
+        {
+          "design": {
+            "screens": [
+              {
+                "deviceType": "DESKTOP",
+                "generatedBy": "create_datastore_entry",
+                "height": "2974",
+                "htmlCode": {
+                  "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b:download",
+                  "mimeType": "text/html",
+                  "name": "projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b"
+                },
+                "id": "e18675d5682c4ff985e66519c011eff9",
+                "name": "projects/14104283770497705087/screens/e18675d5682c4ff985e66519c011eff9",
+                "prompt": "HOLOC-57 Mobile Phone Concept — Holocene Products & Drawer",
+                "screenMetadata": {
+                  "agentType": "PRO_AGENT",
+                  "status": "COMPLETE"
+                },
+                "screenType": "DESIGN",
+                "screenshot": {
+                  "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55:download",
+                  "name": "projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55"
+                },
+                "theme": {},
+                "title": "HOLOC-57 Mobile Phone Concept — Holocene Products & Drawer",
+                "width": "2560"
+              }
+            ],
+            "theme": {}
+          }
+        },
+        {
+          "text": "I have created the mobile phone concept for **HOLOC-57: Holocene `/products`** rendered at the exact 390px phone viewport under the implemented **Ledger editorial system** (`#f1f0eb` ground, `#fbfaf7` paper, `#121210` ink, `#23231f` rules, `#57574f` metadata, and `#bb2d14` focus/active vermilion).\n\n### Design Architecture & Implementation Details\n\n1. **Phone Products Directory (State 01 — Closed Drawer)**\n   - **Header & Breadcrumb**: Clean `33GOD HOLOCENE` top utility bar with persistent Day/Night control and UTC timestamp. Prominent touch-accessible `≡ Menu` button paired with the `/ Products` breadcrumb without horizontal tabs or mobile bottom navigation bars.\n   - **Editorial Statement**: Editorial headline in Newsreader italic: *\"Three preparing to launch. One live.\"* with Atkinson Hyperlegible Next supporting copy.\n   - **Vertically Stacked Rows**:\n     - **Preparing to launch [3]**:\n       - `Tower of Lost Things`: `pjangler / committed .launch.yaml` (age: 14m, receipt: `2026-11-18-a7c`), pointing to `https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html` with explicit external indicator `↗ [ext]`.\n       - `Green In Between`: `pjangler / committed .launch.yaml` (age: 1h 12m, receipt: `2026-11-18-9bf`), pointing to `https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html`.\n       - `Gruvato`: `pjangler / committed .launch.yaml` (age: 3h 48m, receipt: `2026-11-17-4e1`), pointing to `https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html`.\n     - **Live [1]**:\n       - `Earshot`: `earshot-core / published release v2.4.1` (age: 4d 18h, receipt: `2026-11-14-live`), linking internally to `→ [/live]`.\n   - **Source Unavailable State**: Inset callout demonstrating how a missing or unverified receipt gracefully disables the launch action without misrepresenting lifecycle status or fabricating fake products.\n   - **Strict Constraints**: 44px minimum touch targets, no horizontal page scrolling (fluid down to 320px), zero blue SaaS gradients, emoji, or decorative graphics.\n\n2. **Mobile Navigation Drawer (State 02 — Open Drawer)**\n   - Communicated side-by-side over a dimmed backdrop with the directory partially visible beneath.\n   - **Drawer Header**: Explicit `✕ Close` button with modal focus trap semantics (Escape key returns focus to the `Menu` button; selecting any route closes the drawer).\n   - **Hierarchical Structure with Disclosure Controls**:\n     - **Products (`/products`)**: Major section, permanently marked active with the vermilion indicator and default-expanded disclosure containing `Preparing to launch` (`/products?stage=launch`) and `Live` (`/products?stage=live`).\n     - **Workspace**: Disclosed sub-links for `Agents` (`/?view=agents`), `Projects` (`/?view=projects`), and `Genesis` (`/genesis`).\n     - **Media**: Disclosed sub-links for `Voice` (`/voice`), `Wax` (`/wax`), `Transcripts` (`/transcripts`), and `Artifacts` (`/artifacts`).\n     - **System**: Disclosed sub-links for `Candybar` (`/candybar`), `Settings` (`/settings`), `Mini` (`/mini`), `Hooks` (`/hooks`), and `Legacy dashboard` (`/legacy`).\n   - Independent disclosure buttons separate from navigation links, with wrapping for long labels.\n\n*(Note: Artifact provided for specification and visual design reference.)*"
+        },
+        {
+          "suggestion": "Show the phone screen in Night theme (#1c1a17 ground, #26231f surface, #ede7dd text)"
+        },
+        {
+          "suggestion": "Explore interactive drawer animations (slide-over transition and backdrop blur)"
+        },
+        {
+          "suggestion": "Review the 320px ultra-compact layout adaptation"
+        }
+      ],
+      "projectId": "14104283770497705087",
+      "sessionId": "4580030643581838974",
+      "deviceType": "DESKTOP",
+      "generatedBy": "create_datastore_entry",
+      "height": "2974",
+      "htmlCode": {
+        "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b:download",
+        "mimeType": "text/html",
+        "name": "projects/14104283770497705087/files/728eaf21811144ca9cfc06b4091fa12b"
+      },
+      "id": "e18675d5682c4ff985e66519c011eff9",
+      "name": "projects/14104283770497705087/screens/e18675d5682c4ff985e66519c011eff9",
+      "prompt": "HOLOC-57 Mobile Phone Concept — Holocene Products & Drawer",
+      "screenMetadata": {
+        "agentType": "PRO_AGENT",
+        "status": "COMPLETE"
+      },
+      "screenType": "DESIGN",
+      "screenshot": {
+        "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55:download",
+        "name": "projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55"
+      },
+      "theme": {},
+      "title": "HOLOC-57 Mobile Phone Concept — Holocene Products & Drawer",
+      "width": "2560",
+      "agentText": "I have created the mobile phone concept for **HOLOC-57: Holocene `/products`** rendered at the exact 390px phone viewport under the implemented **Ledger editorial system** (`#f1f0eb` ground, `#fbfaf7` paper, `#121210` ink, `#23231f` rules, `#57574f` metadata, and `#bb2d14` focus/active vermilion).\n\n### Design Architecture & Implementation Details\n\n1. **Phone Products Directory (State 01 — Closed Drawer)**\n   - **Header & Breadcrumb**: Clean `33GOD HOLOCENE` top utility bar with persistent Day/Night control and UTC timestamp. Prominent touch-accessible `≡ Menu` button paired with the `/ Products` breadcrumb without horizontal tabs or mobile bottom navigation bars.\n   - **Editorial Statement**: Editorial headline in Newsreader italic: *\"Three preparing to launch. One live.\"* with Atkinson Hyperlegible Next supporting copy.\n   - **Vertically Stacked Rows**:\n     - **Preparing to launch [3]**:\n       - `Tower of Lost Things`: `pjangler / committed .launch.yaml` (age: 14m, receipt: `2026-11-18-a7c`), pointing to `https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html` with explicit external indicator `↗ [ext]`.\n       - `Green In Between`: `pjangler / committed .launch.yaml` (age: 1h 12m, receipt: `2026-11-18-9bf`), pointing to `https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html`.\n       - `Gruvato`: `pjangler / committed .launch.yaml` (age: 3h 48m, receipt: `2026-11-17-4e1`), pointing to `https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html`.\n     - **Live [1]**:\n       - `Earshot`: `earshot-core / published release v2.4.1` (age: 4d 18h, receipt: `2026-11-14-live`), linking internally to `→ [/live]`.\n   - **Source Unavailable State**: Inset callout demonstrating how a missing or unverified receipt gracefully disables the launch action without misrepresenting lifecycle status or fabricating fake products.\n   - **Strict Constraints**: 44px minimum touch targets, no horizontal page scrolling (fluid down to 320px), zero blue SaaS gradients, emoji, or decorative graphics.\n\n2. **Mobile Navigation Drawer (State 02 — Open Drawer)**\n   - Communicated side-by-side over a dimmed backdrop with the directory partially visible beneath.\n   - **Drawer Header**: Explicit `✕ Close` button with modal focus trap semantics (Escape key returns focus to the `Menu` button; selecting any route closes the drawer).\n   - **Hierarchical Structure with Disclosure Controls**:\n     - **Products (`/products`)**: Major section, permanently marked active with the vermilion indicator and default-expanded disclosure containing `Preparing to launch` (`/products?stage=launch`) and `Live` (`/products?stage=live`).\n     - **Workspace**: Disclosed sub-links for `Agents` (`/?view=agents`), `Projects` (`/?view=projects`), and `Genesis` (`/genesis`).\n     - **Media**: Disclosed sub-links for `Voice` (`/voice`), `Wax` (`/wax`), `Transcripts` (`/transcripts`), and `Artifacts` (`/artifacts`).\n     - **System**: Disclosed sub-links for `Candybar` (`/candybar`), `Settings` (`/settings`), `Mini` (`/mini`), `Hooks` (`/hooks`), and `Legacy dashboard` (`/legacy`).\n   - Independent disclosure buttons separate from navigation links, with wrapping for long labels.\n\n*(Note: Artifact provided for specification and visual design reference.)*",
+      "suggestions": [
+        "Show the phone screen in Night theme (#1c1a17 ground, #26231f surface, #ede7dd text)",
+        "Explore interactive drawer animations (slide-over transition and backdrop blur)",
+        "Review the 320px ultra-compact layout adaptation"
+      ],
+      "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/5b72f091ced642c88863e207f5227d55:download"
+    }
+  }
+}

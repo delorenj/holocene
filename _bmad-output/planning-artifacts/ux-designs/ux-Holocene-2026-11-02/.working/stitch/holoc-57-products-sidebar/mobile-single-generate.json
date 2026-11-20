@@ -1,0 +1,774 @@
+{
+  "success": true,
+  "data": {
+    "resource": "screen",
+    "id": "ab1b8cdd2fdd4409a3b3f89a55a747ba",
+    "project": "14104283770497705087",
+    "title": "Holocene Products Directory — Mobile Viewport",
+    "device": "MOBILE",
+    "screenType": "DESIGN",
+    "canvasUrl": "https://stitch.google.com/projects/14104283770497705087?node-id=ab1b8cdd2fdd4409a3b3f89a55a747ba",
+    "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558:download",
+    "htmlCode": {
+      "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a:download",
+      "mimeType": "text/html",
+      "name": "projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a"
+    },
+    "rawScreen": {
+      "outputComponents": [
+        {
+          "design": {
+            "screens": [
+              {
+                "designSystem": {
+                  "designSystem": {
+                    "displayName": "Holocene Ledger",
+                    "styleGuidelines": "## Brand & Style\n\nThe design system embodies the authority, tactility, and meticulous permanence of historical record-keeping reimagined for high-density modern tooling. It bridges archival archival-grade publishing with utilitarian instrumentation. The emotional register is deliberate, scholarly, unhurried, and resolute—delivering an experience akin to working within an impeccably bound ledger or reading a typography-dense broadsheet.\n\nThe visual style is **Archival Brutalism / Strict Editorial**:\n- Explicit structure: Physical lines and ledger rules define layouts, eschewing ambient floating cards.\n- Material honesty: Off-white parchment fields and dense black ink emulate high-grade newsprint and linen paper.\n- Precise graphic contrast: High-contrast ink rules paired with flat, hard-edged offset drop shadows evoke physical stamps, letterpress slugs, and archival index trays.\n- No synthetic ephemera: Soft gaussian blurs, luminous gradients, and translucent glass treatments are entirely prohibited.\n\n## Layout & Spacing\n\nThe layout model simulates a structured ledger ledger-sheet composed of explicit hairline rule intersections. \n\n- **Grid Architecture:** Desktop views operate on a 12-column rigid columnar grid; tablet scales to 8 columns; mobile collapses to 4 columns. Columns are joined by explicit structural dividers.\n- **Rhythm:** Spacing follows a modular scale derived from line-height multiples (`0.25rem`, `0.5rem`, `1rem`, `1.5rem`, `2.5rem`). Layout components clamp to borders rather than floating freely.\n- **Density:** High information density is supported by allowing elements to touch outer bounding borders, separated by continuous `1px` horizontal and vertical `#23231f` rules.\n- **Margins:** Exterior canvas padding is restrained to emphasize wide, broadsheet-style horizontal spans.\n\n## Elevation & Depth\n\nThis system rejects ambient soft blurs, diffuse drop shadows, and simulated lighting models. Depth is mechanical and tactile:\n\n- **Surface Contrast:** Depth is established primarily via flat planes: the base ground (`#f1f0eb`) supports distinct paper blocks (`#fbfaf7`), capped by the inverse header bar (`#141412`).\n- **Hard Offset Cast Shadows:** Elevated components (modals, dropdown popovers, active card tiers, button press actions) employ a zero-blur, hard offset shadow:\n  - Standard Elevation: `2px 2px 0px 0px #23231f`\n  - High Elevation (Dialogs, flyouts): `4px 4px 0px 0px #23231f`\n- **Rules & Framing:** Every functional segment is bounded by a crisp `1px solid #23231f` border.\n- **No Soft Transitions:** Transitions between elevation states occur instantly or via micro-snaps (50–100ms cubic linear step), reinforcing physical letterpress stamping.\n\n## Components\n\n### Header Chrome\n- **Appearance:** Solid `#141412` background spanning full canvas width, bottom-bordered with `1px solid #23231f`.\n- **Text & Nav:** Off-white `#f1f0eb` text. Active page indicator marked by a solid vermilion (`#bb2d14`) underline (2px thickness) or inverted vermilion flag tag.\n\n### Buttons\n- **Primary:** Background `#121210`, text `#fbfaf7`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`. On `:hover`, shift shadow to `3px 3px 0px 0px #23231f`. On `:active`, transform translate `2px 2px` with zero shadow.\n- **Secondary:** Background `#fbfaf7`, text `#121210`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`.\n- **Focus State:** Keyboard focus triggers a strict `2px solid #bb2d14` outline with an explicit `2px` offset.\n\n### Cards & Ledger Panes\n- **Base:** Background `#fbfaf7`, enclosed entirely by `1px solid #23231f`. Hard shadow `2px 2px 0px 0px #23231f`.\n- **Header Slot:** Separated from body content by a continuous horizontal rule (`1px solid #23231f`). Titles rendered in Newsreader serif.\n\n### Inputs & Form Fields\n- **Container:** Background `#fbfaf7`, border `1px solid #23231f`, text `#121210`. Text in sentence-case.\n- **Focus:** No glowing halos. On `:focus`, apply an inner or outer hairline border with a hard `2px solid #bb2d14` outline.\n- **Monospace Fields:** Numbers, reference codes, and formulas automatically switch to monospaced styling.\n\n### Chips & Badges\n- **Structure:** Square corners, `1px solid #23231f`, background `#f1f0eb`.\n- **Selected State:** Background `#bb2d14`, text `#fbfaf7`, border `#bb2d14`.\n- **Metadata Tag:** Font size 11px, muted `#57574f` text with monospaced code notation when referencing ledger IDs.\n\n### Checkboxes & Radios\n- **Geometry:** Strict squares for checkboxes; sharp diamond or square-in-square markers for radios (avoid organic circular radii when possible).\n- **Check State:** Solid `#121210` fill with `#fbfaf7` hard crosshair or tick; vermilion outline on keyboard focus.\n\n### Tables & Data Grids\n- **Header:** Sticky `#f1f0eb` row, separated by `2px solid #23231f`.\n- **Row dividers:** `1px solid #23231f` bottom rules.\n- **Alternating rows:** Avoid zebra striping; delineate rows strictly with thin rules. Numeric data right-aligned in monospace.",
+                    "theme": {
+                      "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+                      "bodyFontFamily": "Atkinson Hyperlegible Next",
+                      "colorMode": "LIGHT",
+                      "colorVariant": "FIDELITY",
+                      "customColor": "#121210",
+                      "designMd": "---\nname: Holocene Ledger\ncolors:\n  surface: '#faf9f4'\n  surface-dim: '#dbdad5'\n  surface-bright: '#faf9f4'\n  surface-container-lowest: '#ffffff'\n  surface-container-low: '#f5f4ef'\n  surface-container: '#efeee9'\n  surface-container-high: '#e9e8e3'\n  surface-container-highest: '#e3e3de'\n  on-surface: '#1b1c19'\n  on-surface-variant: '#474741'\n  inverse-surface: '#30312e'\n  inverse-on-surface: '#f2f1ec'\n  outline: '#787770'\n  outline-variant: '#c8c7be'\n  surface-tint: '#5f5e5b'\n  primary: '#000000'\n  on-primary: '#ffffff'\n  primary-container: '#1c1c19'\n  on-primary-container: '#858480'\n  inverse-primary: '#c9c6c2'\n  secondary: '#b4280f'\n  on-secondary: '#ffffff'\n  secondary-container: '#fe5d3f'\n  on-secondary-container: '#5d0900'\n  tertiary: '#000000'\n  on-tertiary: '#ffffff'\n  tertiary-container: '#1c1c18'\n  on-tertiary-container: '#85847e'\n  error: '#ba1a1a'\n  on-error: '#ffffff'\n  error-container: '#ffdad6'\n  on-error-container: '#93000a'\n  primary-fixed: '#e5e2de'\n  primary-fixed-dim: '#c9c6c2'\n  on-primary-fixed: '#1c1c19'\n  on-primary-fixed-variant: '#474744'\n  secondary-fixed: '#ffdad3'\n  secondary-fixed-dim: '#ffb4a5'\n  on-secondary-fixed: '#3e0400'\n  on-secondary-fixed-variant: '#8e1300'\n  tertiary-fixed: '#e5e2dc'\n  tertiary-fixed-dim: '#c9c6c0'\n  on-tertiary-fixed: '#1c1c18'\n  on-tertiary-fixed-variant: '#474742'\n  background: '#faf9f4'\n  on-background: '#1b1c19'\n  surface-variant: '#e3e3de'\ntypography:\n  display:\n    fontFamily: Newsreader\n    fontSize: 44px\n    fontWeight: '400'\n    lineHeight: 52px\n    letterSpacing: -0.02em\n  display-mobile:\n    fontFamily: Newsreader\n    fontSize: 32px\n    fontWeight: '400'\n    lineHeight: 40px\n    letterSpacing: -0.015em\n  headline-lg:\n    fontFamily: Newsreader\n    fontSize: 32px\n    fontWeight: '500'\n    lineHeight: 40px\n    letterSpacing: -0.01em\n  headline-lg-mobile:\n    fontFamily: Newsreader\n    fontSize: 26px\n    fontWeight: '500'\n    lineHeight: 34px\n    letterSpacing: -0.01em\n  headline-md:\n    fontFamily: Newsreader\n    fontSize: 24px\n    fontWeight: '500'\n    lineHeight: 32px\n    letterSpacing: -0.005em\n  headline-sm:\n    fontFamily: Newsreader\n    fontSize: 20px\n    fontWeight: '600'\n    lineHeight: 28px\n  body-lg:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 16px\n    fontWeight: '400'\n    lineHeight: 24px\n  body-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 14px\n    fontWeight: '400'\n    lineHeight: 20px\n  body-sm:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 12px\n    fontWeight: '400'\n    lineHeight: 16px\n  label-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 13px\n    fontWeight: '600'\n    lineHeight: 16px\n    letterSpacing: 0.02em\n  label-sm:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 11px\n    fontWeight: '700'\n    lineHeight: 14px\n    letterSpacing: 0.04em\n  code-md:\n    fontFamily: Courier Prime\n    fontSize: 13px\n    fontWeight: '400'\n    lineHeight: 18px\n  code-sm:\n    fontFamily: Courier Prime\n    fontSize: 11px\n    fontWeight: '400'\n    lineHeight: 16px\nspacing:\n  gutter: 1rem\n  gutter-desktop: 1.5rem\n  margin: 1rem\n  margin-tablet: 1.5rem\n  margin-desktop: 2.5rem\n  space-xs: 0.25rem\n  space-sm: 0.5rem\n  space-md: 1rem\n  space-lg: 1.5rem\n  space-xl: 2.5rem\n---\n\n## Brand & Style\n\nThe design system embodies the authority, tactility, and meticulous permanence of historical record-keeping reimagined for high-density modern tooling. It bridges archival archival-grade publishing with utilitarian instrumentation. The emotional register is deliberate, scholarly, unhurried, and resolute—delivering an experience akin to working within an impeccably bound ledger or reading a typography-dense broadsheet.\n\nThe visual style is **Archival Brutalism / Strict Editorial**:\n- Explicit structure: Physical lines and ledger rules define layouts, eschewing ambient floating cards.\n- Material honesty: Off-white parchment fields and dense black ink emulate high-grade newsprint and linen paper.\n- Precise graphic contrast: High-contrast ink rules paired with flat, hard-edged offset drop shadows evoke physical stamps, letterpress slugs, and archival index trays.\n- No synthetic ephemera: Soft gaussian blurs, luminous gradients, and translucent glass treatments are entirely prohibited.\n\n## Colors\n\nThe palette simulates tactile print media, stark carbon ink, and deliberate editorial redlining.\n\n- **Ground & Canvas (`#f1f0eb`):** Warm unbleached paper wash acting as the global substrate.\n- **Surface / Paper (`#fbfaf7`):** Elevated, clean archival sheet tone for data cards, sheets, tables, and modal bodies.\n- **Ink Primary (`#121210`):** Near-black dense pigment for primary copy, headlines, and prominent glyphs.\n- **Rule Strong (`#23231f`):** Solid carbon stroke for structural dividers, borders, and hard shadow projections.\n- **Inverse Chrome (`#141412`):** Heavy, near-black top-level header bar creating immediate structural anchoring.\n- **Accent Vermilion (`#bb2d14`):** High-alert, historical redlining pigment reserved strictly for active navigation states, interactive focus brackets, critical diffs, and primary callouts.\n- **Metadata Muted (`#57574f`):** Softened carbon tint for auxiliary labels, timestamps, line numbers, and deactivated states. Maintain minimum contrast ratios strictly against both paper and ground.\n\n## Typography\n\nTypography drives the visual cadence. All titles, major headings, and section banners utilize **Newsreader**, bringing classical editorial balance and high optical contrast to large scales.\n\nBody text, navigation items, forms, and administrative panels use **Atkinson Hyperlegible Next**, ensuring unambiguous character differentiation even at small scales and high data density.\n\nAll file paths, timestamps, git hashes, tabular numeric columns, and key-value metrics mandate a fixed-width monospaced font (**Courier Prime** or Atkinson Hyperlegible Mono fallback).\n\n- Maintain **sentence-case** strictly across all interface layers, including table headers, button labels, alerts, and navigation links.\n- Optical kerning is prioritized for serif titles; avoid loose letter-spacing on Newsreader.\n\n## Layout & Spacing\n\nThe layout model simulates a structured ledger ledger-sheet composed of explicit hairline rule intersections. \n\n- **Grid Architecture:** Desktop views operate on a 12-column rigid columnar grid; tablet scales to 8 columns; mobile collapses to 4 columns. Columns are joined by explicit structural dividers.\n- **Rhythm:** Spacing follows a modular scale derived from line-height multiples (`0.25rem`, `0.5rem`, `1rem`, `1.5rem`, `2.5rem`). Layout components clamp to borders rather than floating freely.\n- **Density:** High information density is supported by allowing elements to touch outer bounding borders, separated by continuous `1px` horizontal and vertical `#23231f` rules.\n- **Margins:** Exterior canvas padding is restrained to emphasize wide, broadsheet-style horizontal spans.\n\n## Elevation & Depth\n\nThis system rejects ambient soft blurs, diffuse drop shadows, and simulated lighting models. Depth is mechanical and tactile:\n\n- **Surface Contrast:** Depth is established primarily via flat planes: the base ground (`#f1f0eb`) supports distinct paper blocks (`#fbfaf7`), capped by the inverse header bar (`#141412`).\n- **Hard Offset Cast Shadows:** Elevated components (modals, dropdown popovers, active card tiers, button press actions) employ a zero-blur, hard offset shadow:\n  - Standard Elevation: `2px 2px 0px 0px #23231f`\n  - High Elevation (Dialogs, flyouts): `4px 4px 0px 0px #23231f`\n- **Rules & Framing:** Every functional segment is bounded by a crisp `1px solid #23231f` border.\n- **No Soft Transitions:** Transitions between elevation states occur instantly or via micro-snaps (50–100ms cubic linear step), reinforcing physical letterpress stamping.\n\n## Shapes\n\nThe geometry of the interface is unyielding, clean, and razor-sharp.\n\n- **Radius Standard:** Absolute 0px (`roundedness: 0`). Elements terminate in sharp right angles, mirroring cut paper reams and cold-rolled metal rules.\n- **Micro-variant Exception:** If localized rendering engines require anti-aliasing relief, a hard ceiling of `2px` may be applied to micro tags, but default interfaces must prioritize strict rectangular perimeters.\n- **Borders:** Surfaces must terminate with distinct `1px` outer rule lines (`#23231f`). Never round input fields, chips, or modals.\n\n## Components\n\n### Header Chrome\n- **Appearance:** Solid `#141412` background spanning full canvas width, bottom-bordered with `1px solid #23231f`.\n- **Text & Nav:** Off-white `#f1f0eb` text. Active page indicator marked by a solid vermilion (`#bb2d14`) underline (2px thickness) or inverted vermilion flag tag.\n\n### Buttons\n- **Primary:** Background `#121210`, text `#fbfaf7`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`. On `:hover`, shift shadow to `3px 3px 0px 0px #23231f`. On `:active`, transform translate `2px 2px` with zero shadow.\n- **Secondary:** Background `#fbfaf7`, text `#121210`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`.\n- **Focus State:** Keyboard focus triggers a strict `2px solid #bb2d14` outline with an explicit `2px` offset.\n\n### Cards & Ledger Panes\n- **Base:** Background `#fbfaf7`, enclosed entirely by `1px solid #23231f`. Hard shadow `2px 2px 0px 0px #23231f`.\n- **Header Slot:** Separated from body content by a continuous horizontal rule (`1px solid #23231f`). Titles rendered in Newsreader serif.\n\n### Inputs & Form Fields\n- **Container:** Background `#fbfaf7`, border `1px solid #23231f`, text `#121210`. Text in sentence-case.\n- **Focus:** No glowing halos. On `:focus`, apply an inner or outer hairline border with a hard `2px solid #bb2d14` outline.\n- **Monospace Fields:** Numbers, reference codes, and formulas automatically switch to monospaced styling.\n\n### Chips & Badges\n- **Structure:** Square corners, `1px solid #23231f`, background `#f1f0eb`.\n- **Selected State:** Background `#bb2d14`, text `#fbfaf7`, border `#bb2d14`.\n- **Metadata Tag:** Font size 11px, muted `#57574f` text with monospaced code notation when referencing ledger IDs.\n\n### Checkboxes & Radios\n- **Geometry:** Strict squares for checkboxes; sharp diamond or square-in-square markers for radios (avoid organic circular radii when possible).\n- **Check State:** Solid `#121210` fill with `#fbfaf7` hard crosshair or tick; vermilion outline on keyboard focus.\n\n### Tables & Data Grids\n- **Header:** Sticky `#f1f0eb` row, separated by `2px solid #23231f`.\n- **Row dividers:** `1px solid #23231f` bottom rules.\n- **Alternating rows:** Avoid zebra striping; delineate rows strictly with thin rules. Numeric data right-aligned in monospace.",
+                      "font": "NEWSREADER",
+                      "headlineFont": "NEWSREADER",
+                      "headlineFontFamily": "Newsreader",
+                      "labelFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+                      "labelFontFamily": "Atkinson Hyperlegible Next",
+                      "namedColors": {
+                        "background": "#faf9f4",
+                        "error": "#ba1a1a",
+                        "error_container": "#ffdad6",
+                        "inverse_on_surface": "#f2f1ec",
+                        "inverse_primary": "#c9c6c2",
+                        "inverse_surface": "#30312e",
+                        "on_background": "#1b1c19",
+                        "on_error": "#ffffff",
+                        "on_error_container": "#93000a",
+                        "on_primary": "#ffffff",
+                        "on_primary_container": "#858480",
+                        "on_primary_fixed": "#1c1c19",
+                        "on_primary_fixed_variant": "#474744",
+                        "on_secondary": "#ffffff",
+                        "on_secondary_container": "#5d0900",
+                        "on_secondary_fixed": "#3e0400",
+                        "on_secondary_fixed_variant": "#8e1300",
+                        "on_surface": "#1b1c19",
+                        "on_surface_variant": "#474741",
+                        "on_tertiary": "#ffffff",
+                        "on_tertiary_container": "#85847e",
+                        "on_tertiary_fixed": "#1c1c18",
+                        "on_tertiary_fixed_variant": "#474742",
+                        "outline": "#787770",
+                        "outline_variant": "#c8c7be",
+                        "primary": "#000000",
+                        "primary_container": "#1c1c19",
+                        "primary_fixed": "#e5e2de",
+                        "primary_fixed_dim": "#c9c6c2",
+                        "secondary": "#b4280f",
+                        "secondary_container": "#fe5d3f",
+                        "secondary_fixed": "#ffdad3",
+                        "secondary_fixed_dim": "#ffb4a5",
+                        "surface": "#faf9f4",
+                        "surface_bright": "#faf9f4",
+                        "surface_container": "#efeee9",
+                        "surface_container_high": "#e9e8e3",
+                        "surface_container_highest": "#e3e3de",
+                        "surface_container_low": "#f5f4ef",
+                        "surface_container_lowest": "#ffffff",
+                        "surface_dim": "#dbdad5",
+                        "surface_tint": "#5f5e5b",
+                        "surface_variant": "#e3e3de",
+                        "tertiary": "#000000",
+                        "tertiary_container": "#1c1c18",
+                        "tertiary_fixed": "#e5e2dc",
+                        "tertiary_fixed_dim": "#c9c6c0"
+                      },
+                      "overrideNeutralColor": "#f1f0eb",
+                      "overridePrimaryColor": "#121210",
+                      "overrideSecondaryColor": "#bb2d14",
+                      "overrideTertiaryColor": "#23231f",
+                      "spacing": {
+                        "gutter": "1rem",
+                        "gutter-desktop": "1.5rem",
+                        "margin": "1rem",
+                        "margin-desktop": "2.5rem",
+                        "margin-tablet": "1.5rem",
+                        "space-lg": "1.5rem",
+                        "space-md": "1rem",
+                        "space-sm": "0.5rem",
+                        "space-xl": "2.5rem",
+                        "space-xs": "0.25rem"
+                      },
+                      "spacingScale": 2,
+                      "typography": {
+                        "body-lg": {
+                          "fontFamily": "Atkinson Hyperlegible Next",
+                          "fontSize": "16px",
+                          "fontWeight": "400",
+                          "lineHeight": "24px"
+                        },
+                        "body-md": {
+                          "fontFamily": "Atkinson Hyperlegible Next",
+                          "fontSize": "14px",
+                          "fontWeight": "400",
+                          "lineHeight": "20px"
+                        },
+                        "body-sm": {
+                          "fontFamily": "Atkinson Hyperlegible Next",
+                          "fontSize": "12px",
+                          "fontWeight": "400",
+                          "lineHeight": "16px"
+                        },
+                        "code-md": {
+                          "fontFamily": "Courier Prime",
+                          "fontSize": "13px",
+                          "fontWeight": "400",
+                          "lineHeight": "18px"
+                        },
+                        "code-sm": {
+                          "fontFamily": "Courier Prime",
+                          "fontSize": "11px",
+                          "fontWeight": "400",
+                          "lineHeight": "16px"
+                        },
+                        "display": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "44px",
+                          "fontWeight": "400",
+                          "letterSpacing": "-0.02em",
+                          "lineHeight": "52px"
+                        },
+                        "display-mobile": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "32px",
+                          "fontWeight": "400",
+                          "letterSpacing": "-0.015em",
+                          "lineHeight": "40px"
+                        },
+                        "headline-lg": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "32px",
+                          "fontWeight": "500",
+                          "letterSpacing": "-0.01em",
+                          "lineHeight": "40px"
+                        },
+                        "headline-lg-mobile": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "26px",
+                          "fontWeight": "500",
+                          "letterSpacing": "-0.01em",
+                          "lineHeight": "34px"
+                        },
+                        "headline-md": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "24px",
+                          "fontWeight": "500",
+                          "letterSpacing": "-0.005em",
+                          "lineHeight": "32px"
+                        },
+                        "headline-sm": {
+                          "fontFamily": "Newsreader",
+                          "fontSize": "20px",
+                          "fontWeight": "600",
+                          "lineHeight": "28px"
+                        },
+                        "label-md": {
+                          "fontFamily": "Atkinson Hyperlegible Next",
+                          "fontSize": "13px",
+                          "fontWeight": "600",
+                          "letterSpacing": "0.02em",
+                          "lineHeight": "16px"
+                        },
+                        "label-sm": {
+                          "fontFamily": "Atkinson Hyperlegible Next",
+                          "fontSize": "11px",
+                          "fontWeight": "700",
+                          "letterSpacing": "0.04em",
+                          "lineHeight": "14px"
+                        }
+                      }
+                    }
+                  },
+                  "name": "assets/49b9312283874c3287269bf02199f2f8",
+                  "version": "1"
+                },
+                "deviceType": "MOBILE",
+                "generatedBy": "figaro_agent",
+                "height": "3214",
+                "htmlCode": {
+                  "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a:download",
+                  "mimeType": "text/html",
+                  "name": "projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a"
+                },
+                "id": "ab1b8cdd2fdd4409a3b3f89a55a747ba",
+                "name": "projects/14104283770497705087/screens/ab1b8cdd2fdd4409a3b3f89a55a747ba",
+                "prompt": "Single dedicated mobile phone screen (device type MOBILE, 390px width layout, natural vertical scrolling, no side-by-side presentation or mock boards).\nStyle: Holocene Ledger design system with paper background #f1f0eb, surface #fbfaf7, ink #121210, strong 1px rules #23231f, muted text #57574f, and vermilion #bb2d14 focus/accent. Newsreader editorial headings, Atkinson Hyperlegible Next body, Atkinson Hyperlegible Mono timestamps and system metadata. No Spruce theme, no SaaS blue, no gradients, no fake hardware frames, no fake health indicators.\n\nContent and Structure:\n1. Breadcrumb and Context bar:\n   - Breadcrumb: Products /products\n   - Subtext: 'pjangler + committed .launch.yaml'\n   - Quiet badge / label: 'Illustrative concept, not live readings'\n\n2. Editorial Title & Statement:\n   - Main title: 'Products' in clean, sharp Newsreader serif.\n   - Distinctive italicized thesis statement: 'Three preparing to launch. One live.'\n\n3. Stacked Section 1: PREPARING TO LAUNCH (3)\n   Divided with crisp 1px rule (#23231f) and uppercase mono section header.\n   Three row items, each with 44px minimum touch targets:\n   - Product 1: 'Tower of Lost Things'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html'\n   - Product 2: 'Green In Between'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html'\n   - Product 3: 'Gruvato'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html'\n\n4. Stacked Section 2: LIVE (1)\n   Divided with crisp 1px rule and uppercase mono section header.\n   - Product: 'Earshot'\n     * Supporting description: 'Existing release, storefront and fulfilment view' (No release versions, no sales numbers, no invented live health metrics).\n     * 44px touch action: 'Open Live management →' linking to '/live'.\n\n5. Separated Inset Reference:\n   - Boxed inset with dashed 1px rule: 'State example: publication unavailable'\n   - Subtext clearly explaining the missing receipt state for unverified deployment manifests.\n   - Action: Disabled action state 'Launch dashboard (receipt missing)' and 'Retry read' button (no invented fourth product).\n\n6. Permanent Footer metadata:\n   - 'Permanent bookmark: /products'\n   - Responsive wrap guarantee: all text wraps cleanly without overflow at 320px minimum screen width.\n   - Note: 'Design reference only; directory view shown with navigation drawer closed.'\n\nInteractive details:\n- Include simple vanilla JS to toggle the modal drawer when clicking the 'MENU' button in the shell header, and close it when pressing 'CLOSE' or ESC key, trapping focus cleanly.",
+                "screenMetadata": {
+                  "agentType": "PRO_AGENT",
+                  "status": "COMPLETE"
+                },
+                "screenType": "DESIGN",
+                "screenshot": {
+                  "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558:download",
+                  "name": "projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558"
+                },
+                "theme": {
+                  "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+                  "bodyFontFamily": "Atkinson Hyperlegible Next",
+                  "colorMode": "LIGHT",
+                  "colorVariant": "FIDELITY",
+                  "customColor": "#121210",
+                  "font": "NEWSREADER",
+                  "headlineFont": "NEWSREADER",
+                  "headlineFontFamily": "Newsreader",
+                  "labelFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+                  "labelFontFamily": "Atkinson Hyperlegible Next",
+                  "namedColors": {
+                    "background": "#faf9f4",
+                    "error": "#ba1a1a",
+                    "error_container": "#ffdad6",
+                    "inverse_on_surface": "#f2f1ec",
+                    "inverse_primary": "#c9c6c2",
+                    "inverse_surface": "#30312e",
+                    "on_background": "#1b1c19",
+                    "on_error": "#ffffff",
+                    "on_error_container": "#93000a",
+                    "on_primary": "#ffffff",
+                    "on_primary_container": "#858480",
+                    "on_primary_fixed": "#1c1c19",
+                    "on_primary_fixed_variant": "#474744",
+                    "on_secondary": "#ffffff",
+                    "on_secondary_container": "#5d0900",
+                    "on_secondary_fixed": "#3e0400",
+                    "on_secondary_fixed_variant": "#8e1300",
+                    "on_surface": "#1b1c19",
+                    "on_surface_variant": "#474741",
+                    "on_tertiary": "#ffffff",
+                    "on_tertiary_container": "#85847e",
+                    "on_tertiary_fixed": "#1c1c18",
+                    "on_tertiary_fixed_variant": "#474742",
+                    "outline": "#787770",
+                    "outline_variant": "#c8c7be",
+                    "primary": "#000000",
+                    "primary_container": "#1c1c19",
+                    "primary_fixed": "#e5e2de",
+                    "primary_fixed_dim": "#c9c6c2",
+                    "secondary": "#b4280f",
+                    "secondary_container": "#fe5d3f",
+                    "secondary_fixed": "#ffdad3",
+                    "secondary_fixed_dim": "#ffb4a5",
+                    "surface": "#faf9f4",
+                    "surface_bright": "#faf9f4",
+                    "surface_container": "#efeee9",
+                    "surface_container_high": "#e9e8e3",
+                    "surface_container_highest": "#e3e3de",
+                    "surface_container_low": "#f5f4ef",
+                    "surface_container_lowest": "#ffffff",
+                    "surface_dim": "#dbdad5",
+                    "surface_tint": "#5f5e5b",
+                    "surface_variant": "#e3e3de",
+                    "tertiary": "#000000",
+                    "tertiary_container": "#1c1c18",
+                    "tertiary_fixed": "#e5e2dc",
+                    "tertiary_fixed_dim": "#c9c6c0"
+                  },
+                  "overrideNeutralColor": "#f1f0eb",
+                  "overridePrimaryColor": "#121210",
+                  "overrideSecondaryColor": "#bb2d14",
+                  "overrideTertiaryColor": "#23231f",
+                  "spacing": {
+                    "gutter": "1rem",
+                    "gutter-desktop": "1.5rem",
+                    "margin": "1rem",
+                    "margin-desktop": "2.5rem",
+                    "margin-tablet": "1.5rem",
+                    "space-lg": "1.5rem",
+                    "space-md": "1rem",
+                    "space-sm": "0.5rem",
+                    "space-xl": "2.5rem",
+                    "space-xs": "0.25rem"
+                  },
+                  "spacingScale": 2,
+                  "typography": {
+                    "body-lg": {
+                      "fontFamily": "Atkinson Hyperlegible Next",
+                      "fontSize": "16px",
+                      "fontWeight": "400",
+                      "lineHeight": "24px"
+                    },
+                    "body-md": {
+                      "fontFamily": "Atkinson Hyperlegible Next",
+                      "fontSize": "14px",
+                      "fontWeight": "400",
+                      "lineHeight": "20px"
+                    },
+                    "body-sm": {
+                      "fontFamily": "Atkinson Hyperlegible Next",
+                      "fontSize": "12px",
+                      "fontWeight": "400",
+                      "lineHeight": "16px"
+                    },
+                    "code-md": {
+                      "fontFamily": "Courier Prime",
+                      "fontSize": "13px",
+                      "fontWeight": "400",
+                      "lineHeight": "18px"
+                    },
+                    "code-sm": {
+                      "fontFamily": "Courier Prime",
+                      "fontSize": "11px",
+                      "fontWeight": "400",
+                      "lineHeight": "16px"
+                    },
+                    "display": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "44px",
+                      "fontWeight": "400",
+                      "letterSpacing": "-0.02em",
+                      "lineHeight": "52px"
+                    },
+                    "display-mobile": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "32px",
+                      "fontWeight": "400",
+                      "letterSpacing": "-0.015em",
+                      "lineHeight": "40px"
+                    },
+                    "headline-lg": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "32px",
+                      "fontWeight": "500",
+                      "letterSpacing": "-0.01em",
+                      "lineHeight": "40px"
+                    },
+                    "headline-lg-mobile": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "26px",
+                      "fontWeight": "500",
+                      "letterSpacing": "-0.01em",
+                      "lineHeight": "34px"
+                    },
+                    "headline-md": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "24px",
+                      "fontWeight": "500",
+                      "letterSpacing": "-0.005em",
+                      "lineHeight": "32px"
+                    },
+                    "headline-sm": {
+                      "fontFamily": "Newsreader",
+                      "fontSize": "20px",
+                      "fontWeight": "600",
+                      "lineHeight": "28px"
+                    },
+                    "label-md": {
+                      "fontFamily": "Atkinson Hyperlegible Next",
+                      "fontSize": "13px",
+                      "fontWeight": "600",
+                      "letterSpacing": "0.02em",
+                      "lineHeight": "16px"
+                    },
+                    "label-sm": {
+                      "fontFamily": "Atkinson Hyperlegible Next",
+                      "fontSize": "11px",
+                      "fontWeight": "700",
+                      "letterSpacing": "0.04em",
+                      "lineHeight": "14px"
+                    }
+                  }
+                },
+                "title": "Holocene Products Directory — Mobile Viewport",
+                "width": "1400"
+              }
+            ],
+            "theme": {}
+          }
+        },
+        {
+          "text": "I have generated the dedicated **Holocene Products Directory** mobile phone screen (device type: `MOBILE`, 390px viewport width) strictly adhering to the Holocene Ledger specification:\n\n### Design & Architectural Implementations:\n- **Form Factor & Viewport**: Rendered as a true standalone single-screen mobile layout (not a desktop presentation board, canvas mockup, or side-by-side illustration). Height is set to natural vertical scrolling, with responsive wrapping verified down to 320px width.\n- **Ledger Design Tokens**: Uses the paper `#f1f0eb` ground, clean `#fbfaf7` card surfaces, deep `#121210` ink text, strong `1px` `#23231f` rules, `#57574f` muted copy, and sharp vermilion `#bb2d14` for active accents and focus treatments.\n- **Typography Rhythm**: Editorial *Newsreader* serif for the main headline and the italic statement (*\"Three preparing to launch. One live.\"*), paired with *Atkinson Hyperlegible* for comfortable body reading and mono labels for technical metadata.\n- **Header & Navigation**:\n  - Compact `33GOD // HOLOCENE` branding, Day/Night toggle, and a dedicated `≡ MENU` button.\n  - The hierarchical navigation drawer (containing *Products*, *Workspace*, *Media*, and *System* categories) is architecturally integrated into the screen and initialized in the closed state so the directory list is directly accessible.\n- **Product Stack (44px Minimum Touch Targets)**:\n  - **Preparing to Launch (3)**:\n    - **Tower of Lost Things**: External launch link pointing to `https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html` with quiet publication receipt verification.\n    - **Green In Between**: Launch link to `https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html`.\n    - **Gruvato**: Launch link to `https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html`.\n  - **Live (1)**:\n    - **Earshot**: Clean operational route to `/live` with *\"Existing release, storefront and fulfilment view\"*. Excludes invented versioning, live gauges, or health metrics.\n- **State Example (Publication Unavailable)**:\n  - A discrete boxed inset beneath the catalog showcasing the fallback state when deployment manifests are unverified, featuring disabled dashboard action and retry button without fabricating extra products.\n- **Footer**: Includes the permanent canonical route bookmark `/products` and compliance specification notes."
+        },
+        {
+          "suggestion": "Open and inspect the navigation drawer state on mobile"
+        },
+        {
+          "suggestion": "Switch to Ledger Dark Mode night pair (#1c1a17 / #26231f)"
+        },
+        {
+          "suggestion": "Add filtering controls for launch stage vs live releases"
+        }
+      ],
+      "projectId": "14104283770497705087",
+      "sessionId": "15076601722715664084",
+      "designSystem": {
+        "designSystem": {
+          "displayName": "Holocene Ledger",
+          "styleGuidelines": "## Brand & Style\n\nThe design system embodies the authority, tactility, and meticulous permanence of historical record-keeping reimagined for high-density modern tooling. It bridges archival archival-grade publishing with utilitarian instrumentation. The emotional register is deliberate, scholarly, unhurried, and resolute—delivering an experience akin to working within an impeccably bound ledger or reading a typography-dense broadsheet.\n\nThe visual style is **Archival Brutalism / Strict Editorial**:\n- Explicit structure: Physical lines and ledger rules define layouts, eschewing ambient floating cards.\n- Material honesty: Off-white parchment fields and dense black ink emulate high-grade newsprint and linen paper.\n- Precise graphic contrast: High-contrast ink rules paired with flat, hard-edged offset drop shadows evoke physical stamps, letterpress slugs, and archival index trays.\n- No synthetic ephemera: Soft gaussian blurs, luminous gradients, and translucent glass treatments are entirely prohibited.\n\n## Layout & Spacing\n\nThe layout model simulates a structured ledger ledger-sheet composed of explicit hairline rule intersections. \n\n- **Grid Architecture:** Desktop views operate on a 12-column rigid columnar grid; tablet scales to 8 columns; mobile collapses to 4 columns. Columns are joined by explicit structural dividers.\n- **Rhythm:** Spacing follows a modular scale derived from line-height multiples (`0.25rem`, `0.5rem`, `1rem`, `1.5rem`, `2.5rem`). Layout components clamp to borders rather than floating freely.\n- **Density:** High information density is supported by allowing elements to touch outer bounding borders, separated by continuous `1px` horizontal and vertical `#23231f` rules.\n- **Margins:** Exterior canvas padding is restrained to emphasize wide, broadsheet-style horizontal spans.\n\n## Elevation & Depth\n\nThis system rejects ambient soft blurs, diffuse drop shadows, and simulated lighting models. Depth is mechanical and tactile:\n\n- **Surface Contrast:** Depth is established primarily via flat planes: the base ground (`#f1f0eb`) supports distinct paper blocks (`#fbfaf7`), capped by the inverse header bar (`#141412`).\n- **Hard Offset Cast Shadows:** Elevated components (modals, dropdown popovers, active card tiers, button press actions) employ a zero-blur, hard offset shadow:\n  - Standard Elevation: `2px 2px 0px 0px #23231f`\n  - High Elevation (Dialogs, flyouts): `4px 4px 0px 0px #23231f`\n- **Rules & Framing:** Every functional segment is bounded by a crisp `1px solid #23231f` border.\n- **No Soft Transitions:** Transitions between elevation states occur instantly or via micro-snaps (50–100ms cubic linear step), reinforcing physical letterpress stamping.\n\n## Components\n\n### Header Chrome\n- **Appearance:** Solid `#141412` background spanning full canvas width, bottom-bordered with `1px solid #23231f`.\n- **Text & Nav:** Off-white `#f1f0eb` text. Active page indicator marked by a solid vermilion (`#bb2d14`) underline (2px thickness) or inverted vermilion flag tag.\n\n### Buttons\n- **Primary:** Background `#121210`, text `#fbfaf7`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`. On `:hover`, shift shadow to `3px 3px 0px 0px #23231f`. On `:active`, transform translate `2px 2px` with zero shadow.\n- **Secondary:** Background `#fbfaf7`, text `#121210`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`.\n- **Focus State:** Keyboard focus triggers a strict `2px solid #bb2d14` outline with an explicit `2px` offset.\n\n### Cards & Ledger Panes\n- **Base:** Background `#fbfaf7`, enclosed entirely by `1px solid #23231f`. Hard shadow `2px 2px 0px 0px #23231f`.\n- **Header Slot:** Separated from body content by a continuous horizontal rule (`1px solid #23231f`). Titles rendered in Newsreader serif.\n\n### Inputs & Form Fields\n- **Container:** Background `#fbfaf7`, border `1px solid #23231f`, text `#121210`. Text in sentence-case.\n- **Focus:** No glowing halos. On `:focus`, apply an inner or outer hairline border with a hard `2px solid #bb2d14` outline.\n- **Monospace Fields:** Numbers, reference codes, and formulas automatically switch to monospaced styling.\n\n### Chips & Badges\n- **Structure:** Square corners, `1px solid #23231f`, background `#f1f0eb`.\n- **Selected State:** Background `#bb2d14`, text `#fbfaf7`, border `#bb2d14`.\n- **Metadata Tag:** Font size 11px, muted `#57574f` text with monospaced code notation when referencing ledger IDs.\n\n### Checkboxes & Radios\n- **Geometry:** Strict squares for checkboxes; sharp diamond or square-in-square markers for radios (avoid organic circular radii when possible).\n- **Check State:** Solid `#121210` fill with `#fbfaf7` hard crosshair or tick; vermilion outline on keyboard focus.\n\n### Tables & Data Grids\n- **Header:** Sticky `#f1f0eb` row, separated by `2px solid #23231f`.\n- **Row dividers:** `1px solid #23231f` bottom rules.\n- **Alternating rows:** Avoid zebra striping; delineate rows strictly with thin rules. Numeric data right-aligned in monospace.",
+          "theme": {
+            "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+            "bodyFontFamily": "Atkinson Hyperlegible Next",
+            "colorMode": "LIGHT",
+            "colorVariant": "FIDELITY",
+            "customColor": "#121210",
+            "designMd": "---\nname: Holocene Ledger\ncolors:\n  surface: '#faf9f4'\n  surface-dim: '#dbdad5'\n  surface-bright: '#faf9f4'\n  surface-container-lowest: '#ffffff'\n  surface-container-low: '#f5f4ef'\n  surface-container: '#efeee9'\n  surface-container-high: '#e9e8e3'\n  surface-container-highest: '#e3e3de'\n  on-surface: '#1b1c19'\n  on-surface-variant: '#474741'\n  inverse-surface: '#30312e'\n  inverse-on-surface: '#f2f1ec'\n  outline: '#787770'\n  outline-variant: '#c8c7be'\n  surface-tint: '#5f5e5b'\n  primary: '#000000'\n  on-primary: '#ffffff'\n  primary-container: '#1c1c19'\n  on-primary-container: '#858480'\n  inverse-primary: '#c9c6c2'\n  secondary: '#b4280f'\n  on-secondary: '#ffffff'\n  secondary-container: '#fe5d3f'\n  on-secondary-container: '#5d0900'\n  tertiary: '#000000'\n  on-tertiary: '#ffffff'\n  tertiary-container: '#1c1c18'\n  on-tertiary-container: '#85847e'\n  error: '#ba1a1a'\n  on-error: '#ffffff'\n  error-container: '#ffdad6'\n  on-error-container: '#93000a'\n  primary-fixed: '#e5e2de'\n  primary-fixed-dim: '#c9c6c2'\n  on-primary-fixed: '#1c1c19'\n  on-primary-fixed-variant: '#474744'\n  secondary-fixed: '#ffdad3'\n  secondary-fixed-dim: '#ffb4a5'\n  on-secondary-fixed: '#3e0400'\n  on-secondary-fixed-variant: '#8e1300'\n  tertiary-fixed: '#e5e2dc'\n  tertiary-fixed-dim: '#c9c6c0'\n  on-tertiary-fixed: '#1c1c18'\n  on-tertiary-fixed-variant: '#474742'\n  background: '#faf9f4'\n  on-background: '#1b1c19'\n  surface-variant: '#e3e3de'\ntypography:\n  display:\n    fontFamily: Newsreader\n    fontSize: 44px\n    fontWeight: '400'\n    lineHeight: 52px\n    letterSpacing: -0.02em\n  display-mobile:\n    fontFamily: Newsreader\n    fontSize: 32px\n    fontWeight: '400'\n    lineHeight: 40px\n    letterSpacing: -0.015em\n  headline-lg:\n    fontFamily: Newsreader\n    fontSize: 32px\n    fontWeight: '500'\n    lineHeight: 40px\n    letterSpacing: -0.01em\n  headline-lg-mobile:\n    fontFamily: Newsreader\n    fontSize: 26px\n    fontWeight: '500'\n    lineHeight: 34px\n    letterSpacing: -0.01em\n  headline-md:\n    fontFamily: Newsreader\n    fontSize: 24px\n    fontWeight: '500'\n    lineHeight: 32px\n    letterSpacing: -0.005em\n  headline-sm:\n    fontFamily: Newsreader\n    fontSize: 20px\n    fontWeight: '600'\n    lineHeight: 28px\n  body-lg:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 16px\n    fontWeight: '400'\n    lineHeight: 24px\n  body-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 14px\n    fontWeight: '400'\n    lineHeight: 20px\n  body-sm:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 12px\n    fontWeight: '400'\n    lineHeight: 16px\n  label-md:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 13px\n    fontWeight: '600'\n    lineHeight: 16px\n    letterSpacing: 0.02em\n  label-sm:\n    fontFamily: Atkinson Hyperlegible Next\n    fontSize: 11px\n    fontWeight: '700'\n    lineHeight: 14px\n    letterSpacing: 0.04em\n  code-md:\n    fontFamily: Courier Prime\n    fontSize: 13px\n    fontWeight: '400'\n    lineHeight: 18px\n  code-sm:\n    fontFamily: Courier Prime\n    fontSize: 11px\n    fontWeight: '400'\n    lineHeight: 16px\nspacing:\n  gutter: 1rem\n  gutter-desktop: 1.5rem\n  margin: 1rem\n  margin-tablet: 1.5rem\n  margin-desktop: 2.5rem\n  space-xs: 0.25rem\n  space-sm: 0.5rem\n  space-md: 1rem\n  space-lg: 1.5rem\n  space-xl: 2.5rem\n---\n\n## Brand & Style\n\nThe design system embodies the authority, tactility, and meticulous permanence of historical record-keeping reimagined for high-density modern tooling. It bridges archival archival-grade publishing with utilitarian instrumentation. The emotional register is deliberate, scholarly, unhurried, and resolute—delivering an experience akin to working within an impeccably bound ledger or reading a typography-dense broadsheet.\n\nThe visual style is **Archival Brutalism / Strict Editorial**:\n- Explicit structure: Physical lines and ledger rules define layouts, eschewing ambient floating cards.\n- Material honesty: Off-white parchment fields and dense black ink emulate high-grade newsprint and linen paper.\n- Precise graphic contrast: High-contrast ink rules paired with flat, hard-edged offset drop shadows evoke physical stamps, letterpress slugs, and archival index trays.\n- No synthetic ephemera: Soft gaussian blurs, luminous gradients, and translucent glass treatments are entirely prohibited.\n\n## Colors\n\nThe palette simulates tactile print media, stark carbon ink, and deliberate editorial redlining.\n\n- **Ground & Canvas (`#f1f0eb`):** Warm unbleached paper wash acting as the global substrate.\n- **Surface / Paper (`#fbfaf7`):** Elevated, clean archival sheet tone for data cards, sheets, tables, and modal bodies.\n- **Ink Primary (`#121210`):** Near-black dense pigment for primary copy, headlines, and prominent glyphs.\n- **Rule Strong (`#23231f`):** Solid carbon stroke for structural dividers, borders, and hard shadow projections.\n- **Inverse Chrome (`#141412`):** Heavy, near-black top-level header bar creating immediate structural anchoring.\n- **Accent Vermilion (`#bb2d14`):** High-alert, historical redlining pigment reserved strictly for active navigation states, interactive focus brackets, critical diffs, and primary callouts.\n- **Metadata Muted (`#57574f`):** Softened carbon tint for auxiliary labels, timestamps, line numbers, and deactivated states. Maintain minimum contrast ratios strictly against both paper and ground.\n\n## Typography\n\nTypography drives the visual cadence. All titles, major headings, and section banners utilize **Newsreader**, bringing classical editorial balance and high optical contrast to large scales.\n\nBody text, navigation items, forms, and administrative panels use **Atkinson Hyperlegible Next**, ensuring unambiguous character differentiation even at small scales and high data density.\n\nAll file paths, timestamps, git hashes, tabular numeric columns, and key-value metrics mandate a fixed-width monospaced font (**Courier Prime** or Atkinson Hyperlegible Mono fallback).\n\n- Maintain **sentence-case** strictly across all interface layers, including table headers, button labels, alerts, and navigation links.\n- Optical kerning is prioritized for serif titles; avoid loose letter-spacing on Newsreader.\n\n## Layout & Spacing\n\nThe layout model simulates a structured ledger ledger-sheet composed of explicit hairline rule intersections. \n\n- **Grid Architecture:** Desktop views operate on a 12-column rigid columnar grid; tablet scales to 8 columns; mobile collapses to 4 columns. Columns are joined by explicit structural dividers.\n- **Rhythm:** Spacing follows a modular scale derived from line-height multiples (`0.25rem`, `0.5rem`, `1rem`, `1.5rem`, `2.5rem`). Layout components clamp to borders rather than floating freely.\n- **Density:** High information density is supported by allowing elements to touch outer bounding borders, separated by continuous `1px` horizontal and vertical `#23231f` rules.\n- **Margins:** Exterior canvas padding is restrained to emphasize wide, broadsheet-style horizontal spans.\n\n## Elevation & Depth\n\nThis system rejects ambient soft blurs, diffuse drop shadows, and simulated lighting models. Depth is mechanical and tactile:\n\n- **Surface Contrast:** Depth is established primarily via flat planes: the base ground (`#f1f0eb`) supports distinct paper blocks (`#fbfaf7`), capped by the inverse header bar (`#141412`).\n- **Hard Offset Cast Shadows:** Elevated components (modals, dropdown popovers, active card tiers, button press actions) employ a zero-blur, hard offset shadow:\n  - Standard Elevation: `2px 2px 0px 0px #23231f`\n  - High Elevation (Dialogs, flyouts): `4px 4px 0px 0px #23231f`\n- **Rules & Framing:** Every functional segment is bounded by a crisp `1px solid #23231f` border.\n- **No Soft Transitions:** Transitions between elevation states occur instantly or via micro-snaps (50–100ms cubic linear step), reinforcing physical letterpress stamping.\n\n## Shapes\n\nThe geometry of the interface is unyielding, clean, and razor-sharp.\n\n- **Radius Standard:** Absolute 0px (`roundedness: 0`). Elements terminate in sharp right angles, mirroring cut paper reams and cold-rolled metal rules.\n- **Micro-variant Exception:** If localized rendering engines require anti-aliasing relief, a hard ceiling of `2px` may be applied to micro tags, but default interfaces must prioritize strict rectangular perimeters.\n- **Borders:** Surfaces must terminate with distinct `1px` outer rule lines (`#23231f`). Never round input fields, chips, or modals.\n\n## Components\n\n### Header Chrome\n- **Appearance:** Solid `#141412` background spanning full canvas width, bottom-bordered with `1px solid #23231f`.\n- **Text & Nav:** Off-white `#f1f0eb` text. Active page indicator marked by a solid vermilion (`#bb2d14`) underline (2px thickness) or inverted vermilion flag tag.\n\n### Buttons\n- **Primary:** Background `#121210`, text `#fbfaf7`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`. On `:hover`, shift shadow to `3px 3px 0px 0px #23231f`. On `:active`, transform translate `2px 2px` with zero shadow.\n- **Secondary:** Background `#fbfaf7`, text `#121210`, border `1px solid #23231f`, shadow `2px 2px 0px 0px #23231f`.\n- **Focus State:** Keyboard focus triggers a strict `2px solid #bb2d14` outline with an explicit `2px` offset.\n\n### Cards & Ledger Panes\n- **Base:** Background `#fbfaf7`, enclosed entirely by `1px solid #23231f`. Hard shadow `2px 2px 0px 0px #23231f`.\n- **Header Slot:** Separated from body content by a continuous horizontal rule (`1px solid #23231f`). Titles rendered in Newsreader serif.\n\n### Inputs & Form Fields\n- **Container:** Background `#fbfaf7`, border `1px solid #23231f`, text `#121210`. Text in sentence-case.\n- **Focus:** No glowing halos. On `:focus`, apply an inner or outer hairline border with a hard `2px solid #bb2d14` outline.\n- **Monospace Fields:** Numbers, reference codes, and formulas automatically switch to monospaced styling.\n\n### Chips & Badges\n- **Structure:** Square corners, `1px solid #23231f`, background `#f1f0eb`.\n- **Selected State:** Background `#bb2d14`, text `#fbfaf7`, border `#bb2d14`.\n- **Metadata Tag:** Font size 11px, muted `#57574f` text with monospaced code notation when referencing ledger IDs.\n\n### Checkboxes & Radios\n- **Geometry:** Strict squares for checkboxes; sharp diamond or square-in-square markers for radios (avoid organic circular radii when possible).\n- **Check State:** Solid `#121210` fill with `#fbfaf7` hard crosshair or tick; vermilion outline on keyboard focus.\n\n### Tables & Data Grids\n- **Header:** Sticky `#f1f0eb` row, separated by `2px solid #23231f`.\n- **Row dividers:** `1px solid #23231f` bottom rules.\n- **Alternating rows:** Avoid zebra striping; delineate rows strictly with thin rules. Numeric data right-aligned in monospace.",
+            "font": "NEWSREADER",
+            "headlineFont": "NEWSREADER",
+            "headlineFontFamily": "Newsreader",
+            "labelFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+            "labelFontFamily": "Atkinson Hyperlegible Next",
+            "namedColors": {
+              "background": "#faf9f4",
+              "error": "#ba1a1a",
+              "error_container": "#ffdad6",
+              "inverse_on_surface": "#f2f1ec",
+              "inverse_primary": "#c9c6c2",
+              "inverse_surface": "#30312e",
+              "on_background": "#1b1c19",
+              "on_error": "#ffffff",
+              "on_error_container": "#93000a",
+              "on_primary": "#ffffff",
+              "on_primary_container": "#858480",
+              "on_primary_fixed": "#1c1c19",
+              "on_primary_fixed_variant": "#474744",
+              "on_secondary": "#ffffff",
+              "on_secondary_container": "#5d0900",
+              "on_secondary_fixed": "#3e0400",
+              "on_secondary_fixed_variant": "#8e1300",
+              "on_surface": "#1b1c19",
+              "on_surface_variant": "#474741",
+              "on_tertiary": "#ffffff",
+              "on_tertiary_container": "#85847e",
+              "on_tertiary_fixed": "#1c1c18",
+              "on_tertiary_fixed_variant": "#474742",
+              "outline": "#787770",
+              "outline_variant": "#c8c7be",
+              "primary": "#000000",
+              "primary_container": "#1c1c19",
+              "primary_fixed": "#e5e2de",
+              "primary_fixed_dim": "#c9c6c2",
+              "secondary": "#b4280f",
+              "secondary_container": "#fe5d3f",
+              "secondary_fixed": "#ffdad3",
+              "secondary_fixed_dim": "#ffb4a5",
+              "surface": "#faf9f4",
+              "surface_bright": "#faf9f4",
+              "surface_container": "#efeee9",
+              "surface_container_high": "#e9e8e3",
+              "surface_container_highest": "#e3e3de",
+              "surface_container_low": "#f5f4ef",
+              "surface_container_lowest": "#ffffff",
+              "surface_dim": "#dbdad5",
+              "surface_tint": "#5f5e5b",
+              "surface_variant": "#e3e3de",
+              "tertiary": "#000000",
+              "tertiary_container": "#1c1c18",
+              "tertiary_fixed": "#e5e2dc",
+              "tertiary_fixed_dim": "#c9c6c0"
+            },
+            "overrideNeutralColor": "#f1f0eb",
+            "overridePrimaryColor": "#121210",
+            "overrideSecondaryColor": "#bb2d14",
+            "overrideTertiaryColor": "#23231f",
+            "spacing": {
+              "gutter": "1rem",
+              "gutter-desktop": "1.5rem",
+              "margin": "1rem",
+              "margin-desktop": "2.5rem",
+              "margin-tablet": "1.5rem",
+              "space-lg": "1.5rem",
+              "space-md": "1rem",
+              "space-sm": "0.5rem",
+              "space-xl": "2.5rem",
+              "space-xs": "0.25rem"
+            },
+            "spacingScale": 2,
+            "typography": {
+              "body-lg": {
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fontSize": "16px",
+                "fontWeight": "400",
+                "lineHeight": "24px"
+              },
+              "body-md": {
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fontSize": "14px",
+                "fontWeight": "400",
+                "lineHeight": "20px"
+              },
+              "body-sm": {
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fontSize": "12px",
+                "fontWeight": "400",
+                "lineHeight": "16px"
+              },
+              "code-md": {
+                "fontFamily": "Courier Prime",
+                "fontSize": "13px",
+                "fontWeight": "400",
+                "lineHeight": "18px"
+              },
+              "code-sm": {
+                "fontFamily": "Courier Prime",
+                "fontSize": "11px",
+                "fontWeight": "400",
+                "lineHeight": "16px"
+              },
+              "display": {
+                "fontFamily": "Newsreader",
+                "fontSize": "44px",
+                "fontWeight": "400",
+                "letterSpacing": "-0.02em",
+                "lineHeight": "52px"
+              },
+              "display-mobile": {
+                "fontFamily": "Newsreader",
+                "fontSize": "32px",
+                "fontWeight": "400",
+                "letterSpacing": "-0.015em",
+                "lineHeight": "40px"
+              },
+              "headline-lg": {
+                "fontFamily": "Newsreader",
+                "fontSize": "32px",
+                "fontWeight": "500",
+                "letterSpacing": "-0.01em",
+                "lineHeight": "40px"
+              },
+              "headline-lg-mobile": {
+                "fontFamily": "Newsreader",
+                "fontSize": "26px",
+                "fontWeight": "500",
+                "letterSpacing": "-0.01em",
+                "lineHeight": "34px"
+              },
+              "headline-md": {
+                "fontFamily": "Newsreader",
+                "fontSize": "24px",
+                "fontWeight": "500",
+                "letterSpacing": "-0.005em",
+                "lineHeight": "32px"
+              },
+              "headline-sm": {
+                "fontFamily": "Newsreader",
+                "fontSize": "20px",
+                "fontWeight": "600",
+                "lineHeight": "28px"
+              },
+              "label-md": {
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fontSize": "13px",
+                "fontWeight": "600",
+                "letterSpacing": "0.02em",
+                "lineHeight": "16px"
+              },
+              "label-sm": {
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fontSize": "11px",
+                "fontWeight": "700",
+                "letterSpacing": "0.04em",
+                "lineHeight": "14px"
+              }
+            }
+          }
+        },
+        "name": "assets/49b9312283874c3287269bf02199f2f8",
+        "version": "1"
+      },
+      "deviceType": "MOBILE",
+      "generatedBy": "figaro_agent",
+      "height": "3214",
+      "htmlCode": {
+        "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a:download",
+        "mimeType": "text/html",
+        "name": "projects/14104283770497705087/files/32ffe5c5851846519bed18da677a512a"
+      },
+      "id": "ab1b8cdd2fdd4409a3b3f89a55a747ba",
+      "name": "projects/14104283770497705087/screens/ab1b8cdd2fdd4409a3b3f89a55a747ba",
+      "prompt": "Single dedicated mobile phone screen (device type MOBILE, 390px width layout, natural vertical scrolling, no side-by-side presentation or mock boards).\nStyle: Holocene Ledger design system with paper background #f1f0eb, surface #fbfaf7, ink #121210, strong 1px rules #23231f, muted text #57574f, and vermilion #bb2d14 focus/accent. Newsreader editorial headings, Atkinson Hyperlegible Next body, Atkinson Hyperlegible Mono timestamps and system metadata. No Spruce theme, no SaaS blue, no gradients, no fake hardware frames, no fake health indicators.\n\nContent and Structure:\n1. Breadcrumb and Context bar:\n   - Breadcrumb: Products /products\n   - Subtext: 'pjangler + committed .launch.yaml'\n   - Quiet badge / label: 'Illustrative concept, not live readings'\n\n2. Editorial Title & Statement:\n   - Main title: 'Products' in clean, sharp Newsreader serif.\n   - Distinctive italicized thesis statement: 'Three preparing to launch. One live.'\n\n3. Stacked Section 1: PREPARING TO LAUNCH (3)\n   Divided with crisp 1px rule (#23231f) and uppercase mono section header.\n   Three row items, each with 44px minimum touch targets:\n   - Product 1: 'Tower of Lost Things'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html'\n   - Product 2: 'Green In Between'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html'\n   - Product 3: 'Gruvato'\n     * Quiet 'Publication receipt' provenance note.\n     * 44px touch action link: 'Open launch dashboard ↗ [ext]' linking to 'https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html'\n\n4. Stacked Section 2: LIVE (1)\n   Divided with crisp 1px rule and uppercase mono section header.\n   - Product: 'Earshot'\n     * Supporting description: 'Existing release, storefront and fulfilment view' (No release versions, no sales numbers, no invented live health metrics).\n     * 44px touch action: 'Open Live management →' linking to '/live'.\n\n5. Separated Inset Reference:\n   - Boxed inset with dashed 1px rule: 'State example: publication unavailable'\n   - Subtext clearly explaining the missing receipt state for unverified deployment manifests.\n   - Action: Disabled action state 'Launch dashboard (receipt missing)' and 'Retry read' button (no invented fourth product).\n\n6. Permanent Footer metadata:\n   - 'Permanent bookmark: /products'\n   - Responsive wrap guarantee: all text wraps cleanly without overflow at 320px minimum screen width.\n   - Note: 'Design reference only; directory view shown with navigation drawer closed.'\n\nInteractive details:\n- Include simple vanilla JS to toggle the modal drawer when clicking the 'MENU' button in the shell header, and close it when pressing 'CLOSE' or ESC key, trapping focus cleanly.",
+      "screenMetadata": {
+        "agentType": "PRO_AGENT",
+        "status": "COMPLETE"
+      },
+      "screenType": "DESIGN",
+      "screenshot": {
+        "downloadUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558:download",
+        "name": "projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558"
+      },
+      "theme": {
+        "bodyFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+        "bodyFontFamily": "Atkinson Hyperlegible Next",
+        "colorMode": "LIGHT",
+        "colorVariant": "FIDELITY",
+        "customColor": "#121210",
+        "font": "NEWSREADER",
+        "headlineFont": "NEWSREADER",
+        "headlineFontFamily": "Newsreader",
+        "labelFont": "ATKINSON_HYPERLEGIBLE_NEXT",
+        "labelFontFamily": "Atkinson Hyperlegible Next",
+        "namedColors": {
+          "background": "#faf9f4",
+          "error": "#ba1a1a",
+          "error_container": "#ffdad6",
+          "inverse_on_surface": "#f2f1ec",
+          "inverse_primary": "#c9c6c2",
+          "inverse_surface": "#30312e",
+          "on_background": "#1b1c19",
+          "on_error": "#ffffff",
+          "on_error_container": "#93000a",
+          "on_primary": "#ffffff",
+          "on_primary_container": "#858480",
+          "on_primary_fixed": "#1c1c19",
+          "on_primary_fixed_variant": "#474744",
+          "on_secondary": "#ffffff",
+          "on_secondary_container": "#5d0900",
+          "on_secondary_fixed": "#3e0400",
+          "on_secondary_fixed_variant": "#8e1300",
+          "on_surface": "#1b1c19",
+          "on_surface_variant": "#474741",
+          "on_tertiary": "#ffffff",
+          "on_tertiary_container": "#85847e",
+          "on_tertiary_fixed": "#1c1c18",
+          "on_tertiary_fixed_variant": "#474742",
+          "outline": "#787770",
+          "outline_variant": "#c8c7be",
+          "primary": "#000000",
+          "primary_container": "#1c1c19",
+          "primary_fixed": "#e5e2de",
+          "primary_fixed_dim": "#c9c6c2",
+          "secondary": "#b4280f",
+          "secondary_container": "#fe5d3f",
+          "secondary_fixed": "#ffdad3",
+          "secondary_fixed_dim": "#ffb4a5",
+          "surface": "#faf9f4",
+          "surface_bright": "#faf9f4",
+          "surface_container": "#efeee9",
+          "surface_container_high": "#e9e8e3",
+          "surface_container_highest": "#e3e3de",
+          "surface_container_low": "#f5f4ef",
+          "surface_container_lowest": "#ffffff",
+          "surface_dim": "#dbdad5",
+          "surface_tint": "#5f5e5b",
+          "surface_variant": "#e3e3de",
+          "tertiary": "#000000",
+          "tertiary_container": "#1c1c18",
+          "tertiary_fixed": "#e5e2dc",
+          "tertiary_fixed_dim": "#c9c6c0"
+        },
+        "overrideNeutralColor": "#f1f0eb",
+        "overridePrimaryColor": "#121210",
+        "overrideSecondaryColor": "#bb2d14",
+        "overrideTertiaryColor": "#23231f",
+        "spacing": {
+          "gutter": "1rem",
+          "gutter-desktop": "1.5rem",
+          "margin": "1rem",
+          "margin-desktop": "2.5rem",
+          "margin-tablet": "1.5rem",
+          "space-lg": "1.5rem",
+          "space-md": "1rem",
+          "space-sm": "0.5rem",
+          "space-xl": "2.5rem",
+          "space-xs": "0.25rem"
+        },
+        "spacingScale": 2,
+        "typography": {
+          "body-lg": {
+            "fontFamily": "Atkinson Hyperlegible Next",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "lineHeight": "24px"
+          },
+          "body-md": {
+            "fontFamily": "Atkinson Hyperlegible Next",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "lineHeight": "20px"
+          },
+          "body-sm": {
+            "fontFamily": "Atkinson Hyperlegible Next",
+            "fontSize": "12px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          },
+          "code-md": {
+            "fontFamily": "Courier Prime",
+            "fontSize": "13px",
+            "fontWeight": "400",
+            "lineHeight": "18px"
+          },
+          "code-sm": {
+            "fontFamily": "Courier Prime",
+            "fontSize": "11px",
+            "fontWeight": "400",
+            "lineHeight": "16px"
+          },
+          "display": {
+            "fontFamily": "Newsreader",
+            "fontSize": "44px",
+            "fontWeight": "400",
+            "letterSpacing": "-0.02em",
+            "lineHeight": "52px"
+          },
+          "display-mobile": {
+            "fontFamily": "Newsreader",
+            "fontSize": "32px",
+            "fontWeight": "400",
+            "letterSpacing": "-0.015em",
+            "lineHeight": "40px"
+          },
+          "headline-lg": {
+            "fontFamily": "Newsreader",
+            "fontSize": "32px",
+            "fontWeight": "500",
+            "letterSpacing": "-0.01em",
+            "lineHeight": "40px"
+          },
+          "headline-lg-mobile": {
+            "fontFamily": "Newsreader",
+            "fontSize": "26px",
+            "fontWeight": "500",
+            "letterSpacing": "-0.01em",
+            "lineHeight": "34px"
+          },
+          "headline-md": {
+            "fontFamily": "Newsreader",
+            "fontSize": "24px",
+            "fontWeight": "500",
+            "letterSpacing": "-0.005em",
+            "lineHeight": "32px"
+          },
+          "headline-sm": {
+            "fontFamily": "Newsreader",
+            "fontSize": "20px",
+            "fontWeight": "600",
+            "lineHeight": "28px"
+          },
+          "label-md": {
+            "fontFamily": "Atkinson Hyperlegible Next",
+            "fontSize": "13px",
+            "fontWeight": "600",
+            "letterSpacing": "0.02em",
+            "lineHeight": "16px"
+          },
+          "label-sm": {
+            "fontFamily": "Atkinson Hyperlegible Next",
+            "fontSize": "11px",
+            "fontWeight": "700",
+            "letterSpacing": "0.04em",
+            "lineHeight": "14px"
+          }
+        }
+      },
+      "title": "Holocene Products Directory — Mobile Viewport",
+      "width": "1400",
+      "agentText": "I have generated the dedicated **Holocene Products Directory** mobile phone screen (device type: `MOBILE`, 390px viewport width) strictly adhering to the Holocene Ledger specification:\n\n### Design & Architectural Implementations:\n- **Form Factor & Viewport**: Rendered as a true standalone single-screen mobile layout (not a desktop presentation board, canvas mockup, or side-by-side illustration). Height is set to natural vertical scrolling, with responsive wrapping verified down to 320px width.\n- **Ledger Design Tokens**: Uses the paper `#f1f0eb` ground, clean `#fbfaf7` card surfaces, deep `#121210` ink text, strong `1px` `#23231f` rules, `#57574f` muted copy, and sharp vermilion `#bb2d14` for active accents and focus treatments.\n- **Typography Rhythm**: Editorial *Newsreader* serif for the main headline and the italic statement (*\"Three preparing to launch. One live.\"*), paired with *Atkinson Hyperlegible* for comfortable body reading and mono labels for technical metadata.\n- **Header & Navigation**:\n  - Compact `33GOD // HOLOCENE` branding, Day/Night toggle, and a dedicated `≡ MENU` button.\n  - The hierarchical navigation drawer (containing *Products*, *Workspace*, *Media*, and *System* categories) is architecturally integrated into the screen and initialized in the closed state so the directory list is directly accessible.\n- **Product Stack (44px Minimum Touch Targets)**:\n  - **Preparing to Launch (3)**:\n    - **Tower of Lost Things**: External launch link pointing to `https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html` with quiet publication receipt verification.\n    - **Green In Between**: Launch link to `https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html`.\n    - **Gruvato**: Launch link to `https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html`.\n  - **Live (1)**:\n    - **Earshot**: Clean operational route to `/live` with *\"Existing release, storefront and fulfilment view\"*. Excludes invented versioning, live gauges, or health metrics.\n- **State Example (Publication Unavailable)**:\n  - A discrete boxed inset beneath the catalog showcasing the fallback state when deployment manifests are unverified, featuring disabled dashboard action and retry button without fabricating extra products.\n- **Footer**: Includes the permanent canonical route bookmark `/products` and compliance specification notes.",
+      "suggestions": [
+        "Open and inspect the navigation drawer state on mobile",
+        "Switch to Ledger Dark Mode night pair (#1c1a17 / #26231f)",
+        "Add filtering controls for launch stage vs live releases"
+      ],
+      "imageUrl": "https://stitch.googleapis.com/v1/projects/14104283770497705087/files/c3854385f9b447d3bec5721a47663558:download"
+    }
+  }
+}

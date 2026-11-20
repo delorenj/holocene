@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { formatDuration, HubTabs, sinceSeconds } from "../hub/ui";
+import { formatDuration, sinceSeconds } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 
 // Holocene settings. First setting: agent avatars. One avatar per agent, stored by the Holocene API
 // (apps/api/src/avatars.ts) and mirrored both ways with each agent's gateways (Telegram today): upload one here
@@ -258,15 +259,14 @@ export function SettingsApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="settings">
         <Brand />
-        <HubTabs current="settings" />
         <div className="hub-header-end">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body set-body">
+      <div className="hub-body set-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">
             {list.data ? `${withAvatar} of ${list.data.agents.length} agents have an avatar.` : list.error ? "The Holocene API is not answering." : "Reading the agents…"}

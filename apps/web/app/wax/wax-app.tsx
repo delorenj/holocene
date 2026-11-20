@@ -1,7 +1,8 @@
 "use client";
 
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, HubTabs, SourceStrip, sinceSeconds, formatDuration } from "../hub/ui";
+import { CopyRef, SourceStrip, sinceSeconds, formatDuration } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Source } from "../hub/types";
 import { PipelineGraph } from "./pipeline-graph";
 import type { WaxPass, WaxPayload, WaxPipeline, WaxPipelineNode, WaxWorkerStatus } from "./types";
@@ -245,16 +246,15 @@ export function WaxApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="wax">
         <Brand />
-        <HubTabs current="wax" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body">
+      <div className="hub-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">
             {list.data ? statement(list.data) : list.error ? "The Holocene API is not answering." : "Reading the Wax catalog…"}

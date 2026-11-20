@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, Glyph, HubTabs, SourceStrip, formatDuration } from "../hub/ui";
+import { CopyRef, Glyph, SourceStrip, formatDuration } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Source } from "../hub/types";
 import { ESCALATED_REASON, HOP_SIGNAL, HOP_WORD, MEMO_SIGNAL, attemptText, audioChip, captureChip, clockTime, convLabel, dayTime, delegationLabel, formatLatency, gatewayPauseLabel, gatewayPauseSentence, laneQueueText, liveTotal, modelAtRoute, permText, phoneCopyText, statement } from "./model";
 import type { ConvChip, FollowUp, Hop, HopFailure, Lane, MemoDetail, MemoPayload, MemosPayload, MemoSummary, MemoTiming, WatcherStatus } from "./types";
@@ -55,16 +56,15 @@ export function VoiceApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="voice">
         <Brand />
-        <HubTabs current="voice" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body">
+      <div className="hub-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">
             {list.data ? statement(memos) : list.error ? "The Holocene API is not answering." : "Reading the memo journeys…"}

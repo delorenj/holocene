@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AgentsView } from "./agents-view";
 import { ProjectsView } from "./projects-view";
-import { SourceStrip, HubTabs } from "./ui";
+import { HubShell } from "./hub-shell";
+import { SourceStrip } from "./ui";
 import type { AgentsPayload, ProjectsPayload } from "./types";
 
 // The hub shell: one SPA, two views over the same agent→project join. View and
@@ -195,16 +196,15 @@ export function HubApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current={view} onSelect={(id) => (id === "agents" || id === "projects" ? (go(id), true) : false)}>
         <Brand />
-        <HubTabs current={view} onSelect={(id) => (id === "agents" || id === "projects" ? (go(id), true) : false)} />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body">
+      <div className="hub-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">{statement ?? (current.error ? "The hub API is not answering." : "Reading the fleet…")}</p>
           {current.error ? (

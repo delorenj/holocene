@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "data": {
+    "resource": "screen",
+    "id": "screen-preview-dry-run",
+    "project": "14104283770497705087",
+    "device": "MOBILE",
+    "canvasUrl": "https://stitch.google.com/projects/14104283770497705087",
+    "dryRun": true,
+    "requests": [
+      {
+        "kind": "tool",
+        "tool": "generate_screen_from_text",
+        "args": {
+          "projectId": "14104283770497705087",
+          "prompt": "Generate ONE actual MOBILE device screen, not a desktop presentation board, not side-by-side phone mockups and not multiple states on a canvas. A single 390px-wide phone viewport of Holocene Products directory, screen device metadata MOBILE. Keep height natural with vertical scrolling. Current Ledger language: paper #f1f0eb, surface #fbfaf7, ink #121210, strong 1px rules #23231f, muted #57574f, vermilion #bb2d14 selection/focus. Newsreader editorial title; Atkinson Hyperlegible Next body, Atkinson Hyperlegible Mono timestamps. Avoid Spruce, generic blue SaaS, gradients, fake hardware frames and invented counts/receipt hashes/version numbers. No dashboard cards with fake live health.\n\nHeader: compact 33GOD Holocene branding, Day/Night toggle, clearly labelled Menu button. Breadcrumb Products /products. Main heading Products. Statement 'Three preparing to launch. One live.' Source description 'pjangler + committed .launch.yaml' and small 'Illustrative concept, not live readings'. Single stacked list divided into Preparing to launch (3) and Live (1), with horizontal ruled rows and 44px minimum touch actions. Tower of Lost Things: Open launch dashboard links https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html. Green In Between: https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html. Gruvato: https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html. All launch links have external-link indication and quiet 'Publication receipt' provenance. Earshot: Open Live management -> /live; supporting text 'Existing release, storefront and fulfilment view'. No release version, sales numbers or guessed health. Permanent bookmark /products. Long names wrap and nothing exceeds the viewport at 320px.\n\nMenu opens the same hierarchical navigation as desktop via a modal drawer, but show it CLOSED in this one screen so the directory is visible. Drawer intended contents, not a second displayed screen: major Products /products with Preparing to launch /products?stage=launch and Live /products?stage=live; Workspace: Agents /?view=agents, Projects /?view=projects, Genesis /genesis; Media: Voice /voice, Wax /wax, Transcripts /transcripts, Artifacts /artifacts; System: Candybar /candybar, Settings /settings, Mini /mini, Hooks /hooks, Legacy dashboard /legacy. Eventual behavior: labelled close, Escape, focus trap and return to Menu; reduced motion; day/night preservation. Below current products a small separated 'State example: publication unavailable' with no invented fourth product and no enabled dashboard link. This screen is a design reference only, not proof of accessibility or interaction.",
+          "deviceType": "MOBILE"
+        }
+      }
+    ]
+  }
+}

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Brand, ThemeToggle, usePoll, useTheme } from "../hub/hub-app";
-import { CopyRef, Glyph, HubTabs, SourceStrip } from "../hub/ui";
+import { CopyRef, Glyph, SourceStrip } from "../hub/ui";
+import { HubShell } from "../hub/hub-shell";
 import type { Source } from "../hub/types";
 import {
   SEVERITY_SIGNAL,
@@ -110,16 +111,15 @@ export function GenesisApp() {
 
   return (
     <div className="hub-root" data-theme={theme}>
-      <header className="hub-header">
+      <HubShell current="genesis">
         <Brand />
-        <HubTabs current="genesis" />
         <div className="hub-header-end">
           <SourceStrip sources={sources} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
-      </header>
+      </HubShell>
 
-      <div className="hub-body gn-body">
+      <div className="hub-body gn-body" id="hub-content" role="main" tabIndex={-1}>
         <div className="hub-lede">
           <p className="hub-statement" aria-live="polite">
             {data ? statement(data, now, hideTest) : poll.error ? "The Holocene API is not answering." : "Reading Genesis events…"}
