@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HubTabs } from "../hub/ui";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 
@@ -28,6 +28,9 @@ export function ArtifactsApp() {
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
+  const forceRefresh = useRef(false);
+  const requestGeneration = useRef(0);
+  const refresh = () => { forceRefresh.current = true; setRetry((v) => v + 1); };
   const [data, setData] = useState<ResponseData>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -39,24 +42,25 @@ export function ArtifactsApp() {
     } catch { /* UTC is explicitly shown below */ }
   }, []);
   useEffect(() => {
+    const generation = ++requestGeneration.current;
     if ((from && !to) || (!from && to)) { setError("Choose both start and end dates (the same date for one day)."); setLoading(false); return; }
     if (from && to && from > to) { setError("The end date must not be before the start date."); setLoading(false); return; }
     const controller = new AbortController();
     setLoading(true); setError("");
     const params = new URLSearchParams({ search, type: mode === "pictures" ? "images" : mode === "video" ? "videos" : type, page: String(page), zone: zone.name });
     if (from && to) { params.set("from", from); params.set("to", to); }
-    if (retry) params.set("refresh", "1");
     const timer = setTimeout(() => {
+      if (forceRefresh.current) { params.set("refresh", "1"); forceRefresh.current = false; }
       fetch(`/api/artifacts/catalog?${params}`, { cache: "no-store", signal: controller.signal })
         .then(async (response) => { if (!response.ok) throw Error(response.status === 401 ? "Catalog access denied." : "Catalog unavailable. Try again."); return response.json() as Promise<ResponseData>; })
-        .then((result) => { setData(result); setLoading(false); })
-        .catch((reason: unknown) => { if (!controller.signal.aborted) { setError(reason instanceof Error ? reason.message : "Catalog unavailable. Try again."); setLoading(false); } });
+        .then((result) => { if (!controller.signal.aborted && generation === requestGeneration.current) { setData(result); setLoading(false); } })
+        .catch((reason: unknown) => { if (!controller.signal.aborted && generation === requestGeneration.current) { setError(reason instanceof Error ? reason.message : "Catalog unavailable. Try again."); setLoading(false); } });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [search, type, mode, from, to, page, zone.name, retry]);
   useEffect(() => {
     if (!data || data.complete || error || loading) return;
-    const timer = setTimeout(() => setRetry((v) => v + 1), Math.max(1000, data.retryAfterMs + 100));
+    const timer = setTimeout(refresh, Math.max(1000, data.retryAfterMs + 100));
     return () => clearTimeout(timer);
   }, [data, error, loading]);
   const updateSearch = (v: string) => { setSearch(v); setPage(1); };
@@ -78,10 +82,10 @@ export function ArtifactsApp() {
       <p className="artifact-timezone">Dates use {zone.name}{zone.fallback ? " (UTC fallback; browser timezone unavailable)" : " (browser timezone)"}. Each selected day includes local midnight, excluding midnight of the following day. Items without a known date are excluded from date filters.</p>
     </section>
     <section className="artifact-results" aria-live="polite">
-      {error && <div className="artifact-alert" role="alert">{error} <button type="button" onClick={() => setRetry((v) => v + 1)}>Retry</button></div>}
+      {error && <div className="artifact-alert" role="alert">{error} <button type="button" onClick={refresh}>Retry</button></div>}
       {loading && <p>Loading catalog…</p>}
       {!loading && data && !error && <>
-        <div className="artifact-status"><strong>{data.total} {data.total === 1 ? "result" : "results"}</strong><button type="button" onClick={() => setRetry((v) => v + 1)}>Refresh sources</button></div>
+        <div className="artifact-status"><strong>{data.total} {data.total === 1 ? "result" : "results"}</strong><button type="button" onClick={refresh}>Refresh sources</button></div>
         <ul className="artifact-sources">{Object.entries(data.sources).map(([name, state]) => <li key={name}>{name}: {state.ok ? "available" : state.stale ? "unavailable · showing cached snapshot" : "unavailable"}{state.fetchedAt ? ` · fetched ${new Date(state.fetchedAt).toLocaleString()}` : " · no snapshot"}</li>)}</ul>
         {!data.complete && <p className="artifact-alert">{Object.values(data.sources).some((s) => s.ok || s.stale) ? "Results are incomplete. One or more sources are unavailable; cached items may be stale." : "All sources are unavailable. No current catalog could be loaded."} Retrying automatically while this page is open; Refresh sources retries now.</p>}
         {data.excludedUnknownDates > 0 && <p>{data.excludedUnknownDates} undated items excluded by the date filter.</p>}

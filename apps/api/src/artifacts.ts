@@ -51,6 +51,8 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
     const useful = files.filter((r) => !SCAFFOLD.test(rel(r).split("/").at(-1)!) && (!/^(?:assets|static|_next)\//.test(rel(r)) || category(rel(r)) !== "other"));
     const primary = html ?? useful[0];
     if (!primary) continue;
+    // Additional HTML pages belong to the site, not to independent publications.
+    const originals = useful.filter((r) => r === primary || !/\.html?$/i.test(rel(r)));
     const loose = bucket === "projects" && prefix.split("/").length === 2;
     const newest = validDate(files.map((r) => r.modified).filter(Boolean).sort().at(-1));
     const make = (file: ObjectRow, isPrimary: boolean): Artifact => {
@@ -64,7 +66,7 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
         date: validDate(file.modified) ?? newest, dateKind: validDate(file.modified) || newest ? "modified" : "unknown" };
     };
     out.push(make(primary, true));
-    for (const file of useful) if (file !== primary) out.push(make(file, false));
+    for (const file of originals) if (file !== primary) out.push(make(file, false));
   }
   return out;
 }
@@ -77,55 +79,66 @@ export function normalizeR2(rows: ObjectRow[], enrichment: Enrichment = {}): Art
     if (parts.length !== 2 || !/^[a-f0-9]{16,64}$/.test(parts[0])) continue;
     groups.set(parts[0], [...(groups.get(parts[0]) ?? []), row]);
   }
-  const out: Artifact[] = [];
+  const byId = new Map<string, Artifact>();
+  // Build member pages first so a gallery variant can inherit their published
+  // timestamp, description, poster and playable filename before adding labels.
   for (const [token, files] of groups) {
     const page = files.find((r) => !r.key.split("/")[1].includes("."));
     if (!page) continue;
     const name = page.key.split("/")[1];
-    const manifest = enrichment[`${token}/gallery.json`]?.manifest;
-    const entry = manifest && typeof manifest === "object" && !Array.isArray(manifest) ? manifest as Record<string, unknown> : null;
-    const items = Array.isArray(entry?.items) ? entry.items : [];
-    const gallery = items.length > 0 ? String(entry?.title ?? name).slice(0, 300) : undefined;
     const rawTitle = enrichment[page.key]?.title;
     const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.slice(0, 300) : label(name);
     const published = validDate(enrichment[page.key]?.published);
-    const description = enrichment[page.key]?.description?.slice(0, 1000);
-    if (gallery) {
-      for (const member of items) {
-        if (!member || typeof member !== "object" || Array.isArray(member)) continue;
-        const m = member as Record<string, unknown>;
-        const videoUrl = safePublishedUrl(m.video_url, VIDEO);
-        const originalUrl = safePublishedUrl(m.entry_url, VIDEO);
-        if (!originalUrl || !videoUrl || typeof m.name !== "string" || originalUrl.split("/").at(-1) !== encodeURIComponent(m.name)) continue;
-        const memberToken = originalUrl.split("/")[3];
-        if (!/^[a-f0-9]{16,64}$/.test(memberToken)
-          || !groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === originalUrl)
-          || !groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === videoUrl)
-          || !/\.mp4$/i.test(new URL(videoUrl).pathname)) continue;
-        const listedPoster = safePublishedUrl(m.poster_url, VIDEO);
-        const posterUrl = listedPoster && groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === listedPoster) ? listedPoster : undefined;
-        out.push({ id: `r2:${memberToken}/${m.name}`, source: "r2", title: typeof m.label === "string" ? m.label.slice(0, 300) : label(m.name),
-          description: typeof m.notes === "string" ? m.notes.slice(0, 1000) : undefined,
-          filenames: [m.name], category: "videos", originalUrl, mediaUrl: videoUrl,
-          posterUrl, date: validDate(page.modified),
-          dateKind: validDate(page.modified) ? "modified" : "unknown", gallery,
-          galleryUrl: `${VIDEO}/${encodeKey(page.key)}`,
-          variant: typeof m.letter === "string" ? m.letter.slice(0, 4) : undefined });
-      }
-      continue;
-    }
+    const rawDescription = enrichment[page.key]?.description;
+    const description = typeof rawDescription === "string" ? rawDescription.slice(0, 1000) : undefined;
     const media = files.find((r) => /\.mp4$/i.test(r.key));
     const poster = files.find((r) => /\.(jpg|jpeg|png|webp)$/i.test(r.key));
-    out.push({ id: `r2:${page.key}`, source: "r2", title, description, filenames: [name, ...(media ? [media.key.split("/")[1]] : [])],
+    byId.set(`r2:${page.key}`, { id: `r2:${page.key}`, source: "r2", title, description,
+      filenames: [name, ...(media ? [media.key.split("/")[1]] : [])],
       category: "videos", originalUrl: `${VIDEO}/${encodeKey(page.key)}`,
       mediaUrl: media ? `${VIDEO}/${encodeKey(media.key)}` : undefined,
       posterUrl: poster ? `${VIDEO}/${encodeKey(poster.key)}` : undefined,
       date: published ?? validDate(page.modified), dateKind: published ? "published" : validDate(page.modified) ? "modified" : "unknown" });
   }
-  // The gallery manifest owns variant labels; replace the standalone page row for each member.
-  const byId = new Map<string, Artifact>();
-  for (const item of out) if (!item.gallery) byId.set(item.id, item);
-  for (const item of out) if (item.gallery) byId.set(item.id, item);
+  for (const [token, files] of groups) {
+    const page = files.find((r) => !r.key.split("/")[1].includes("."));
+    if (!page) continue;
+    const manifest = enrichment[`${token}/gallery.json`]?.manifest;
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) continue;
+    const entry = manifest as Record<string, unknown>;
+    if (!Array.isArray(entry.items) || !entry.items.length) continue;
+    const rawGalleryTitle = entry.title;
+    const gallery = typeof rawGalleryTitle === "string" && rawGalleryTitle.trim()
+      ? rawGalleryTitle.slice(0, 300) : label(page.key.split("/")[1]);
+    const galleryDescription = typeof entry.description === "string" ? entry.description.slice(0, 1000) : undefined;
+    let validMembers = 0;
+    for (const member of entry.items) {
+      if (!member || typeof member !== "object" || Array.isArray(member)) continue;
+      const m = member as Record<string, unknown>;
+      const videoUrl = safePublishedUrl(m.video_url, VIDEO);
+      const originalUrl = safePublishedUrl(m.entry_url, VIDEO);
+      if (!originalUrl || !videoUrl || typeof m.name !== "string" || originalUrl.split("/").at(-1) !== encodeURIComponent(m.name)) continue;
+      const memberToken = originalUrl.split("/")[3];
+      if (!/^[a-f0-9]{16,64}$/.test(memberToken)
+        || !groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === originalUrl)
+        || !groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === videoUrl)
+        || !/\.mp4$/i.test(new URL(videoUrl).pathname)) continue;
+      const base = byId.get(`r2:${memberToken}/${m.name}`);
+      if (!base) continue;
+      const listedPoster = safePublishedUrl(m.poster_url, VIDEO);
+      const posterUrl = listedPoster && groups.get(memberToken)?.some((r) => `${VIDEO}/${encodeKey(r.key)}` === listedPoster) ? listedPoster : base.posterUrl;
+      const variantLabel = typeof m.label === "string" && m.label.trim() ? m.label.slice(0, 300) : undefined;
+      const notes = typeof m.notes === "string" ? m.notes.slice(0, 1000) : undefined;
+      const description = [...new Set([base.title, base.description, notes, galleryDescription].filter((s): s is string => !!s))]
+        .filter((s) => s !== variantLabel).join(" · ").slice(0, 3000);
+      byId.set(base.id, { ...base, title: variantLabel ?? base.title, description: description || undefined,
+        mediaUrl: videoUrl, posterUrl, gallery, galleryUrl: `${VIDEO}/${encodeKey(page.key)}`,
+        variant: typeof m.letter === "string" ? m.letter.slice(0, 4) : undefined });
+      validMembers++;
+    }
+    // Keep a navigable page when a malformed manifest has no valid members.
+    if (validMembers) byId.delete(`r2:${page.key}`);
+  }
   return [...byId.values()];
 }
 
@@ -136,25 +149,34 @@ export function boundaries(day: string, endDay: string, zone: string): [number, 
   };
   parse(day); parse(endDay);
   if (day > endDay) throw Error("Date range is reversed");
-  const dtf = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
-  const midnight = (s: string) => {
+  const dtf = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const localDay = (instant: number) => {
+    const parts = Object.fromEntries(dtf.formatToParts(instant).map((p) => [p.type, p.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  };
+  // Search for the first instant whose local date is at least the target date.
+  // This handles nonexistent or repeated midnight and entirely skipped days.
+  const startOfDay = (s: string) => {
     const target = Date.parse(`${s}T00:00:00Z`);
-    let guess = target;
-    for (let i = 0; i < 4; i++) {
-      const parts = Object.fromEntries(dtf.formatToParts(guess).map((p) => [p.type, p.value]));
-      const local = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-      const next = guess + target - local;
-      if (next === guess) break;
-      guess = next;
+    let lo = target - 2 * 86400000;
+    let hi = target + 2 * 86400000;
+    while (lo < hi) {
+      const mid = lo + Math.floor((hi - lo) / 2);
+      if (localDay(mid) < s) lo = mid + 1;
+      else hi = mid;
     }
-    return guess;
+    return lo;
   };
   const next = new Date(Date.parse(`${endDay}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-  return [midnight(day), midnight(next)];
+  return [startOfDay(day), startOfDay(next)];
 }
 export function queryArtifacts(items: Artifact[], q: { search?: string; type?: string; from?: string; to?: string; zone?: string; page?: string; limit?: string }) {
   if (q.type && !["all", "images", "videos", "audio", "pdfs", "other"].includes(q.type)) throw Error("Invalid type");
-  if (q.zone && (q.zone.length > 80 || !Intl.supportedValuesOf("timeZone").includes(q.zone) && q.zone !== "UTC")) throw Error("Invalid timezone");
+  if (q.zone) {
+    if (q.zone.length > 80) throw Error("Invalid timezone");
+    try { new Intl.DateTimeFormat("en-US", { timeZone: q.zone }); }
+    catch { throw Error("Invalid timezone"); }
+  }
   const page = Number(q.page ?? 1), limit = Number(q.limit ?? 24);
   if (!Number.isInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw Error("Invalid pagination");
   if (!!q.from !== !!q.to) throw Error("Both dates are required");
@@ -162,7 +184,7 @@ export function queryArtifacts(items: Artifact[], q: { search?: string; type?: s
   const term = (q.search ?? "").trim().toLocaleLowerCase();
   if (term.length > 200) throw Error("Search too long");
   const matches = items.filter((item) => (!q.type || q.type === "all" || item.category === q.type)
-    && (!term || [item.title, item.description ?? "", ...item.filenames].some((s) => s.toLocaleLowerCase().includes(term)))
+    && (!term || [item.title, item.description ?? "", item.gallery ?? "", ...item.filenames].some((s) => s.toLocaleLowerCase().includes(term)))
     && (!bounds || (item.date && Date.parse(item.date) >= bounds[0] && Date.parse(item.date) < bounds[1])));
   matches.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || a.id.localeCompare(b.id));
   return { items: matches.slice((page - 1) * limit, page * limit), total: matches.length, page, limit,
@@ -197,7 +219,7 @@ export function createArtifactCatalog(loaders: { projects: () => Promise<Artifac
 
 const run = async (command: string, args: string[], timeout: number) => (await exec(command, args, { timeout, maxBuffer: 64 * 1024 * 1024 })).stdout;
 async function enrichMinio(items: Artifact[]) {
-  const sites = items.filter((item) => /\/index\.html?$/i.test(item.originalUrl));
+  const sites = items.filter((item) => /\.html?$/i.test(new URL(item.originalUrl).pathname));
   let cursor = 0;
   const deadline = AbortSignal.timeout(30000);
   await Promise.all(Array.from({ length: 10 }, async () => {
@@ -228,8 +250,8 @@ async function enrichMinio(items: Artifact[]) {
   }));
   return items;
 }
-async function listMinio(bucket: "projects" | "share") {
-  const output = await run("mc", ["ls", "--json", "--recursive", `delo/${bucket}/`], 120000);
+export async function listMinio(bucket: "projects" | "share", listing = run) {
+  const output = await listing("mc", ["ls", "--json", "--recursive", `delo/${bucket}/`], 120000);
   const rows = output.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { status?: string; type?: string; key?: string; lastModified?: string });
   if (rows.some((r) => r.status === "error")) throw Error("Listing failed");
   return enrichMinio(normalizeMinio(bucket, rows.filter((r) => r.type === "file" && typeof r.key === "string").map((r) => ({ key: r.key!, modified: r.lastModified }))));
