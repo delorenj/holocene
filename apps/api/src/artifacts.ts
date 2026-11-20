@@ -51,9 +51,10 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
     const useful = files.filter((r) => !SCAFFOLD.test(rel(r).split("/").at(-1)!) && (!/^(?:assets|static|_next)\//.test(rel(r)) || category(rel(r)) !== "other"));
     const primary = html ?? useful[0];
     if (!primary) continue;
-    // Additional HTML pages belong to the site, not to independent publications.
-    const originals = useful.filter((r) => r === primary || !/\.html?$/i.test(rel(r)));
     const loose = bucket === "projects" && prefix.split("/").length === 2;
+    // Only identified publication bundles collapse extra HTML into one site.
+    // Legacy session folders can hold unrelated loose pages without an index.
+    const originals = useful.filter((r) => loose || r === primary || !/\.html?$/i.test(rel(r)));
     const newest = validDate(files.map((r) => r.modified).filter(Boolean).sort().at(-1));
     const make = (file: ObjectRow, isPrimary: boolean): Artifact => {
       const filename = rel(file);

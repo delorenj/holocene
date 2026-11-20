@@ -58,6 +58,21 @@ test("full catalog search/date/type before pagination, stable ties and categorie
   assert.throws(() => queryArtifacts(items, { from: "2026-11-19" }));
 });
 
+test("legacy session folders preserve independent loose HTML pages regardless of listing order", () => {
+  const keys = ["demo/session-uuid/zeta.html", "demo/session-uuid/alpha.html"];
+  for (const ordered of [keys, [...keys].reverse()]) {
+    const items = normalizeMinio("projects", ordered.map((key) => row(key)));
+    assert.deepEqual(items.map((item) => item.id), ["projects:demo/session-uuid/alpha.html", "projects:demo/session-uuid/zeta.html"]);
+    assert.deepEqual(items.map((item) => item.title), ["alpha.html", "zeta.html"]);
+    for (const name of ["alpha.html", "zeta.html"]) {
+      const [match] = queryArtifacts(items, { search: name }).items;
+      assert.equal(queryArtifacts(items, { search: name }).total, 1);
+      assert.equal(match.originalUrl, `https://s3.delo.sh/projects/demo/session-uuid/${name}`);
+      assert.deepEqual(match.filenames, [name]);
+    }
+  }
+});
+
 test("multiple HTML pages attach to one site while useful documents remain separate", () => {
   const items = normalizeMinio("projects", ["demo/2026-11-20/site/index.html", "demo/2026-11-20/site/about.html", "demo/2026-11-20/site/style.css", "demo/2026-11-20/site/manual.pdf", "demo/2026-11-20/site/photos/cover.jpg"].map((key) => row(key)));
   assert.equal(items.length, 3);
