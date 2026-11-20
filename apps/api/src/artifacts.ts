@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
+import { decodeHTML, decodeHTMLAttribute } from "entities";
 
 const exec = promisify(execFile);
 export type Category = "images" | "videos" | "audio" | "pdfs" | "other";
@@ -51,9 +52,9 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
     const useful = files.filter((r) => !SCAFFOLD.test(rel(r).split("/").at(-1)!) && (!/^(?:assets|static|_next)\//.test(rel(r)) || category(rel(r)) !== "other"));
     const primary = html ?? useful[0];
     if (!primary) continue;
-    const loose = bucket === "projects" && prefix.split("/").length === 2;
-    // Only identified publication bundles collapse extra HTML into one site.
-    // Legacy session folders can hold unrelated loose pages without an index.
+    // Only identified publication bundles collapse extra HTML into one site. A legacy
+    // session folder with a root index is a site; without one its pages stand alone.
+    const loose = bucket === "projects" && prefix.split("/").length === 2 && !files.some((r) => /^index\.html?$/i.test(rel(r)));
     const originals = useful.filter((r) => loose || r === primary || !/\.html?$/i.test(rel(r)));
     const newest = validDate(files.map((r) => r.modified).filter(Boolean).sort().at(-1));
     const make = (file: ObjectRow, isPrimary: boolean): Artifact => {
@@ -218,6 +219,29 @@ export function createArtifactCatalog(loaders: { projects: () => Promise<Artifac
   };
 }
 
+// HTML5 character-reference decoding (complete named table, numeric/C1 rules,
+// semicolon-less legacy names) from the maintained `entities` package. One pass only.
+export const decodeHtmlEntities = (text: string): string => decodeHTML(text);
+const attributes = (tag: string) => {
+  const out: Record<string, string> = {};
+  for (const m of tag.replace(/^<meta\b/i, "").matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+    const key = m[1].toLowerCase();
+    if (!(key in out)) out[key] = m[2] ?? m[3] ?? m[4] ?? "";
+  }
+  return out;
+};
+const clean = (value: string | undefined, decode: (s: string) => string) => value === undefined ? undefined : decode(value).replace(/\s+/g, " ").trim() || undefined;
+// Metadata is read as inert text: nothing is parsed into a DOM, executed or mounted.
+export function extractHtmlMetadata(html: string): { title?: string; description?: string } {
+  const title = clean(html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1], decodeHTML);
+  let description: string | undefined;
+  for (const [tag] of html.matchAll(/<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    const attrs = attributes(tag);
+    if (attrs.name?.trim().toLowerCase() === "description" && "content" in attrs) { description = clean(attrs.content, decodeHTMLAttribute); break; }
+  }
+  return { title, description };
+}
+
 const run = async (command: string, args: string[], timeout: number) => (await exec(command, args, { timeout, maxBuffer: 64 * 1024 * 1024 })).stdout;
 async function enrichMinio(items: Artifact[]) {
   const sites = items.filter((item) => /\.html?$/i.test(new URL(item.originalUrl).pathname));
@@ -241,9 +265,7 @@ async function enrichMinio(items: Artifact[]) {
         await reader.cancel();
         if (size > 131072) continue;
         const html = new TextDecoder().decode(Buffer.concat(chunks));
-        const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
-        const meta = html.match(/<meta\s+[^>]*name=["']description["'][^>]*>/i)?.[0];
-        const description = meta?.match(/content=["']([^"']+)["']/i)?.[1]?.trim();
+        const { title, description } = extractHtmlMetadata(html);
         if (title && title.length <= 300) item.title = title;
         if (description) item.description = description.slice(0, 1000);
       } catch { /* Metadata is optional; the listed original remains discoverable. */ }
