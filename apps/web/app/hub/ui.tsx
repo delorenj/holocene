@@ -130,6 +130,7 @@ export function BoxIcon({ size = 12 }: { size?: number }) {
 const HUB_TABS: Array<{ id: string; label: string; href: string }> = [
   { id: "agents", label: "Agents", href: "/?view=agents" },
   { id: "projects", label: "Projects", href: "/?view=projects" },
+  { id: "live", label: "Live", href: "/live" },
   { id: "genesis", label: "Genesis", href: "/genesis" },
   { id: "voice", label: "Voice", href: "/voice" },
   { id: "wax", label: "Wax", href: "/wax" },

@@ -1,0 +1,325 @@
+/* The Live hub, in the Ledger theme from ../hub/hub.css. Everything is prefixed with .hub-root so it
+   outranks the legacy globals. The vermilion pop is the hub's colour for "you" and selection; here it
+   carries the promotion mark and anything overdue, and nothing else. */
+
+.hub-root[data-theme="ledger"] {
+  --live-warn: #8a5a00;
+  --live-warn-soft: #f7ecd2;
+  --live-good-soft: #e3eedd;
+  --live-bit-0: #bb2d14;
+  --live-bit-1: #2f5d6b;
+  --live-bit-2: #3e6b34;
+  --live-bit-3: #121210;
+}
+.hub-root[data-theme="ledger-night"] {
+  --live-warn: #e3b25a;
+  --live-warn-soft: #3b2f17;
+  --live-good-soft: #243121;
+  --live-bit-0: #ff6a4d;
+  --live-bit-1: #8fc4d4;
+  --live-bit-2: #a3d39a;
+  --live-bit-3: #ede7dd;
+}
+
+.hub-root .live-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1180px;
+}
+.hub-root .live-body .hub-lede { padding-bottom: 0; }
+
+.hub-root .live-refresh {
+  height: 28px;
+  padding: 0 12px;
+  border: 2px solid var(--line-strong);
+  font: 600 12px/24px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.hub-root .live-refresh:hover:not(:disabled) { background: var(--wash); }
+.hub-root .live-refresh:disabled { opacity: 0.6; cursor: progress; }
+
+/* ---------- the hero card ---------- */
+
+.hub-root .live-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 26px 28px 22px;
+  background: var(--surface);
+  border: 3px solid var(--line-strong);
+  box-shadow: 8px 8px 0 var(--shadow);
+  /* ruled ledger stock, with the red margin rule down the left */
+  background-image:
+    linear-gradient(to right, transparent 0 22px, var(--margin) 22px 23px, transparent 23px),
+    repeating-linear-gradient(to bottom, transparent 0 27px, var(--rule) 27px 28px);
+}
+.hub-root .live-hero > * { position: relative; }
+.hub-root .live-hero.is-attention { box-shadow: 8px 8px 0 var(--live-warn); }
+.hub-root .live-hero.is-down { box-shadow: 8px 8px 0 var(--broken); }
+
+.hub-root .live-ribbon {
+  position: absolute;
+  top: 18px;
+  right: -44px;
+  width: 190px;
+  padding: 3px 0;
+  transform: rotate(35deg);
+  text-align: center;
+  font: 700 10px/14px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--pop);
+  color: #fff;
+  border-block: 1px solid var(--line-strong);
+}
+
+.hub-root .live-hero-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding-left: 18px;
+  padding-right: 120px;
+}
+.hub-root .live-badge {
+  padding: 3px 10px;
+  background: var(--pop);
+  color: #fff;
+  font: 700 11px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.hub-root .live-platform {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .live-platform-word {
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hub-root .live-name {
+  margin: 14px 0 0 18px;
+  font: 600 64px/66px var(--font-display);
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+.hub-root .live-tagline {
+  margin: 6px 0 0 18px;
+  max-width: 60ch;
+  font: italic 400 22px/30px var(--font-display);
+  color: var(--ink-2);
+  text-wrap: balance;
+}
+.hub-root .live-offer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 10px 0 0 18px;
+  font: 400 13px/18px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .live-offer a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- the numbers ---------- */
+
+.hub-root .live-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 24px 0 0;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+}
+.hub-root .live-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px 12px;
+  border-left: 2px solid var(--line-strong);
+}
+.hub-root .live-metric:first-child { border-left: 0; }
+.hub-root .live-metric dd { margin: 0; }
+.hub-root .live-metric-value {
+  font: 600 44px/48px var(--font-display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  overflow-wrap: anywhere;
+}
+.hub-root .live-metric-note {
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-2);
+}
+.hub-root .live-metric-extra { color: var(--ink-3); }
+.hub-root .live-metric.is-good .live-metric-value { color: var(--cleared); }
+.hub-root .live-metric.is-warn { background: var(--live-warn-soft); }
+.hub-root .live-metric.is-warn .live-metric-value { color: var(--live-warn); }
+.hub-root .live-metric.is-bad { background: var(--pop-soft); }
+.hub-root .live-metric.is-bad .live-metric-value,
+.hub-root .live-metric.is-bad .live-metric-note { color: var(--pop); font-weight: 600; }
+.hub-root .live-metric.is-muted .live-metric-value { color: var(--ink-3); }
+
+@media (max-width: 900px) {
+  .hub-root .live-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hub-root .live-metric:nth-child(odd) { border-left: 0; }
+  .hub-root .live-metric:nth-child(n + 3) { border-top: 2px solid var(--line-strong); }
+}
+@media (max-width: 600px) {
+  .hub-root .live-hero { padding: 20px 16px 16px; }
+  .hub-root .live-hero-head { padding-right: 0; }
+  .hub-root .live-name { font-size: 46px; line-height: 50px; }
+  .hub-root .live-tagline { font-size: 18px; line-height: 26px; }
+  .hub-root .live-metric-value { font-size: 36px; line-height: 40px; }
+  .hub-root .live-ribbon { right: -54px; top: 14px; }
+}
+
+/* ---------- source chips ---------- */
+
+.hub-root .live-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hub-root .live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font: 600 11px/16px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.hub-root .live-chip-name { text-transform: uppercase; letter-spacing: 0.08em; }
+.hub-root .live-chip-fresh { font-weight: 400; color: var(--ink-3); }
+.hub-root .live-chip.is-ok { border-color: var(--cleared); }
+.hub-root .live-chip.is-ok .hub-glyph { color: var(--cleared); }
+.hub-root .live-chip.is-warn,
+.hub-root .live-chip.is-stale { border-color: var(--live-warn); background: var(--live-warn-soft); }
+.hub-root .live-chip.is-warn .hub-glyph,
+.hub-root .live-chip.is-stale .hub-glyph { color: var(--live-warn); }
+.hub-root .live-chip.is-down { border-color: var(--pop); background: var(--pop-soft); }
+.hub-root .live-chip.is-down .hub-glyph { color: var(--pop); }
+.hub-root .live-chip.is-unavailable { border-style: dashed; color: var(--ink-3); }
+.hub-root .live-chip.is-pending { border-style: dashed; }
+
+/* ---------- actions (links and reads only) ---------- */
+
+.hub-root .live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.hub-root .live-action {
+  display: inline-block;
+  padding: 5px 12px;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 12px/18px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--shadow);
+  transition: transform 0.08s var(--ease), box-shadow 0.08s var(--ease);
+}
+.hub-root .live-action:hover { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
+.hub-root .live-action.is-primary { background: var(--ink); color: var(--on-ink); }
+
+/* ---------- board movement ---------- */
+
+.hub-root .live-board { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line-strong); }
+.hub-root .live-board ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.hub-root .live-board li {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  padding: 3px 0;
+  font: 400 12px/18px var(--font-mono);
+  border-bottom: 1px dotted var(--line);
+}
+.hub-root .live-ticket-key { font-weight: 600; }
+.hub-root .live-ticket-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-sans); font-size: 13px; }
+.hub-root .live-ticket-state { color: var(--ink-2); }
+.hub-root .live-ticket-age { color: var(--ink-3); }
+@media (max-width: 600px) {
+  .hub-root .live-board li { grid-template-columns: 64px minmax(0, 1fr); }
+  .hub-root .live-ticket-state, .hub-root .live-ticket-age { display: none; }
+}
+
+/* ---------- the first-promotion moment ---------- */
+
+.hub-root .live-banner {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--pop-soft);
+  border: 2px solid var(--pop);
+  box-shadow: 4px 4px 0 var(--pop);
+}
+.hub-root .live-banner-body { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hub-root .live-banner .hub-label { color: var(--pop); }
+.hub-root .live-banner-line { font: 600 20px/26px var(--font-display); color: var(--ink); text-wrap: balance; }
+.hub-root .live-banner-sub { font: 400 12px/18px var(--font-mono); color: var(--ink-2); }
+.hub-root .live-banner-close {
+  position: relative;
+  flex: none;
+  padding: 5px 14px;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+  font: 600 12px/18px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.hub-root .live-banner-close:hover { background: var(--ink); color: var(--on-ink); }
+@media (max-width: 600px) {
+  .hub-root .live-banner { flex-direction: column; align-items: flex-start; }
+}
+
+/* A short fall of paper bits, once, behind the text. Off for anyone who asked for less motion. */
+.hub-root .live-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.hub-root .live-bit {
+  position: absolute;
+  top: -16px;
+  opacity: 0;
+  animation: live-fall 2.4s cubic-bezier(0.3, 0.1, 0.6, 1) 1 both;
+}
+.hub-root .live-bit.tone-0 { background: var(--live-bit-0); }
+.hub-root .live-bit.tone-1 { background: var(--live-bit-1); }
+.hub-root .live-bit.tone-2 { background: var(--live-bit-2); }
+.hub-root .live-bit.tone-3 { background: var(--live-bit-3); }
+@keyframes live-fall {
+  0% { opacity: 0; translate: 0 0; }
+  12% { opacity: 0.9; }
+  100% { opacity: 0; translate: 14px 140px; rotate: 200deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-root .live-confetti { display: none; }
+  .hub-root .live-action { transition: none; }
+}
+
+/* ---------- empty, skipped, footnote ---------- */
+
+.hub-root .live-empty p { max-width: 70ch; }
+.hub-root .live-skipped {
+  padding: 12px 14px;
+  border: 2px dashed var(--live-warn);
+  background: var(--live-warn-soft);
+}
+.hub-root .live-skipped ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.hub-root .live-skipped li { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 12px/18px var(--font-mono); }
+.hub-root .live-readonly { font: 400 11px/16px var(--font-mono); color: var(--ink-3); }
