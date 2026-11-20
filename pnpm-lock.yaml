@@ -32,6 +32,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      entities:
+        specifier: ^7.0.1
+        version: 7.0.1
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
@@ -1018,6 +1021,10 @@ packages:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
 
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+    engines: {node: '>=0.12'}
+
   esbuild@0.28.0:
     resolution: {integrity: sha512-sNR9MHpXSUV/XB4zmsFKN+QgVG82Cc7+/aaxJ8Adi8hyOac+EXptIp45QBPaVyX3N70664wRbTcLTOemCAnyqw==}
     engines: {node: '>=18'}
@@ -1964,6 +1971,8 @@ snapshots:
   detect-node-es@1.1.0: {}
 
   dotenv@17.4.2: {}
+
+  entities@7.0.1: {}
 
   esbuild@0.28.0:
     optionalDependencies:

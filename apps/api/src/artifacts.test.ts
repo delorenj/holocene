@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import Fastify from "fastify";
-import { authorizeArtifacts, boundaries, createArtifactCatalog, listMinio, normalizeMinio, normalizeR2, queryArtifacts, registerArtifactRoutes, safePublishedUrl } from "./artifacts.js";
+import { authorizeArtifacts, boundaries, createArtifactCatalog, decodeHtmlEntities, extractHtmlMetadata, listMinio, normalizeMinio, normalizeR2, queryArtifacts, registerArtifactRoutes, safePublishedUrl } from "./artifacts.js";
 import type { Artifact } from "./artifacts.js";
 
 const row = (key: string, modified = "2026-11-20T12:00:00Z") => ({ key, modified });
@@ -71,6 +71,72 @@ test("legacy session folders preserve independent loose HTML pages regardless of
       assert.deepEqual(match.filenames, [name]);
     }
   }
+});
+
+test("legacy session folder with a root index is one site regardless of listing order", () => {
+  const keys = ["demo/session-uuid/index.html", "demo/session-uuid/about.html", "demo/session-uuid/style.css", "demo/session-uuid/clip.mp4"];
+  for (const ordered of [keys, [...keys].reverse()]) {
+    const items = normalizeMinio("projects", ordered.map((key) => row(key)));
+    const pages = items.filter((item) => /\.html$/.test(item.originalUrl));
+    assert.equal(pages.length, 1, "no secondary HTML duplicates");
+    assert.equal(pages[0].originalUrl, "https://s3.delo.sh/projects/demo/session-uuid/index.html");
+    assert.equal(pages[0].title, "session uuid");
+    assert.deepEqual([...pages[0].filenames].sort(), ["about.html", "clip.mp4", "index.html", "style.css"]);
+    assert.equal(queryArtifacts(items, { search: "about.html" }).total, 1);
+    assert.ok(items.some((item) => item.category === "videos" && item.originalUrl.endsWith("/clip.mp4")), "media original stays independent");
+    assert.equal(items.length, 2);
+  }
+  const loose = normalizeMinio("projects", ["demo/session-uuid/zeta.html", "demo/session-uuid/alpha.html", "demo/session-uuid/style.css"].map((key) => row(key)));
+  assert.deepEqual(loose.map((item) => item.title).sort(), ["alpha.html", "zeta.html"]);
+});
+
+test("HTML metadata decodes character references as inert text", () => {
+  assert.equal(decodeHtmlEntities("Research &amp; Development"), "Research & Development");
+  assert.equal(decodeHtmlEntities("Jarad&#39;s &#x27;plan&#x27; &quot;v2&quot; &mdash; caf&eacute; &#x1F680; &#128640; &#8217;"), "Jarad's 'plan' \"v2\" — café 🚀 🚀 ’");
+  assert.equal(decodeHtmlEntities("&lt;script&gt;alert(1)&lt;/script&gt;"), "<script>alert(1)</script>");
+  assert.equal(decodeHtmlEntities("&#150; &#0; &#xD800; &#x110000;"), "– \ufffd \ufffd \ufffd");
+  assert.equal(decodeHtmlEntities("Q&A, AT&T, 5 & 6, &bogus; &amp"), "Q&A, AT&T, 5 & 6, &bogus; &");
+  assert.equal(decodeHtmlEntities("Plain text with no references"), "Plain text with no references");
+  assert.equal(decodeHtmlEntities("&amp;amp;"), "&amp;", "decodes once");
+  assert.equal(decodeHtmlEntities("&Alpha; &NotEqual; &Bacute; &bogus;"), "Α ≠ &Bacute; &bogus;", "complete HTML5 names; invented names stay literal");
+  assert.deepEqual(extractHtmlMetadata(`<title>&notit; &copy=x</title><meta name="description" content="&notit; &copy=x">`), { title: "¬it; ©=x", description: "&notit; &copy=x" }, "text vs attribute legacy-name context");
+  assert.deepEqual(extractHtmlMetadata(`<title>
+    Research &amp; Development </title><meta content="A &amp; B summary" name="description"><meta name="description" content="second">`), { title: "Research & Development", description: "A & B summary" });
+  assert.deepEqual(extractHtmlMetadata(`<meta property="og:title" content="x"><meta data-x='a>b' NAME=Description content='It&#39;s "quoted"'>`), { title: undefined, description: "It's \"quoted\"" });
+});
+
+test("listMinio enrichment and search use decoded metadata for reordered attributes", async (t) => {
+  const prior = globalThis.fetch;
+  t.after(() => { globalThis.fetch = prior; });
+  globalThis.fetch = (async () => new Response("<!doctype html><title>Research &amp; Development</title><meta content=\"A &amp; B summary &#8212; Jarad&#39;s caf&#xE9;\" name=\"description\">")) as typeof fetch;
+  const items = await listMinio("projects", async () => JSON.stringify({ type: "file", key: "demo/2026-11-20/report/index.html", lastModified: "2026-11-20T12:00:00Z" }));
+  assert.equal(items[0].title, "Research & Development");
+  assert.equal(items[0].description, "A & B summary — Jarad's café");
+  for (const search of ["Research & Development", "A & B summary", "Jarad's café"]) assert.equal(queryArtifacts(items, { search }).total, 1, search);
+  assert.equal(queryArtifacts(items, { search: "&amp;" }).total, 0);
+});
+
+test("listMinio enrichment and search decode the complete HTML5 reference set", async (t) => {
+  const prior = globalThis.fetch;
+  t.after(() => { globalThis.fetch = prior; });
+  const pages: Record<string, string> = {
+    greek: `<title>Study of &Alpha; particles</title><meta content="&NotEqual; result" name="description">`,
+    invalid: `<title>Invented &bogus; and &Bacute;</title><meta name='description' content='Literal &bogus;'>`,
+    numeric: `<title>Research &#945; &amp; &#x3B2;</title><meta data-x="1" content="Decoded &#128640; &#x1F680; &#150; &quot;ok&quot; &rsquo;" name="description">`,
+  };
+  globalThis.fetch = (async (input: string | URL | Request) => new Response(pages[String(input).split("/").at(-2)!])) as typeof fetch;
+  const lines = Object.keys(pages).map((name) => JSON.stringify({ type: "file", key: `demo/2026-11-20/${name}/index.html`, lastModified: "2026-11-20T12:00:00Z" })).join("\n");
+  const items = await listMinio("projects", async () => lines);
+  const by = (name: string) => items.find((item) => item.originalUrl.includes(`/${name}/`))!;
+  assert.deepEqual([by("greek").title, by("greek").description], ["Study of Α particles", "≠ result"]);
+  assert.deepEqual([by("invalid").title, by("invalid").description], ["Invented &bogus; and &Bacute;", "Literal &bogus;"]);
+  assert.deepEqual([by("numeric").title, by("numeric").description], ["Research α & β", "Decoded 🚀 🚀 – \"ok\" ’"]);
+  for (const [search, name] of [["Α particles", "greek"], ["≠ result", "greek"], ["&Bacute;", "invalid"], ["α & β", "numeric"], ["🚀", "numeric"]]) {
+    const result = queryArtifacts(items, { search });
+    assert.equal(result.total, 1, search);
+    assert.ok(result.items[0].originalUrl.includes(`/${name}/`), search);
+  }
+  assert.equal(queryArtifacts(items, { search: "B\u0301" }).total, 0, "invalid name is not invented into an accent");
 });
 
 test("multiple HTML pages attach to one site while useful documents remain separate", () => {
