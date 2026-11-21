@@ -1,0 +1,604 @@
+{
+  "candidate": "ebff673854e84ccd1fd1fe1e13c20f3516605207",
+  "generatedAt": "2026-11-21T00:08:28.083Z",
+  "viewports": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "products": [
+        {
+          "id": "earshot",
+          "stage": "live",
+          "href": "/live"
+        },
+        {
+          "id": "greeninbetween",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "gruvato",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "tolt",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html"
+        }
+      ],
+      "issues": 51,
+      "themes": [
+        {
+          "m": {
+            "width": 1440,
+            "html": 1440,
+            "body": 1440,
+            "theme": "ledger"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 232
+          }
+        },
+        {
+          "m": {
+            "width": 1440,
+            "html": 1440,
+            "body": 1440,
+            "theme": "ledger-night"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 232
+          }
+        }
+      ],
+      "drawer": {},
+      "history": true,
+      "links": [
+        {
+          "id": "tolt",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48113,
+          "viewport": 1440
+        },
+        {
+          "id": "greeninbetween",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 53338,
+          "viewport": 1440
+        },
+        {
+          "id": "gruvato",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 48162,
+          "viewport": 1440
+        }
+      ],
+      "live": {
+        "url": "http://127.0.0.1:3107/live",
+        "heading": "Earshot",
+        "width": 1440
+      },
+      "modified": [
+        {
+          "options": {
+            "modifiers": [
+              "Control"
+            ]
+          },
+          "url": "http://127.0.0.1:3107/?view=projects",
+          "originalURL": "http://127.0.0.1:3107/?view=projects&focus=earshot"
+        },
+        {
+          "options": {
+            "button": "middle"
+          },
+          "url": "http://127.0.0.1:3107/?view=projects",
+          "originalURL": "http://127.0.0.1:3107/?view=projects&focus=earshot"
+        }
+      ],
+      "agentFocus": "holocene-pm",
+      "errors": []
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "products": [
+        {
+          "id": "earshot",
+          "stage": "live",
+          "href": "/live"
+        },
+        {
+          "id": "greeninbetween",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "gruvato",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "tolt",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html"
+        }
+      ],
+      "issues": 51,
+      "themes": [
+        {
+          "m": {
+            "width": 390,
+            "html": 390,
+            "body": 390,
+            "theme": "ledger"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 0
+          }
+        },
+        {
+          "m": {
+            "width": 390,
+            "html": 390,
+            "body": 390,
+            "theme": "ledger-night"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 0
+          }
+        }
+      ],
+      "drawer": {
+        "keyboardMenu": true,
+        "focus": {
+          "width": "2px",
+          "style": "solid"
+        },
+        "trapSteps": 30,
+        "escape": true,
+        "focusReturned": true
+      },
+      "history": true,
+      "links": [
+        {
+          "id": "tolt",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48000,
+          "viewport": 390
+        },
+        {
+          "id": "greeninbetween",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 53225,
+          "viewport": 390
+        },
+        {
+          "id": "gruvato",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 48105,
+          "viewport": 390
+        }
+      ],
+      "live": {
+        "url": "http://127.0.0.1:3107/live",
+        "heading": "Earshot",
+        "width": 390
+      },
+      "modified": [],
+      "agentFocus": "holocene-pm",
+      "errors": []
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "products": [
+        {
+          "id": "earshot",
+          "stage": "live",
+          "href": "/live"
+        },
+        {
+          "id": "greeninbetween",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "gruvato",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "tolt",
+          "stage": "launch",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html"
+        }
+      ],
+      "issues": 51,
+      "themes": [
+        {
+          "m": {
+            "width": 320,
+            "html": 320,
+            "body": 320,
+            "theme": "ledger"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 0
+          }
+        },
+        {
+          "m": {
+            "width": 320,
+            "html": 320,
+            "body": 320,
+            "theme": "ledger-night"
+          },
+          "style": {
+            "animation": "none",
+            "transition": "0s",
+            "width": 0
+          }
+        }
+      ],
+      "drawer": {
+        "keyboardMenu": true,
+        "focus": {
+          "width": "2px",
+          "style": "solid"
+        },
+        "trapSteps": 30,
+        "escape": true,
+        "focusReturned": true
+      },
+      "history": true,
+      "links": [
+        {
+          "id": "tolt",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48000,
+          "viewport": 320
+        },
+        {
+          "id": "greeninbetween",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 53225,
+          "viewport": 320
+        },
+        {
+          "id": "gruvato",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 48105,
+          "viewport": 320
+        }
+      ],
+      "live": {
+        "url": "http://127.0.0.1:3107/live",
+        "heading": "Earshot",
+        "width": 320
+      },
+      "modified": [],
+      "agentFocus": "holocene-pm",
+      "errors": []
+    }
+  ],
+  "routes": [
+    {
+      "route": "/artifacts",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/artifacts",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/candybar",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/candybar",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/genesis",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/genesis",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/settings",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/settings",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/transcripts",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/transcripts",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/voice",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/voice",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/wax",
+      "status": 200,
+      "oldTabs": 0,
+      "current": "/wax",
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440,
+          "theme": "ledger"
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390,
+          "theme": "ledger"
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320,
+          "theme": "ledger"
+        }
+      ]
+    },
+    {
+      "route": "/mini",
+      "status": 200,
+      "oldTabs": 0,
+      "current": null,
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320
+        }
+      ]
+    },
+    {
+      "route": "/hooks",
+      "status": 200,
+      "oldTabs": 0,
+      "current": null,
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320
+        }
+      ]
+    },
+    {
+      "route": "/legacy",
+      "status": 200,
+      "oldTabs": 0,
+      "current": null,
+      "widths": [
+        {
+          "width": 1440,
+          "html": 1440,
+          "body": 1440
+        },
+        {
+          "width": 390,
+          "html": 390,
+          "body": 390
+        },
+        {
+          "width": 320,
+          "html": 320,
+          "body": 320
+        }
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "first-failure",
+      "label": "SYNTHETIC browser-only payload",
+      "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry unavailable or invalid. No successful PJ snapshot is available.\n\nPreparing to launch\n\nNo entries in the available snapshot; discovery is incomplete.\n\nLive\n\nNo entries in the available snapshot; discovery is incomplete."
+    },
+    {
+      "id": "last-good",
+      "label": "SYNTHETIC browser-only payload",
+      "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry unavailable or invalid. Last good PJ snapshot: 2026-11-20T00:00:00Z (6s old at this read).\n\nPreparing to launch\n\nNo entries in the available snapshot; discovery is incomplete.\n\nLive\n\nNo entries in the available snapshot; discovery is incomplete."
+    },
+    {
+      "id": "healthy-empty",
+      "label": "SYNTHETIC browser-only payload",
+      "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry read 2026-11-20T00:00:00Z. Declarations and receipts are read-only; links do not attest service health.\n\nPreparing to launch\n\nNo registered products declared launch.\n\nLive\n\nNo registered products declared live."
+    }
+  ],
+  "auth": [
+    {
+      "path": "/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true
+    },
+    {
+      "path": "/api/modules/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true
+    }
+  ]
+}

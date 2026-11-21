@@ -1,0 +1,227 @@
+[
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "captures": [
+      {
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "pageWidth": 1440,
+        "bodyWidth": 1440,
+        "sidebar": 232,
+        "theme": "ledger",
+        "contrast": 6.982360459803082,
+        "navContrast": 12.134578554257386,
+        "focusContrast": 7.314617653153856,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      },
+      {
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "pageWidth": 1440,
+        "bodyWidth": 1440,
+        "sidebar": 232,
+        "theme": "ledger-night",
+        "contrast": 5.773734760766054,
+        "navContrast": 10.814184945614548,
+        "focusContrast": 6.8178379729905885,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      }
+    ],
+    "destinations": [
+      {
+        "id": "tolt",
+        "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "title": "TOLT launch dashboard"
+      },
+      {
+        "id": "greeninbetween",
+        "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "title": "GreenInBetween launch dashboard"
+      },
+      {
+        "id": "gruvato",
+        "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "title": "gruvato launch dashboard"
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "title": "Holocene · Live",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "bodyWidth": 1440,
+      "sidebar": 232,
+      "theme": "ledger-night"
+    },
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "captures": [
+      {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "pageWidth": 390,
+        "bodyWidth": 390,
+        "sidebar": 0,
+        "theme": "ledger",
+        "contrast": 6.982360459803082,
+        "navContrast": 12.134578554257386,
+        "focusContrast": 7.314617653153856,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      },
+      {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "pageWidth": 390,
+        "bodyWidth": 390,
+        "sidebar": 0,
+        "theme": "ledger-night",
+        "contrast": 5.773734760766054,
+        "navContrast": 10.814184945614548,
+        "focusContrast": 6.8178379729905885,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      }
+    ],
+    "destinations": [
+      {
+        "id": "tolt",
+        "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "title": "TOLT launch dashboard"
+      },
+      {
+        "id": "greeninbetween",
+        "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "title": "GreenInBetween launch dashboard"
+      },
+      {
+        "id": "gruvato",
+        "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "title": "gruvato launch dashboard"
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "title": "Holocene · Live",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "bodyWidth": 390,
+      "sidebar": 0,
+      "theme": "ledger-night"
+    },
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 320,
+      "height": 740
+    },
+    "captures": [
+      {
+        "viewport": {
+          "width": 320,
+          "height": 740
+        },
+        "pageWidth": 320,
+        "bodyWidth": 320,
+        "sidebar": 0,
+        "theme": "ledger",
+        "contrast": 6.982360459803082,
+        "navContrast": 12.134578554257386,
+        "focusContrast": 7.314617653153856,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      },
+      {
+        "viewport": {
+          "width": 320,
+          "height": 740
+        },
+        "pageWidth": 320,
+        "bodyWidth": 320,
+        "sidebar": 0,
+        "theme": "ledger-night",
+        "contrast": 5.773734760766054,
+        "navContrast": 10.814184945614548,
+        "focusContrast": 6.8178379729905885,
+        "motion": {
+          "animation": "none",
+          "transition": "0s"
+        }
+      }
+    ],
+    "destinations": [
+      {
+        "id": "tolt",
+        "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+        "title": "TOLT launch dashboard"
+      },
+      {
+        "id": "greeninbetween",
+        "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+        "title": "GreenInBetween launch dashboard"
+      },
+      {
+        "id": "gruvato",
+        "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+        "title": "gruvato launch dashboard"
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "title": "Holocene · Live",
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "pageWidth": 320,
+      "bodyWidth": 320,
+      "sidebar": 0,
+      "theme": "ledger-night"
+    },
+    "pageErrors": []
+  }
+]

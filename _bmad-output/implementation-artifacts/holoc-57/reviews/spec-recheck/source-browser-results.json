@@ -1,0 +1,52 @@
+[
+  {
+    "id": "invalid-mode",
+    "label": "SYNTHETIC browser interception with payload from independent actual Fastify GET/private source fixture",
+    "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry read 2026-11-21T00:11:55.334Z. Declarations and receipts are read-only; links do not attest service health.\n\nPreparing to launch\n\nNo entries in the available snapshot; discovery is incomplete.\n\nLive\n\nNo entries in the available snapshot; discovery is incomplete.\n\nLifecycle source issues (1)",
+    "registry": {
+      "state": "ok",
+      "snapshotAt": "2026-11-21T00:11:55.334Z",
+      "ageSeconds": 0
+    },
+    "products": [],
+    "issueCount": 1
+  },
+  {
+    "id": "malformed-first",
+    "label": "SYNTHETIC browser interception with payload from independent actual Fastify GET/private source fixture",
+    "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry unavailable or invalid. Lifecycle discovery is incomplete. No successful PJ snapshot is available.\n\nPreparing to launch\n\nNo entries in the available snapshot; discovery is incomplete.\n\nLive\n\nNo entries in the available snapshot; discovery is incomplete.",
+    "registry": {
+      "state": "down",
+      "detail": "PJ registry unavailable or invalid. Lifecycle discovery is incomplete."
+    },
+    "products": [],
+    "issueCount": 0
+  },
+  {
+    "id": "malformed-lastgood",
+    "label": "SYNTHETIC browser interception with payload from independent actual Fastify GET/private source fixture",
+    "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry unavailable or invalid. Lifecycle discovery is incomplete. Last good PJ snapshot: 2027-01-15T08:00:00.000Z (6s old at this read).\n\nPreparing to launch\ninvalid\n\nPJ · invalid · committed .launch.yaml 97a927b3\n\nPublication receipt unavailable; no dashboard link can be resolved.\n\nDashboard unavailable\nLive\n\nNo entries in the available snapshot; discovery is incomplete.",
+    "registry": {
+      "state": "down",
+      "detail": "PJ registry unavailable or invalid. Lifecycle discovery is incomplete.",
+      "snapshotAt": "2027-01-15T08:00:00.000Z",
+      "ageSeconds": 6
+    },
+    "products": [
+      "invalid"
+    ],
+    "issueCount": 0
+  },
+  {
+    "id": "healthy-empty",
+    "label": "SYNTHETIC browser interception with payload from independent actual Fastify GET/private source fixture",
+    "text": "Products\n\nPreparing to launch and live. Open the existing dashboard or management view.\n\nREFRESH SOURCES\nAll products\nPreparing to launch\nLive\n\nPJ registry read 2027-01-15T08:00:36.000Z. Declarations and receipts are read-only; links do not attest service health.\n\nPreparing to launch\n\nNo registered products declared launch.\n\nLive\n\nNo registered products declared live.",
+    "registry": {
+      "state": "ok",
+      "snapshotAt": "2027-01-15T08:00:36.000Z",
+      "ageSeconds": 0
+    },
+    "products": [],
+    "issueCount": 0
+  }
+]

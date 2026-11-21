@@ -1,0 +1,225 @@
+{
+  "commit": "ebff673854e84ccd1fd1fe1e13c20f3516605207",
+  "checks": [
+    {
+      "case": "initial healthy",
+      "state": "ok",
+      "ids": [
+        "bad",
+        "neighbor"
+      ],
+      "snapshotAt": "2027-01-15T08:00:00.000Z"
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: [launch]",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: [steady]",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: [live]",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: {toString: launch}",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: null",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: 123",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q1",
+      "raw": "mode: true",
+      "http": 200,
+      "products": [
+        "neighbor"
+      ],
+      "issues": [
+        [
+          "bad",
+          "invalid"
+        ]
+      ]
+    },
+    {
+      "case": "Q2",
+      "invalidId": 42,
+      "helperDown": true,
+      "firstRead": {
+        "state": "down",
+        "snapshotAt": null,
+        "count": 0
+      },
+      "retained": {
+        "state": "down",
+        "snapshotAt": "2027-01-15T08:00:48.000Z",
+        "ageSeconds": 6,
+        "ids": [
+          "bad",
+          "neighbor"
+        ]
+      }
+    },
+    {
+      "case": "Q2",
+      "invalidId": {},
+      "helperDown": true,
+      "firstRead": {
+        "state": "down",
+        "snapshotAt": null,
+        "count": 0
+      },
+      "retained": {
+        "state": "down",
+        "snapshotAt": "2027-01-15T08:00:48.000Z",
+        "ageSeconds": 12,
+        "ids": [
+          "bad",
+          "neighbor"
+        ]
+      }
+    },
+    {
+      "case": "Q2",
+      "invalidId": [],
+      "helperDown": true,
+      "firstRead": {
+        "state": "down",
+        "snapshotAt": null,
+        "count": 0
+      },
+      "retained": {
+        "state": "down",
+        "snapshotAt": "2027-01-15T08:00:48.000Z",
+        "ageSeconds": 18,
+        "ids": [
+          "bad",
+          "neighbor"
+        ]
+      }
+    },
+    {
+      "case": "Q2",
+      "invalidId": false,
+      "helperDown": true,
+      "firstRead": {
+        "state": "down",
+        "snapshotAt": null,
+        "count": 0
+      },
+      "retained": {
+        "state": "down",
+        "snapshotAt": "2027-01-15T08:00:48.000Z",
+        "ageSeconds": 24,
+        "ids": [
+          "bad",
+          "neighbor"
+        ]
+      }
+    },
+    {
+      "case": "Q2",
+      "invalidId": "",
+      "helperDown": true,
+      "firstRead": {
+        "state": "down",
+        "snapshotAt": null,
+        "count": 0
+      },
+      "retained": {
+        "state": "down",
+        "snapshotAt": "2027-01-15T08:00:48.000Z",
+        "ageSeconds": 30,
+        "ids": [
+          "bad",
+          "neighbor"
+        ]
+      }
+    },
+    {
+      "case": "healthy empty control",
+      "state": "ok",
+      "snapshotAt": "2027-01-15T08:01:24.000Z",
+      "count": 0
+    },
+    {
+      "case": "Q3",
+      "head": "df2fa8b5dd94d9fb3d292d596c6cfa685d030d3f",
+      "replacement": "0854c147aeca15633195c776690cf5a7eb217533",
+      "normalGitRaw": "mode: live",
+      "noReplaceRaw": "mode: launch",
+      "directRaw": "mode: launch",
+      "response": {
+        "stage": "launch",
+        "commit": "df2fa8b5dd94d9fb3d292d596c6cfa685d030d3f"
+      }
+    }
+  ]
+}
