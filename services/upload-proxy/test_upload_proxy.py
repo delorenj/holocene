@@ -16,6 +16,7 @@ import upload_proxy as up  # noqa: E402
 import memo_common as mc  # noqa: E402
 
 up.WAKE_URL = ""  # no test PUT should reach for a real watcher; WakeHint passes its own URL
+up.WAKE_BEAT_URL = ""  # nor a beat
 BB_HOOKS = Path("/home/delorenj/code/33GOD/bloodbank/services/agent-hooks")
 KEY = "inbox/holocene-pm/2026/10/15/20261015T201500Z.ogg"
 
@@ -1534,6 +1535,55 @@ class WakeHint(unittest.TestCase):
     def test_a_dead_watcher_is_fail_open(self):
         up.wake_watcher_async(KEY, b"OggS1234", url="http://127.0.0.1:9/wake")
         time.sleep(0.3)  # nothing raised into the caller
+
+    def test_wake_outcomes_are_counted_for_the_beat(self):
+        with up.WAKE_STATS_LOCK:
+            before = dict(up.WAKE_STATS)
+        up.wake_watcher_async(KEY, b"OggS1234", url=self.url)
+        up.wake_watcher_async(KEY, b"OggS1234", url="http://127.0.0.1:9/wake")
+        for _ in range(100):
+            with up.WAKE_STATS_LOCK:
+                if up.WAKE_STATS["sent"] > before["sent"] and up.WAKE_STATS["failed"] > before["failed"]:
+                    break
+            time.sleep(0.02)
+        with up.WAKE_STATS_LOCK:
+            self.assertEqual((up.WAKE_STATS["sent"] - before["sent"], up.WAKE_STATS["failed"] - before["failed"]), (1, 1))
+
+    def test_the_beat_carries_the_boot_and_the_wake_counts(self):
+        beat_url = self.url + "/beat"
+        self.assertEqual(up.wake_beat_once(url=beat_url, timeout=2), 202)
+        path, body = self.got[-1]
+        self.assertEqual(path, "/wake/beat")
+        self.assertEqual(body["boot"], up.PUSH.boot)
+        with up.WAKE_STATS_LOCK:
+            self.assertEqual((body["wake_sent"], body["wake_failed"]), (up.WAKE_STATS["sent"], up.WAKE_STATS["failed"]))
+
+    def test_the_beat_url_follows_the_wake_url(self):
+        self.assertEqual(up.wake_beat_url("http://host.docker.internal:8697/wake"), "http://host.docker.internal:8697/wake/beat")
+        self.assertEqual(up.wake_beat_url("http://h:1/wake/"), "http://h:1/wake/beat")
+        self.assertEqual(up.wake_beat_url(""), "")  # no wake, no beat
+
+    def test_the_beat_loop_beats_until_stopped_and_survives_a_dead_watcher(self):
+        import threading
+        real = (up.WAKE_BEAT_URL, up.WAKE_BEAT_S)
+        self.addCleanup(lambda: (setattr(up, "WAKE_BEAT_URL", real[0]), setattr(up, "WAKE_BEAT_S", real[1])))
+        up.WAKE_BEAT_URL, up.WAKE_BEAT_S = self.url + "/beat", 0.05
+        stop = threading.Event()
+        t = threading.Thread(target=up.wake_beat_forever, args=(stop,), daemon=True)
+        t.start()
+        self.wait(3)
+        stop.set()
+        t.join(2)
+        self.assertFalse(t.is_alive())
+        self.assertGreaterEqual(len([1 for p, _ in self.got if p == "/wake/beat"]), 3)
+        up.WAKE_BEAT_URL = "http://127.0.0.1:9/wake/beat"
+        stop = threading.Event()
+        t = threading.Thread(target=up.wake_beat_forever, args=(stop,), daemon=True)
+        t.start()
+        time.sleep(0.2)
+        stop.set()
+        t.join(2)
+        self.assertFalse(t.is_alive())  # a refused beat never kills the loop
 
     def test_a_put_hints_the_watcher_after_the_object_is_stored(self):
         import socketserver, threading

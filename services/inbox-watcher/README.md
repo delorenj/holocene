@@ -14,7 +14,8 @@ tools to see every hop of it.
         | NATS PUB bloodbank.evt.audio.memo.uploaded      fact: audio.memo.uploaded
         v
    s3://holocene-auto/inbox/<agent>/.../<ts>.ogg         HOP 2  object exists
-        | (polled every 5s by holocene-inbox-watcher.service)
+        | POST /wake to the watcher at once (and /wake/beat every 10 s: S3 is listed every 15 s as a backstop while beats
+        | arrive, every 1 s otherwise; see "the wake hint and the early push")
         v
    inbox_watcher.py                                      memo_id = uuid5(URL, "s3://holocene-auto/"+key)
         |-- received    fact: audio.memo.received         HOP 3  watcher owns it
@@ -49,7 +50,8 @@ tools to see every hop of it.
         |-- replied     fact: audio.memo.replied
         |-- EVERY stage change and progress line: status/<yyyy>/<mm>/<dd>/<memo_id>.json (the car's view)
         v
-   Agent Pad polls replies/ every 2 s for 10 min after a send (else 15 s), plays in order   HOP 11 playback
+   Agent Pad hears each reply / chunk / progress clip over the proxy's SSE stream (/upload/events) the moment it is up;   HOP 11 playback
+        | it polls replies/ only as the fallback (6 s while the stream is live, 2 s when it is not, 15 s idle), plays in order
         |-- and the memo's status object on the same poll: tile line "Working 1:20 · <progress>", transcript text, progress clips
         |-- POST /upload/played {reply_key, phase}  -> upload proxy log line "playback"
         |-- played      fact: audio.memo.played (phase started|ended)  or  failed(stage=playback, retryable)
@@ -1010,6 +1012,18 @@ Two loopback hops that take the 1 s `mc ls` tick and the `bb-emit` subprocess of
   2 s listing cannot delay it. Keys the watcher already knows are skipped (memo id = uuid5 of the key), so a hint and the
   poll can never start a memo twice; the poll still runs and still finds anything the hint missed. Logged as `wake_hint`
   on both sides. Measured on the live host (load 70+), PUT landed to memo discovered: p50 6.1 s -> 0.004 s, p90 9.6 s -> 0.011 s.
+- **Wake beat: the listing is a backstop while the wake is proven (2026-11-21).** The proxy also POSTs
+  `{boot, wake_sent, wake_failed}` to `/wake/beat` every 10 s (`WATCHER_WAKE_BEAT_S`, 0 = off; `WATCHER_WAKE_BEAT_URL`,
+  default the wake URL + `/beat`). The beat proves the whole proxy -> watcher path, the same way the proxy's SSE `beat`
+  proves the push channel to the pad (`push.ts` `pushLive`). While beats arrive (`WakeChannel.live()`: one within
+  `MEMO_WAKE_STALE_S`=35 s and no missed wake in the last `MEMO_WAKE_DISTRUST_S`=600 s), the fast discovery thread idles
+  and the tick lists `inbox/` every `MEMO_WAKE_BACKSTOP_S`=15 s instead of every 1 s plus every 0.4 s (~3.5 full listings a
+  second, all day; 19 of 19 memos in the journal had already been started by their wake). A wake is "missed" when the
+  backstop listing finds a memo older than 5 s that no wake announced (`wake_missed`, warn), or when a beat's
+  `wake_failed` grew within one proxy boot (the listing runs at once): either puts the fast listing back for 10 min.
+  No beat yet (a fresh start, the proxy down) is fast as before. Transitions are logged as `wake_channel` (watcher) and
+  `wake_beat` (proxy); the heartbeat file carries `wake {live, beat_age_s, beats, misses, ...}`.
+  `MEMO_WAKE_BACKSTOP_S=0` restores the old always-fast listing.
 - **Early push (live both sides: the watcher calls it for `received` / `transcribed` / `voiced`, see "Latency levers").** `POST http://127.0.0.1:8698/internal/push {action, memo_id,
   data}` (compose publishes the proxy's 8080 on loopback only; `/internal/` is not under Traefik's `/upload/` rule) pushes
   the same compact event the NATS fact would produce to every open `/upload/events` stream at once, and drops the NATS copy

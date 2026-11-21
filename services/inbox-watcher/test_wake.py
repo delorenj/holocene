@@ -143,6 +143,126 @@ class WakeListener(MemoHarness, unittest.TestCase):
     def test_port_zero_turns_it_off(self):
         self.assertIsNone(iw.start_wake_listener(self.w, port=0))
 
+    def test_a_beat_makes_the_channel_live(self):
+        base = self.serve()
+        self.assertFalse(self.w.wake.live())
+        self.assertEqual(self.post(base, {"boot": "b1", "wake_sent": 0, "wake_failed": 0}, path="/wake/beat"), 202)
+        self.assertTrue(self.w.wake.live())
+        for bad in (["not", "an", "object"], {}, {"boot": "b1"}, {"wake_failed": 0}, {"boot": "", "wake_failed": 0},
+                    {"boot": "b1", "wake_failed": -1}, {"boot": "b1", "wake_failed": True}, {"boot": 7, "wake_failed": 0}):
+            self.assertEqual(self.post(base, bad, path="/wake/beat"), 400, bad)  # only a well-formed beat is proof
+        self.assertEqual(self.w.wake.beats, 1)
+
+    def test_a_beat_reporting_a_failed_wake_lists_fast_at_once(self):
+        base = self.serve()
+        self.assertEqual(self.post(base, {"boot": "b1", "wake_failed": 0}, path="/wake/beat"), 202)
+        iw.WAKE.clear()
+        self.post(base, {"boot": "b1", "wake_failed": 1}, path="/wake/beat")
+        self.assertTrue(iw.WAKE.is_set())
+        self.assertFalse(self.w.wake.live())
+        iw.WAKE.clear()
+
+
+class Clock:
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+class WakeChannelRules(unittest.TestCase):
+    def setUp(self):
+        self.clock = Clock()
+        self.ch = iw.WakeChannel(clock=self.clock, backstop_s=15)
+
+    def test_not_live_until_the_first_beat(self):
+        self.assertFalse(self.ch.live())
+        self.assertEqual(self.ch.period(1.0), 1.0)
+        self.ch.beat("b1", 0)
+        self.assertTrue(self.ch.live())
+        self.assertEqual(self.ch.period(1.0), 15)
+
+    def test_a_stale_beat_is_not_live(self):
+        self.ch.beat("b1", 0)
+        self.clock.t += iw.WAKE_STALE_S + 0.1
+        self.assertFalse(self.ch.live())
+        self.assertEqual(self.ch.period(1.0), 1.0)
+
+    def test_a_miss_distrusts_the_channel_for_a_while(self):
+        self.ch.beat("b1", 0)
+        self.ch.missed()
+        self.assertFalse(self.ch.live())
+        self.clock.t += iw.WAKE_DISTRUST_S - 1
+        self.ch.beat("b1", 0)
+        self.assertFalse(self.ch.live())
+        self.clock.t += 2
+        self.ch.beat("b1", 0)
+        self.assertTrue(self.ch.live())
+
+    def test_a_grown_failure_count_is_a_miss(self):
+        self.assertFalse(self.ch.beat("b1", 0))
+        self.assertFalse(self.ch.beat("b1", 0))
+        self.assertTrue(self.ch.beat("b1", 1))       # a wake failed since the last beat
+        self.assertFalse(self.ch.live())
+
+    def test_a_new_boot_that_already_failed_is_a_miss(self):
+        # the failures may predate this watcher hearing of the boot (a proxy restart, a watcher restart, two proxies)
+        self.assertTrue(self.ch.beat("b1", 3))
+        ch = iw.WakeChannel(clock=self.clock, backstop_s=15)
+        ch.beat("b1", 9)
+        self.assertFalse(ch.beat("b2", 0))           # a restarted proxy with a clean count starts again
+        self.assertFalse(ch.beat("b2", 0))
+        self.assertTrue(ch.beat("b1", 9))            # a second proxy alternating boots never hides its failures
+
+    def test_backstop_zero_keeps_the_old_fast_poll(self):
+        ch = iw.WakeChannel(clock=self.clock, backstop_s=0)
+        ch.beat("b1", 0)
+        self.assertFalse(ch.live())
+        self.assertEqual(ch.period(1.0), 1.0)
+
+    def test_the_snapshot_says_why(self):
+        self.ch.beat("b1", 0)
+        self.clock.t += 3
+        s = self.ch.snapshot()
+        self.assertEqual((s["live"], s["beat_age_s"], s["beats"], s["misses"], s["proxy_boot"]), (True, 3.0, 1, 0, "b1"))
+
+
+class WakeBackstop(MemoHarness, unittest.TestCase):
+    def test_a_listing_that_finds_an_unwoken_memo_while_live_is_a_miss(self):
+        self.w.wake.beat("b1", 0)
+        key = self.upload("miss-1")
+        o = [dict(x, last_modified=mc_.now_utc() - __import__("datetime").timedelta(seconds=30))
+             for x in mc_.s3_list_inbox() if x["key"] == key]
+        self.w.discover((o, None))
+        self.assertFalse(self.w.wake.live())
+        self.assertEqual(self.w.wake.misses, 1)
+
+    def test_a_woken_memo_or_a_fresh_object_is_not_a_miss(self):
+        self.w.wake.beat("b1", 0)
+        key = self.upload("miss-2")
+        iw.wake_apply(self.w, iw.wake_entry(hint(key, len(b"OggS fake audio"))))
+        self.w.discover(([x for x in mc_.s3_list_inbox() if x["key"] == key], None))  # seen after its wake: already known
+        key2 = self.upload("miss-3")
+        self.w.discover(([x for x in mc_.s3_list_inbox() if x["key"] == key2], None))  # just landed: its wake may be in flight
+        self.assertTrue(self.w.wake.live())
+        self.assertEqual(self.w.wake.misses, 0)
+        iw.WAKE.clear()
+
+    def test_while_live_the_tick_lists_itself_even_after_a_recent_fast_listing(self):
+        # the discovery thread idles once the channel is live, so its last listing must not make the tick skip its own
+        self.w.wake.beat("b1", 0)
+        self.w.fast_listed_at = time.time()
+        calls = []
+        real = self.w.list_inbox
+        with unittest.mock.patch.object(self.w, "list_inbox", side_effect=lambda: calls.append(1) or real()):
+            self.w.tick(discover=True)
+        self.assertEqual(len(calls), 1)
+
+    def test_the_heartbeat_reports_the_channel(self):
+        self.w.wake.beat("b1", 0)
+        self.assertTrue(self.w.wake.snapshot()["live"])
+
 
 if __name__ == "__main__":
     unittest.main()

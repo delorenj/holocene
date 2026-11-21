@@ -379,6 +379,83 @@ LIST_TIMEOUT_S = 10      # a hung MinIO must not hold the loop for a minute
 OUTBOX_RETRY_S = 5       # a blocked outbox is retried this often, not every tick
 WAKE = threading.Event()
 
+# The wake channel as the primary inbound path, the S3 listing as its backstop (the same rule as the pad's push channel,
+# apps/agent-pad/src/push.ts pushLive: a channel that proves itself with beats makes polling a slow fallback). The upload
+# proxy POSTs /wake for every upload and /wake/beat every 10 s. While beats arrive, and neither a listing nor the proxy has
+# reported a wake that did not land, inbox/ is listed every WAKE_BACKSTOP_S instead of every second plus every
+# DISCOVER_FAST_S (about 3.5 full listings a second, all day, for ~20 memos a day that the wake had already started).
+# Any doubt (no beat yet, a stale beat, a missed wake) puts the fast listing back at once. MEMO_WAKE_BACKSTOP_S=0: always fast.
+WAKE_BACKSTOP_S = float(os.environ.get("MEMO_WAKE_BACKSTOP_S", "15"))
+WAKE_STALE_S = float(os.environ.get("MEMO_WAKE_STALE_S", "35"))         # three missed 10 s beats
+WAKE_DISTRUST_S = float(os.environ.get("MEMO_WAKE_DISTRUST_S", "600"))  # fast again this long after a missed wake
+WAKE_MISS_GRACE_S = 5.0   # an object the listing finds younger than this may still have its wake in flight
+
+
+class WakeChannel:
+    """Is the upload proxy's wake proven live right now. Thread-safe; the clock is injectable for tests."""
+
+    def __init__(self, clock=time.monotonic, backstop_s: float | None = None):
+        self.clock = clock
+        self.backstop_s = WAKE_BACKSTOP_S if backstop_s is None else backstop_s
+        self._lock = threading.Lock()
+        self.beat_at = 0.0
+        self.missed_at = 0.0
+        self.beats = 0
+        self.misses = 0
+        self.proxy_boot = None
+        self.proxy_failed = None
+        self._shown: bool | None = None
+
+    def beat(self, boot=None, failed=None) -> bool:
+        """One proxy beat. True when it reports a wake failure since the last beat of the same proxy boot (a miss)."""
+        boot = boot if isinstance(boot, str) and len(boot) <= 64 else None
+        failed = failed if isinstance(failed, int) and not isinstance(failed, bool) and failed >= 0 else None
+        now = self.clock()
+        with self._lock:
+            # A boot not seen before that already failed a wake (the proxy restarted, or a second proxy beats) may have
+            # failed it before this watcher heard of it: a miss too, the safe direction.
+            base = (self.proxy_failed or 0) if boot == self.proxy_boot else 0
+            lost = failed is not None and failed > base
+            self.beat_at, self.beats = now, self.beats + 1
+            self.proxy_boot, self.proxy_failed = boot, failed
+            if lost:
+                self.missed_at, self.misses = now, self.misses + 1
+        return lost
+
+    def missed(self) -> None:
+        with self._lock:
+            self.missed_at, self.misses = self.clock(), self.misses + 1
+
+    def live(self, now: float | None = None) -> bool:
+        now = self.clock() if now is None else now
+        with self._lock:
+            return (self.backstop_s > 0 and self.beat_at > 0 and now - self.beat_at < WAKE_STALE_S
+                    and not (self.missed_at and now - self.missed_at < WAKE_DISTRUST_S))
+
+    def period(self, fast: float) -> float:
+        """How far apart the tick lists inbox/: the backstop while the channel is live, else the fast poll."""
+        return max(fast, self.backstop_s) if self.live() else fast
+
+    def transition(self) -> None:
+        """Log when the channel turns live or stops being live (once per change, not per tick)."""
+        live = self.live()
+        if live != self._shown:
+            if self._shown is not None or live:
+                snap = self.snapshot()
+                log("wake_channel", "info" if live else "warn", live=live, beat_age_s=snap["beat_age_s"],
+                    misses=snap["misses"], note=(f"wake proven: listing inbox/ every {self.backstop_s:g} s as a backstop"
+                                                 if live else "wake not proven: listing inbox/ fast"))
+            self._shown = live
+
+    def snapshot(self) -> dict:
+        now = self.clock()
+        live = self.live(now)
+        with self._lock:
+            return {"live": live, "beat_age_s": round(now - self.beat_at, 1) if self.beat_at else None,
+                    "beats": self.beats, "misses": self.misses, "proxy_boot": self.proxy_boot,
+                    "missed_age_s": round(now - self.missed_at, 1) if self.missed_at else None,
+                    "backstop_s": self.backstop_s}
+
 # Retry backoff base seconds per failure stage (doubles each attempt, capped).
 BACKOFF = {"download": 10, "transcribe": 20, "dispatch": 10, "agent_reply": 5, "tts": 15, "reply_upload": 10, "converse": 3}
 
@@ -461,6 +538,7 @@ class State:
         self.data: dict = {"version": 1, "memos": {}, "outbox": []}
         self.fresh = not self.path.exists()
         self._last = ""
+        self._save_lock = threading.Lock()
         if not self.fresh:
             try:
                 self.data = json.loads(self.path.read_text())
@@ -483,15 +561,19 @@ class State:
         self.data.setdefault("conversations_closed", [])
 
     def save(self) -> None:
-        """Write state.json only when it changed (it used to be rewritten, indented, every second)."""
-        body = json.dumps(self.data, separators=(",", ":"), default=str)
-        if body == self._last:
-            return
-        self.dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(body)
-        os.replace(tmp, self.path)
-        self._last = body
+        """Write state.json only when it changed (it used to be rewritten, indented, every second).
+
+        Serialised, and each writer has its own temp file: the tick and a pool worker saving at once both wrote
+        state.tmp, and the second os.replace found it gone (FileNotFoundError, a failed tick or step)."""
+        with self._save_lock:
+            body = json.dumps(self.data, separators=(",", ":"), default=str)
+            if body == self._last:
+                return
+            self.dir.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(f".state.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_text(body)
+            os.replace(tmp, self.path)
+            self._last = body
 
     @property
     def memos(self) -> dict:
@@ -905,6 +987,7 @@ class Watcher:
         self.phrases = PhraseBank(state.dir / "phrases", enabled=PHRASEBANK)
         self.fresh_listing: tuple | None = None   # a listing the discovery thread saw a new object in, for the next tick
         self.fast_listed_at = 0.0                 # when the discovery thread last listed (the tick skips its own then)
+        self.wake = WakeChannel()                 # is the upload proxy's wake proven live (listing is the backstop then)
 
     def choose_lane(self) -> tuple[str, str | None]:
         """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
@@ -1099,7 +1182,7 @@ class Watcher:
         finally:
             self.last_list_s = time.time() - t0
 
-    def discover(self, listing: tuple[list[dict] | None, str | None] | None = None) -> None:
+    def discover(self, listing: tuple[list[dict] | None, str | None] | None = None, source: str = "listing") -> None:
         objs, err = listing if listing is not None else self.list_inbox()
         if err is not None:
             if err != self.last_list_err:  # do not spam an outage every tick
@@ -1131,7 +1214,13 @@ class Watcher:
                                         "retryable": False, "attempt": 1})
             else:
                 log("discovered", memo_id=mid, key=key, agent=agent, stage="receive", bytes=o["size"],
-                    age_s=round(age, 1))
+                    age_s=round(age, 1), source=source)
+                wake = getattr(self, "wake", None)
+                if source == "listing" and wake is not None and wake.live() and age > WAKE_MISS_GRACE_S:
+                    # The wake had its chance and said nothing: list fast again until the channel earns trust back.
+                    wake.missed()
+                    log("wake_missed", "warn", memo_id=mid, key=key, agent=agent, age_s=round(age, 1),
+                        note=f"found by the backstop listing, not a wake: listing fast for {int(WAKE_DISTRUST_S)} s")
                 self.status(m)
             self.s.save()
 
@@ -1343,7 +1432,8 @@ class Watcher:
     def tick(self, discover: bool = True) -> None:
         # The listing is I/O: run it outside the lock so a slow MinIO never stalls workers applying results.
         listing, self.fresh_listing = self.fresh_listing, None
-        if listing is None and discover and not (DISCOVER_FAST_S and time.time() - self.fast_listed_at < 3 * DISCOVER_FAST_S + 1.0):
+        if listing is None and discover and not (DISCOVER_FAST_S and not self.wake.live()
+                                                  and time.time() - self.fast_listed_at < 3 * DISCOVER_FAST_S + 1.0):
             listing = self.list_inbox()
         with self.mu:
             self.flush_outbox()
@@ -1373,6 +1463,7 @@ class Watcher:
                 "memos": counts, "outbox": len(self.s.data["outbox"]),
                 "phone_retries": sum(1 for m in self.s.memos.values() if self.phone_retry_pending(m)),
                 "converse": converse_hb,
+                "wake": self.wake.snapshot(),
                 "active": [{"memo_id": m["memo_id"], "key": m["key"], "stage": m["stage"],
                             "running": m["key"] in self.running,
                             "voice": {k: (m.get("voice_lock") or m.get("cue_voice_lock") or {}).get(k)
@@ -1389,6 +1480,10 @@ class Watcher:
 
         def loop():
             while not STOP:
+                if self.wake.live():
+                    # Every upload wakes the watcher itself: listing S3 every DISCOVER_FAST_S would only re-confirm it.
+                    time.sleep(1.0)
+                    continue
                 t0 = time.time()
                 try:
                     objs, err = self.list_inbox()
@@ -5116,7 +5211,7 @@ def wake_apply(w: "Watcher", entry: dict) -> bool:
     be inside a 2 s listing, so waiting for it to notice WAKE would waste the time this exists to save."""
     with w.mu:
         before = len(w.s.memos)
-        w.discover(([entry], None))
+        w.discover(([entry], None), source="wake")
         m = w.s.memos.get(entry["key"])
         new = len(w.s.memos) > before
         # tick()'s own gate for a memo: active, not running, due. receive is inline, transcribe goes to its pool.
@@ -5136,6 +5231,26 @@ def start_wake_listener(w: "Watcher", port: int = WAKE_PORT) -> "http.server.Thr
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
+            if self.path == "/wake/beat":
+                ok = False
+                try:
+                    n = min(int(self.headers.get("Content-Length", 0)), 1024)
+                    body = json.loads(self.rfile.read(n) or b"{}")
+                    # only a well-formed beat is proof of the channel (the proxy always sends both)
+                    ok = (isinstance(body, dict) and isinstance(body.get("boot"), str) and 0 < len(body["boot"]) <= 64
+                          and isinstance(body.get("wake_failed"), int) and not isinstance(body["wake_failed"], bool)
+                          and body["wake_failed"] >= 0)
+                except (ValueError, OSError):
+                    pass
+                # Applied before the answer (a lock and a compare): the proxy's 202 means the watcher has the beat.
+                if ok and w.wake.beat(body.get("boot"), body.get("wake_failed")):
+                    log("wake_missed", "warn", note="the upload proxy reports a wake it could not deliver: listing now, "
+                        f"and fast for {int(WAKE_DISTRUST_S)} s", proxy_boot=body.get("boot"))
+                    WAKE.set()
+                self.send_response(202 if ok else 400)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             entry = None
             try:
                 n = min(int(self.headers.get("Content-Length", 0)), 4096)
@@ -5266,10 +5381,12 @@ def main() -> int:
     last_discover = 0.0
     while not STOP:
         # S3 is listed every --poll seconds; pending steps run every second so a stage
-        # never waits a whole poll interval for the next one.
+        # never waits a whole poll interval for the next one. While the proxy's wake channel is proven live
+        # (WakeChannel) every upload starts its memo itself and the listing is a WAKE_BACKSTOP_S backstop.
         # A slow or failing MinIO is listed less often: at least twice the last listing's duration apart.
-        period = max(args.poll, 2 * w.last_list_s)
-        do_discover = time.time() - last_discover >= period
+        w.wake.transition()
+        period = max(w.wake.period(args.poll), 2 * w.last_list_s)
+        do_discover = time.monotonic() - last_discover >= period  # monotonic: a wall-clock step never pauses the backstop
         failed = False
         try:
             w.tick(discover=do_discover)
@@ -5277,13 +5394,13 @@ def main() -> int:
             failed = True
             log("tick_error", "error", error=f"{type(e).__name__}: {e}")
         if do_discover:
-            last_discover = time.time()  # stamped after the tick, so a slow listing is not followed by another at once
+            last_discover = time.monotonic()  # stamped after the tick, so a slow listing is not followed by another at once
         if args.once and not (args.drain and w.active() and time.time() < deadline):
             break
         if failed:
             time.sleep(1)  # a tick that raises before advancing would otherwise spin at the 0.05 s floor
             continue
-        WAKE.wait(w.sleep_for(period - (time.time() - last_discover)))
+        WAKE.wait(w.sleep_for(period - (time.monotonic() - last_discover)))
         WAKE.clear()
     w.shutdown(wait=args.once)
     log("stopped")

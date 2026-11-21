@@ -128,6 +128,20 @@ EMIT_FACTS = os.environ.get("EMIT_FACTS", "1") != "0"
 WAKE_URL = os.environ.get("WATCHER_WAKE_URL", "http://host.docker.internal:8697/wake")
 WAKE_TIMEOUT_S = float(os.environ.get("WATCHER_WAKE_TIMEOUT_S", "0.5"))
 WAKE_ETAG_MAX_BYTES = 8 * 1024 * 1024  # a larger object may be a multipart upload, whose etag is not its md5
+# The wake beat: every WAKE_BEAT_S the proxy tells the watcher it is here and how many wakes it could not deliver. The
+# beat proves the whole proxy -> watcher path (this URL, the Docker host route, the listener), so while beats arrive the
+# watcher lists inbox/ only as a slow backstop (inbox_watcher.py WakeChannel); a failed-wake count that grew sends it back
+# to the fast listing at once. 0 turns the beat off, and the watcher then lists fast as it always did.
+WAKE_BEAT_S = float(os.environ.get("WATCHER_WAKE_BEAT_S", "10"))
+
+
+def wake_beat_url(wake_url: str) -> str:
+    return wake_url.rstrip("/") + "/beat" if wake_url else ""
+
+
+WAKE_BEAT_URL = os.environ.get("WATCHER_WAKE_BEAT_URL") or wake_beat_url(WAKE_URL)
+WAKE_STATS = {"sent": 0, "failed": 0}
+WAKE_STATS_LOCK = threading.Lock()
 SERVICE = "agent-pad-upload"
 
 
@@ -1315,15 +1329,47 @@ def wake_watcher_async(key: str, body: bytes, device=None, host=None, url: str |
     t0 = time.time()
 
     def work():
+        ok = False
         try:
             hint = build_wake_hint(key, body, device, host)
             status = wake_post(url, hint, WAKE_TIMEOUT_S)
+            ok = status == 202
             log("wake_hint", key=key, memo_id=hint["memo_id"], status=status, ms=int((time.time() - t0) * 1000))
         except Exception as e:  # noqa: BLE001 - fail open: the watcher's own poll finds the memo
             log("wake_hint", key=key, memo_id=memo_id_for(key), status=0, error=f"{type(e).__name__}: {e}"[:160],
                 ms=int((time.time() - t0) * 1000))
+        finally:
+            with WAKE_STATS_LOCK:
+                WAKE_STATS["sent" if ok else "failed"] += 1
 
     threading.Thread(target=work, daemon=True).start()
+
+
+def wake_beat_once(url: str | None = None, timeout: float | None = None) -> int:
+    """POST one beat {boot, wake_sent, wake_failed} to the watcher. The status; raises on a refused or slow watcher."""
+    with WAKE_STATS_LOCK:
+        stats = dict(WAKE_STATS)
+    return wake_post(WAKE_BEAT_URL if url is None else url,
+                     {"boot": PUSH.boot, "wake_sent": stats["sent"], "wake_failed": stats["failed"]},
+                     WAKE_TIMEOUT_S if timeout is None else timeout)
+
+
+def wake_beat_forever(stop: threading.Event | None = None) -> None:
+    """Beat every WAKE_BEAT_S; logs only when the watcher starts or stops answering, never every beat."""
+    if not WAKE_BEAT_URL or WAKE_BEAT_S <= 0:
+        return
+    stop = stop or threading.Event()
+    up = None
+    while not stop.is_set():
+        try:
+            status, err = wake_beat_once(), None
+        except Exception as e:  # noqa: BLE001 - the watcher is down or restarting: it lists fast on its own then
+            status, err = 0, f"{type(e).__name__}: {e}"[:160]
+        now_up = status == 202
+        if now_up != up:
+            log("wake_beat", status=status, up=now_up, error=err, url=WAKE_BEAT_URL)
+            up = now_up
+        stop.wait(WAKE_BEAT_S)
 
 
 def emit_uploaded_async(key: str, size: int, content_type: str, user_agent: str, upload_ms: float, capture=None,
@@ -2040,5 +2086,6 @@ if __name__ == "__main__":
         call_file=CALL_STATE_FILE or None, call_loaded=OPERATOR_CALL.loaded, call_gate=OPERATOR_CALL_GATE,
         on_call=OPERATOR_CALL.check()["on_call"])
     threading.Thread(target=nats_subscribe_forever, name="push-nats", daemon=True).start()
+    threading.Thread(target=wake_beat_forever, name="wake-beat", daemon=True).start()
     with ThreadedServer(("", PORT), Handler) as srv:
         srv.serve_forever()
