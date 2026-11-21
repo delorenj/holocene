@@ -1693,6 +1693,10 @@ def voice_name(value) -> str | None:
     return value.strip() if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value.strip()) else None
 
 
+class _ProfileMalformed(Exception):
+    """A profile config.yaml that does not parse; carries no config text."""
+
+
 class ProfileVoice:
     """Adapter over CardCache's registry and rendered profiles; no second assignment roster."""
 
@@ -1716,8 +1720,7 @@ class ProfileVoice:
             path = (root / name / "config.yaml").resolve()
             if not path.is_relative_to(root):
                 return {**result, "fallback": "invalid_profile_path"}
-            import yaml  # type: ignore
-            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            config = self.cards.profile_config(path)
             tts = config.get("tts") if isinstance(config, dict) else None
             if not isinstance(tts, dict):
                 return {**result, "fallback": "profile_voice_missing"}
@@ -1746,7 +1749,35 @@ class CardCache:
         self._roster: tuple[int | None, list] = (None, [])
         self._recall: dict[str, tuple[float, str]] = {}
         self._cards: dict[str, tuple[tuple, dict]] = {}
+        self._profiles: dict[Path, tuple[tuple, object]] = {}
         self._lock = threading.RLock()
+
+    def profile_config(self, path: Path):
+        """A rendered profile's parsed config.yaml, re-parsed only when the file changes (same stat key as FlagFile).
+
+        The watcher's heartbeat resolves every tile's voice every tick: 54 profiles, ~1.1 MB of YAML, parsed in pure
+        Python once a second held a core at ~50-100% for days (2026-11-21). Raises OSError when the file cannot be
+        read (never cached, so a fixed permission is seen at once) and _ProfileMalformed when it does not parse
+        (cached until the file changes). Callers must treat the returned object as read-only: it is shared."""
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+        with self._lock:
+            hit = self._profiles.get(path)
+            if hit is not None and hit[0] == key:
+                if hit[1] is _ProfileMalformed:
+                    raise _ProfileMalformed()
+                return hit[1]
+        text = path.read_text(encoding="utf-8")
+        try:
+            import yaml  # type: ignore
+            config = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+        except Exception:  # noqa: BLE001 - YAML errors must not leak config text (which may contain credentials)
+            config = _ProfileMalformed
+        with self._lock:
+            self._profiles[path] = (key, config)
+        if config is _ProfileMalformed:
+            raise _ProfileMalformed()
+        return config
 
     def registry(self) -> dict:
         try:

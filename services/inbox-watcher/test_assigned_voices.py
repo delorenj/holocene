@@ -121,6 +121,23 @@ class AssignedVoices(unittest.TestCase):
         (self.profiles / "escape").symlink_to(outside)
         self.assertEqual(self.choice(profile="escape")["fallback"], "invalid_profile_path")
 
+    def test_heartbeat_parses_each_unchanged_profile_once(self):
+        # 2026-11-21: the per-tick heartbeat re-parsed every profile's config.yaml and held a core for days.
+        import yaml
+        real = yaml.load
+        with patch.object(yaml, "load", side_effect=real) as load:
+            for _ in range(20):
+                self.desk.heartbeat(default_voice="rick")
+                self.choice()
+        self.assertEqual(load.call_count, 3)  # the registry + holocene-pm + infra-pm, once each
+        self.config("infra-pm", "tts: {voice: walken}\n")  # an edit is seen at once
+        self.assertEqual(self.choice("tile-b")["voice"], "walken")
+        self.config("infra-pm", "tts: [")
+        for _ in range(3):  # a malformed file is cached as malformed, not re-parsed
+            self.assertEqual(self.choice("tile-b")["fallback"], "profile_malformed")
+        self.config("infra-pm", "tts: {voice: brule}\n")
+        self.assertEqual(self.choice("tile-b")["voice"], "brule")
+
     def test_missing_and_malformed_registry_are_emergency_not_guessed_profiles(self):
         for text in ("agents: []", "[", "agents: {tile-a: {profile_name: '../escape'}}", "agents: {}"):
             self.registry.write_text(text)
