@@ -1,0 +1,19 @@
+{"cases":[]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+1 !== 0
+
+    at file:///home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/spec-recheck/source-browser.mjs:8:377 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v26.5.0

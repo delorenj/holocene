@@ -1,0 +1,22 @@
+{
+  "viewports": 3,
+  "dashboardOpens": 9,
+  "liveOpens": 3,
+  "routes": 10,
+  "fixtures": 3,
+  "auth": [
+    {
+      "path": "/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true
+    },
+    {
+      "path": "/api/modules/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true
+    }
+  ],
+  "failure": null
+}
