@@ -1,0 +1,42 @@
+[
+  {
+    "route": "/products",
+    "before": {
+      "width": 390,
+      "points": [
+        {
+          "tag": "DIV",
+          "cls": "hub-drawer-overlay",
+          "pointerEvents": "auto"
+        },
+        {
+          "tag": "HTML",
+          "cls": "",
+          "pointerEvents": "auto"
+        }
+      ],
+      "drawer": "{\"x\":0,\"y\":0,\"width\":320,\"height\":844,\"top\":0,\"right\":320,\"bottom\":844,\"left\":0}"
+    },
+    "dismissed": true
+  },
+  {
+    "route": "/?view=agents&focus=holocene-pm",
+    "before": {
+      "width": 390,
+      "points": [
+        {
+          "tag": "DIV",
+          "cls": "hub-drawer-overlay",
+          "pointerEvents": "auto"
+        },
+        {
+          "tag": "HTML",
+          "cls": "",
+          "pointerEvents": "auto"
+        }
+      ],
+      "drawer": "{\"x\":0,\"y\":0,\"width\":320,\"height\":844,\"top\":0,\"right\":320,\"bottom\":844,\"left\":0}"
+    },
+    "dismissed": true
+  }
+]

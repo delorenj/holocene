@@ -24,7 +24,7 @@ export type ProductsDeps = {
 };
 
 async function git(repo: string, args: string[]) {
-  const { stdout } = await exec("git", ["--no-optional-locks", "-C", repo, ...args], {
+  const { stdout } = await exec("git", ["--no-replace-objects", "--no-optional-locks", "-C", repo, ...args], {
     timeout: 2500, maxBuffer: MAX_BYTES, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
   });
   return stdout.trim();

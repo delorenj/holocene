@@ -1,0 +1,5 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+
+> @holocene/api@0.0.1 typecheck /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/api
+> tsc --noEmit "--incremental" "false"
+

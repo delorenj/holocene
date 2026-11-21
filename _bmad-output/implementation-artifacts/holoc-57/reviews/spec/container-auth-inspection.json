@@ -1,0 +1,5 @@
+{
+  "command": "docker inspect holocene-web",
+  "exit_code": 1,
+  "stderr": "error: no such object: holocene-web\n"
+}

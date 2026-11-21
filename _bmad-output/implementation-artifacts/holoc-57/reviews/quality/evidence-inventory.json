@@ -1,0 +1,251 @@
+{
+  "candidate": "4d36eb9c237549c3ce6e0913b5960a47387c3001",
+  "notes": "Private Stitch references only; not imported into app. URL host/script inventory for evidence-scope audit. Secret scan found only deliberate unsafe-URL unit fixtures.",
+  "evidenceFiles": [
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/acceptance-source.md",
+      "bytes": 4101,
+      "urlHosts": {
+        "plane.delo.sh": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/browser/real-navigation.json",
+      "bytes": 6286,
+      "urlHosts": {
+        "s3.delo.sh": 18,
+        "127.0.0.1": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/api-test.log",
+      "bytes": 31530,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/api-typecheck.log",
+      "bytes": 228,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/browser-optimized.log",
+      "bytes": 702,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/web-build.log",
+      "bytes": 2376,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/web-test.log",
+      "bytes": 8249,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/checks/web-typecheck.log",
+      "bytes": 228,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/investigation-and-verification.md",
+      "bytes": 17554,
+      "urlHosts": {
+        "127.0.0.1": 4,
+        "s3.delo.sh": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/holoc-57/workbench.mts",
+      "bytes": 1293,
+      "urlHosts": {
+        "127.0.0.1": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/implementation-artifacts/spec-holoc-57-products-sidebar.md",
+      "bytes": 9659,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.memlog.md",
+      "bytes": 3271,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/1857e1f45dbb4f88ae5dd8c0355611f7/export-2026-11-20/1857e1f45dbb4f88ae5dd8c0355611f7.html",
+      "bytes": 33049,
+      "urlHosts": {
+        "fonts.googleapis.com": 4,
+        "fonts.gstatic.com": 1,
+        "cdn.tailwindcss.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": [
+        "https://cdn.tailwindcss.com"
+      ]
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/ab1b8cdd2fdd4409a3b3f89a55a747ba/export-2026-11-20/ab1b8cdd2fdd4409a3b3f89a55a747ba.html",
+      "bytes": 24723,
+      "urlHosts": {
+        "fonts.googleapis.com": 3,
+        "cdn.tailwindcss.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": [
+        "https://cdn.tailwindcss.com"
+      ]
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/desktop-dry-run.json",
+      "bytes": 4065,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/desktop-generate.json",
+      "bytes": 103379,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "stitch.googleapis.com": 7,
+        "s3.delo.sh": 12
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/desktop-url.json",
+      "bytes": 244,
+      "urlHosts": {
+        "stitch.google.com": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/e18675d5682c4ff985e66519c011eff9/export-2026-11-20/e18675d5682c4ff985e66519c011eff9.html",
+      "bytes": 28915,
+      "urlHosts": {
+        "cdn.tailwindcss.com": 1,
+        "fonts.googleapis.com": 2,
+        "fonts.gstatic.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": [
+        "https://cdn.tailwindcss.com"
+      ]
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/handoff.md",
+      "bytes": 6736,
+      "urlHosts": {
+        "stitch.google.com": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-dry-run.json",
+      "bytes": 3558,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-generate.json",
+      "bytes": 11036,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "stitch.googleapis.com": 7,
+        "s3.delo.sh": 6
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-single-dry-run.json",
+      "bytes": 3179,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-single-generate.json",
+      "bytes": 74721,
+      "urlHosts": {
+        "stitch.google.com": 1,
+        "stitch.googleapis.com": 7,
+        "s3.delo.sh": 12
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-single-url.json",
+      "bytes": 244,
+      "urlHosts": {
+        "stitch.google.com": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/mobile-url.json",
+      "bytes": 244,
+      "urlHosts": {
+        "stitch.google.com": 1
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/prompt-desktop.md",
+      "bytes": 3556,
+      "urlHosts": {
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/prompt-mobile-single.md",
+      "bytes": 2674,
+      "urlHosts": {
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/.working/stitch/holoc-57-products-sidebar/prompt-mobile.md",
+      "bytes": 3053,
+      "urlHosts": {
+        "s3.delo.sh": 3
+      },
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/DESIGN.md",
+      "bytes": 2182,
+      "urlHosts": {},
+      "externalScripts": []
+    },
+    {
+      "file": "_bmad-output/planning-artifacts/ux-designs/ux-Holocene-2026-11-02/EXPERIENCE.md",
+      "bytes": 2568,
+      "urlHosts": {},
+      "externalScripts": []
+    }
+  ]
+}

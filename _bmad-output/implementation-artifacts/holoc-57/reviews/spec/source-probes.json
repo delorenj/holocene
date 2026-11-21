@@ -1,0 +1,90 @@
+{
+  "classifications": [
+    {
+      "raw": "mode: [launch]",
+      "result": {
+        "stage": "live",
+        "issue": "Committed live declaration is invalid; inspect its live configuration."
+      }
+    },
+    {
+      "raw": "mode: [steady]",
+      "result": {
+        "stage": "live",
+        "issue": "Committed live declaration is invalid; inspect its live configuration."
+      }
+    },
+    {
+      "raw": "mode: [live]",
+      "result": {
+        "stage": "live",
+        "issue": "Committed live declaration is invalid; inspect its live configuration."
+      }
+    },
+    {
+      "raw": "mode: {x: launch}",
+      "result": {
+        "issue": "Committed .launch.yaml has a missing or unknown mode."
+      }
+    },
+    {
+      "raw": "mode: launch",
+      "result": {
+        "stage": "launch"
+      }
+    },
+    {
+      "raw": "mode: steady",
+      "result": {
+        "steady": true
+      }
+    }
+  ],
+  "payload": {
+    "generatedAt": "2026-11-20T23:40:00.000Z",
+    "registry": {
+      "state": "ok",
+      "snapshotAt": "2026-11-20T23:40:00.000Z",
+      "ageSeconds": 0
+    },
+    "products": [
+      {
+        "id": "invalid-array-mode",
+        "name": "Invalid array mode fixture",
+        "stage": "live",
+        "declaration": {
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "issue": "Committed live declaration is invalid; inspect its live configuration.",
+        "destination": {
+          "href": "/live",
+          "label": "Open Live management"
+        }
+      }
+    ],
+    "issues": []
+  },
+  "malformedRegistry": {
+    "projects": []
+  },
+  "malformedFirstPayload": {
+    "generatedAt": "2026-11-20T23:40:00.000Z",
+    "registry": {
+      "state": "ok",
+      "snapshotAt": "2026-11-20T23:40:00.000Z",
+      "ageSeconds": 0
+    },
+    "products": [],
+    "issues": []
+  },
+  "malformedAfterGoodPayload": {
+    "generatedAt": "2026-11-20T23:40:06.000Z",
+    "registry": {
+      "state": "ok",
+      "snapshotAt": "2026-11-20T23:40:06.000Z",
+      "ageSeconds": 0
+    },
+    "products": [],
+    "issues": []
+  }
+}

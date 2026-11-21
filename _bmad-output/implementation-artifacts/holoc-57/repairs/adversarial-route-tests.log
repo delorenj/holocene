@@ -1,0 +1,18 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+✔ directory joins authoritative identity and links, promotion moves same ID and receipt changes do not replace identity (6.935427ms)
+✔ registry outage first read vs last-good snapshot vs healthy empty are distinct, errors never serialize secrets (0.640839ms)
+✔ missing/invalid/unreadable sources are visible; unsafe or missing receipt disables action, cache coalesces (0.693768ms)
+✔ registered projects rejects malformed registry and retains declared PM receipt path (6.934515ms)
+✔ malformed registry identity makes the actual GET down without replacing dated last-good (43.335281ms)
+✔ actual GET isolates non-string committed YAML modes from a valid neighbor (154.245085ms)
+✔ replacement refs cannot alter the committed declaration or its GET provenance (30.255908ms)
+✔ real Git reads committed declaration not dirty disk; receipt reads stay bounded and inside registered repo (27.474414ms)
+✔ read-only module route is no-store and allowlists response, no write endpoint (1.811336ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 464.233772

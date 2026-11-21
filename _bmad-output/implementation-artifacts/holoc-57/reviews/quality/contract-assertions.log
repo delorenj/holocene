@@ -1,0 +1,99 @@
+✖ Q1 malformed non-string modes are isolated invalid issues, never Live or endpoint 500 (1.322535ms)
+✖ Q2 malformed registry identity preserves dated last-good with discovery down (0.148219ms)
+✖ Q3 pinned committed declaration ignores mutable replacement refs (0.120217ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36.166576
+
+✖ failing tests:
+
+test at _bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:9:1
+✖ Q1 malformed non-string modes are isolated invalid issues, never Live or endpoint 500 (1.322535ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      {
+  +     ok: false,
+  -     ok: true,
+        raw: 'mode: {toString: launch}\n'
+      },
+      {
+  +     ok: false,
+  -     ok: true,
+        raw: 'mode: [launch]\n'
+      },
+      {
+  +     ok: false,
+  -     ok: true,
+        raw: 'mode: [steady]\n'
+      },
+      {
+  +     ok: false,
+  -     ok: true,
+        raw: 'mode: [live]\n'
+      }
+    ]
+  
+      at TestContext.<anonymous> (file:///home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:12:9)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ { raw: 'mode: {toString: launch}\n', ok: false }, { raw: 'mode: [launch]\n', ok: false }, { raw: 'mode: [steady]\n', ok: false }, { raw: 'mode: [live]\n', ok: false } ],
+    expected: [ { raw: 'mode: {toString: launch}\n', ok: true }, { raw: 'mode: [launch]\n', ok: true }, { raw: 'mode: [steady]\n', ok: true }, { raw: 'mode: [live]\n', ok: true } ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at _bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:14:1
+✖ Q2 malformed registry identity preserves dated last-good with discovery down (0.148219ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'ok' !== 'down'
+  
+      at TestContext.<anonymous> (file:///home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:16:9)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'down',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at _bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:20:1
+✖ Q3 pinned committed declaration ignores mutable replacement refs (0.120217ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'mode: live'
+  - 'mode: launch'
+            ^
+  
+      at TestContext.<anonymous> (file:///home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs:23:9)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'mode: live',
+    expected: 'mode: launch',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

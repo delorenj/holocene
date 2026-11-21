@@ -1,0 +1,163 @@
+[
+  {
+    "name": "safe control",
+    "accepted": true,
+    "observed": {
+      "destination": {
+        "href": "https://s3.delo.sh/projects/fixture/2026-11-20/launch-dashboard/index.html",
+        "label": "Open launch dashboard",
+        "publishedAt": "2026-11-20T22:00:00.000Z"
+      },
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "scheme",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "http",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "host suffix",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "userinfo",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "default port",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "literal dot",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "encoded dot",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "double encoding",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "backslash",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "fragment",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "query",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "control newline",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "outside path",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "protocol relative",
+    "accepted": false,
+    "observed": {
+      "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "oversized receipt",
+    "elapsedMs": 5,
+    "observed": {
+      "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "FIFO real GET",
+    "elapsedMs": 4,
+    "observed": {
+      "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "outside symlink real GET",
+    "observed": {
+      "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+      "registry": "ok"
+    }
+  },
+  {
+    "name": "contained symlink control",
+    "pass": true
+  },
+  {
+    "name": "intermediate directory swap race",
+    "trials": 160,
+    "swaps": 72,
+    "successes": 1,
+    "rejections": 159,
+    "escapedReads": 0,
+    "elapsedMs": 6,
+    "limit": "Probabilistic stress probe, not exhaustive race proof."
+  }
+]

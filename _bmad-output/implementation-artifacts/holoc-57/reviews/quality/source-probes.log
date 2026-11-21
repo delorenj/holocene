@@ -1,0 +1,72 @@
+[
+  {
+    "name": "valid committed launch control"
+  },
+  {
+    "name": "dirty worktree ignored",
+    "pass": true
+  },
+  {
+    "name": "non-string lifecycle must be invalid and not product",
+    "raw": "mode: {toString: launch}\n",
+    "contractHolds": false
+  },
+  {
+    "name": "non-string lifecycle must be invalid and not product",
+    "raw": "mode: [launch]\n",
+    "contractHolds": false
+  },
+  {
+    "name": "non-string lifecycle must be invalid and not product",
+    "raw": "mode: [steady]\n",
+    "contractHolds": false
+  },
+  {
+    "name": "non-string lifecycle must be invalid and not product",
+    "raw": "mode: [live]\n",
+    "contractHolds": false
+  },
+  {
+    "name": "invalid registry project identity",
+    "badId": 42,
+    "contractHolds": false
+  },
+  {
+    "name": "invalid registry project identity",
+    "badId": {},
+    "contractHolds": false
+  },
+  {
+    "name": "invalid registry project identity",
+    "badId": [],
+    "contractHolds": false
+  },
+  {
+    "name": "invalid registry project identity",
+    "badId": false,
+    "contractHolds": false
+  },
+  {
+    "name": "invalid registry project identity",
+    "badId": "",
+    "contractHolds": false
+  },
+  {
+    "name": "malformed identity overwrites last good",
+    "contractHolds": false
+  },
+  {
+    "name": "FIFO bounded rejection",
+    "elapsedMs": 0
+  },
+  {
+    "name": "outside symlink rejection",
+    "pass": true
+  },
+  {
+    "name": "local replacement refs and pinned source",
+    "reportedCommit": "a9bee6ea08a7c838f8fb796d76747f86364b47db",
+    "observedRaw": "mode: live",
+    "trueObjectRaw": "mode: launch"
+  }
+]

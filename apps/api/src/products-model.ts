@@ -16,7 +16,7 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export function classifyProduct(raw: string): { stage?: Stage; steady?: true; issue?: string } {
   let doc: unknown;
   try { doc = load(raw); } catch { return { issue: "Committed .launch.yaml is invalid YAML." }; }
-  if (!record(doc) || !["launch", "live", "steady"].includes(String(doc.mode))) return { issue: "Committed .launch.yaml has a missing or unknown mode." };
+  if (!record(doc) || typeof doc.mode !== "string" || !["launch", "live", "steady"].includes(doc.mode)) return { issue: "Committed .launch.yaml has a missing or unknown mode." };
   if (doc.mode === "steady") return { steady: true };
   if (doc.mode === "launch") return { stage: "launch" };
   const live = parseLaunchFile(raw);

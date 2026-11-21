@@ -1,0 +1,95 @@
+[
+  {
+    "width": 1440,
+    "agentFocus": "holocene-pm",
+    "agentFocusRendered": true,
+    "dimensions": {
+      "viewport": 1440,
+      "html": 1440,
+      "body": 1440
+    },
+    "themes": [],
+    "historyPreservedAgentFocus": true,
+    "keyboardSkip": true
+  },
+  {
+    "width": 390,
+    "agentFocus": "holocene-pm",
+    "agentFocusRendered": true,
+    "dimensions": {
+      "viewport": 390,
+      "html": 390,
+      "body": 390
+    },
+    "themes": [
+      {
+        "theme": "ledger",
+        "style": {
+          "background": "rgb(18, 18, 16)",
+          "color": "rgb(241, 240, 235)",
+          "animation": "none",
+          "transition": "0s",
+          "width": 320
+        },
+        "ancestor": "Workspace−, current groupAgentsProjectsLive managementGenesis",
+        "escapeOrOutsideDismissal": true,
+        "focusReturned": true
+      },
+      {
+        "theme": "ledger-night",
+        "style": {
+          "background": "rgb(15, 14, 12)",
+          "color": "rgb(237, 231, 221)",
+          "animation": "none",
+          "transition": "0s",
+          "width": 320
+        },
+        "ancestor": "Workspace−, current groupAgentsProjectsLive managementGenesis",
+        "escapeOrOutsideDismissal": true,
+        "focusReturned": true
+      }
+    ],
+    "historyPreservedAgentFocus": true,
+    "keyboardSkip": true
+  },
+  {
+    "width": 320,
+    "agentFocus": "holocene-pm",
+    "agentFocusRendered": true,
+    "dimensions": {
+      "viewport": 320,
+      "html": 320,
+      "body": 320
+    },
+    "themes": [
+      {
+        "theme": "ledger",
+        "style": {
+          "background": "rgb(18, 18, 16)",
+          "color": "rgb(241, 240, 235)",
+          "animation": "none",
+          "transition": "0s",
+          "width": 320
+        },
+        "ancestor": "Workspace−, current groupAgentsProjectsLive managementGenesis",
+        "escapeOrOutsideDismissal": true,
+        "focusReturned": true
+      },
+      {
+        "theme": "ledger-night",
+        "style": {
+          "background": "rgb(15, 14, 12)",
+          "color": "rgb(237, 231, 221)",
+          "animation": "none",
+          "transition": "0s",
+          "width": 320
+        },
+        "ancestor": "Workspace−, current groupAgentsProjectsLive managementGenesis",
+        "escapeOrOutsideDismissal": true,
+        "focusReturned": true
+      }
+    ],
+    "historyPreservedAgentFocus": true,
+    "keyboardSkip": true
+  }
+]

@@ -1,0 +1,165 @@
+[
+  {
+    "name": "native-route-and-lifecycle-controls",
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "routeChecks": [
+      {
+        "requested": "/products?unrelated=keep&stage=live",
+        "url": "http://127.0.0.1:3107/products?unrelated=keep&stage=live",
+        "current": "/products?stage=live",
+        "products": 1,
+        "query": {
+          "unrelated": "keep",
+          "stage": "live"
+        }
+      },
+      {
+        "requested": "/products/?stage=launch&unrelated=keep",
+        "url": "http://127.0.0.1:3107/products/?stage=launch&unrelated=keep",
+        "current": "/products?stage=launch",
+        "products": 3,
+        "query": {
+          "stage": "launch",
+          "unrelated": "keep"
+        }
+      },
+      {
+        "requested": "/?view=projects&focus=earshot&extra=retained",
+        "url": "http://127.0.0.1:3107/?view=projects&focus=earshot&extra=retained",
+        "current": "/?view=projects",
+        "products": 0,
+        "query": {
+          "view": "projects",
+          "focus": "earshot",
+          "extra": "retained"
+        }
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "earshotHeading": true,
+      "bodyTextLength": 1819
+    },
+    "writeRequests": []
+  },
+  {
+    "name": "drawer state across reopen",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "before": "true",
+    "after": "false",
+    "notes": "Disclosure reset on unmount is not treated as a blocker; current ancestor is independently reopened."
+  },
+  {
+    "name": "native-route-and-lifecycle-controls",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "routeChecks": [
+      {
+        "requested": "/products?unrelated=keep&stage=live",
+        "url": "http://127.0.0.1:3107/products?unrelated=keep&stage=live",
+        "current": "/products?stage=live",
+        "products": 1,
+        "query": {
+          "unrelated": "keep",
+          "stage": "live"
+        }
+      },
+      {
+        "requested": "/products/?stage=launch&unrelated=keep",
+        "url": "http://127.0.0.1:3107/products/?stage=launch&unrelated=keep",
+        "current": "/products?stage=launch",
+        "products": 3,
+        "query": {
+          "stage": "launch",
+          "unrelated": "keep"
+        }
+      },
+      {
+        "requested": "/?view=projects&focus=earshot&extra=retained",
+        "url": "http://127.0.0.1:3107/?view=projects&focus=earshot&extra=retained",
+        "current": "/?view=projects",
+        "products": 0,
+        "query": {
+          "view": "projects",
+          "focus": "earshot",
+          "extra": "retained"
+        }
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "earshotHeading": true,
+      "bodyTextLength": 1710
+    },
+    "writeRequests": []
+  },
+  {
+    "name": "drawer state across reopen",
+    "viewport": {
+      "width": 320,
+      "height": 740
+    },
+    "before": "true",
+    "after": "false",
+    "notes": "Disclosure reset on unmount is not treated as a blocker; current ancestor is independently reopened."
+  },
+  {
+    "name": "native-route-and-lifecycle-controls",
+    "viewport": {
+      "width": 320,
+      "height": 740
+    },
+    "routeChecks": [
+      {
+        "requested": "/products?unrelated=keep&stage=live",
+        "url": "http://127.0.0.1:3107/products?unrelated=keep&stage=live",
+        "current": "/products?stage=live",
+        "products": 1,
+        "query": {
+          "unrelated": "keep",
+          "stage": "live"
+        }
+      },
+      {
+        "requested": "/products/?stage=launch&unrelated=keep",
+        "url": "http://127.0.0.1:3107/products/?stage=launch&unrelated=keep",
+        "current": "/products?stage=launch",
+        "products": 3,
+        "query": {
+          "stage": "launch",
+          "unrelated": "keep"
+        }
+      },
+      {
+        "requested": "/?view=projects&focus=earshot&extra=retained",
+        "url": "http://127.0.0.1:3107/?view=projects&focus=earshot&extra=retained",
+        "current": "/?view=projects",
+        "products": 0,
+        "query": {
+          "view": "projects",
+          "focus": "earshot",
+          "extra": "retained"
+        }
+      }
+    ],
+    "live": {
+      "url": "http://127.0.0.1:3107/live",
+      "earshotHeading": true,
+      "bodyTextLength": 1710
+    },
+    "writeRequests": []
+  },
+  {
+    "name": "fixture-only HTTP outage retains dated last response",
+    "pass": true,
+    "rows": 4
+  }
+]

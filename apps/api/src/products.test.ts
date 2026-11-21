@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import Fastify from "fastify";
 import { getRegisteredProjects } from "./hub.js";
 import type { ProjectRecord } from "./hub-model.js";
-import { committedDeclaration, createProductsDirectory, readPublication, registerProductsRoutes, type ProductsDeps } from "./products.js";
+import { committedDeclaration, createProductsDirectory, defaultProductsDeps, readPublication, registerProductsRoutes, type ProductsDeps } from "./products.js";
 
 const p = (id: string): ProjectRecord => ({ id, name: id, repoPath: `/unused/${id}`, indexed: true });
 const LIVE = `mode: live
@@ -77,6 +77,109 @@ test("registered projects rejects malformed registry and retains declared PM rec
     globalThis.fetch = async () => new Response(JSON.stringify({ projects: { example: { repo_path: "/registered", agents: { pm: { role: "pm", role_dir: "custom/pm" } } } } }));
     const read = await getRegisteredProjects(); assert.equal(read.down, undefined); assert.equal(read.projects[0].agents?.[0].roleDir, "custom/pm");
   } finally { globalThis.fetch = original; }
+});
+
+test("malformed registry identity makes the actual GET down without replacing dated last-good", async () => {
+  const original = globalThis.fetch;
+  let now = 1_800_000_000_000;
+  let registry: unknown = { projects: { example: { repo_path: "/registered", project_id: "example" } } };
+  globalThis.fetch = async () => new Response(JSON.stringify(registry));
+  const deps = setup().deps;
+  deps.now = () => now;
+  deps.declaration = async () => ({ raw: "mode: launch\n", commit: "a".repeat(40) });
+  deps.projects = getRegisteredProjects;
+  const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(deps));
+  const get = async () => {
+    const response = await app.inject({ method: "GET", url: "/api/modules/products" });
+    assert.equal(response.statusCode, 200);
+    return response.json();
+  };
+  try {
+    const good = await get();
+    assert.equal(good.registry.state, "ok"); assert.deepEqual(good.products.map((x: { id: string }) => x.id), ["example"]);
+    for (const badId of [42, {}, [], false, ""]) {
+      registry = { projects: { example: { repo_path: "/registered", project_id: badId } } };
+      assert.ok((await getRegisteredProjects()).down, JSON.stringify(badId));
+      const first = Fastify(); registerProductsRoutes(first, createProductsDirectory(deps));
+      try {
+        const response = await first.inject({ method: "GET", url: "/api/modules/products" });
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.json().registry.state, "down");
+        assert.equal(response.json().registry.snapshotAt, undefined);
+        assert.deepEqual(response.json().products, []);
+      } finally { await first.close(); }
+      now += 6000;
+      const stale = await get();
+      assert.equal(stale.registry.state, "down"); assert.equal(stale.registry.snapshotAt, good.registry.snapshotAt);
+      assert.equal(stale.registry.ageSeconds, (now - 1_800_000_000_000) / 1000);
+      assert.deepEqual(stale.products.map((x: { id: string }) => x.id), ["example"]);
+    }
+    registry = { projects: {} }; now += 6000;
+    const empty = await get(); assert.equal(empty.registry.state, "ok"); assert.deepEqual(empty.products, []);
+    assert.notEqual(empty.registry.snapshotAt, good.registry.snapshotAt);
+    registry = { projects: { example: { repo_path: "/registered", project_id: "example" } } }; now += 6000;
+    assert.deepEqual((await get()).products.map((x: { id: string }) => x.id), ["example"]);
+  } finally { globalThis.fetch = original; await app.close(); }
+});
+
+test("actual GET isolates non-string committed YAML modes from a valid neighbor", async () => {
+  const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-mode-route-"));
+  const original = globalThis.fetch;
+  const repo = join(root, "invalid"); const neighbor = join(root, "neighbor");
+  const gitAt = (path: string, ...args: string[]) => execFileSync("git", ["-C", path, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
+  try {
+    for (const path of [repo, neighbor]) {
+      await mkdir(path);
+      gitAt(path, "init"); gitAt(path, "config", "user.email", "fixture@example.invalid"); gitAt(path, "config", "user.name", "Fixture");
+      await writeFile(join(path, ".launch.yaml"), "mode: launch\n");
+      gitAt(path, "add", ".launch.yaml"); gitAt(path, "commit", "-m", "fixture");
+    }
+    globalThis.fetch = async () => new Response(JSON.stringify({ projects: {
+      invalid: { repo_path: repo, project_id: "invalid" }, neighbor: { repo_path: neighbor, project_id: "neighbor" }
+    } }));
+    for (const raw of ["mode: [launch]\n", "mode: [steady]\n", "mode: [live]\n", "mode: {toString: launch}\n", "mode: null\n", "mode: 123\n", "mode: true\n", "mode: {value: live}\n", "mode: ''\n"]) {
+      await writeFile(join(repo, ".launch.yaml"), raw);
+      gitAt(repo, "add", ".launch.yaml"); gitAt(repo, "commit", "-m", "invalid mode");
+      const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(defaultProductsDeps(getRegisteredProjects)));
+      try {
+        const response = await app.inject({ method: "GET", url: "/api/modules/products" });
+        assert.equal(response.statusCode, 200, raw);
+        const body = response.json();
+        assert.equal(body.registry.state, "ok");
+        assert.deepEqual(body.products.map((x: { id: string }) => x.id), ["neighbor"], raw);
+        assert.deepEqual(body.issues.map((x: { id: string; state: string }) => [x.id, x.state]), [["invalid", "invalid"]], raw);
+        assert.ok(!response.body.includes('"href":"/live"'));
+      } finally { await app.close(); }
+    }
+  } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
+});
+
+test("replacement refs cannot alter the committed declaration or its GET provenance", async () => {
+  const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-replacement-"));
+  const original = globalThis.fetch;
+  const repo = join(root, "repo"); await mkdir(repo);
+  const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
+  try {
+    git("init"); git("config", "user.email", "fixture@example.invalid"); git("config", "user.name", "Fixture");
+    await writeFile(join(repo, ".launch.yaml"), "mode: launch\n"); git("add", ".launch.yaml"); git("commit", "-m", "original launch");
+    const originalCommit = git("rev-parse", "HEAD");
+    await writeFile(join(repo, ".launch.yaml"), "mode: live\n"); git("add", ".launch.yaml");
+    const tree = git("write-tree"); const replacement = git("commit-tree", tree, "-m", "replacement live");
+    git("replace", originalCommit, replacement);
+    assert.equal(git("rev-parse", "HEAD"), originalCommit);
+    assert.equal(git("show", `${originalCommit}:.launch.yaml`), "mode: live");
+    globalThis.fetch = async () => new Response(JSON.stringify({ projects: { example: { repo_path: repo, project_id: "example" } } }));
+    const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(defaultProductsDeps(getRegisteredProjects)));
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/modules/products" });
+      assert.equal(response.statusCode, 200);
+      const body = response.json();
+      assert.equal(body.products[0].stage, "launch");
+      assert.equal(body.products[0].declaration.commit, originalCommit);
+      assert.equal((await committedDeclaration({ ...p("example"), repoPath: repo })).raw, "mode: launch");
+      assert.equal(execFileSync("git", ["--no-replace-objects", "-C", repo, "show", `${originalCommit}:.launch.yaml`], { encoding: "utf8" }).trim(), "mode: launch");
+    } finally { await app.close(); }
+  } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
 });
 test("real Git reads committed declaration not dirty disk; receipt reads stay bounded and inside registered repo", async () => {
   const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-source-"));

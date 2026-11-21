@@ -1,0 +1,127 @@
+[
+  {
+    "name": "api-typecheck",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/api",
+      "typecheck",
+      "--incremental",
+      "false"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "duration_seconds": 2.56,
+    "log": "api-typecheck.log",
+    "last_lines": [
+      "\u2009WARN\u2009 Issue while reading \"/home/delorenj/.npmrc\". Failed to replace env in config: ${NPM_TOKEN?}",
+      "",
+      "> @holocene/api@0.0.1 typecheck /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/api",
+      "> tsc --noEmit \"--incremental\" \"false\"",
+      ""
+    ]
+  },
+  {
+    "name": "web-typecheck",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/web",
+      "typecheck",
+      "--incremental",
+      "false"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "duration_seconds": 3.58,
+    "log": "web-typecheck.log",
+    "last_lines": [
+      "\u2009WARN\u2009 Issue while reading \"/home/delorenj/.npmrc\". Failed to replace env in config: ${NPM_TOKEN?}",
+      "",
+      "> @holocene/web@0.0.1 typecheck /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web",
+      "> tsc --noEmit \"--incremental\" \"false\"",
+      ""
+    ]
+  },
+  {
+    "name": "api-regression",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/api",
+      "test"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "duration_seconds": 1.62,
+    "log": "api-regression.log",
+    "last_lines": [
+      "\u2714 a CLI failure is a DOWN source, never healthy emptiness (26.68008ms)",
+      "\u2714 a CLI failure after a good read keeps the last snapshot, labeled stale (50.893264ms)",
+      "\u2714 a non-object snapshot is a failure, not an empty catalog (31.806949ms)",
+      "\u2714 reads inside the TTL hit the cache and do not re-run the CLI (64.467871ms)",
+      "\u2139 tests 330",
+      "\u2139 suites 0",
+      "\u2139 pass 330",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 skipped 0",
+      "\u2139 todo 0",
+      "\u2139 duration_ms 1330.373771"
+    ]
+  },
+  {
+    "name": "web-regression",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/web",
+      "test"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "duration_seconds": 46.61,
+    "log": "web-regression.log",
+    "last_lines": [
+      "\u2714 keys owed: clear is calm, due shows the countdown, overdue shows the overrun and is loud (0.700733ms)",
+      "\u2714 version and storefront metrics read the release and the page (0.502719ms)",
+      "\u2714 the page sentence: loading, API down, empty, invalid, healthy, owing (0.705592ms)",
+      "\u2714 the celebration is for the first live app, once per browser (0.718817ms)",
+      "\u2139 tests 86",
+      "\u2139 suites 0",
+      "\u2139 pass 86",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 skipped 0",
+      "\u2139 todo 0",
+      "\u2139 duration_ms 46327.912243"
+    ]
+  },
+  {
+    "name": "reproduced-browser-suite",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/web",
+      "test:products-browser"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 1,
+    "duration_seconds": 2.62,
+    "log": "browser-initial-failure.md",
+    "last_lines": [
+      "    - [pid=602814] <process did exit: exitCode=null, signal=SIGABRT>",
+      "    - [pid=602814] starting temporary directories cleanup",
+      "    - [pid=602814] finished temporary directories cleanup",
+      "    - [pid=602814] <gracefully close end>",
+      "  ",
+      "      at browserTest (/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web/app/products/products.browser.mjs:12:34)",
+      "      at TestContext.<anonymous> (/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web/app/products/products.browser.mjs:111:146) {",
+      "    log: [ '  - <launching> /home/delorenj/.local/bin/google-chrome --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,AvoidCorsURLLoaderRestartOnRedirect,TcpPortRandomizationWin,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,PreconnectToSearch,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface,SkipListAccountsWithoutGaiaCookies --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --enable-unsafe-swiftshader --edge-skip-compat-layer-relaunch --disable-stack-profiler --disable-infobars --disable-sync --do-not-de-elevate --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --no-sandbox --user-data-dir=/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/spec/scratch/reproduced-browser-suite/playwright_chromiumdev_profile-p1dowh --remote-debugging-pipe --no-startup-window', '  - <launched> pid=602814', '  - [pid=602814][err] [602814:602814:1120/183729.582402:FATAL:chrome/browser/process_singleton_posix.cc:313] Socket path too long: /home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/spec/scratch/reproduced-browser-suite/com.google.Chrome.M6TG9B/SingletonSocket.', '  - [pid=602814] <gracefully close start>', '  - [pid=602814] <kill>', '  - [pid=602814] <will force kill>', '  - [pid=602814] exception while trying to kill process: Error: kill ESRCH', '  - [pid=602814] <process did exit: exitCode=null, signal=SIGABRT>', '  - [pid=602814] starting temporary directories cleanup', '  - [pid=602814] finished temporary directories cleanup', '  - [pid=602814] <gracefully close end>' ]",
+      "  }",
+      "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/apps/web:",
+      "\u2009ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL\u2009 @holocene/web@0.0.1 test:products-browser: `node --test app/products/products.browser.mjs`",
+      "Exit status 1"
+    ]
+  }
+]

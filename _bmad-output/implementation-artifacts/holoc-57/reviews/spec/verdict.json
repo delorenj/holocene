@@ -1,0 +1,60 @@
+{
+  "status": "BLOCKED",
+  "candidate": "4d36eb9c237549c3ce6e0913b5960a47387c3001",
+  "base": "3fe12c684fef0de56c64b757381dc9da3f8bdbe1",
+  "review_type": "independent_spec_acceptance",
+  "report": "_bmad-output/implementation-artifacts/holoc-57/reviews/spec/review.md",
+  "blockers": [
+    {
+      "id": "SPEC-F1",
+      "ac": 2,
+      "severity": "medium",
+      "title": "Array-valued lifecycle modes are classified as Live",
+      "source": ["apps/api/src/products-model.ts:19-24", "apps/api/src/products.ts:95-96"],
+      "observed": "mode: [launch], [steady], and [live] pass String(mode) validation and become a Live product with /live action.",
+      "expected": "Non-scalar modes produce a visible source issue with no guessed lifecycle/action.",
+      "evidence": ["source-probes.json", "source-probes.log", "fixture-invalid-array-mode-320.png"]
+    },
+    {
+      "id": "SPEC-F2",
+      "ac": 2,
+      "severity": "medium",
+      "title": "Malformed registry identity becomes healthy empty discovery and overwrites last-good",
+      "source": ["apps/api/src/hub.ts:91-94", "apps/api/src/hub.ts:135-139", "apps/api/src/products.ts:78-80"],
+      "observed": "A registry row with repo_path and project_id: 123 is silently dropped; directory says state ok, products [], issues [], even after a valid last-good snapshot.",
+      "expected": "Reject malformed discovery or expose a typed issue; retain labelled last-good instead of claiming healthy emptiness.",
+      "evidence": ["source-probes.json", "source-probes.log", "fixture-malformed-registry-false-empty-320.png"]
+    }
+  ],
+  "acceptance": [
+    {"ac": 1, "verdict": "PASS", "detail": "Current real four products and all receipt/Live destinations verified at desktop and 390/320 CSS widths; mutation/promotion identity fixtures pass."},
+    {"ac": 2, "verdict": "FAIL", "detail": "Two independently reproduced invalid-source classification/false-empty blockers."},
+    {"ac": 3, "verdict": "PASS", "detail": "Selected A+C references, PM rationale, corrected DESIGN/EXPERIENCE and real Ledger hierarchy conform."},
+    {"ac": 4, "verdict": "PASS", "detail": "Direct/focused hub routes, rendered selected panels, back/forward, Ctrl/middle links, stage subsets, old destinations and shared shells verified."},
+    {"ac": 5, "verdict": "PASS", "detail": "No page overflow at 1440/390/320; themes, keyboard focus/groups/trap/skip, Escape/focus return, current semantics and reduced motion verified."},
+    {"ac": 6, "verdict": "PARTIAL", "detail": "Both typechecks and 330 API/86 web/3 browser tests pass; invalid-type regressions missing. Public anonymous auth redirects verified; authenticated candidate live acceptance not performed."},
+    {"ac": 7, "verdict": "PARTIAL", "detail": "Independent spec browser requirement complete; separate quality review belongs to parent and is not claimed here."},
+    {"ac": 8, "verdict": "PARTIAL", "detail": "Local reviewed checkpoint and evidence preserved, but candidate not accepted until blockers resolved; parent owns handoff/push and later authorized live acceptance."}
+  ],
+  "executed": {
+    "api_typecheck": {"exit_code": 0, "incremental": false},
+    "web_typecheck": {"exit_code": 0, "incremental": false},
+    "api_regression": {"exit_code": 0, "passed": 330, "failed": 0},
+    "web_regression": {"exit_code": 0, "passed": 86, "failed": 0},
+    "reproduced_browser_suite": {"exit_code": 0, "passed": 3, "failed": 0, "initial_harness_launch_failure": "Long TMPDIR exceeded Chrome Unix socket length; retry used active-profile scratch."},
+    "independent_source_probes": {"exit_code": 0, "meaning": "Confirms the observed defective behavior; not an acceptance pass."},
+    "independent_browser": {"exit_code": 0, "viewports": [1440, 390, 320], "real_launch_dashboard_opens": 9, "earshot_live_opens": 3, "labelled_synthetic_fixture_states": 6},
+    "supplemental_navigation": {"exit_code": 0},
+    "outside_click_probe": {"exit_code": 0},
+    "anonymous_public_boundary": {"products": 307, "products_api": 307, "redirect_origin": "https://accounts.google.com"},
+    "container_label_inspection": {"exit_code": 1, "error": "no such object: holocene-web"},
+    "git_diff_check": {"exit_code": 0}
+  },
+  "limits": [
+    "No authenticated production browser or public candidate serving proof.",
+    "Existing specialist APIs beyond products/Live/hub were not fully forwarded or exercised.",
+    "No screen-reader, physical device, full WCAG or pixel-perfect certification.",
+    "Separate quality-review verdict not claimed.",
+    "No source edits, commit, push, merge, deploy, restart, board or lifecycle writes; parent-owned service handles untouched."
+  ]
+}

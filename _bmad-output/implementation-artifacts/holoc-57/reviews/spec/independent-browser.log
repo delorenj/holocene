@@ -1,0 +1,21 @@
+{
+  "viewports": 3,
+  "routes": 10,
+  "fixtures": 6,
+  "auth": [
+    {
+      "path": "/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true,
+      "candidateServingProven": false
+    },
+    {
+      "path": "/api/modules/products",
+      "status": 307,
+      "redirectOrigin": "https://accounts.google.com",
+      "anonymous": true,
+      "candidateServingProven": false
+    }
+  ]
+}

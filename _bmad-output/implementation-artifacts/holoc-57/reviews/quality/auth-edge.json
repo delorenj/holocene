@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-20T23:46:49.986831+00:00",
+  "checks": [
+    {
+      "path": "/products",
+      "status": 307,
+      "redirectHost": "accounts.google.com",
+      "note": "Only response status and redirect host retained. No cookie, nonce, state, token or response body persisted."
+    },
+    {
+      "path": "/api/modules/products",
+      "status": 307,
+      "redirectHost": "accounts.google.com",
+      "note": "Only response status and redirect host retained. No cookie, nonce, state, token or response body persisted."
+    }
+  ],
+  "limit": "Anonymous public edge test only; neither candidate deployment nor authenticated live acceptance is proved."
+}

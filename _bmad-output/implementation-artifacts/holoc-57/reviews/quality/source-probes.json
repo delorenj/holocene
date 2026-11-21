@@ -1,0 +1,302 @@
+{
+  "candidate": "4d36eb9c237549c3ce6e0913b5960a47387c3001",
+  "fixtureOnly": true,
+  "results": [
+    {
+      "name": "valid committed launch control",
+      "payload": {
+        "generatedAt": "2026-11-20T23:45:26.464Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.464Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "launch",
+            "declaration": {
+              "commit": "78fc5bce66ec176abe3617450e54389b3eddaaf6"
+            },
+            "destination": {
+              "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-20/launch-dashboard/index.html",
+              "label": "Open launch dashboard",
+              "publishedAt": "2026-11-20T22:00:00.000Z"
+            }
+          }
+        ],
+        "issues": []
+      }
+    },
+    {
+      "name": "dirty worktree ignored",
+      "pass": true
+    },
+    {
+      "name": "non-string lifecycle must be invalid and not product",
+      "raw": "mode: {toString: launch}\n",
+      "observed": {
+        "httpStatus": 500,
+        "statusCode": 500,
+        "error": "Internal Server Error",
+        "message": "Cannot convert object to primitive value"
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "non-string lifecycle must be invalid and not product",
+      "raw": "mode: [launch]\n",
+      "observed": {
+        "httpStatus": 200,
+        "generatedAt": "2026-11-20T23:45:26.516Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.516Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "live",
+            "declaration": {
+              "commit": "aee288804e307a2037be2e27c63d08f146d07caa"
+            },
+            "issue": "Committed live declaration is invalid; inspect its live configuration.",
+            "destination": {
+              "href": "/live",
+              "label": "Open Live management"
+            }
+          }
+        ],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "non-string lifecycle must be invalid and not product",
+      "raw": "mode: [steady]\n",
+      "observed": {
+        "httpStatus": 200,
+        "generatedAt": "2026-11-20T23:45:26.532Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.532Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "live",
+            "declaration": {
+              "commit": "29937e6eb6e77feeadcc0ba7f9e14b0afd134610"
+            },
+            "issue": "Committed live declaration is invalid; inspect its live configuration.",
+            "destination": {
+              "href": "/live",
+              "label": "Open Live management"
+            }
+          }
+        ],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "non-string lifecycle must be invalid and not product",
+      "raw": "mode: [live]\n",
+      "observed": {
+        "httpStatus": 200,
+        "generatedAt": "2026-11-20T23:45:26.547Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.547Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "live",
+            "declaration": {
+              "commit": "ce41627579ba88e07f2075cf4b12e2465360a283"
+            },
+            "issue": "Committed live declaration is invalid; inspect its live configuration.",
+            "destination": {
+              "href": "/live",
+              "label": "Open Live management"
+            }
+          }
+        ],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "invalid registry project identity",
+      "badId": 42,
+      "down": false,
+      "projectCount": 0,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.568Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.568Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "invalid registry project identity",
+      "badId": {},
+      "down": false,
+      "projectCount": 0,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.572Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.572Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "invalid registry project identity",
+      "badId": [],
+      "down": false,
+      "projectCount": 0,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.576Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.576Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "invalid registry project identity",
+      "badId": false,
+      "down": false,
+      "projectCount": 0,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.580Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.580Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "invalid registry project identity",
+      "badId": "",
+      "down": false,
+      "projectCount": 0,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.584Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.584Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "malformed identity overwrites last good",
+      "before": {
+        "generatedAt": "2026-11-20T23:45:26.586Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.586Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "launch",
+            "declaration": {
+              "commit": "a9bee6ea08a7c838f8fb796d76747f86364b47db"
+            },
+            "destination": {
+              "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-20/launch-dashboard/index.html",
+              "label": "Open launch dashboard",
+              "publishedAt": "2026-11-20T22:00:00.000Z"
+            }
+          }
+        ],
+        "issues": []
+      },
+      "after": {
+        "generatedAt": "2026-11-20T23:45:32.586Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:32.586Z",
+          "ageSeconds": 0
+        },
+        "products": [],
+        "issues": []
+      },
+      "contractHolds": false
+    },
+    {
+      "name": "FIFO bounded rejection",
+      "rejected": true,
+      "elapsedMs": 0
+    },
+    {
+      "name": "outside symlink rejection",
+      "pass": true
+    },
+    {
+      "name": "local replacement refs and pinned source",
+      "httpStatus": 200,
+      "observed": {
+        "generatedAt": "2026-11-20T23:45:26.623Z",
+        "registry": {
+          "state": "ok",
+          "snapshotAt": "2026-11-20T23:45:26.623Z",
+          "ageSeconds": 0
+        },
+        "products": [
+          {
+            "id": "quality-fixture",
+            "name": "Quality fixture",
+            "stage": "live",
+            "declaration": {
+              "commit": "a9bee6ea08a7c838f8fb796d76747f86364b47db"
+            },
+            "issue": "Committed live declaration is invalid; inspect its live configuration.",
+            "destination": {
+              "href": "/live",
+              "label": "Open Live management"
+            }
+          }
+        ],
+        "issues": []
+      },
+      "headUnchanged": true,
+      "reportedCommit": "a9bee6ea08a7c838f8fb796d76747f86364b47db",
+      "observedRaw": "mode: live",
+      "trueObjectRaw": "mode: launch"
+    }
+  ]
+}

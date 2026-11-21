@@ -1,0 +1,9 @@
+{
+  "candidate": "4d36eb9c237549c3ce6e0913b5960a47387c3001",
+  "sources": {
+    "source-probes.mts": "bcdb1f3beac2e7a91914dbfb67e0990f1930c349f950e96af5852b18d4e99ad3",
+    "assert-contract.mjs": "9f048fb4e77989a235e7070433e69b245ebd33bbdf607476cdc183d143587eb6",
+    "receipt-probes.mjs": "6f2fad828db7c634a8e852819e740b452040d7392b4bec128df83ae7ee0af1ae",
+    "targeted-browser.mjs": "1475a2db66404250be068ab9825f091ca3129e08471dd3a6220d1438d5c137e5"
+  }
+}

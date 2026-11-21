@@ -132,9 +132,10 @@ async function readProjects(extraPaths: string[]): Promise<{ projects: ProjectRe
     if (!record(body) || !record(body.projects)) throw new Error("invalid registry response");
     const rows = body.projects;
     for (const [key, snap] of Object.entries(rows)) {
-      if (!record(snap) || !text(snap.repo_path)) throw new Error("invalid registry project");
+      if (!record(snap) || !text(snap.repo_path) || (snap.project_id != null && !text(snap.project_id))) throw new Error("invalid registry project");
       const rec = recordFromManifest({ ...snap, project_id: snap.project_id ?? key }, text(snap.repo_path) ?? "", true);
-      if (rec) projects.set(rec.id, rec);
+      if (!rec) throw new Error("invalid registry project identity");
+      projects.set(rec.id, rec);
     }
     source = { name: "pjangler", value: `${projects.size} projects`, ageSeconds: 0 };
   } catch (error) {

@@ -1,0 +1,184 @@
+{
+  "files": [
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/README.md",
+      "bytes": 11643
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/api-test.log",
+      "bytes": 32206
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/api-typecheck.log",
+      "bytes": 103
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/assert-contract.mjs",
+      "bytes": 1528
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/auth-edge.json",
+      "bytes": 657
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-greeninbetween-1440.png",
+      "bytes": 146860
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-greeninbetween-320.png",
+      "bytes": 61131
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-greeninbetween-390.png",
+      "bytes": 79963
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-gruvato-1440.png",
+      "bytes": 163254
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-gruvato-320.png",
+      "bytes": 59724
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-gruvato-390.png",
+      "bytes": 76228
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-tolt-1440.png",
+      "bytes": 163212
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-tolt-320.png",
+      "bytes": 57436
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/dashboard-tolt-390.png",
+      "bytes": 78904
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/drawer-320.png",
+      "bytes": 46100
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/drawer-390.png",
+      "bytes": 35736
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/earshot-live-1440.png",
+      "bytes": 191242
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/earshot-live-320.png",
+      "bytes": 133692
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/earshot-live-390.png",
+      "bytes": 137479
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/fixture-unavailable-320.png",
+      "bytes": 39590
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-1440-ledger-night.png",
+      "bytes": 90191
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-1440-ledger.png",
+      "bytes": 87979
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-320-ledger-night.png",
+      "bytes": 77101
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-320-ledger.png",
+      "bytes": 74821
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-390-ledger-night.png",
+      "bytes": 76761
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/products-390-ledger.png",
+      "bytes": 74345
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser/real-navigation.json",
+      "bytes": 6289
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/browser-suite.log",
+      "bytes": 452
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/contract-assertions.log",
+      "bytes": 4144
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/evidence-inventory.json",
+      "bytes": 7980
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/image-secret-scan.json",
+      "bytes": 6185
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/oracle-sha256.json",
+      "bytes": 458
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/receipt-probes.json",
+      "bytes": 4182
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/receipt-probes.log",
+      "bytes": 3819
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/receipt-probes.mjs",
+      "bytes": 5863
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/secret-scan.json",
+      "bytes": 743
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/source-probes.json",
+      "bytes": 8416
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/source-probes.log",
+      "bytes": 1606
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/source-probes.mts",
+      "bytes": 8120
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/stale-api-phone.png",
+      "bytes": 75061
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/targeted-browser.json",
+      "bytes": 4466
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/targeted-browser.log",
+      "bytes": 4467
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/targeted-browser.mjs",
+      "bytes": 5598
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/web-test.log",
+      "bytes": 8436
+    },
+    {
+      "path": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar/_bmad-output/implementation-artifacts/holoc-57/reviews/quality/web-typecheck.log",
+      "bytes": 103
+    }
+  ]
+}

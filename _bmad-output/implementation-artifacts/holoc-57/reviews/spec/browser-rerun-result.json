@@ -1,0 +1,27 @@
+{
+  "name": "reproduced-browser-suite",
+  "command": [
+    "pnpm",
+    "--filter",
+    "@holocene/web",
+    "test:products-browser"
+  ],
+  "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+  "exit_code": 0,
+  "duration_seconds": 6.27,
+  "log": "reproduced-browser-suite.log",
+  "last_lines": [
+    "",
+    "\u2714 real registered products: desktop and phone navigate every receipt dashboard and existing Earshot Live (4343.311944ms)",
+    "\u2714 hub focus/history/native modified links and shared specialist sidebar (921.391414ms)",
+    "\u2714 fixture-only failure states render explicitly and refresh retries without fabricating healthy emptiness (646.859123ms)",
+    "\u2139 tests 3",
+    "\u2139 suites 0",
+    "\u2139 pass 3",
+    "\u2139 fail 0",
+    "\u2139 cancelled 0",
+    "\u2139 skipped 0",
+    "\u2139 todo 0",
+    "\u2139 duration_ms 6082.030303"
+  ]
+}

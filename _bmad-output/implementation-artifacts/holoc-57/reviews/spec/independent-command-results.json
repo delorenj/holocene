@@ -1,0 +1,46 @@
+[
+  {
+    "name": "source-probes",
+    "command": [
+      "pnpm",
+      "--filter",
+      "@holocene/api",
+      "exec",
+      "tsx",
+      "../../_bmad-output/implementation-artifacts/holoc-57/reviews/spec/source-probes.mts"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "log": "source-probes.log"
+  },
+  {
+    "name": "independent-browser",
+    "command": [
+      "node",
+      "_bmad-output/implementation-artifacts/holoc-57/reviews/spec/independent-browser.mjs"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "log": "independent-browser.log"
+  },
+  {
+    "name": "supplemental-navigation",
+    "command": [
+      "node",
+      "_bmad-output/implementation-artifacts/holoc-57/reviews/spec/supplemental-navigation.mjs"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "log": "supplemental-navigation.log"
+  },
+  {
+    "name": "outside-click-probe",
+    "command": [
+      "node",
+      "_bmad-output/implementation-artifacts/holoc-57/reviews/spec/outside-click-probe.mjs"
+    ],
+    "cwd": "/home/delorenj/code/33GOD/holocene/.worktrees/holoc-57-products-sidebar",
+    "exit_code": 0,
+    "log": "outside-click-probe.log"
+  }
+]
