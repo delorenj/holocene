@@ -47,6 +47,8 @@ Environment=MEMO_CONVERSE_TTS_STEPS=6
 # 7.1 s p50 / down 3.5 s p50 via Cloudflare vs 0.14 s / 0.07 s here, measured under load. MEMO_S3_DIRECT=1 serves the hot-path
 # calls (cp, ls, stat, cat, pipe) in-process on a kept-alive SigV4 connection (65 ms up, 18 ms down, 3 ms stat); mc runs anything else.
 Environment=MEMO_S3_ALIAS=delodrive
+# Voxxy key (vox.delo.sh requires it from 2026-11-23): an op:// ref, read once by memo_common.vox_headers.
+Environment=VOX_API_KEY_REF=op://DeLoSecrets/mpxfavdfzeqh7ahqc2r3qa6aki/credential
 Environment=MEMO_S3_DIRECT=1
 # received / transcribed / voiced published by one ordered thread instead of a bb-emit subprocess in the path (0.16-0.25 s each)
 Environment=MEMO_FACTS_ASYNC=1
