@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-11-23T00:00:00.000Z",
+  "registry": {
+    "state": "ok",
+    "snapshotAt": "2026-11-23T00:00:00.000Z",
+    "ageSeconds": 0
+  },
+  "products": [
+    {
+      "id": "empty-fixture",
+      "name": "Empty review fixture",
+      "stage": "launch",
+      "declaration": {
+        "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+      },
+      "launch": {
+        "state": "unknown",
+        "source": "launch dashboard receipt",
+        "openActions": 0,
+        "ownerBlockers": 0,
+        "nextStep": "Review gate evidence in the dashboard; no verified readiness is asserted."
+      }
+    },
+    {
+      "id": "no-evidence-fixture",
+      "name": "No-evidence review fixture",
+      "stage": "launch",
+      "declaration": {
+        "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+      },
+      "launch": {
+        "state": "attention",
+        "source": "launch dashboard receipt",
+        "observedAt": "2026-11-22T20:00:00.000Z",
+        "openActions": 0,
+        "ownerBlockers": 0,
+        "nextStep": "Review gate evidence in the dashboard; no verified readiness is asserted."
+      }
+    }
+  ],
+  "issues": []
+}

@@ -1,0 +1,25 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'unknown'
+- 'attention'
+
+    at <anonymous> (/home/delorenj/code/33GOD/holocene/.worktrees/holoc-62-projects-launch-local/_bmad-output/implementation-artifacts/holoc-62/quality-review/adversarial-probes.mts:52:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'unknown',
+  expected: 'attention',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v26.5.0
+undefined
+/home/delorenj/code/33GOD/holocene/.worktrees/holoc-62-projects-launch-local/apps/api:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: tsx ../../_bmad-output/implementation-artifacts/holoc-62/quality-review/adversarial-probes.mts

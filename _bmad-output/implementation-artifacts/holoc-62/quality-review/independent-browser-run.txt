@@ -1,0 +1,81 @@
+{
+  "real": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "rows": 3,
+      "destinations": [
+        {
+          "id": "greeninbetween",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 46869
+        },
+        {
+          "id": "gruvato",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 20338
+        },
+        {
+          "id": "tolt",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48120
+        }
+      ],
+      "errors": []
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "rows": 3,
+      "destinations": [
+        {
+          "id": "greeninbetween",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 46756
+        },
+        {
+          "id": "gruvato",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 20281
+        },
+        {
+          "id": "tolt",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48007
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "fixture": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "entrypoint": "actual GET output replayed only to isolate UI rendering",
+      "empty": "Readiness unknown · 0 owner-blocked gates · 0 open actions (reported; not verified current)\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+      "invalid": "Needs attention · 0 owner-blocked gates · 0 open actions\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T20:00:00.000Z. Publication time is not gate freshness."
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "entrypoint": "actual GET output replayed only to isolate UI rendering",
+      "empty": "Readiness unknown · 0 owner-blocked gates · 0 open actions (reported; not verified current)\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+      "invalid": "Needs attention · 0 owner-blocked gates · 0 open actions\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T20:00:00.000Z. Publication time is not gate freshness."
+    }
+  ],
+  "localNonGETs": []
+}

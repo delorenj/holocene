@@ -1,0 +1,190 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+{
+  "assertions": "passed; bug assertions confirm incorrect candidate output",
+  "cases": 23,
+  "results": [
+    {
+      "label": "control: known statuses with claimed recent observations",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "DEFECT: both collections empty",
+      "state": "unknown",
+      "counts": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "DEFECT: absent gate entries produce owner blocker zero",
+      "state": "unknown",
+      "counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "label": "DEFECT: done and met have no identity/evidence but are considered current",
+      "state": "attention",
+      "counts": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "DEFECT: impossible calendar date normalized to current observation",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "timestamp with no timezone accepted in host timezone",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "partial missing observations",
+      "state": "unknown",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "future observations",
+      "state": "unknown",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "oldest observation stale",
+      "state": "stale",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "unknown item status",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "invalid requirements array",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "invalid item null",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "unknown requirement status",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "missing receipt still listed without scripts",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "unsafe URL rejected: javascript:alert(1)",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh.evil.test/projects/quality-fixture/launch-dashboard/index.html",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh/projects/quality-fixture/a/../launch-dashboard/index.html",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh/projects/quality-fixture/launch-dashboard/index.html?token=fixture",
+      "state": "attention",
+      "counts": [
+        1,
+        1
+      ]
+    },
+    {
+      "label": "FIFO rejected without blocking",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "symlink outside repository rejected",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "oversized receipt rejected",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "malformed JSON rejected",
+      "state": "unknown",
+      "counts": [
+        null,
+        null
+      ]
+    },
+    {
+      "label": "cache coalesces, expires after 5s, and route remains read-only",
+      "counts": [
+        null,
+        null
+      ]
+    }
+  ]
+}

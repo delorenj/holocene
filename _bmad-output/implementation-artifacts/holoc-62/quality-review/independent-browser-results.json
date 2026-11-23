@@ -1,0 +1,280 @@
+{
+  "revision": "7e9c5d0cbbc3f92398c82afa7f893fab56be2d65",
+  "runAt": "2026-11-23T00:12:26.412Z",
+  "real": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "links": [
+        {
+          "text": "Live products",
+          "href": "/products?stage=live",
+          "current": null
+        },
+        {
+          "text": "Launch mode products",
+          "href": "/products?stage=launch",
+          "current": "page"
+        },
+        {
+          "text": "All projects",
+          "href": "/?view=projects",
+          "current": null
+        }
+      ],
+      "launch": [
+        {
+          "id": "greeninbetween",
+          "text": "Readiness unknown · 23 owner-blocked gates · 19 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T03:28:49.000Z. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "gruvato",
+          "text": "Readiness unknown · 1 owner-blocked gates · 5 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "tolt",
+          "text": "Readiness unknown · 18 owner-blocked gates · 17 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html"
+        }
+      ],
+      "measurement": {
+        "width": 1440,
+        "document": 1440,
+        "body": 1440
+      },
+      "destinations": [
+        {
+          "id": "greeninbetween",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 46869
+        },
+        {
+          "id": "gruvato",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 20338
+        },
+        {
+          "id": "tolt",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48120
+        }
+      ],
+      "errors": []
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "links": [
+        {
+          "text": "Live products",
+          "href": "/products?stage=live",
+          "current": null
+        },
+        {
+          "text": "Launch mode products",
+          "href": "/products?stage=launch",
+          "current": "page"
+        },
+        {
+          "text": "All projects",
+          "href": "/?view=projects",
+          "current": null
+        }
+      ],
+      "launch": [
+        {
+          "id": "greeninbetween",
+          "text": "Readiness unknown · 23 owner-blocked gates · 19 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T03:28:49.000Z. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "gruvato",
+          "text": "Readiness unknown · 1 owner-blocked gates · 5 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html"
+        },
+        {
+          "id": "tolt",
+          "text": "Readiness unknown · 18 owner-blocked gates · 17 open actions (reported; not verified current)Recheck gates with missing observations in the dashboard.Source: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+          "href": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html"
+        }
+      ],
+      "measurement": {
+        "width": 320,
+        "document": 320,
+        "body": 320
+      },
+      "destinations": [
+        {
+          "id": "greeninbetween",
+          "url": "https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html",
+          "title": "GreenInBetween launch dashboard",
+          "bodyLength": 46756
+        },
+        {
+          "id": "gruvato",
+          "url": "https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html",
+          "title": "gruvato launch dashboard",
+          "bodyLength": 20281
+        },
+        {
+          "id": "tolt",
+          "url": "https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html",
+          "title": "TOLT launch dashboard",
+          "bodyLength": 48007
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "fixture": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "entrypoint": "actual GET output replayed only to isolate UI rendering",
+      "empty": "Readiness unknown · 0 owner-blocked gates · 0 open actions (reported; not verified current)\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+      "invalid": "Needs attention · 0 owner-blocked gates · 0 open actions\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T20:00:00.000Z. Publication time is not gate freshness."
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 740
+      },
+      "entrypoint": "actual GET output replayed only to isolate UI rendering",
+      "empty": "Readiness unknown · 0 owner-blocked gates · 0 open actions (reported; not verified current)\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: unknown. Publication time is not gate freshness.",
+      "invalid": "Needs attention · 0 owner-blocked gates · 0 open actions\n\nReview gate evidence in the dashboard; no verified readiness is asserted.\n\nSource: launch dashboard receipt · Oldest recorded gate observation: 2026-11-22T20:00:00.000Z. Publication time is not gate freshness."
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/products"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/569f660a0e70f747.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/3959f740cf767ad5.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/eafc29836ea9a14b.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/webpack-8e2d5ae8eebbf11b.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/c2b9d013-80e05034b4fbed70.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/333-b3b3fffaa993bd0b.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/main-app-4a28c07cd207d757.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/3325-2aeb6d4a0d14ddb2.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/8759-c0b563e4cddb73ba.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/app/products/page-c7bd18fd3f266c3e.js"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/AtkinsonHyperlegibleNext-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/Newsreader-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/AtkinsonHyperlegibleMono-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/modules/products"
+    },
+    {
+      "method": "GET",
+      "path": "/products"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/569f660a0e70f747.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/3959f740cf767ad5.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/css/eafc29836ea9a14b.css"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/webpack-8e2d5ae8eebbf11b.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/c2b9d013-80e05034b4fbed70.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/333-b3b3fffaa993bd0b.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/main-app-4a28c07cd207d757.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/3325-2aeb6d4a0d14ddb2.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/8759-c0b563e4cddb73ba.js"
+    },
+    {
+      "method": "GET",
+      "path": "/_next/static/chunks/app/products/page-c7bd18fd3f266c3e.js"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/AtkinsonHyperlegibleNext-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/AtkinsonHyperlegibleMono-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/fonts/Newsreader-Variable.woff2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/modules/products"
+    }
+  ]
+}

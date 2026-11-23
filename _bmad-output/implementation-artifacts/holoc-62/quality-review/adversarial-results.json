@@ -1,0 +1,517 @@
+{
+  "revision": "7e9c5d0cbbc3f92398c82afa7f893fab56be2d65",
+  "runAt": "2026-11-23T00:11:23.027Z",
+  "entrypoint": "actual registerProductsRoutes GET + defaultProductsDeps + committed Git fixture + real readPublication",
+  "results": [
+    {
+      "label": "control: known statuses with claimed recent observations",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "DEFECT: both collections empty",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "openActions": 0,
+          "ownerBlockers": 0,
+          "nextStep": "Review gate evidence in the dashboard; no verified readiness is asserted."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "DEFECT: absent gate entries produce owner blocker zero",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 0,
+          "nextStep": "Review open launch actions in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "DEFECT: done and met have no identity/evidence but are considered current",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 0,
+          "ownerBlockers": 0,
+          "nextStep": "Review gate evidence in the dashboard; no verified readiness is asserted."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "DEFECT: impossible calendar date normalized to current observation",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-03-02T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "timestamp with no timezone accepted in host timezone",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T17:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "partial missing observations",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Recheck gates with missing observations in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "future observations",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Recheck gates with missing observations in the dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "oldest observation stale",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "stale",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-01T00:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Recheck stale launch gates before relying on this dashboard."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "unknown item status",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "invalid requirements array",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "invalid item null",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "unknown requirement status",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        },
+        "destination": {
+          "href": "https://s3.delo.sh/projects/quality-fixture/2026-11-22/launch-dashboard/index.html",
+          "label": "Open launch dashboard",
+          "publishedAt": "2026-11-22T20:00:00.000Z"
+        }
+      }
+    },
+    {
+      "label": "missing receipt still listed without scripts",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        }
+      }
+    },
+    {
+      "label": "unsafe URL rejected: javascript:alert(1)",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        }
+      }
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh.evil.test/projects/quality-fixture/launch-dashboard/index.html",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        }
+      }
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh/projects/quality-fixture/a/../launch-dashboard/index.html",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        }
+      }
+    },
+    {
+      "label": "unsafe URL rejected: https://s3.delo.sh/projects/quality-fixture/launch-dashboard/index.html?token=fixture",
+      "http": 200,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt is invalid or has an unsafe dashboard URL.",
+        "launch": {
+          "state": "attention",
+          "source": "launch dashboard receipt",
+          "observedAt": "2026-11-22T20:00:00.000Z",
+          "openActions": 1,
+          "ownerBlockers": 1,
+          "nextStep": "Review owner-blocked launch gates in the dashboard."
+        }
+      }
+    },
+    {
+      "label": "FIFO rejected without blocking",
+      "http": 200,
+      "elapsedMs": 4.718549999999993,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        }
+      }
+    },
+    {
+      "label": "symlink outside repository rejected",
+      "http": 200,
+      "elapsedMs": 4.1542460000000005,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        }
+      }
+    },
+    {
+      "label": "oversized receipt rejected",
+      "http": 200,
+      "elapsedMs": 4.994771000000014,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        }
+      }
+    },
+    {
+      "label": "malformed JSON rejected",
+      "http": 200,
+      "elapsedMs": 4.33651900000001,
+      "product": {
+        "id": "quality-fixture",
+        "name": "Quality fixture",
+        "stage": "launch",
+        "declaration": {
+          "commit": "4b2d7f2e389677d136c3876c4e2408dcf824906b"
+        },
+        "issue": "Publication receipt unavailable; no dashboard link can be resolved.",
+        "launch": {
+          "state": "unknown",
+          "source": "launch dashboard receipt",
+          "nextStep": "Inspect launch evidence; readiness is unknown."
+        }
+      }
+    },
+    {
+      "label": "cache coalesces, expires after 5s, and route remains read-only",
+      "calls": 2,
+      "before": {
+        "state": "attention",
+        "source": "launch dashboard receipt",
+        "observedAt": "2026-11-22T20:00:00.000Z",
+        "openActions": 1,
+        "ownerBlockers": 1,
+        "nextStep": "Review owner-blocked launch gates in the dashboard."
+      },
+      "after": {
+        "state": "attention",
+        "source": "launch dashboard receipt",
+        "observedAt": "2026-11-22T20:00:00.000Z",
+        "openActions": 0,
+        "ownerBlockers": 1,
+        "nextStep": "Review owner-blocked launch gates in the dashboard."
+      }
+    }
+  ]
+}
