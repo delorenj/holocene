@@ -2,7 +2,7 @@
 title: Holocene — EXPERIENCE
 status: accepted-direction
 created: 2026-11-02
-updated: 2026-11-20
+updated: 2026-11-23
 ---
 
 # Products and navigation behavior (HOLOC-57)
@@ -19,3 +19,11 @@ Selected A+C direction and rationale: [DESIGN.md](DESIGN.md). This bounded contr
 - Metadata uses the existing authenticated `/api/modules/*` serving path; do not create a public proxy or change edge, Pad or HQ authentication. Local loopback verification is not authenticated production acceptance.
 
 Real desktop/320px/390px, keyboard, theme, reduced-motion and destination evidence is recorded in the implementation handoff. Independent reviewers and later authorized live serving remain separate gates.
+
+## 2026-11-23 revision behavior
+
+- Stage filter links keep the accessible names `All products`, `Preparing to launch`, `Live`; their visible counts are `aria-hidden`. Panel counts are labelled (`3 products`). Section headings keep their exact names.
+- Each product row has exactly one link (the action). The receipt path is text, not a second link, so there is one tab stop per product.
+- Issue grouping: `unavailable` and `invalid` declarations are individual cards; `missing` declarations collapse into one disclosure listing names. A degraded registry adds a dashed card with `Retry read` (same read-only refresh as `Refresh sources`).
+- Phone: column labels hide, rows become a single column under the index, the filter becomes a full-width wrapped segmented control, panel meta wraps under the title.
+
