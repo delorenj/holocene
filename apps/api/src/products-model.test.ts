@@ -12,12 +12,12 @@ test("explicit committed lifecycle only; malformed and absent modes never imply 
 });
 test("launch evidence counts only known gates and never equates publication with gate observation", () => {
   const now = Date.parse("2026-11-22T23:00:00Z");
-  const sample = { ...receipt(), items: [{ status: "open", verified_at: "2026-11-22T20:00:00Z" }], requirements: { x: { status: "owner", verified_at: "2026-11-22T20:00:00Z" } }, private: "op://secret" };
+  const sample = { ...receipt(), items: [{ id: "action", status: "open", verified_at: "2026-11-22T20:00:00Z" }], requirements: { x: { status: "owner", item: "action", verified_at: "2026-11-22T20:00:00Z" } }, private: "op://secret" };
   const current = launchEvidence(sample, now);
   assert.equal(current.state, "attention"); assert.equal(current.openActions, 1); assert.equal(current.ownerBlockers, 1);
   assert.equal(current.observedAt, "2026-11-22T20:00:00.000Z"); assert.ok(!JSON.stringify(current).includes("op://"));
-  assert.equal(launchEvidence({ ...sample, items: [{ status: "open", verified_at: null }] }, now).state, "unknown");
-  assert.equal(launchEvidence({ ...sample, items: [{ status: "open", verified_at: "2026-11-01T00:00:00Z" }], requirements: { x: { status: "owner", verified_at: "2026-11-22T20:00:00Z" } } }, now).state, "stale");
+  assert.equal(launchEvidence({ ...sample, items: [{ id: "action", status: "open", verified_at: null }] }, now).state, "unknown");
+  assert.equal(launchEvidence({ ...sample, items: [{ id: "action", status: "open", verified_at: "2026-11-01T00:00:00Z" }] }, now).state, "stale");
   assert.equal(launchEvidence(receipt(), now).state, "unknown");
   assert.equal(launchEvidence(undefined, now).openActions, undefined);
   assert.equal(launchEvidence({ ...sample, items: [{ status: "unrecognized" }] }, now).state, "unknown");

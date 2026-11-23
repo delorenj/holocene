@@ -45,6 +45,8 @@ test("real registered products: desktop and phone navigate every receipt dashboa
       assert.equal(await state.count(), 1);
       assert.match(await state.innerText(), /Readiness unknown|Stale evidence|Needs attention/);
       assert.match(await state.innerText(), /Oldest recorded gate observation:/);
+      assert.match(await state.innerText(), /gate readiness not verified/);
+      assert.doesNotMatch(await state.innerText(), /0 owner-blocked gates|0 open actions/);
     }
     const captures = [];
     for (const theme of ["ledger", "ledger-night"]) {

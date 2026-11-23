@@ -217,6 +217,65 @@ test("real Git reads committed declaration not dirty disk; receipt reads stay bo
     assert.equal((await committedDeclaration(project)).raw, undefined);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+test("actual GET never reports zero for absent coverage or malformed completion evidence", async () => {
+  const now = Date.parse("2026-11-23T00:00:00Z");
+  const at = "2026-11-22T20:00:00Z";
+  const item = { id: "action", status: "open", verified_at: at };
+  const gate = { status: "owner", item: "action", verified_at: at };
+  const base = { ...receipt(), items: [item], requirements: { x: gate } };
+  const cases: [string, unknown][] = [
+    ["both collections empty", { ...base, items: [], requirements: {} }],
+    ["missing requirements", { ...base, requirements: {} }],
+    ["missing items", { ...base, items: [] }],
+    ["identity-less done and evidence-free met", { ...base, items: [{ status: "done", verified_at: at }], requirements: { x: { status: "met", verified_at: at } } }],
+    ["duplicate item ids", { ...base, items: [item, item] }],
+    ["malformed item id", { ...base, items: [{ ...item, id: "bad id" }] }],
+    ["done without evidence", { ...base, items: [{ id: "action", status: "done", verified_at: at }], requirements: { x: gate } }],
+    ["met without evidence", { ...base, requirements: { x: { status: "met", verified_at: at } } }],
+    ["owner orphan item", { ...base, requirements: { x: { ...gate, item: "missing" } } }],
+    ["agent missing ticket ref", { ...base, requirements: { x: { status: "agent", verified_at: at } } }],
+    ["n/a missing reason", { ...base, requirements: { x: { status: "na", verified_at: at } } }],
+    ["impossible February 30", { ...base, items: [{ ...item, verified_at: "2026-02-30T20:00:00Z" }], requirements: { x: { ...gate, verified_at: "2026-02-30T20:00:00Z" } } }],
+    ["zone-less observation", { ...base, items: [{ ...item, verified_at: "2026-11-22T20:00:00" }], requirements: { x: { ...gate, verified_at: "2026-11-22T20:00:00" } } }],
+  ];
+  for (const [label, body] of cases) {
+    const deps = setup().deps; deps.now = () => now; deps.receipt = async () => body;
+    const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(deps));
+    try {
+      const r = await app.inject({ method: "GET", url: "/api/modules/products" });
+      assert.equal(r.statusCode, 200, label); assert.equal(r.headers["cache-control"], "no-store");
+      const launch = r.json().products[0].launch;
+      assert.equal(launch.state, "unknown", label);
+      assert.equal(launch.openActions, undefined, label); assert.equal(launch.ownerBlockers, undefined, label);
+      assert.equal(launch.observedAt, undefined, label);
+      assert.equal(r.json().products[0].destination.href, receipt().published.url, label);
+    } finally { await app.close(); }
+  }
+  const complete = { ...base, items: [{ id: "action", status: "done", evidence: "https://example.invalid/receipt", verified_at: at }], requirements: { x: { status: "met", evidence: "https://example.invalid/gate", verified_at: "2026-11-22T15:00:00-05:00" } } };
+  const deps = setup().deps; deps.now = () => now; deps.receipt = async () => complete;
+  const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(deps));
+  try {
+    const r = await app.inject({ method: "GET", url: "/api/modules/products" });
+    assert.equal(r.statusCode, 200);
+    const launch = r.json().products[0].launch;
+    assert.equal(launch.state, "attention"); assert.equal(launch.openActions, 0); assert.equal(launch.ownerBlockers, 0);
+    assert.equal(launch.observedAt, "2026-11-22T20:00:00.000Z");
+  } finally { await app.close(); }
+});
+
+test("actual GET treats zone-less timestamps identically across process timezones", async () => {
+  const stamp = "2026-11-15T21:00:00";
+  const deps = setup().deps;
+  deps.now = () => Date.parse("2026-11-23T00:00:00Z");
+  deps.receipt = async () => ({ ...receipt(), items: [{ id: "action", status: "open", verified_at: stamp }], requirements: { x: { status: "owner", item: "action", verified_at: stamp } } });
+  const app = Fastify(); registerProductsRoutes(app, createProductsDirectory(deps));
+  try {
+    const r = await app.inject({ method: "GET", url: "/api/modules/products" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.json().products[0].launch.state, "unknown");
+    assert.equal(r.json().products[0].launch.observedAt, undefined);
+  } finally { await app.close(); }
+});
 test("read-only module route is no-store and allowlists response, no write endpoint", async () => {
   const app = Fastify(); const h = setup(); registerProductsRoutes(app, h.directory);
   try {

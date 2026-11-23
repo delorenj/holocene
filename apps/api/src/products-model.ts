@@ -14,6 +14,23 @@ export type Product = {
 };
 export type ProductIssue = { id: string; name: string; state: "missing" | "invalid" | "unavailable"; detail: string };
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const nonempty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+const meaningful = (v: unknown): v is string => nonempty(v) && v.trim().length >= 8 && !/^(?:(?:jarad|the owner|owner|he|user)\b.{0,40}\b(?:said|says|replied|reply|confirmed|told|messaged)\b|(?:done|ok|okay|yes|replied|confirmed)\W*$)/i.test(v);
+
+function observation(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!m) return undefined;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  const civil = new Date(0);
+  civil.setUTCFullYear(year, month - 1, day);
+  civil.setUTCHours(hour, minute, second, 0);
+  if (civil.getUTCFullYear() !== year || civil.getUTCMonth() !== month - 1 || civil.getUTCDate() !== day ||
+      civil.getUTCHours() !== hour || civil.getUTCMinutes() !== minute || civil.getUTCSeconds() !== second ||
+      (m[8] && (Number(m[8]) > 23 || Number(m[9]) > 59))) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export function classifyProduct(raw: string): { stage?: Stage; steady?: true; issue?: string } {
   let doc: unknown;
@@ -27,25 +44,33 @@ export function classifyProduct(raw: string): { stage?: Stage; steady?: true; is
 }
 
 export function launchEvidence(raw: unknown, now: number): LaunchState {
-  const unknown: LaunchState = { state: "unknown", source: "launch dashboard receipt", nextStep: "Inspect launch evidence; readiness is unknown." };
+  const unknown: LaunchState = { state: "unknown", source: "launch dashboard receipt", nextStep: "Inspect missing or incomplete launch gate evidence; readiness and counts are unknown." };
   if (!record(raw) || raw.schema !== "launch-dashboard/1" || !Array.isArray(raw.items) || !record(raw.requirements)) return unknown;
   const items = raw.items;
-  if (items.some((item) => !record(item) || (item.status !== "open" && item.status !== "done"))) return unknown;
   const requirements = Object.values(raw.requirements);
-  if (requirements.some((gate) => !record(gate) || (gate.status !== "owner" && gate.status !== "agent" && gate.status !== "met" && gate.status !== "na"))) return unknown;
+  if (!items.length || !requirements.length) return unknown;
+  const ids = new Set<string>();
+  for (const item of items) {
+    if (!record(item) || typeof item.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(item.id) || ids.has(item.id) || (item.status !== "open" && item.status !== "done") ||
+        (item.status === "done" && !meaningful(item.evidence))) return unknown;
+    ids.add(item.id);
+  }
+  if (requirements.some((gate) => !record(gate) ||
+      (gate.status === "owner" ? !nonempty(gate.item) || !ids.has(gate.item) :
+       gate.status === "agent" ? typeof gate.ref !== "string" || !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(gate.ref) :
+       gate.status === "met" ? !meaningful(gate.evidence) :
+       gate.status === "na" ? !nonempty(gate.why) || gate.why.trim().length < 8 : true))) return unknown;
+  // Publication time locates a dashboard, but cannot attest to gate freshness.
+  const times = [...items, ...requirements].map((entry) => observation((entry as Record<string, unknown>).verified_at));
+  if (times.some((time) => time === undefined || time > now)) return unknown;
+  const observedAt = new Date(Math.min(...times as number[])).toISOString();
   const openActions = items.filter((item) => item.status === "open").length;
   const ownerBlockers = requirements.filter((gate) => (gate as Record<string, unknown>).status === "owner").length;
-  // A publication timestamp only locates a dashboard; it is not evidence that its gates were rechecked.
-  const times = [...items, ...requirements].map((entry) => (entry as Record<string, unknown>).verified_at);
-  const verified = times.filter((t): t is string => typeof t === "string" && Number.isFinite(Date.parse(t)) && /^\d{4}-\d\d-\d\dT/.test(t) && Date.parse(t) <= now);
-  const observedAt = verified.length ? new Date(Math.min(...verified.map((t) => Date.parse(t)))).toISOString() : undefined;
-  const partial = times.some((t) => typeof t !== "string" || !Number.isFinite(Date.parse(t)) || !/^\d{4}-\d\d-\d\dT/.test(t) || Date.parse(t) > now);
-  const stale = !!observedAt && now - Date.parse(observedAt) > 7 * 24 * 60 * 60 * 1000;
+  const stale = now - Date.parse(observedAt) > 7 * 24 * 60 * 60 * 1000;
   return {
-    state: stale ? "stale" : partial || !items.length || !requirements.length ? "unknown" : "attention",
-    source: "launch dashboard receipt", ...(observedAt ? { observedAt } : {}),
-    openActions, ownerBlockers,
-    nextStep: stale ? "Recheck stale launch gates before relying on this dashboard." : partial ? "Recheck gates with missing observations in the dashboard." : ownerBlockers ? "Review owner-blocked launch gates in the dashboard." : openActions ? "Review open launch actions in the dashboard." : "Review gate evidence in the dashboard; no verified readiness is asserted."
+    state: stale ? "stale" : "attention",
+    source: "launch dashboard receipt", observedAt, openActions, ownerBlockers,
+    nextStep: stale ? "Recheck stale launch gates before relying on this dashboard." : ownerBlockers ? "Review owner-blocked launch gates in the dashboard." : openActions ? "Review open launch actions in the dashboard." : "Review gate evidence in the dashboard; no verified readiness is asserted."
   };
 }
 

@@ -1,0 +1,17 @@
+# HOLOC-62 local repair — Q1–Q3
+
+Scope: isolated `holoc-62-projects-launch-local` worktree, original `quality-review/` untouched. No publication, live service change, producer execution, or ticket mutation.
+
+- Q1: Empty or missing item/gate collections no longer produce measured zeros. Unknown coverage omits both counts and observation date; the next step points to missing/incomplete gate evidence. Valid, observed done/met data can still report explicitly verified zero counts.
+- Q2: Completion claims require a valid unique item identity and meaningful evidence; owner gates reference an existing item, agent gates require a ticket ref, n/a requires a reason, and met requires evidence. Any malformed relationship makes the entire summary unknown rather than promoting a partial set. Raw evidence and references remain out of the API projection. Existing producer contract inspected read-only (`flume/templates/hermes-agent/template/.scripts/launch-dashboard.py`, `item_problems`, `requirement_problem`); no collector was run.
+- Q3: Gate observations require calendar-valid date/time and an explicit `Z` or numeric timezone. Invalid dates, zone-less strings, future observations, and incomplete observations cannot generate current/stale counts; oldest valid complete observation controls stale. Publication time remains a destination locator, not gate freshness.
+
+## Reproductions and checks
+
+- Red before source change: targeted real `GET /api/modules/products` test: 2 failed (empty collections reported `0`; zone-less date reported `attention`).
+- Green after change: `pnpm --filter @holocene/api typecheck` exit 0; API suite 337 pass / 0 fail; `pnpm --filter @holocene/web typecheck` exit 0; web suite 86 pass / 0 fail. Targeted actual GET tests passed in `TZ=UTC` and `TZ=America/New_York` (2/2 in each). Case table in `apps/api/src/products.test.ts` covers empty/absent collections, malformed identities and completion evidence, owner orphan, missing agent ref/n/a reason, impossible Feb 30, zone-less time, and valid zero with explicit offset. `git diff --check` exit 0.
+- Refreshed nonwatch candidate API on `127.0.0.1:4162` after stopping only prior candidate PID `2269914`; rebuilt optimized web with `HOLOCENE_API_INTERNAL_URL=http://127.0.0.1:4162`, stopped only prior candidate web parent `2271595`, restarted on `127.0.0.1:3162`. A first rebuild without this environment retained a build-time rewrite to the old live API and yielded a browser failure (0 launch-state elements); corrected by rebuilding with the candidate URL. Nothing outside the candidate processes was stopped.
+- Real `GET http://127.0.0.1:3162/api/modules/products`: registry ok; Earshot live and GreenInBetween/gruvato/TOLT launch retained; all launch summaries unknown with no numerical counts or observedAt; safe dashboard destinations preserved.
+- Refreshed optimized browser suite 3 pass / 0 fail: desktop 1440 and phones 390/320, both themes, project hierarchy, keyboard/drawer/history, no horizontal overflow, and actual S3 destination popups for all three launch products plus existing `/live` Earshot. It asserts the actual launch cards do not render misleading zero counts. Screenshots and destination results: `browser/`.
+
+Candidate handles: API `proc_c900256e37f6` (listener PID 3118698), web `proc_6176c89f505e` (listener PID 3183038 child). These are loopback-only workbenches, not deployment or authenticated public-serving acceptance. Independent rereview remains for parent.
