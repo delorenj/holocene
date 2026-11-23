@@ -1,0 +1,106 @@
+ WARN  Issue while reading "/home/delorenj/.npmrc". Failed to replace env in config: ${NPM_TOKEN?}
+{
+  "revision": "1b4deccc67f48986e0ebb8dba378841b9d159714",
+  "timezone": "America/New_York",
+  "entrypoint": "Fastify actual GET; committed Git declaration and on-disk receipt via default reader",
+  "cases": [
+    {
+      "name": "Q1 empty collections",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q1 no requirements",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q1 missing items",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q2 identity-less done and evidence-free met",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q2 orphan owner",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q2 hollow met",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q2 missing agent reference",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q2 missing na reason",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q3 impossible February 30",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q3 zone-less",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q3 future",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": true
+    },
+    {
+      "name": "Q3 stale oldest valid observation",
+      "state": "stale",
+      "counts": true,
+      "observation": true,
+      "destination": true
+    },
+    {
+      "name": "complete validated zero",
+      "state": "attention",
+      "counts": true,
+      "observation": true,
+      "destination": true
+    },
+    {
+      "name": "no PM receipt",
+      "state": "unknown",
+      "counts": false,
+      "observation": false,
+      "destination": false
+    }
+  ]
+}
