@@ -1411,7 +1411,7 @@ def cmd_converse(args) -> int:
 def print_tiles(desk, s: dict) -> None:
     tiles = s.get("tiles") or {}
     default = os.environ.get("MEMO_VOX_VOICE") or unit_env().get("MEMO_VOX_VOICE") or "rick"
-    print(f"voices   inherited from rendered Hermes profiles; emergency only: {default}; overrides are car-only")
+    print(f"voices   inherited from registered rendered Hermes profiles; emergency only: {default}; assign in Flume")
     for agent in sorted(set(tiles) | set(desk.cards.registry())):
         t = tiles.get(agent) or {}
         choice = desk.voice_choice(agent, default, car=True)
@@ -1448,46 +1448,21 @@ def vox_catalog() -> list[dict]:
 
 
 def cmd_voice(args) -> int:
-    """memo:voice <agent> [<voice>|--clear]: the tile's car reply voice (the flag file's `tiles`, under its lock; the
-    watcher reads it per reply, no restart). Car only: the agent's Telegram/Hermes voice is not touched."""
+    """Read-only assignment diagnostic; legacy set/clear requests are refused without touching flags."""
     import converse as cv
-    path = c.STATE_DIR / "converse.json"
     env = desk_env()
     emergency = env.get("MEMO_VOX_VOICE") or "rick"
     desk = cv.Desk(c.STATE_DIR, env=env, log=lambda *a, **k: None)
-    catalog = vox_catalog()  # one bounded availability lookup, including read/clear diagnostics
-    inherited = desk.voice_choice(args.agent, emergency, catalog=catalog)
-    default = inherited["voice"]
-    base = {"agent": args.agent, "default_voice": default}
-    if args.value is None and not args.clear:
-        choice = desk.voice_choice(args.agent, emergency, car=True, catalog=catalog)
-        return _setting_result(args, True, {**base, **choice, "ok": True, "own": choice["source"] == "car_override",
-                                            "message": f"{args.agent}: car voice {choice['voice']} ({choice['source']}; "
-                                                       f"configured={choice['configured_voice']}; "
-                                                       f"effective={choice['effective_voice'] or 'unknown'}; "
-                                                       f"availability={choice['availability']}; fallback={choice['fallback'] or '-'})"})
-    if args.clear or str(args.value).strip().lower() in ("default", "--clear", "clear", "none"):
-        tile = cv.update_tile(path, args.agent, voice=None, by=args.by)
-        return _setting_result(args, True, {**base, **inherited, "ok": True, "cleared": True, "tile": tile,
-                                            "message": f"{args.agent}: car voice {default} ({inherited['source']}; "
-                                                       f"configured={inherited['configured_voice']}; "
-                                                       f"effective={inherited['effective_voice'] or 'unknown'}; "
-                                                       f"availability={inherited['availability']}; fallback={inherited['fallback'] or '-'})"})
-    if not catalog:
-        return _setting_result(args, False, {**base, "ok": False, "error": "vox's voice list could not be read"}, 1)
-    v = cv.resolve_voice(args.value, catalog)
-    if v in (None, "default"):
-        names = ", ".join(x["name"] for x in catalog)
-        return _setting_result(args, False, {**base, "ok": False, "error": f"no voice called {args.value!r}",
-                                             "valid": [x["name"] for x in catalog],
-                                             "message": f"refused: no voice called {args.value!r} (vox has: {names})"}, 3)
-    tile = cv.update_tile(path, args.agent, voice=v, by=args.by)
-    disp = next((x.get("display_name") for x in catalog if x["name"] == v), v)
-    choice = desk.voice_choice(args.agent, emergency, car=True, catalog=catalog)
-    return _setting_result(args, True, {**base, **choice, "ok": True, "cleared": False,
-                                        "display_name": disp, "spoken": cv.voice_spoken(v),
-                                        "tile": tile, "message": f"{args.agent}: car voice {v} ({disp}); the watcher "
-                                        "uses it from the next reply, no restart"})
+    choice = desk.voice_choice(args.agent, emergency, catalog=vox_catalog())
+    legacy = desk.tile(args.agent).get("voice")
+    base = {"agent": args.agent, **choice, "legacy_override_present": legacy is not None,
+            "assignment_owner": "Flume"}
+    if args.value is not None or args.clear:
+        return _setting_result(args, False, {**base, "ok": False, "error": cv.VOICE_ASSIGNMENT_MESSAGE,
+                                             "message": cv.VOICE_ASSIGNMENT_MESSAGE}, 3)
+    return _setting_result(args, True, {**base, "ok": True,
+                                        "message": f"{args.agent}: assigned voice {choice['voice']} ({choice['source']}; "
+                                                   f"fallback={choice['fallback'] or '-'}). {cv.VOICE_ASSIGNMENT_MESSAGE}"})
 
 
 def cmd_model(args) -> int:
@@ -1549,9 +1524,10 @@ def main() -> int:
     cs.add_argument("--handoff", choices=("named", "off"))
     cs.add_argument("--routes-file", help="a JSON routes list that overrides the unit's ladder (tests, S11)")
     cs.add_argument("--clear-routes", action="store_true", help="drop a routes override from the flag file")
-    for verb, what in (("voice", "a vox voice (name or display name), or default"),
+    for verb, what in (("voice", "read-only assigned voice; changes belong in Flume"),
                        ("model", "a model alias from car_desk_aliases.json, or default")):
-        sp = sub.add_parser(verb, help=f"a tile's car {verb}: {verb} <agent> [<value>|--clear]")
+        sp = sub.add_parser(verb, help=("assigned voice diagnostic (set/clear refused)" if verb == "voice"
+                                        else f"a tile's car {verb}: {verb} <agent> [<value>|--clear]"))
         sp.add_argument("agent")
         sp.add_argument("value", nargs="?", help=what)
         sp.add_argument("--clear", action="store_true", help="back to the default")

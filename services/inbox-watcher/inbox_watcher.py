@@ -2938,24 +2938,8 @@ class Watcher:
 
     def _voice_choice(self, m: dict, emergency: str = VOICE) -> dict:
         agent = self._responding_agent(m)
-        profile = m.get("profile")
-        # Only overrides need sender I/O. An inherited voice also applies to browser/unknown-origin memos.
-        override = cv.voice_name(self.desk.tile(agent).get("voice")) if isinstance(agent, str) else None
-        with self.mu:
-            sender = m.get("sender")
-        if override and not (isinstance(sender, dict) and sender.get("ok")) and m.get("key"):
-            try:
-                sender = mc_.s3_sender(m["key"])
-            except Exception:  # noqa: BLE001
-                sender = {"ok": False}
-            if sender.get("ok"):
-                with self.mu:
-                    m["sender"] = sender
-        car = isinstance(sender, dict) and sender.get("ok") is True and sender.get("host") == "car"
-        choice = self.desk.voice_choice(agent, emergency, profile=profile, car=car, check_catalog=True)
+        choice = self.desk.voice_choice(agent, emergency, check_catalog=True)
         choice["agent"] = agent
-        if override and not car:
-            log("tile_voice_not_car", key=m.get("key"), agent=agent, tile_voice=override, used=choice["voice"])
         return choice
 
     @staticmethod
@@ -2973,23 +2957,26 @@ class Watcher:
     def _cue_matches(self, m: dict, choice: dict) -> bool:
         identity = choice.get("identity")
         current = self._voice_identity(m)
-        # The desk's pre-dispatch cue can carry into the first full-agent turn. A confirmed DIFFERENT responder cannot.
+        # A pre-dispatch cue can enter the first stamped reply for the same responder.
         same = identity == current or (isinstance(identity, list) and identity == [None, current[1]])
-        return same and (m.get("profile") is None or m["profile"] == choice.get("profile"))
+        stamp = choice.get("stamp")
+        return same and (stamp == m.get("reply_stamp") or (stamp is None and m.get("reply_stamp") is not None))
 
     def _cue_voice(self, m: dict) -> dict:
         """Freeze pre-reply narration/cues for this responder round, then promote into the stamped reply."""
         identity = self._voice_identity(m)
         with self.mu:
             final = m.get("voice_lock") or {}
-            if final.get("stamp") == m.get("reply_stamp") and final.get("voice"):
+            if (final.get("stamp") == m.get("reply_stamp") and final.get("voice")
+                    and final.get("identity") == identity):
                 final.setdefault("lock_id", str(uuid.uuid4()))
                 return dict(final)
             pending = m.get("cue_voice_lock") or {}
             if self._cue_matches(m, pending):
                 pending.setdefault("lock_id", str(uuid.uuid4()))
                 return dict(pending)
-        choice = {**self._voice_choice(m), "identity": identity, "lock_id": str(uuid.uuid4())}
+        choice = {**self._voice_choice(m), "identity": identity, "stamp": m.get("reply_stamp"),
+                  "lock_id": str(uuid.uuid4())}
         with self.mu:
             pending = m.get("cue_voice_lock") or {}
             if not self._cue_matches(m, pending):
@@ -3008,7 +2995,8 @@ class Watcher:
         with self.mu:
             stamp = m.get("reply_stamp")
             vl = m.get("voice_lock")
-            if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
+            if (isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice")
+                    and (vl.get("identity") is None or vl["identity"] == self._voice_identity(m))):
                 vl.setdefault("lock_id", str(uuid.uuid4()))
                 return vl["voice"]
         with self.mu:
@@ -3017,9 +3005,11 @@ class Watcher:
                   and pending.get("stamp") in (None, stamp) else self._voice_choice(m))
         with self.mu:
             vl = m.get("voice_lock")
-            if isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice"):
+            if (isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice")
+                    and (vl.get("identity") is None or vl["identity"] == self._voice_identity(m))):
                 return vl["voice"]  # another render of this reply locked it first
-            m["voice_lock"] = {**choice, "stamp": stamp, "lock_id": choice.get("lock_id") or str(uuid.uuid4())}
+            m["voice_lock"] = {**choice, "stamp": stamp, "identity": self._voice_identity(m),
+                               "lock_id": choice.get("lock_id") or str(uuid.uuid4())}
             m.pop("cue_voice_lock", None)
             self._log_voice(m, choice)
             self.s.save()  # persist before crossing the render boundary, not only after the first upload
@@ -3029,7 +3019,6 @@ class Watcher:
         """Under mu: a render owns only its captured command, responder, stamp and lock generation."""
         return (m.get("reply_stamp") == choice.get("cue_stamp")
                 and self._voice_identity(m) == choice.get("cue_identity")
-                and m.get("profile") == choice.get("cue_profile")
                 and not self._cancelled(m))
 
     def _missing_voice(self, m: dict, choice: dict, *, cue: bool = False) -> dict | None:
@@ -3045,12 +3034,11 @@ class Watcher:
             if not cue:
                 owns = (owns and lock.get("stamp") == choice.get("stamp") == m.get("reply_stamp")
                         and not lock.get("rendered") and not m.get("voiced_n"))
-            if choice.get("source") != "progress_override":
-                if not owns:
-                    return None
-                lock.update(voice=VOICE, effective_voice=VOICE, availability="unavailable",
-                            source="emergency_fallback", fallback="voice_not_found")
-                self.s.save()
+            if not owns:
+                return None
+            lock.update(voice=VOICE, effective_voice=VOICE, availability="unavailable",
+                        source="emergency_fallback", fallback="voice_not_found")
+            self.s.save()
         choice = {**choice, "voice": VOICE, "effective_voice": VOICE, "availability": "unavailable",
                   "source": "emergency_fallback", "fallback": "voice_not_found"}
         log("voice_fallback", "warn", memo_id=m.get("memo_id"), agent=choice.get("agent"),
@@ -3058,11 +3046,7 @@ class Watcher:
         return choice
 
     def _synth_cue(self, m: dict, text: str, tmp: Path, steps: int, *, progress: bool = False) -> tuple | None:
-        pin = cv.voice_name(os.environ.get("MEMO_PROGRESS_VOICE")) if progress else None
-        choice = ({"voice": pin, "requested": pin, "source": "progress_override", "fallback": None}
-                  if pin else self._cue_voice(m))
-        if pin:
-            self._log_voice(m, choice)
+        choice = self._cue_voice(m)
         with self.mu:
             choice.update(cue_stamp=m.get("reply_stamp"), cue_identity=self._voice_identity(m),
                           cue_profile=m.get("profile"))

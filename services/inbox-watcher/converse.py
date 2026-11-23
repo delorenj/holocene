@@ -997,14 +997,12 @@ def clamp_perm(requested: str, words: list[str], agent_tokens: list[str] | None 
     return PERMS[min(PERMS.index(req), PERMS.index(perm_allowed(words, agent_tokens)))]
 
 
-# ---------------------------------------------------------------- per-tile voice and model: names and phrases (no LLM)
+# ---------------------------------------------------------------- per-tile model and legacy voice request recognition
 
 TOOL_VOICE, TOOL_MODEL = "car_set_voice", "car_set_model"
-# The two setting tools' argument contracts, for the in-process fallback when the skill scope is missing (the skills'
-# tool.json files say the same).
+VOICE_ASSIGNMENT_MESSAGE = "Agent voices are assigned in Flume. Change this agent's voice there; this desk cannot change it."
+# The retired voice contract is retained only to recognize and refuse old tool calls.
 BUILTIN_SCHEMAS = {
-    TOOL_VOICE: {"type": "object", "properties": {"voice": {"type": "string", "maxLength": 64}}, "required": ["voice"],
-                 "additionalProperties": False},
     TOOL_MODEL: {"type": "object", "properties": {"model": {"type": "string", "maxLength": 64}}, "required": ["model"],
                  "additionalProperties": False},
 }
@@ -1154,20 +1152,18 @@ _MODEL_RES = [
 
 
 def setting_phrase(text: str, catalog: list[dict], table: dict | None) -> dict | None:
-    """A whole utterance that only changes the tile's voice or model: {"tool_name", "args"}, else None (the model decides).
-    "use walken two voice", "switch the voice to Morgan Freeman", "reset the voice"; "switch to deepseek pro", "use the
-    free model", "switch the model to auto", "reset the model". A bare name is a voice only next to the word voice, so
-    "switch to marge" (an agent) is never read as a voice."""
+    """Recognize a whole spoken voice request for refusal, or a model change for the existing model writer.
+    Voice recognition never needs the catalog and cannot set an assignment."""
     n = norm(text)
     if not n or len(n) > 120:
         return None
     for rx in _VOICE_RES:
         m = rx.fullmatch(n)
-        if m is None:
-            continue
-        v = "default" if m.groupdict().get("reset") else resolve_voice(m.group("v"), catalog, fuzzy=True)
-        if v:
-            return {"tool_name": TOOL_VOICE, "args": {"voice": v}}
+        if m is not None:
+            # Glued "face" is ambiguous (interface, surface); only known voice names count.
+            if "voice" not in n and resolve_voice(m.groupdict().get("v") or "", catalog, fuzzy=True) is None:
+                continue
+            return {"tool_name": TOOL_VOICE, "args": {"voice": m.groupdict().get("v") or "default"}}
     for rx in _MODEL_RES:
         m = rx.fullmatch(n)
         if m is None:
@@ -1710,8 +1706,8 @@ class ProfileVoice:
         if not voice_name(agent) or agent != voice_name(agent):
             return {**result, "fallback": "invalid_agent"}
         row = self.cards.row(agent)
-        # Gateway-confirmed profiles may differ from the original tile's registered alias.
-        name = profile if profile is not None else row.get("profile_name")
+        # The registry's profile_name is authoritative, including aliases and delegated responders.
+        name = row.get("profile_name")
         if not voice_name(name) or name != voice_name(name):
             return {**result, "fallback": "invalid_profile" if name is not None else "profile_missing"}
         result["profile"] = name
@@ -2049,25 +2045,22 @@ def write_flag(path: Path, drop: tuple = (), **updates) -> dict:
 _UNSET = object()
 
 
-def update_tile(path: Path, agent: str, *, voice=_UNSET, model=_UNSET, by: str = "cli") -> dict:
-    """Set (a string) or clear (None) one tile's car voice and/or desk model alias in the flag file's `tiles` map, under
-    the flag lock. Returns the tile's new settings ({} when nothing is left)."""
+def update_tile(path: Path, agent: str, *, model=_UNSET, by: str = "cli") -> dict:
+    """Set or clear the desk model alias without touching legacy voice or unrelated tile fields."""
     if not agent or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", agent):
         raise ValueError(f"bad agent id {agent!r}")
     with flag_lock(path):
         doc = _read_flag_doc(path)
         tiles = doc.get("tiles") if isinstance(doc.get("tiles"), dict) else {}
         tile = dict(tiles.get(agent) or {}) if isinstance(tiles.get(agent), dict) else {}
-        for k, v in (("voice", voice), ("model", model)):
-            if v is _UNSET:
-                continue
-            if v is None:
-                tile.pop(k, None)
+        if model is not _UNSET:
+            if model is None:
+                tile.pop("model", None)
             else:
-                tile[k] = str(v)
-            tile[f"{k}_set_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            tile[f"{k}_set_by"] = by
-        if any(k in tile for k in ("voice", "model")):
+                tile["model"] = str(model)
+            tile["model_set_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            tile["model_set_by"] = by
+        if tile:
             tiles[agent] = tile
         else:
             tiles.pop(agent, None)
@@ -2252,7 +2245,8 @@ class ToolBox:
         return tools
 
     def listing(self) -> list[dict]:
-        return [self.tools()[k] for k in sorted(self.tools())]
+        # A legacy voice skill may still be installed in the external scope. Never advertise it.
+        return [self.tools()[k] for k in sorted(self.tools()) if k != TOOL_VOICE]
 
     def validate(self, name: str | None, args) -> tuple[dict | None, str | None]:
         t = self.tools().get(name or "")
@@ -2493,15 +2487,12 @@ class Desk:
         return t if isinstance(t, dict) else {}
 
     def voice_for(self, agent: str | None, default: str) -> str:
-        """Car-context convenience; non-car callers use voice_choice(car=False)."""
-        return self.voice_choice(agent, default, car=True)["voice"]
+        return self.voice_choice(agent, default)["voice"]
 
     def voice_choice(self, agent: str | None, emergency: str, *, profile: str | None = None,
                      car: bool = False, check_catalog: bool = False, catalog: list | None = None) -> dict:
-        choice = ProfileVoice(self.cards).resolve(agent, emergency, profile)
-        override = voice_name(self.tile(agent).get("voice")) if car and isinstance(agent, str) else None
-        if override:
-            choice.update(voice=override, requested=override, source="car_override", fallback=None)
+        # `car` is accepted for old adapter callers, but no transport gets an override.
+        choice = ProfileVoice(self.cards).resolve(agent, emergency)
         rows = catalog if catalog is not None else self.voices.get() if check_catalog else self.voices.cached()
         names = {v["name"] for v in rows}
         choice.update(configured_voice=choice["voice"], configured_source=choice["source"],
@@ -2533,10 +2524,9 @@ class Desk:
         return merge_ladder(front, s["routes"]), info
 
     def setting_phrase(self, transcript: str) -> dict | None:
-        """The deterministic voice / model switch ("use walken voice", "switch to deepseek pro"), or None."""
         if not re.search(r"\b(?:voice|model|brain|use|switch|change|set|try|go|think|reset|clear)\b", norm(transcript)):
-            return None  # no setting verb at all: never fetch the voice list for an ordinary question
-        return setting_phrase(transcript, self.voices.get(), self.aliases())
+            return None
+        return setting_phrase(transcript, self.voices.cached(), self.aliases())
 
     # -- scope proofs (a router rung is used only while its token is proven Claude-free)
 
@@ -2731,13 +2721,14 @@ class Desk:
         args = args if isinstance(args, dict) else {}
         loaded = self.tools.tools()
         res: dict = {"tool": name, "args": args, "via": "skill"}
-        if name in loaded:
-            # the skill writes through this watcher's own verb, into this desk's flag file and alias table
+        if name == TOOL_VOICE:
+            r = {"ok": False, "exit": 3, "out": None, "error": VOICE_ASSIGNMENT_MESSAGE, "ms": 0}
+        elif name in loaded:
             r = self.tools.run(name, args, agent, by=by, env={
                 "MEMO_STATE_DIR": str(self.flag.path.parent), "MEMO_CONVERSE_ALIASES": str(self.aliases_path),
                 "HOLOCENE_CAR_DESK_ALIASES": str(self.aliases_path),
                 "HOLOCENE_MEMO_TRACE": str(Path(__file__).resolve().parent / "memo_trace.py")})
-        elif name in (TOOL_VOICE, TOOL_MODEL) and not _check_args(BUILTIN_SCHEMAS[name], args):
+        elif name == TOOL_MODEL and not _check_args(BUILTIN_SCHEMAS[name], args):
             res["via"] = "builtin"
             r = self._builtin_tool(agent, name, args, by)
         else:
@@ -2754,36 +2745,26 @@ class Desk:
         path = self.flag.path
         try:
             if name == TOOL_VOICE:
-                catalog = self.voices.get()
-                v = resolve_voice(args["voice"], catalog)
-                if v is None:
-                    return {"ok": False, "exit": 3, "out": None, "error": f"no voice called {args['voice']!r}", "ms": 0}
-                clear = v == "default"
-                tile = update_tile(path, agent, voice=None if clear else v, by=by)
-                choice = self.voice_choice(agent, self.env.get("MEMO_VOX_VOICE") or "rick", car=True, catalog=catalog)
-                out = {"ok": True, "agent": agent, **choice, "cleared": clear}
-            else:
-                a = resolve_alias(args["model"], self.aliases())
-                if a is None:
-                    return {"ok": False, "exit": 3, "out": None, "error": f"no model called {args['model']!r}", "ms": 0}
-                tile = update_tile(path, agent, model=None if a == "default" else a, by=by)
-                out = {"ok": True, "agent": agent, "model": tile.get("model"), "cleared": a == "default"}
+                return {"ok": False, "exit": 3, "out": None, "error": VOICE_ASSIGNMENT_MESSAGE, "ms": 0}
+            a = resolve_alias(args["model"], self.aliases())
+            if a is None:
+                return {"ok": False, "exit": 3, "out": None, "error": f"no model called {args['model']!r}", "ms": 0}
+            tile = update_tile(path, agent, model=None if a == "default" else a, by=by)
+            out = {"ok": True, "agent": agent, "model": tile.get("model"), "cleared": a == "default"}
         except (OSError, ValueError) as e:
             return {"ok": False, "exit": 1, "out": None, "error": f"{type(e).__name__}: {e}"[:200], "ms": 0}
         return {"ok": True, "exit": 0, "out": out, "error": None, "ms": int((time.time() - t0) * 1000)}
 
     def tool_say(self, tile_name: str, name: str | None, args: dict, r: dict) -> str:
         """The spoken outcome of a tool call (a template)."""
+        if name == TOOL_VOICE:
+            return VOICE_ASSIGNMENT_MESSAGE
         out = r.get("out") or {}
         if not r.get("ok"):
-            what = {TOOL_VOICE: "the voice", TOOL_MODEL: "the model"}.get(name or "", "that")
+            what = {TOOL_MODEL: "the model"}.get(name or "", "that")
             why = re.sub(r"\s+", " ", str(out.get("error") or r.get("error") or "")).strip().rstrip(".")
             why = why if why and len(why) <= 120 and "/" not in why and "Error" not in why else "it didn't go through"
             return f"I couldn't change {what}: {why}."
-        if name == TOOL_VOICE:
-            if out.get("cleared") or not out.get("voice"):
-                return f"{tile_name} is back to the default voice."
-            return f"Switched {tile_name} to {voice_spoken(str(out['voice']))}."
         if name == TOOL_MODEL:
             if out.get("cleared") or not out.get("model"):
                 return f"{tile_name} is back on the default model."
@@ -2846,7 +2827,8 @@ class Desk:
             t = self.tile(agent, s)
             lad, info = self.routes_for(s, agent)
             choice = self.voice_choice(agent, default_voice or "rick", car=True, catalog=catalog)
-            tiles[agent] = {**choice, "voice_own": choice["source"] == "car_override",
+            tiles[agent] = {**choice, "voice_own": False,
+                            "legacy_voice_present": "voice" in t,
                             "model": t.get("model"), "model_label": info.get("label"), "model_error": info.get("error"),
                             "ladder": [r["id"] for r in lad], "budget_s": info.get("budget_s") or self.budget_s,
                             "extra_routes": [self._route_row(r) for r in lad if r["id"] not in keys]}

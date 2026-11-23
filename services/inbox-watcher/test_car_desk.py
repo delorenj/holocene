@@ -305,38 +305,32 @@ class Phrases(unittest.TestCase):
     def test_setting_phrases(self):
         v = lambda x: {"tool_name": cv.TOOL_VOICE, "args": {"voice": x}}  # noqa: E731
         mo = lambda x: {"tool_name": cv.TOOL_MODEL, "args": {"model": x}}  # noqa: E731
-        for said, want in (("Use walken voice.", v("walken")), ("Switch to the Walken two voice, please.", v("walken2")),
-                           ("switch the voice to Morgan Freeman", v("morgan")), ("Use Morgan Freeman's voice", v("morgan")),
-                           ("Reset the voice.", v("default")), ("Switch to DeepSeek Pro.", mo("deepseek-pro")),
-                           ("Okay, use the free model", mo("free")), ("switch the model to auto", mo("auto")),
-                           ("go with the autorouter", mo("auto")), ("Reset the model.", mo("default")),
-                           ("use the default model", mo("default")), ("Can you switch to deep seek flash please?", mo("deepseek-flash"))):
-            self.assertEqual(cv.setting_phrase(said, CATALOG, self.table), want, said)
-        # whisper's spelling one letter off (live 2026-10-22: "Use the walkin' voice!"); never for short names or two near ones
-        self.assertEqual(cv.setting_phrase("Use the walkin' voice!", CATALOG, self.table), v("walken"))
-        self.assertEqual(cv.setting_phrase("use the morgen voice", CATALOG, self.table), v("morgan"))
-        self.assertIsNone(cv.setting_phrase("use the nick voice", CATALOG, self.table))
-        self.assertIsNone(cv.resolve_voice("walkin", CATALOG))  # typed values (CLI, skills) are exact
-        # live 2026-10-22, both missed the short-circuit and went to the LLM: "USE WALK VOICE" (two letters short of
-        # walken; walken2 is one further) and "Use Rickface!" (whisper's "rick voice")
-        self.assertEqual(cv.setting_phrase("USE WALK VOICE", CATALOG, self.table), v("walken"))
-        self.assertEqual(cv.setting_phrase("Use Rickface!", CATALOG, self.table), v("rick"))
-        self.assertEqual(cv.setting_phrase("use rick's face", CATALOG, self.table), v("rick"))
-        self.assertEqual(cv.setting_phrase("use the carla voice", CATALOG, self.table), v("carlin"))
+        for said, want in (("Use walken voice.", "walken"), ("Switch to the Walken two voice, please.", "walken two"),
+                           ("switch the voice to Morgan Freeman", "morgan freeman"), ("Use Morgan Freeman's voice", "morgan freeman"),
+                           ("Reset the voice.", "default")):
+            got = cv.setting_phrase(said, CATALOG, self.table)
+            self.assertIsNotNone(got)
+            self.assertEqual(got["args"]["voice"], want)
+        for said, want in (("Switch to DeepSeek Pro.", "deepseek-pro"), ("Okay, use the free model", "free"),
+                           ("switch the model to auto", "auto"), ("go with the autorouter", "auto"),
+                           ("Reset the model.", "default"), ("use the default model", "default"),
+                           ("Can you switch to deep seek flash please?", "deepseek-flash")):
+            self.assertEqual(cv.setting_phrase(said, CATALOG, self.table), mo(want))
+        self.assertEqual(cv.setting_phrase("reset the voice", [], self.table), v("default"))
+        # Unknown names still trigger a safe refusal, not a voice assignment.
+        self.assertEqual(cv.setting_phrase("use bob voice", [], self.table), v("bob"))
+
+        for said in ("Use the walkin' voice!", "use the morgen voice", "USE WALK VOICE", "Use Rickface!",
+                     "use rick's face", "use the carla voice"):
+            self.assertEqual(cv.setting_phrase(said, CATALOG, self.table)["tool_name"], cv.TOOL_VOICE)
+        self.assertIsNone(cv.resolve_voice("walkin", CATALOG))
         self.assertEqual(cv.resolve_voice("walk", CATALOG, fuzzy=True), "walken")
-        self.assertIsNone(cv.resolve_voice("walk", CATALOG))
-        self.assertIsNone(cv.resolve_voice("mort", CATALOG, fuzzy=True))  # four letters are never near a five-letter name
-        self.assertIsNone(cv.resolve_voice("dave", CATALOG, fuzzy=True))
+        for said in ("use the nick voice", "use the bob voice", "switch to banana voice"):
+            self.assertEqual(cv.setting_phrase(said, CATALOG, self.table)["tool_name"], cv.TOOL_VOICE)
         for said in ("use the interface", "use a straight face", "switch to the surface", "use your poker face",
-                     "try a different face", "use the walk", "use the nick voice", "use the bob voice"):
-            self.assertIsNone(cv.setting_phrase(said, CATALOG, self.table), said)
-        self.assertEqual(cv._edits("walk", "walken"), 2)
-        self.assertEqual(cv._edits("walk", "walken2", 2), 3)
-        self.assertTrue(cv._within_one_edit("walkin", "walken"))
-        self.assertFalse(cv._within_one_edit("walk", "walken"))
-        for said in ("switch to marge", "switch to flume", "use the default", "what voice is that", "switch to rick",
-                     "use the walken voice and then tell me what's on the board", "Send it.", "switch to banana voice",
-                     "Have the PM switch to the new database"):
+                     "try a different face", "use the walk", "switch to marge", "switch to flume", "use the default",
+                     "what voice is that", "switch to rick", "use the walken voice and then tell me what's on the board",
+                     "Send it.", "Have the PM switch to the new database"):
             self.assertIsNone(cv.setting_phrase(said, CATALOG, self.table), said)
 
     def test_the_voice_list_never_makes_the_car_wait_once_it_has_one(self):
@@ -373,23 +367,25 @@ class TileWriter(unittest.TestCase):
 
     def test_tiles_are_kept_by_the_mode_writer_and_cleared_cleanly(self):
         cv.write_flag(self.path, mode="on", agents=["holocene-pm"])
-        cv.update_tile(self.path, "holocene-pm", voice="walken", by="car")
+        self.path.write_text(json.dumps({**json.loads(self.path.read_text()), "tiles": {
+            "holocene-pm": {"voice": "walken", "voice_set_by": "legacy", "custom": "keep"}}}))
         cv.update_tile(self.path, "holocene-pm", model="deepseek-pro")
         cv.write_flag(self.path, mode="off")
         doc = json.loads(self.path.read_text())
         self.assertEqual(doc["mode"], "off")
-        self.assertEqual((doc["tiles"]["holocene-pm"]["voice"], doc["tiles"]["holocene-pm"]["model"]), ("walken", "deepseek-pro"))
-        self.assertEqual(doc["tiles"]["holocene-pm"]["voice_set_by"], "car")
-        cv.update_tile(self.path, "holocene-pm", voice=None)
+        self.assertEqual(doc["tiles"]["holocene-pm"]["voice"], "walken")
+        self.assertEqual(doc["tiles"]["holocene-pm"]["model"], "deepseek-pro")
         cv.update_tile(self.path, "holocene-pm", model=None)
-        self.assertEqual(json.loads(self.path.read_text())["tiles"], {})
+        self.assertEqual(json.loads(self.path.read_text())["tiles"]["holocene-pm"]["custom"], "keep")
+        with self.assertRaises(TypeError):
+            cv.update_tile(self.path, "holocene-pm", voice="x")
         with self.assertRaises(ValueError):
-            cv.update_tile(self.path, "../etc", voice="x")
+            cv.update_tile(self.path, "../etc", model="x")
 
     def test_concurrent_writers_lose_no_update(self):
         def work(i):
             for j in range(10):
-                cv.update_tile(self.path, f"agent-{i}", voice=f"v{j}")
+                cv.update_tile(self.path, f"agent-{i}", model=f"v{j}")
                 cv.write_flag(self.path, mode="on")
         ts = [threading.Thread(target=work, args=(i,)) for i in range(6)]
         for t in ts:
@@ -397,16 +393,15 @@ class TileWriter(unittest.TestCase):
         for t in ts:
             t.join()
         tiles = json.loads(self.path.read_text())["tiles"]
-        self.assertEqual({a: t["voice"] for a, t in tiles.items()}, {f"agent-{i}": "v9" for i in range(6)})
+        self.assertEqual({a: t["model"] for a, t in tiles.items()}, {f"agent-{i}": "v9" for i in range(6)})
 
     def test_a_file_with_only_tiles_keeps_the_env_mode(self):
-        cv.update_tile(self.path, "holocene-pm", voice="walken")
+        cv.update_tile(self.path, "holocene-pm", model="free")
         desk = cv.Desk(self.path.parent, env={"MEMO_CONVERSE": "shadow", "MEMO_CONVERSE_ROUTES": json.dumps(
             [route("r1", "m", ref="op://V/i/f", base="https://h/v1")])}, log=lambda *a, **k: None)
         s = desk.settings()
         self.assertEqual((s["mode"], s["source"]), ("shadow", "env+flag"))
-        self.assertEqual(desk.voice_for("holocene-pm", "rick"), "walken")
-        self.assertEqual(desk.voice_for("flume-pm", "rick"), "rick")
+        self.assertEqual(desk.voice_for("holocene-pm", "rick"), "rick")
 
 
 # ---------------------------------------------------------------------------------------------------- tools
@@ -460,14 +455,12 @@ class Tools(unittest.TestCase):
         self.scope = Path(tempfile.mkdtemp(prefix="scope-"))
         self.box = cv.ToolBox(self.scope, log=lambda *a, **k: None)
 
-    def test_loads_only_car_desk_tools_and_reloads_on_change(self):
-        self.assertEqual(self.box.tools(), {})
+    def test_legacy_voice_tool_is_not_advertised(self):
         make_skill(self.scope, "car-set-voice", VOICE_TOOL, "print('{}')")
-        make_skill(self.scope, "other", {**VOICE_TOOL, "name": "other_tool"}, "print('{}')", consumers="[hermes]")
-        self.assertEqual(sorted(self.box.tools()), ["car_set_voice"])
+        self.assertEqual(self.box.listing(), [])
         make_skill(self.scope, "car-set-model", MODEL_TOOL, "print('{}')")
-        self.assertEqual(sorted(self.box.tools()), ["car_set_model", "car_set_voice"])
-        self.assertIn("car_set_model(model: string one of deepseek-flash", cv.tools_block(self.box.listing()))
+        self.assertEqual([t["name"] for t in self.box.listing()], ["car_set_model"])
+        self.assertNotIn("car_set_voice", cv.tools_block(self.box.listing()))
 
     def test_validation_against_the_contract(self):
         make_skill(self.scope, "car-set-model", MODEL_TOOL, "print('{}')")
@@ -546,39 +539,22 @@ class TileTurns(ConverseHarness, unittest.TestCase):
     def tile(self):
         return (json.loads(self.flagpath.read_text()).get("tiles") or {}).get("holocene-pm") or {}
 
-    def test_use_walken_voice_switches_with_no_llm_call_and_says_so_in_the_new_voice(self):
+    def test_voice_request_refused_without_skill_or_voice_write(self):
         key, m = self.say("Use Walken voice.")
         self.assertEqual(m["status"], "done")
         self.assertEqual(self.llm_calls(), 0)
         self.assertEqual(self.cmds(key), [])
-        self.assertEqual(self.tile()["voice"], "walken")
-        self.assertEqual(self.tile()["voice_set_by"], "car")
-        self.assertEqual(VOX_TEXTS, ["Switched Holocene PM to Walken."])
-        self.assertEqual(VOX_VOICES, ["walken"])  # spoken in the NEW voice
-        r, = self.of_type("routed", key)
-        self.assertEqual((r["action"], r["path"], r["lexicon"]), ("tool", "setting_phrase", True))
-        self.assertEqual((r["tool"]["tool"], r["tool"]["args"], r["tool"]["ok"], r["tool"]["via"]),
-                         ("car_set_voice", {"voice": "walken"}, True, "skill"))
-        self.assertEqual(r["tile_voice"], "walken")
-        rep, = self.of_type("replied", key)
-        self.assertEqual(rep["voice"], "walken")
-        self.assertNotIn("voice_requested", rep)
-        # the next turn is spoken in walken too; another tile is not
-        self.hyper.decision = decision(say="The watcher stage is next.")
-        self.say("What's next?")
-        self.assertEqual(VOX_VOICES[-1], "walken")
-        hb = self.w.desk.heartbeat(default_voice=iw.VOICE)
-        self.assertEqual(hb["tiles"]["holocene-pm"]["voice"], "walken")
-        self.assertEqual(hb["tools"]["loaded"], ["car_set_model", "car_set_voice"])
-
-    def test_walken_two_and_reset(self):
-        self.say("Switch to the Walken two voice.")
-        self.assertEqual(self.tile()["voice"], "walken2")
-        self.assertEqual(self.last_said, "Switched Holocene PM to Walken two.")
-        self.say("Reset the voice.")
         self.assertNotIn("voice", self.tile())
-        self.assertEqual(self.last_said, "Holocene PM is back to the default voice.")
-        self.assertIn(VOX_VOICES[-1], (None, iw.VOICE))
+        self.assertEqual(self.last_said, cv.VOICE_ASSIGNMENT_MESSAGE)
+        r, = self.of_type("routed", key)
+        self.assertFalse(r["tool"]["ok"])
+        self.assertEqual(r["tool"]["tool"], cv.TOOL_VOICE)
+        self.assertEqual(self.w.desk.heartbeat(default_voice=iw.VOICE)["tools"]["loaded"], ["car_set_model"])
+
+    def test_reset_voice_is_also_refused(self):
+        self.say("Reset the voice.")
+        self.assertEqual(self.last_said, cv.VOICE_ASSIGNMENT_MESSAGE)
+        self.assertNotIn("voice", self.tile())
 
     def test_switch_to_deepseek_pro_puts_its_routes_in_front_of_the_ladder(self):
         key, m = self.say("Switch to DeepSeek Pro.")
@@ -618,65 +594,25 @@ class TileTurns(ConverseHarness, unittest.TestCase):
         # the prompt offered both tools
         system = self.hyper.calls[-1]["body"]["messages"][0]["content"]
         self.assertIn("TOOLS", system)
-        self.assertIn("car_set_voice(voice: string)", system)
+        self.assertNotIn("car_set_voice", system)
         self.hyper.decision = {"say": "", "action": "tool", "tool_name": "rm_everything", "args": {}}
         self.say("Delete everything.")
         self.assertTrue(self.last_said.startswith("I couldn't change that:"), self.last_said)
 
-    def test_without_the_skill_scope_the_phrase_still_switches_in_process(self):
+    def test_without_skill_scope_voice_request_is_refused(self):
         self.w.desk.tools = cv.ToolBox(Path(tempfile.mkdtemp()), log=lambda *a, **k: None)
         key, m = self.say("Use Morgan Freeman's voice.")
-        self.assertEqual(self.tile()["voice"], "morgan")
+        self.assertEqual(self.last_said, cv.VOICE_ASSIGNMENT_MESSAGE)
+        self.assertNotIn("voice", self.tile())
         r, = self.of_type("routed", key)
-        self.assertEqual((r["tool"]["via"], r["tool"]["ok"]), ("builtin", True))
-        self.assertEqual(VOX_VOICES[-1], "morgan")
-        # Naming Rick is explicit, even when it equals the emergency fallback.
-        key, m = self.say("Use Rick voice.")
-        self.assertEqual(self.tile().get("voice"), "rick")
-        r, = self.of_type("routed", key)
-        self.assertTrue(r["tool"]["ok"])
-        self.assertEqual(self.last_said, "Switched Holocene PM to Rick.")
+        self.assertFalse(r["tool"]["ok"])
 
-    def test_an_unknown_tile_voice_falls_back_at_once_and_says_which_voice_was_used(self):
-        cv.update_tile(self.flagpath, "holocene-pm", voice="ghost")
-        self.hyper.decision = decision(say="Still here.")
-        t0 = time.time()
-        key, m = self.say("Are you there?")
-        self.assertLess(time.time() - t0, 10)
-        self.assertEqual(m["status"], "done")
-        self.assertEqual(VOX_VOICES, [iw.VOICE])  # rendered once, in the default voice: no retry stall
-        rep, = self.of_type("replied", key)
-        self.assertEqual((rep["voice"], rep["voice_requested"], rep["voice_fallback"]), (iw.VOICE, "ghost", "voice_not_found"))
-        self.assertEqual(m["voice_lock"]["voice"], iw.VOICE)
-
-    def test_the_voice_is_locked_per_reply(self):
-        m = {"agent": "holocene-pm", "reply_stamp": "2026-10-22T10:00:00Z", "memo_id": "x", "key": "k"}
-        cv.update_tile(self.flagpath, "holocene-pm", voice="walken")
-        self.assertEqual(self.w._reply_voice(m), "walken")
-        cv.update_tile(self.flagpath, "holocene-pm", voice="carlin")
-        self.assertEqual(self.w._reply_voice(m), "walken")  # the same reply keeps its voice
-        m["reply_stamp"] = "2026-10-22T10:05:00Z"
-        self.assertEqual(self.w._reply_voice(m), "carlin")  # the next reply round locks again
-
-    def test_the_tile_voice_is_a_car_setting_a_browser_memo_keeps_the_default(self):
-        # review 2026-10-22: the tile's voice applied to every reply for the agent, browser memos included
-        cv.update_tile(self.flagpath, "holocene-pm", voice="walken")
-        browser = {"agent": "holocene-pm", "reply_stamp": "s1", "memo_id": "b", "key": "kb",
-                   "sender": {"ok": True, "host": "browser", "device": None}}
-        self.assertEqual(self.w._reply_voice(browser), iw.VOICE)
-        # a memo whose sender is not known yet: read once (S3 metadata), kept on the memo
-        self.sender = {"ok": True, "host": "browser", "device": None}
-        m = {"agent": "holocene-pm", "reply_stamp": "s1", "memo_id": "u", "key": "ku"}
-        self.assertEqual(self.w._reply_voice(m), iw.VOICE)
-        self.assertEqual(m["sender"]["host"], "browser")
-        self.sender = {"ok": False, "host": None, "device": None}  # unreadable: not known to be the car
-        self.assertEqual(self.w._reply_voice({"agent": "holocene-pm", "reply_stamp": "s1", "key": "kx"}), iw.VOICE)
-        self.sender = {"ok": True, "host": "car", "device": DEVICE}
-        self.assertEqual(self.w._reply_voice({"agent": "holocene-pm", "reply_stamp": "s1", "key": "kc"}), "walken")
-        self.assertEqual(self.w._tile_voice("holocene-pm", "kc", "rick"), "walken")
-        # no voice of its own: no S3 read at all
-        with unittest.mock.patch.object(mc_, "s3_sender", side_effect=AssertionError("read")):
-            self.assertEqual(self.w._tile_voice("flume-pm", "kz", iw.VOICE), iw.VOICE)
+    def test_legacy_voice_is_inert_for_car_and_browser(self):
+        self.flagpath.write_text(json.dumps({"tiles": {"holocene-pm": {"voice": "walken"}}}))
+        for sender in ({"ok": True, "host": "browser"}, {"ok": True, "host": "car"}, {}):
+            m = {"agent": "holocene-pm", "reply_stamp": "s1", "key": "kb", "sender": sender}
+            self.assertEqual(self.w._reply_voice(m), iw.VOICE)
+        self.assertEqual(self.w.desk.tile("holocene-pm")["voice"], "walken")
 
 
 class CliVerbs(unittest.TestCase):
@@ -685,32 +621,20 @@ class CliVerbs(unittest.TestCase):
         r = subprocess.run([sys.executable, "-B", str(MEMO_TRACE), *args], capture_output=True, text=True, env=env, timeout=30)
         return r.returncode, json.loads(r.stdout.strip().splitlines()[-1]) if "--json" in args else r.stdout
 
-    def test_voice_and_model_verbs(self):
+    def test_voice_is_read_only_and_model_verb_preserved(self):
         state = Path(tempfile.mkdtemp())
         rc, out = self.run_cli("voice", "holocene-pm", "walken two", "--json", state=state)
-        self.assertEqual((rc, out["ok"], out["voice"], out["spoken"]), (0, True, "walken2", "Walken two"))
-        rc, out = self.run_cli("voice", "holocene-pm", "bob", "--json", state=state)
         self.assertEqual((rc, out["ok"]), (3, False))
-        self.assertIn("walken", out["valid"])
+        self.assertIn("Flume", out["message"])
+        self.assertFalse((state / "converse.json").exists())
+        rc, out = self.run_cli("voice", "holocene-pm", "--clear", "--json", state=state)
+        self.assertEqual((rc, out["ok"]), (3, False))
+        self.assertFalse((state / "converse.json").exists())
         rc, out = self.run_cli("model", "holocene-pm", "deepseek pro", "--json", state=state)
         self.assertEqual((rc, out["model"]), (0, "deepseek-pro"))
-        self.assertEqual(out["ladder"][:2], ["pro-h=deepseek-v4-pro-0813", "pro-d=deepseek-v4-pro"])
-        rc, out = self.run_cli("model", "holocene-pm", "claude opus", "--json", state=state)
-        self.assertEqual(rc, 3)
-        tiles = json.loads((state / "converse.json").read_text())["tiles"]
-        self.assertEqual((tiles["holocene-pm"]["voice"], tiles["holocene-pm"]["model"]), ("walken2", "deepseek-pro"))
-        rc, out = self.run_cli("converse", "status", state=state)
-        self.assertIn("tile     holocene-pm: voice walken2, model deepseek-pro", out)
         rc, out = self.run_cli("model", "holocene-pm", "--clear", "--json", state=state)
         self.assertEqual((rc, out["model"], out["cleared"]), (0, None, True))
-        rc, out = self.run_cli("voice", "holocene-pm", "--clear", "--json", state=state)
-        self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"], {})
-        # A named Rick request stays explicit; only clear/default restores inheritance.
-        rc, out = self.run_cli("voice", "holocene-pm", "walken", "--json", state=state)
-        self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"]["holocene-pm"]["voice"], "walken")
-        rc, out = self.run_cli("voice", "holocene-pm", "Rick", "--json", state=state)
-        self.assertEqual((rc, out["ok"], out["voice"], out["cleared"]), (0, True, "rick", False))
-        self.assertEqual(json.loads((state / "converse.json").read_text())["tiles"]["holocene-pm"]["voice"], "rick")
+        self.assertNotIn("voice", json.loads((state / "converse.json").read_text()).get("tiles", {}))
 
 
 REAL = Path.home() / "code/skillex/all-skills"
@@ -731,16 +655,14 @@ class RealSkills(unittest.TestCase):
             (skills / n).symlink_to(REAL / n)
         self.assertEqual(sorted(box.tools()), ["car_set_model", "car_set_voice"])
         r = box.run("car_set_voice", {"voice": "Christopher Walken"}, "holocene-pm", env=env, timeout=10)
-        self.assertTrue(r["ok"], r)
-        self.assertEqual(r["out"]["voice"], "walken")
-        r = box.run("car_set_voice", {"voice": "nobody"}, "holocene-pm", env=env, timeout=10)
-        self.assertEqual((r["ok"], r["exit"]), (False, 3))
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["exit"], 3)
+        self.assertFalse((state / "converse.json").exists())
         r = box.run("car_set_model", {"model": "free"}, "holocene-pm", env=env, timeout=10)
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["out"]["model"], "free")
         tiles = json.loads((state / "converse.json").read_text())["tiles"]["holocene-pm"]
-        self.assertEqual((tiles["voice"], tiles["model"], tiles["voice_set_by"]), ("walken", "free", "car"))
-        self.assertTrue(VOX_CATALOG)
+        self.assertNotIn("voice", tiles)
 
 
 if __name__ == "__main__":

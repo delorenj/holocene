@@ -108,9 +108,12 @@ class AssignedVoices(unittest.TestCase):
             self.assertEqual(self.choice("tile-b")["fallback"], "profile_unreadable")
 
     def test_identifiers_and_symlink_escape_fail_closed(self):
+        self.assertEqual(self.choice(profile="../infra-pm")["voice"], "carlin")
         for name in ("../infra-pm", "/tmp/infra-pm", ".", "", ["infra-pm"], " infra-pm "):
             with self.subTest(name=name):
-                self.assertEqual(self.choice(profile=name)["source"], "emergency_fallback")
+                self.registry.write_text("agents: {tile-a: {profile_name: " + json.dumps(name) + "}}")
+                self.assertEqual(self.choice()["source"], "emergency_fallback")
+        self.registry.write_text("agents: {tile-a: {profile_name: holocene-pm}}")
         for agent in ("../tile-a", "/tile-a", "", None, ["tile-a"]):
             with self.subTest(agent=agent):
                 self.assertEqual(self.choice(agent)["fallback"], "invalid_agent")
@@ -119,7 +122,8 @@ class AssignedVoices(unittest.TestCase):
         outside.mkdir()
         (outside / "config.yaml").write_text("tts: {voice: walken}")
         (self.profiles / "escape").symlink_to(outside)
-        self.assertEqual(self.choice(profile="escape")["fallback"], "invalid_profile_path")
+        self.registry.write_text("agents: {tile-a: {profile_name: escape}}")
+        self.assertEqual(self.choice()["fallback"], "invalid_profile_path")
 
     def test_heartbeat_parses_each_unchanged_profile_once(self):
         # 2026-11-21: the per-tick heartbeat re-parsed every profile's config.yaml and held a core for days.
@@ -145,21 +149,18 @@ class AssignedVoices(unittest.TestCase):
         self.registry.unlink()
         self.assertEqual(self.choice()["fallback"], "profile_missing")
 
-    def test_gateway_confirmed_profile_wins_without_changing_original_tile(self):
+    def test_gateway_reported_profile_cannot_override_registry_assignment(self):
         m = self.memo(profile="infra-pm", reply_stamp="one")
-        self.assertEqual(self.w._reply_voice(m), "brule")
-        self.assertEqual(m["agent"], "tile-a")
-        self.assertEqual(m["voice_lock"]["profile"], "infra-pm")
+        self.assertEqual(self.w._reply_voice(m), "carlin")
+        self.assertEqual(m["voice_lock"]["profile"], "holocene-pm")
 
-    def test_car_override_only_when_origin_verified_even_explicit_rick(self):
-        cv.update_tile(self.desk.flag.path, "tile-a", voice="rick")
-        for sender in ({"ok": True, "host": "browser"}, {"ok": False, "host": "car"}, {}):
+    def test_legacy_override_is_inert_for_every_transport(self):
+        self.desk.flag.path.write_text(json.dumps({"tiles": {"tile-a": {"voice": "rick"}}}))
+        for sender in ({"ok": True, "host": "browser"}, {"ok": True, "host": "car"},
+                       {"ok": True, "host": "telegram"}, {}):
             m = self.memo(sender=sender, reply_stamp="one")
             self.assertEqual(self.w._reply_voice(m), "carlin")
             self.assertEqual(m["voice_lock"]["source"], "inherited")
-        m = self.memo(reply_stamp="one")
-        self.assertEqual(self.w._reply_voice(m), "rick")
-        self.assertEqual(m["voice_lock"]["source"], "car_override")
 
     def test_config_registry_and_override_changes_apply_next_stamp_not_current_reply(self):
         m = self.memo(reply_stamp="one")
@@ -175,11 +176,11 @@ class AssignedVoices(unittest.TestCase):
         self.assertEqual(self.w._reply_voice(m), "walken")
         m["reply_stamp"] = "three"
         self.assertEqual(self.w._reply_voice(m), "brule")
-        cv.update_tile(self.desk.flag.path, "tile-a", voice="rick")
+        self.desk.flag.path.write_text(json.dumps({"tiles": {"tile-a": {"voice": "rick"}}}))
         self.assertEqual(self.w._reply_voice(m), "brule")
         m["reply_stamp"] = "four"
-        self.assertEqual(self.w._reply_voice(m), "rick")
-        cv.update_tile(self.desk.flag.path, "tile-a", voice=None)
+        self.assertEqual(self.w._reply_voice(m), "brule")
+        self.desk.flag.path.write_text(json.dumps({"tiles": {}}))
         m["reply_stamp"] = "five"
         self.assertEqual(self.w._reply_voice(m), "brule")
 
@@ -202,8 +203,22 @@ class AssignedVoices(unittest.TestCase):
         m = self.memo()
         self.assertEqual(self.w._cue_voice(m)["voice"], "carlin")
         m.update(profile="infra-pm", reply_stamp="one")
-        self.assertEqual(self.w._reply_voice(m), "brule")
+        self.assertEqual(self.w._reply_voice(m), "carlin")
         m["profile"] = "holocene-pm"
+        self.assertEqual(self.w._reply_voice(m), "carlin")
+
+    def test_cue_lock_reselects_on_next_stamp_and_changed_responder(self):
+        m = self.memo(reply_stamp="one")
+        self.assertEqual(self.w._cue_voice(m)["voice"], "carlin")
+        old = dict(m["cue_voice_lock"])
+        self.config("holocene-pm", "tts: {voice: walken}")
+        m["reply_stamp"] = "two"
+        self.assertEqual(self.w._cue_voice(m)["voice"], "walken")
+        self.assertNotEqual(m["cue_voice_lock"]["lock_id"], old["lock_id"])
+        self.assertIsNone(self.w._missing_voice(m, {**old, "cue_stamp": "one",
+                                                   "cue_identity": old["identity"]}, cue=True))
+        m["agent"] = "tile-b"
+        self.assertEqual(self.w._cue_voice(m)["voice"], "brule")
         self.assertEqual(self.w._reply_voice(m), "brule")
 
     def test_gateway_confirmation_of_same_profile_and_registry_edits_do_not_mix_round(self):
@@ -223,12 +238,10 @@ class AssignedVoices(unittest.TestCase):
         self.registry.write_text("agents: {tile-a: {profile_name: infra-pm}}")
         os.utime(self.registry, ns=(before.st_atime_ns, before.st_mtime_ns))
         self.assertEqual(self.choice()["voice"], "brule")
-        cv.update_tile(self.desk.flag.path, "tile-a", voice="rick")
-        self.assertEqual(self.choice(car=True)["voice"], "rick")
+        self.desk.flag.path.write_text(json.dumps({"tiles": {"tile-a": {"voice": "rick"}}}))
+        self.assertEqual(self.choice(car=True)["voice"], "brule")
         before = self.desk.flag.path.stat()
-        data = json.loads(self.desk.flag.path.read_text())
-        data["tiles"]["tile-a"]["voice"] = "brule"
-        self.desk.flag.path.write_text(json.dumps(data))
+        self.desk.flag.path.write_text(json.dumps({"tiles": {"tile-a": {"voice": "walken"}}}))
         os.utime(self.desk.flag.path, ns=(before.st_atime_ns, before.st_mtime_ns))
         self.assertEqual(self.choice(car=True)["voice"], "brule")
 
@@ -260,16 +273,17 @@ class AssignedVoices(unittest.TestCase):
         self.config("holocene-pm", "tts: {voice: brule}")
         self.assertEqual(self.w._reply_voice(resumed), "carlin")
 
-    def test_progress_pin_is_truthful_and_does_not_change_final_assignment(self):
+    def test_progress_pin_is_ignored_for_assignment(self):
         m = self.memo()
         with patch.dict(os.environ, {"MEMO_PROGRESS_VOICE": "walken"}):
             _, _, choice, _ = self.w._synth_cue(m, "Working.", self.root, iw.PROGRESS_TTS_STEPS, progress=True)
-        self.assertEqual((choice["voice"], choice["source"]), ("walken", "progress_override"))
+        self.assertEqual((choice["voice"], choice["source"]), ("carlin", "inherited"))
         m["reply_stamp"] = "one"
         self.assertEqual(self.w._reply_voice(m), "carlin")
 
     def test_actual_narration_hold_prime_hold_run_and_final_use_responder_profile(self):
-        m = self.memo(profile="infra-pm", stage="await_agent", status="active", dispatched_ts=time.time() - 60)
+        self.registry.write_text("agents: {tile-a: {profile_name: infra-pm}, tile-b: {profile_name: infra-pm}}")
+        m = self.memo(stage="await_agent", status="active", dispatched_ts=time.time() - 60)
         self.w.s.memos[m["key"]] = m
         self.w.fact_fast = Mock()
         job = {"key": m["key"], "mid": m["memo_id"], "agent": "tile-a", "cid": "cmd",
@@ -299,16 +313,11 @@ class AssignedVoices(unittest.TestCase):
         self.assertEqual(self.w._reply_voice(m), "rick")
         self.assertEqual(m["voice_lock"]["requested"], "ghost")
 
-    def test_unknown_progress_pin_falls_back_without_poisoning_assignment(self):
-        def missing(text, tmp, **kw):
-            if kw.get("voice") == "ghost":
-                raise iw.VoiceNotFound("tts", "voice_not_found", "not found", retryable=False)
-            return self.fake_synth(text, tmp, **kw)
+    def test_unknown_progress_pin_does_not_affect_assignment(self):
         m = self.memo()
-        with patch.dict(os.environ, {"MEMO_PROGRESS_VOICE": "ghost"}), \
-                patch.object(iw, "synthesize", side_effect=missing):
+        with patch.dict(os.environ, {"MEMO_PROGRESS_VOICE": "ghost"}):
             _, _, choice, _ = self.w._synth_cue(m, "Working.", self.root, iw.PROGRESS_TTS_STEPS, progress=True)
-        self.assertEqual((choice["voice"], choice["requested"], choice["fallback"]), ("rick", "ghost", "voice_not_found"))
+        self.assertEqual((choice["voice"], choice["requested"], choice["fallback"]), ("carlin", "carlin", None))
         m["reply_stamp"] = "one"
         self.assertEqual(self.w._reply_voice(m), "carlin")
 
@@ -350,15 +359,13 @@ class AssignedVoices(unittest.TestCase):
                 self.w._synth(m, "Legacy resume.", self.root)
         self.assertEqual(m["voice_lock"]["voice"], "carlin")
 
-    def test_builtin_explicit_rick_and_clear_restore_profile_inheritance(self):
+    def test_builtin_voice_refuses_and_preserves_file(self):
         result = self.desk._builtin_tool("tile-a", cv.TOOL_VOICE, {"voice": "Rick"}, "test")
-        self.assertTrue(result["ok"])
-        self.assertFalse(result["out"]["cleared"])
-        self.assertEqual(self.desk.tile("tile-a")["voice"], "rick")
-        result = self.desk._builtin_tool("tile-a", cv.TOOL_VOICE, {"voice": "default"}, "test")
-        self.assertTrue(result["out"]["cleared"])
-        self.assertEqual((result["out"]["voice"], result["out"]["source"]), ("carlin", "inherited"))
-        self.assertNotIn("voice", self.desk.tile("tile-a"))
+        self.assertFalse(result["ok"])
+        self.assertIn("Flume", result["error"])
+        self.assertFalse(self.desk.flag.path.exists())
+        self.assertFalse(self.desk._builtin_tool("tile-a", cv.TOOL_VOICE, {"voice": "default"}, "test")["ok"])
+        self.assertFalse(self.desk.flag.path.exists())
 
     def cli(self, value=None, clear=False):
         args = SimpleNamespace(agent="tile-a", value=value, clear=clear, by="test", json=True)
@@ -367,40 +374,38 @@ class AssignedVoices(unittest.TestCase):
                 patch.object(cli, "vox_catalog", return_value=self.catalog.get()), \
                 contextlib.redirect_stdout(io.StringIO()) as stdout:
             rc = cli.cmd_voice(args)
+        return rc, json.loads(stdout.getvalue())
+
+    def test_cli_read_only_and_refuses_set_clear(self):
+        for value, clear in (("Rick", False), ("default", False), (None, True)):
+            rc, result = self.cli(value, clear)
+            self.assertEqual(rc, 3)
+            self.assertIn("Flume", result["message"])
+            self.assertFalse(self.desk.flag.path.exists())
+        rc, result = self.cli()
         self.assertEqual(rc, 0)
-        return json.loads(stdout.getvalue())
+        self.assertEqual((result["voice"], result["source"]), ("carlin", "inherited"))
 
-    def test_cli_explicit_rick_default_and_clear_with_diagnostics(self):
-        result = self.cli("Rick")
-        self.assertEqual((result["voice"], result["source"], result["cleared"]), ("rick", "car_override", False))
-        self.assertEqual(self.cli()["source"], "car_override")
-        result = self.cli("default")
-        self.assertEqual((result["voice"], result["source"], result["cleared"]), ("carlin", "inherited", True))
-        self.cli("Rick")
-        self.assertEqual(self.cli(clear=True)["voice"], "carlin")
-        self.assertEqual(self.cli()["profile"], "holocene-pm")
-        self.config("holocene-pm", "tts: []")
-        self.assertEqual(self.cli()["source"], "emergency_fallback")
-
-    def test_diagnostic_tiles_include_inherited_and_explicit_and_emergency(self):
-        cv.update_tile(self.desk.flag.path, "tile-b", voice="rick")
+    def test_diagnostic_tiles_show_ignored_legacy_and_emergency(self):
+        self.desk.flag.path.write_text(json.dumps({"tiles": {"tile-b": {"voice": "rick"}}}))
         hb = self.desk.heartbeat(default_voice="rick")
-        self.assertEqual(hb["voice_default"], "profile")
         self.assertEqual(hb["tiles"]["tile-a"]["source"], "inherited")
-        self.assertEqual(hb["tiles"]["tile-b"]["source"], "car_override")
+        self.assertEqual(hb["tiles"]["tile-b"]["source"], "inherited")
+        self.assertTrue(hb["tiles"]["tile-b"]["legacy_voice_present"])
         self.config("holocene-pm", "tts: {}")
         hb = self.desk.heartbeat(default_voice="rick")
         self.assertEqual(hb["tiles"]["tile-a"]["fallback"], "profile_voice_missing")
         with contextlib.redirect_stdout(io.StringIO()) as output:
             cli.print_tiles(self.desk, self.desk.settings())
         self.assertIn("emergency_fallback", output.getvalue())
-        self.assertIn("car_override", output.getvalue())
+        self.assertNotIn("car_override", output.getvalue())
 
-    def test_diagnostics_share_known_missing_catalog_fallback_including_clear_and_builtin(self):
+    def test_diagnostics_share_known_missing_catalog_fallback(self):
         self.config("holocene-pm", "tts: {voice: ghost}")
         hb = self.desk.heartbeat(default_voice="rick")["tiles"]["tile-a"]
-        for result in (hb, self.cli(), self.cli("default"),
-                       self.desk._builtin_tool("tile-a", cv.TOOL_VOICE, {"voice": "default"}, "test")["out"]):
+        rc, diagnostic = self.cli()
+        self.assertEqual(rc, 0)
+        for result in (hb, diagnostic):
             self.assertEqual((result["configured_voice"], result["requested"]), ("ghost", "ghost"))
             self.assertEqual((result["voice"], result["effective_voice"]), ("rick", "rick"))
             self.assertEqual((result["availability"], result["source"], result["fallback"]),
