@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { rectOf, stackPath, treePath, useDrag, usePositions, type Pos, type Rect } from "./canvas";
 import { Age, BandTrack, BoxIcon, CopyRef, Glyph, formatDuration, signalWord, sinceSeconds } from "./ui";
 import type { Agent, AgentsPayload, Contractor, Evidence, HubEvent, Signal } from "./types";
+import { VoicePicker } from "./voice-picker";
 
 type NodeKind = "ceo" | "director" | "pm" | "contractor" | "inactive";
 type LaidNode = { id: string; kind: NodeKind; x: number; y: number; w: number; h: number; agent?: Agent; contractor?: Contractor };
@@ -387,6 +388,7 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
         <span className={`insp-state sig-text-${a.signal}`}>{stateText(a)} · {signalWord(a.signal)}</span>
         <span className="insp-meta">gateway {a.gateway}{a.tools !== undefined ? ` · ${a.tools} tools` : ""}{a.subs ? ` · ${a.subs} subagent lanes` : ""}</span>
       </header>
+      <VoicePicker agent={a} />
       <ProjectBlock label={a.role === "director" ? "Directs project" : "Attached to"} a={a} onOpenProject={onOpenProject} />
       <div className="insp-section">
         <span className="hub-label">Reports to</span>

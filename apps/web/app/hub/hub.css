@@ -953,6 +953,65 @@ html[data-hub-theme="ledger-night"] body {
   gap: 6px;
 }
 
+/* ---------- voice picker (Flume-owned assignment) ---------- */
+
+.hub-root .hub-voice .voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hub-root .hub-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 28px 0 8px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  box-shadow: 2px 2px 0 var(--shadow);
+  font: 500 13px/28px var(--font-sans);
+  color: var(--ink);
+  appearance: none;
+  cursor: pointer;
+}
+.hub-root .hub-select:focus-visible {
+  outline: 2px solid var(--pop);
+  outline-offset: 2px;
+}
+.hub-root .hub-select:disabled {
+  opacity: 0.6;
+  box-shadow: none;
+  cursor: progress;
+}
+.hub-root .hub-voice .voice-status {
+  font: 600 11px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hub-root .hub-voice .voice-msg {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--ink-2);
+}
+.hub-root .hub-voice .voice-msg.tone-error {
+  color: var(--broken);
+}
+.hub-root .hub-voice .voice-msg.tone-warn {
+  color: var(--stuck);
+}
+.hub-root .hub-voice .voice-msg.tone-ok {
+  color: var(--cleared);
+}
+.hub-root .hub-voice code {
+  font: 400 11px/15px var(--font-mono);
+}
+
 .hub-root .hub-row {
   display: flex;
   flex-wrap: wrap;
