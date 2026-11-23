@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import {
   celebrationKey, chipFor, chipState, chips, confettiPieces, duration, keysMetric, metrics, money, overallState, promotedBadge,
@@ -144,6 +145,53 @@ test("the page sentence: loading, API down, empty, invalid, healthy, owing", () 
   const unknown = app({}, { fulfilment: src({ due: 1, overdue: 0, clear: 0, blocked: 0, other: 1, blockedReasons: [], urgency: "unknown" }, { status: "warn" }) });
   assert.match(statement(payload([unknown]), undefined, NOW), /unknown order states/);
   assert.ok(!statement(payload([unknown]), undefined, NOW).includes("1 key owed"));
+});
+
+test("source freshness advances from checkedAt or generatedAt plus age", () => {
+  const fresh = app();
+  fresh.sources.fulfilment.checkedAt = new Date(NOW).toISOString();
+  fresh.sources.fulfilment.ageSeconds = 0;
+  assert.equal(keysMetric(fresh, NOW + 90_000).value, "0");
+  assert.equal(keysMetric(fresh, NOW + 91_000).value, "–");
+  assert.equal(chipFor("fulfilment", fresh.sources.fulfilment, NOW + 600_000).fresh, "10m");
+  delete fresh.sources.fulfilment.checkedAt;
+  fresh.sources.fulfilment.ageSeconds = 30;
+  assert.equal(keysMetric(fresh, NOW + 61_000, new Date(NOW).toISOString()).value, "–");
+  delete fresh.sources.fulfilment.ageSeconds;
+  assert.equal(keysMetric(fresh, NOW).value, "–");
+  assert.doesNotMatch(statement(payload([fresh]), undefined, NOW), /Everything reads well; no keys owed/);
+});
+
+test("retained payload after a failed poll renders stale keys, chips and hero in the real LiveApp", () => {
+  const require = createRequire(import.meta.url);
+  const React = require("react") as typeof import("react");
+  (globalThis as typeof globalThis & { React: typeof React }).React = React;
+  const { renderToStaticMarkup } = require("react-dom/server") as typeof import("react-dom/server");
+  const { LiveApp: Component } = require("./live-app.tsx") as typeof import("./live-app");
+  const data = payload([app()]);
+  for (const source of Object.values(data.apps[0].sources)) {
+    source.checkedAt = new Date(NOW).toISOString();
+    source.ageSeconds = 0;
+  }
+  const original = React.useState;
+  let index = 0;
+  (React as { useState: typeof React.useState }).useState = ((initial: unknown) => {
+    const current = index++;
+    if (current === 1) initial = data;
+    if (current === 2) initial = "503 Service Unavailable";
+    if (current === 4) initial = NOW + 600_000;
+    return original(initial);
+  }) as typeof React.useState;
+  try {
+    const html = renderToStaticMarkup(React.createElement(Component));
+    assert.match(html, /snapshot stale; obligations unknown/);
+    assert.match(html, /live-hero is-attention/);
+    assert.match(html, /live-chip is-stale[^>]*title="fulfilment: stale[^"]*read 10m ago/);
+    assert.match(html, /Showing the last good read/);
+    assert.doesNotMatch(html, /Everything reads well; no keys owed|all clear · 24 h promise|live-metric is-good[^>]*>.*Keys owed/);
+  } finally {
+    (React as { useState: typeof React.useState }).useState = original;
+  }
 });
 
 test("the celebration is for the first live app, once per browser", () => {

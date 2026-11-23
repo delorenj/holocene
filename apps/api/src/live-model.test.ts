@@ -286,6 +286,19 @@ test("snapshot is verified empty only for an exact successful envelope; malforme
   }
 });
 
+test("invocation-bound timing does not extend deadlines across a delayed reader", () => {
+  const start = Date.parse("2026-11-20T12:00:00Z");
+  const raw = { status: "ok", orders: { cs_live_a: "paid_unissued:due_in=5s", cs_live_b: "issued_undelivered:overdue_by=1s" } };
+  const instant = summarizeSnapshot(raw, start, 24, start)!;
+  assert.deepEqual([instant.due, instant.overdue, instant.worstOverdueSeconds], [1, 1, 1]);
+  assert.equal(instant.soonestDueAt, new Date(start + 5_000).toISOString());
+  const delayed = summarizeSnapshot(raw, start, 24, start + 10_000)!;
+  assert.deepEqual([delayed.due, delayed.overdue, delayed.worstOverdueSeconds], [0, 2, 11]);
+  assert.equal(delayed.soonestDueAt, undefined);
+  assert.deepEqual([summarizeSnapshot({ status: "ok", orders: { cs_live_a: "paid_unissued:due_in=0s" } }, start, 24, start)?.due,
+    summarizeSnapshot({ status: "ok", orders: { cs_live_a: "paid_unissued:due_in=0s" } }, start, 24, start + 1_000)?.overdue], [1, 1]);
+});
+
 test("only the exact read-only snapshot argv with independently approved restricted key is executable", () => {
   const approved = "op://Vault/restricted/credential";
   const checkout = "op://Vault/checkout/credential";

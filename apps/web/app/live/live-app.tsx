@@ -132,11 +132,11 @@ function Celebration({ app, onClose }: { app: App; onClose: () => void }) {
   );
 }
 
-function Hero({ app, now }: { app: App; now: number }) {
-  const state = overallState(app);
+function Hero({ app, now, generatedAt }: { app: App; now: number; generatedAt?: string }) {
+  const state = overallState(app, now, generatedAt);
   const times = saleTimes(app);
   const board = app.sources.activity.data?.recent ?? [];
-  const cells = metrics(app, now);
+  const cells = metrics(app, now, generatedAt);
   return (
     <article className={`live-hero is-${state}`} aria-label={`${app.name}, live`}>
       {app.firstPromoted ? <span className="live-ribbon">First live app</span> : null}
@@ -162,7 +162,7 @@ function Hero({ app, now }: { app: App; now: number }) {
       </dl>
 
       <ul className="live-chips" aria-label={`${app.name} sources`}>
-        {chips(app).map((c) => (
+        {chips(app, now, generatedAt).map((c) => (
           <HealthChip key={c.key} chip={c} />
         ))}
       </ul>
@@ -261,7 +261,7 @@ export function LiveApp() {
 
         {celebrate ? <Celebration app={celebrate} onClose={() => setCelebrate(undefined)} /> : null}
 
-        {data?.apps.map((app) => <Hero key={app.id} app={app} now={now} />)}
+        {data?.apps.map((app) => <Hero key={app.id} app={app} now={now} generatedAt={data.generatedAt} />)}
 
         {data && !data.apps.length && !data.source.down ? <Empty /> : null}
 

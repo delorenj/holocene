@@ -367,7 +367,7 @@ export function snapshotArgv(argv: string[], home: string, approvedKeyRef?: stri
 }
 
 /** Snapshot envelope is fail-closed: malformed/unknown states cannot imply an empty queue. */
-export function summarizeSnapshot(raw: unknown, nowMs: number, promiseHours?: number): FulfilmentData | undefined {
+export function summarizeSnapshot(raw: unknown, nowMs: number, promiseHours?: number, observedAtMs = nowMs): FulfilmentData | undefined {
   if (!record(raw) || raw.status !== "ok" || !record(raw.orders) || Object.keys(raw).some((k) => k !== "status" && k !== "orders")) return undefined;
   const out: FulfilmentData = { due: 0, overdue: 0, clear: 0, blocked: 0, unpaid: 0, other: 0, blockedReasons: [], promiseHours };
   let soonest: number | undefined;
@@ -386,20 +386,22 @@ export function summarizeSnapshot(raw: unknown, nowMs: number, promiseHours?: nu
         continue;
       }
       const seconds = Number(match[3]);
-      if (!Number.isFinite(new Date(nowMs + seconds * 1000).getTime())) {
+      const deadline = nowMs + (match[2] === "due_in" ? seconds : -seconds) * 1000;
+      if (!Number.isFinite(new Date(deadline).getTime())) {
         out.other++;
         continue;
       }
-      if (match[2] === "due_in") {
+      if (deadline >= observedAtMs) {
         out.due++;
-        soonest = Math.min(soonest ?? seconds, seconds);
+        soonest = Math.min(soonest ?? deadline, deadline);
       } else {
         out.overdue++;
-        worst = Math.max(worst ?? seconds, seconds);
+        const late = Math.max(1, Math.ceil((observedAtMs - deadline) / 1000));
+        worst = Math.max(worst ?? late, late);
       }
     } else out.other++;
   }
-  if (soonest !== undefined) out.soonestDueAt = new Date(nowMs + soonest * 1000).toISOString();
+  if (soonest !== undefined) out.soonestDueAt = new Date(soonest).toISOString();
   if (worst !== undefined) out.worstOverdueSeconds = worst;
   return out;
 }

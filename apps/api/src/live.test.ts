@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import Fastify from "fastify";
 import type { ProjectRecord } from "./hub-model.js";
-import { createLiveHub, registerLiveRoutes, type LiveDeps, type LivePayload } from "./live.js";
+import { createLiveHub, defaultLiveDeps, registerLiveRoutes, type LiveDeps, type LivePayload } from "./live.js";
 
 // The hub's IO, with the world replaced by fakes: the same code path the live service runs, no network.
 
@@ -120,6 +120,7 @@ function setup(over: {
     today: () => "2026-11-20",
     opBin: "op",
     fulfilmentKeyRef: "op://Vault/restricted/credential",
+    approvedSnapshotSource: (repoPath) => repoPath === "/repos/earshot" ? "/repos/earshot/scripts/licensing/issuer.py" : undefined,
     waitMs: over.waitMs ?? 2_000
   };
   return { hub: createLiveHub(deps), calls, deps, clock };
@@ -192,12 +193,24 @@ test("fulfilment executes only the approved snapshot in the repo root and counts
   const h = setup({ run: (file) => (file === "uv" ? { stdout: envelope({ cs_live_1: "issued_undelivered:due_in=1800s", cs_live_2: "issued_undelivered:overdue_by=60s", cs_live_3: "delivered" }) } : undefined) as never });
   const { apps } = await read(h);
   const call = h.calls.run.find((r) => r.file === "uv")!;
-  assert.deepEqual(call.args, SNAPSHOT.slice(1).map((a) => a.startsWith("~/") ? `/home/me/${a.slice(2)}` : a));
+  assert.deepEqual(call.args, ["run", "/repos/earshot/scripts/licensing/issuer.py", ...SNAPSHOT.slice(3).map((a) => a.startsWith("~/") ? `/home/me/${a.slice(2)}` : a)]);
   assert.equal(call.cwd, "/repos/earshot");
   assert.notEqual(call.env, "/tmp");
   const f = apps[0].sources.fulfilment.data!;
   assert.deepEqual([f.due, f.overdue, f.clear, f.urgency], [1, 1, 1, "overdue"]);
   assert.equal(f.soonestDueAt, new Date(T0 + 1_800_000).toISOString());
+});
+
+test("delayed snapshot preserves the invocation-bound deadline and counts elapsed overdue time", async () => {
+  const clock = { t: T0 };
+  const h = setup({ now: clock, run: (file) => {
+    if (file !== "uv") return undefined as never;
+    clock.t += 10_000;
+    return { stdout: envelope({ cs_live_1: "issued_undelivered:due_in=5s", cs_live_2: "paid_unissued:overdue_by=1s" }) };
+  } });
+  const f = (await read(h)).apps[0].sources.fulfilment.data!;
+  assert.deepEqual([f.due, f.overdue, f.worstOverdueSeconds, f.urgency], [0, 2, 11, "overdue"]);
+  assert.equal(f.soonestDueAt, undefined);
 });
 
 test("legacy and injected declarations are unavailable without ever invoking the issuer", async () => {
@@ -484,24 +497,70 @@ test("route snapshot consumer invokes no issue, sign, email, or notify action an
   await app.close();
 });
 
-test("private fixture ledger bytes, mode and timestamps survive the API read", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "holoc58-ledger-"));
-  const file = join(dir, "ledger.json");
-  writeFileSync(file, '{"fixture":"unchanged"}', { mode: 0o600 });
-  const before = statSync(file);
-  const h = setup({ run: (exe, args) => {
-    if (exe !== "uv") return undefined as never;
-    assert.equal(args.at(-1), "snapshot");
-    assert.equal(readFileSync(file, "utf8"), '{"fixture":"unchanged"}');
-    return { stdout: envelope({ cs_live_1: "issued_undelivered:due_in=0s" }) };
-  } });
-  const app = Fastify();
-  registerLiveRoutes(app, h.hub);
-  assert.equal((await app.inject({ method: "GET", url: "/api/modules/live/apps" })).statusCode, 200);
-  assert.equal(readFileSync(file, "utf8"), '{"fixture":"unchanged"}');
-  const after = statSync(file);
-  assert.deepEqual([after.mode, after.mtimeMs, after.ctimeMs], [before.mode, before.mtimeMs, before.ctimeMs]);
-  await app.close();
+test("production runner reads only the approved scratch source and its actual private ledger path", async () => {
+  const root = mkdtempSync(join(tmpdir(), "holoc58-reader-"));
+  const repo = join(root, "trusted");
+  const other = join(root, "other");
+  const home = join(root, "home");
+  const ledgerDir = join(home, ".local/share/earshot/licenses");
+  for (const dir of [join(repo, "scripts/licensing"), join(other, "scripts/licensing"), ledgerDir]) mkdirSync(dir, { recursive: true });
+  const ledger = join(ledgerDir, "ledger.json");
+  writeFileSync(ledger, '{"fixture":"unchanged"}', { mode: 0o600 });
+  const catalog = join(ledgerDir, "approved-catalog.json");
+  writeFileSync(catalog, "{}", { mode: 0o600 });
+  const script = join(repo, "scripts/licensing/issuer.py");
+  const marker = join(root, "unrelated-ran");
+  writeFileSync(script, `import json, pathlib, sys\na=sys.argv[1:]\nassert a[-1]=='snapshot' and '--ledger' in a and '--approved-catalog' in a\np=pathlib.Path(a[a.index('--ledger')+1])\nassert json.loads(p.read_text()) == {'fixture':'unchanged'}\nassert pathlib.Path(a[a.index('--approved-catalog')+1]).read_text() == '{}'\nprint(json.dumps({'status':'ok','orders':{'cs_live_fixture':'issued_undelivered:due_in=0s'}}))\n`);
+  writeFileSync(join(other, "scripts/licensing/issuer.py"), `import pathlib\npathlib.Path(${JSON.stringify(marker)}).write_text('ran')\nprint('{"status":"ok","orders":{}}')\n`);
+  const beforeBytes = readFileSync(ledger);
+  const beforeStat = statSync(ledger);
+  const beforeEntries = readdirSync(ledgerDir).sort();
+  const oldRepo = process.env.LIVE_FULFILMENT_TRUSTED_REPO;
+  const oldKey = process.env.LIVE_FULFILMENT_READONLY_KEY_REF;
+  process.env.LIVE_FULFILMENT_TRUSTED_REPO = repo;
+  process.env.LIVE_FULFILMENT_READONLY_KEY_REF = SNAPSHOT.at(-2);
+  try {
+    const h = setup({ files: { [join(repo, ".launch.yaml")]: LAUNCH(), [join(other, ".launch.yaml")]: LAUNCH() }, projects: async () => ({ projects: [project("earshot", repo), project("unrelated", other)] }) });
+    const real = defaultLiveDeps({ projects: h.deps.projects, tickets: h.deps.tickets });
+    h.deps.home = home;
+    h.deps.run = async (file, args, opts) => file === "uv" ? real.run(file, args, { ...opts, env: { ...opts.env, UV_OFFLINE: "1", UV_NO_MANAGED_PYTHON: "1", UV_PYTHON: "/usr/bin/python3", UV_CACHE_DIR: join(root, "uv-cache"), PYTHONDONTWRITEBYTECODE: "1" } }) : { stdout: SECRET };
+    h.deps.approvedSnapshotSource = real.approvedSnapshotSource;
+    const app = Fastify();
+    registerLiveRoutes(app, createLiveHub(h.deps));
+    const body = (await app.inject({ method: "GET", url: "/api/modules/live/apps" })).json() as LivePayload;
+    assert.equal(body.apps.find((a) => a.id === "earshot")?.sources.fulfilment.data?.due, 1);
+    assert.equal(body.apps.find((a) => a.id === "unrelated")?.sources.fulfilment.status, "unavailable");
+    assert.equal(readdirSync(root).includes("unrelated-ran"), false);
+    await app.close();
+    const alias = join(root, "alias");
+    symlinkSync(repo, alias);
+    assert.equal(real.approvedSnapshotSource(alias), undefined);
+    const replaced = join(root, "outside.py");
+    writeFileSync(replaced, `import pathlib\npathlib.Path(${JSON.stringify(marker)}).write_text('symlink ran')\n`);
+    const symlinkedRepo = join(root, "symlink-source");
+    mkdirSync(join(symlinkedRepo, "scripts/licensing"), { recursive: true });
+    symlinkSync(replaced, join(symlinkedRepo, "scripts/licensing/issuer.py"));
+    process.env.LIVE_FULFILMENT_TRUSTED_REPO = symlinkedRepo;
+    assert.equal(real.approvedSnapshotSource(symlinkedRepo), undefined);
+    const symlinked = setup({ files: { [join(symlinkedRepo, ".launch.yaml")]: LAUNCH() }, projects: async () => ({ projects: [project("symlinked", symlinkedRepo)] }) });
+    symlinked.deps.approvedSnapshotSource = real.approvedSnapshotSource;
+    symlinked.deps.run = real.run;
+    const symlinkHub = Fastify();
+    registerLiveRoutes(symlinkHub, createLiveHub(symlinked.deps));
+    const blocked = (await symlinkHub.inject({ method: "GET", url: "/api/modules/live/apps" })).json() as LivePayload;
+    assert.equal(blocked.apps[0].sources.fulfilment.status, "unavailable");
+    assert.equal(readdirSync(root).includes("unrelated-ran"), false);
+    await symlinkHub.close();
+    assert.deepEqual(readFileSync(ledger), beforeBytes);
+    const after = statSync(ledger);
+    assert.deepEqual([after.mode, after.mtimeMs, after.ctimeMs], [beforeStat.mode, beforeStat.mtimeMs, beforeStat.ctimeMs]);
+    assert.deepEqual(readdirSync(ledgerDir).sort(), beforeEntries);
+  } finally {
+    if (oldRepo === undefined) delete process.env.LIVE_FULFILMENT_TRUSTED_REPO;
+    else process.env.LIVE_FULFILMENT_TRUSTED_REPO = oldRepo;
+    if (oldKey === undefined) delete process.env.LIVE_FULFILMENT_READONLY_KEY_REF;
+    else process.env.LIVE_FULFILMENT_READONLY_KEY_REF = oldKey;
+  }
 });
 
 test("GET /api/modules/live/apps serves the payload uncached, and ?force=1 refreshes", async () => {

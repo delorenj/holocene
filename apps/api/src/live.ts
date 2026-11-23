@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import { projectDefinition, projectLastRun, type LastRun } from "./candybar.js";
@@ -132,6 +132,8 @@ export type LiveDeps = {
   opBin: string;
   /** Independently approved restricted read-only key reference for the snapshot. */
   fulfilmentKeyRef?: string;
+  /** Owner-approved source resolver; undefined means snapshot execution is unavailable. */
+  approvedSnapshotSource: (repoPath: string) => string | undefined;
   /** How long one request waits on a cold source before answering `pending`. */
   waitMs: number;
 };
@@ -341,15 +343,30 @@ function cliReason(error: unknown): string {
   return stderr || (typeof e?.code === "string" ? e.code : e?.message) || "failed";
 }
 
+function approvedSnapshotSource(approvedRepo: string | undefined, repoPath: string): string | undefined {
+  if (!approvedRepo || !isAbsolute(approvedRepo) || !isAbsolute(repoPath)) return undefined;
+  try {
+    const repo = realpathSync(approvedRepo);
+    if (repo !== approvedRepo || realpathSync(repoPath) !== repo || repoPath !== repo) return undefined;
+    const script = join(repo, "scripts/licensing/issuer.py");
+    if (lstatSync(script).isSymbolicLink() || !lstatSync(script).isFile() || realpathSync(script) !== script) return undefined;
+    return script;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readFulfilment(deps: LiveDeps, decl: LiveDecl, repoPath: string): Promise<Probe<FulfilmentView>> {
   const f = decl.fulfilment;
   if (!f) return { status: "unavailable", detail: "the live block declares no fulfilment" };
   const argv = snapshotArgv(f.outstandingArgv, deps.home, deps.fulfilmentKeyRef, decl.checkout?.keyRef);
-  if (!argv) return { status: "unavailable", detail: "read-only fulfilment snapshot is not approved or declared; legacy outstanding cannot run" };
-  const [file, ...args] = argv;
+  const script = deps.approvedSnapshotSource(repoPath);
+  if (!argv || !script) return { status: "unavailable", detail: "read-only fulfilment snapshot is not approved or declared; legacy outstanding cannot run" };
+  const [file, , , ...rest] = argv;
+  const startedAt = deps.now();
   let out: RunResult;
   try {
-    out = await deps.run(file, args, { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: process.env.TMPDIR ?? deps.home } });
+    out = await deps.run(file, ["run", script, ...rest], { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: process.env.TMPDIR ?? deps.home } });
   } catch {
     return { status: "down", detail: "fulfilment snapshot failed; ledger or provider state is unknown" };
   }
@@ -359,7 +376,7 @@ async function readFulfilment(deps: LiveDeps, decl: LiveDecl, repoPath: string):
   } catch {
     return { status: "down", detail: "fulfilment snapshot returned invalid JSON; state is unknown" };
   }
-  const data = summarizeSnapshot(json, deps.now(), f.promiseHours);
+  const data = summarizeSnapshot(json, startedAt, f.promiseHours, deps.now());
   if (!data) return { status: "down", detail: "fulfilment snapshot returned an invalid envelope; state is unknown" };
   const view: FulfilmentView = { ...data, urgency: fulfilmentUrgency(data) };
   if (data.other > 0) return { status: "warn", detail: `${data.other} order(s) in an unknown state`, data: view };
@@ -582,6 +599,7 @@ export function defaultLiveDeps(sources: { projects: LiveDeps["projects"]; ticke
     today: () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
     opBin: process.env.LIVE_OP_BIN ?? "op",
     fulfilmentKeyRef: process.env.LIVE_FULFILMENT_READONLY_KEY_REF,
+    approvedSnapshotSource: (repoPath) => approvedSnapshotSource(process.env.LIVE_FULFILMENT_TRUSTED_REPO, repoPath),
     waitMs: 8_000
   };
 }
