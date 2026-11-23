@@ -1505,3 +1505,11 @@ html[data-hub-theme="ledger-night"] body {
   .hub-root .hub-shell { gap: 8px 12px; }
   .hub-root .hub-shell .hub-header-end { flex-basis: auto; }
 }
+
+/* A published demo video (PublishedVideo): 16:9 black frame, caption with the share link. */
+.hub-root .hub-video { margin: 0; display: grid; gap: 8px; }
+.hub-root .hub-video-frame { aspect-ratio: 16 / 9; background: #000; border: 2px solid var(--line-strong); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.hub-root .hub-video-frame video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.hub-root .hub-video-placeholder { margin: 0; padding: 16px; color: #d8d2c8; font: 400 12px/18px var(--font-mono); text-align: center; }
+.hub-root .hub-video figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font: 400 12px/18px var(--font-mono); color: var(--ink-3); }
+.hub-root .hub-video figcaption a { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }

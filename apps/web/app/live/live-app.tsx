@@ -5,12 +5,13 @@ import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip } from "../hub/ui";
 import { HubShell } from "../hub/hub-shell";
 import { NavIcon } from "../hub/nav-icons";
+import { PublishedVideo } from "../hub/published-video";
 import type { Signal, Source } from "../hub/types";
 import {
   celebrationKey, chips, confettiPieces, duration, metrics, overallState, promotedBadge, saleTimes, shouldCelebrate, statement,
   type Chip, type ChipState, type Metric
 } from "./model";
-import type { LiveApp as App, LivePayload } from "./types";
+import type { LiveApp as App, LivePayload, OnDeckApp } from "./types";
 
 // The Live hub: every app promoted to production (a registered pjangler project whose .launch.yaml says
 // `mode: live`), with what is true about it right now. Every action here is a link or a read; the money,
@@ -185,6 +186,7 @@ function Hero({ app, now }: { app: App; now: number }) {
             <ActionLink key={e.href} href={e.href}>{e.label}</ActionLink>
           ))}
         </nav>
+        {app.video ? <PublishedVideo url={app.video} title={`${app.name} demo`} className="live-video" /> : null}
       </div>
 
       {board.length ? (
@@ -209,6 +211,35 @@ function Hero({ app, now }: { app: App; now: number }) {
           </ul>
         </section>
       ) : null}
+    </article>
+  );
+}
+
+function OnDeck({ app }: { app: OnDeckApp }) {
+  const links = [...(app.links.board ? [{ label: "Open board", href: app.links.board }] : []), ...app.links.evidence];
+  return (
+    <article className="hub-panel live-deck" aria-labelledby={`live-deck-${app.id}`}>
+      <header className="hub-panel-head is-quiet live-deck-head">
+        <NavIcon name="launch" />
+        <span className="hub-tag is-working">on deck · not promoted</span>
+        {app.platform || app.package ? (
+          <span className="hub-panel-meta live-platform">
+            {app.platform ? <span className="live-platform-word">{app.platform}</span> : null}
+            {app.package ? <CopyRef value={app.package} /> : null}
+          </span>
+        ) : null}
+      </header>
+      <div className="hub-panel-body live-deck-body">
+        <h2 className="live-deck-name" id={`live-deck-${app.id}`}>{app.name}</h2>
+        <p className="live-tagline">{app.tagline}</p>
+        {app.note ? <p className="live-offer"><span>{app.note}</span></p> : null}
+        {links.length ? (
+          <nav className="live-actions" aria-label={`${app.name} links`}>
+            {links.map((l) => <ActionLink key={l.href} href={l.href}>{l.label}</ActionLink>)}
+          </nav>
+        ) : null}
+        {app.video ? <PublishedVideo url={app.video} title={`${app.name} demo`} className="live-video" /> : null}
+      </div>
     </article>
   );
 }
@@ -284,18 +315,28 @@ export function LiveApp() {
 
         {data && !data.apps.length && !data.source.down ? <Empty /> : null}
 
+        {data?.onDeck?.length ? (
+          <>
+            <div className="live-shelf" id="on-deck">
+              <h2 className="hub-label">On deck</h2>
+              <p>In daily use and headed for promotion. Declared with a <code>showcase:</code> block in the repo&apos;s <code>.launch.yaml</code>; nothing here is probed.</p>
+            </div>
+            {data.onDeck.map((app) => <OnDeck key={app.id} app={app} />)}
+          </>
+        ) : null}
+
         {data?.skipped.length ? (
           <section className="hub-panel live-skipped" aria-labelledby="live-skipped">
             <div className="hub-panel-head is-quiet">
               <NavIcon name="diagnostics" />
-              <h2 id="live-skipped">Says live, not promoted</h2>
+              <h2 id="live-skipped">{data.skipped.every((s) => s.block === "showcase") ? "Showcase not shown" : "Says live, not promoted"}</h2>
               <span className="hub-panel-count">{data.skipped.length}<span className="hub-sr-only"> invalid live {data.skipped.length === 1 ? "block" : "blocks"}</span></span>
-              <span className="hub-panel-meta">mode: live with an invalid live: block · fix it in the repo</span>
+              <span className="hub-panel-meta">invalid live: or showcase: block in .launch.yaml · fix it in the repo</span>
             </div>
             <ul className="hub-panel-body">
               {data.skipped.map((s) => (
                 <li key={s.id}>
-                  <span className="hub-tag is-broken">invalid</span>
+                  <span className="hub-tag is-broken">{s.block === "showcase" ? "invalid showcase" : "invalid live"}</span>
                   <strong>{s.name}</strong>
                   <span>{s.problems.join("; ")}</span>
                 </li>

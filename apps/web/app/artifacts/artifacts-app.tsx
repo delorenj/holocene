@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { HubShell } from "../hub/hub-shell";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { NavIcon } from "../hub/nav-icons";
-import { FEATURED, featuredQuery, pickFeatured, type FeaturedRef } from "./featured";
+import { usePublished } from "../hub/published-video";
+import { FEATURED, type FeaturedRef } from "./featured";
 
 type Category = "all" | "images" | "videos" | "audio" | "pdfs" | "other";
 type Item = { id: string; source: string; project?: string; title: string; description?: string; filenames: string[]; category: Category; originalUrl: string; mediaUrl?: string; posterUrl?: string; date?: string; dateKind: string; gallery?: string; galleryUrl?: string; variant?: string };
@@ -24,16 +25,7 @@ function Preview({ item }: { item: Item }) {
 const sourceTag = (state: { ok: boolean; stale: boolean }) => state.ok ? "is-cleared" : state.stale ? "is-stuck" : "is-broken";
 
 function FeaturedEntry({ entry, zone, retry }: { entry: FeaturedRef; zone: string; retry: number }) {
-  const [state, setState] = useState<{ item?: Item; status: "loading" | "found" | "missing" | "error" }>({ status: "loading" });
-  useEffect(() => {
-    const controller = new AbortController();
-    const params = featuredQuery(entry); params.set("zone", zone);
-    fetch(`/api/artifacts/catalog?${params}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => { if (!response.ok) throw Error(); return response.json() as Promise<ResponseData>; })
-      .then((result) => { const item = pickFeatured(entry, result.items); setState(item ? { item, status: "found" } : { status: result.complete ? "missing" : "error" }); })
-      .catch(() => { if (!controller.signal.aborted) setState({ status: "error" }); });
-    return () => controller.abort();
-  }, [entry, zone, retry]);
+  const state = usePublished<Item>(entry, zone, retry);
   const item = state.item;
   if (!item) return <article className="artifact-featured is-placeholder">
     <p role="status">{state.status === "loading" ? "Loading featured artifact…" : state.status === "missing" ? "This featured artifact is no longer in the catalog." : "Featured artifact unavailable while catalog sources are incomplete."} <a href={entry.originalUrl} target="_blank" rel="noopener noreferrer">Open the published original ↗</a></p>

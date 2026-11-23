@@ -315,3 +315,22 @@
 .hub-root .live-skipped li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font: 400 12px/18px var(--font-mono); overflow-wrap: anywhere; }
 .hub-root .live-skipped li strong { font-family: var(--font-sans); font-size: 14px; }
 .hub-root .live-readonly { font: 400 11px/16px var(--font-mono); color: var(--ink-3); }
+
+/* ---------- on deck: in use, headed for promotion, not live ---------- */
+
+.hub-root .live-shelf { margin-top: 10px; padding-top: 14px; border-top: 2px solid var(--line-strong); }
+.hub-root .live-shelf h2 { margin: 0; }
+.hub-root .live-shelf p { margin: 4px 0 0; max-width: 80ch; color: var(--ink-2); font-size: 13px; line-height: 20px; }
+.hub-root .live-shelf code { padding: 0 4px; border: 1px solid var(--line); background: var(--sunken); font: 400 12px/18px var(--font-mono); color: var(--ink); }
+.hub-root .live-deck-head .live-platform { flex-wrap: wrap; }
+.hub-root .live-deck { border-style: dashed; }
+.hub-root .live-deck-body { padding: 20px 28px 24px; }
+.hub-root .live-deck-name { margin: 0; font: 600 44px/48px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
+.hub-root .live-deck-body .live-tagline,
+.hub-root .live-deck-body .live-offer { margin-left: 0; }
+.hub-root .live-deck-head .live-platform-word { color: var(--ink); }
+.hub-root .live-video { margin-top: 22px; max-width: 960px; }
+@media (max-width: 600px) {
+  .hub-root .live-deck-body { padding: 16px; }
+  .hub-root .live-deck-name { font-size: 34px; line-height: 38px; }
+}
