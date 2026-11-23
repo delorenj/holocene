@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { CopyRef, Glyph, SourceStrip } from "../hub/ui";
 import { HubShell } from "../hub/hub-shell";
+import { NavIcon } from "../hub/nav-icons";
 import type { Signal, Source } from "../hub/types";
 import {
   celebrationKey, chips, confettiPieces, duration, metrics, overallState, promotedBadge, saleTimes, shouldCelebrate, statement,
@@ -132,57 +133,69 @@ function Celebration({ app, onClose }: { app: App; onClose: () => void }) {
   );
 }
 
+const STATE_TAG = { ok: ["is-cleared", "all sources ok"], attention: ["is-stuck", "needs attention"], down: ["is-broken", "source down"] } as const;
+
 function Hero({ app, now }: { app: App; now: number }) {
   const state = overallState(app);
   const times = saleTimes(app);
   const board = app.sources.activity.data?.recent ?? [];
   const cells = metrics(app, now);
+  const [tagClass, tagText] = STATE_TAG[state];
   return (
-    <article className={`live-hero is-${state}`} aria-label={`${app.name}, live`}>
-      {app.firstPromoted ? <span className="live-ribbon">First live app</span> : null}
-      <header className="live-hero-head">
+    <article className={`hub-panel live-hero is-${state}`} aria-label={`${app.name}, live`}>
+      <header className="hub-panel-head live-hero-head">
+        <NavIcon name="storefront" />
         <span className="live-badge">{promotedBadge(app)}</span>
-        <span className="live-platform">
+        <span className={`hub-tag ${tagClass}`}>{tagText}</span>
+        <span className="hub-panel-meta live-platform">
           <span className="live-platform-word">{app.platform}</span>
           <CopyRef value={app.package} />
         </span>
       </header>
 
-      <h2 className="live-name">{app.name}</h2>
-      <p className="live-tagline">{app.tagline}</p>
-      <p className="live-offer">
-        {app.offer ? <span>{app.offer}</span> : null}
-        {app.support ? <a href={`mailto:${app.support}`}>{app.support}</a> : null}
-      </p>
+      <div className="hub-panel-body live-hero-body">
+        {app.firstPromoted ? <span className="live-ribbon">First live app</span> : null}
+        <h2 className="live-name">{app.name}</h2>
+        <p className="live-tagline">{app.tagline}</p>
+        <p className="live-offer">
+          {app.offer ? <span>{app.offer}</span> : null}
+          {app.support ? <a href={`mailto:${app.support}`}>{app.support}</a> : null}
+        </p>
 
-      <dl className="live-metrics">
-        {cells.map((m, i) => (
-          <MetricCell key={m.label} metric={m} extra={i === 0 ? times : undefined} />
-        ))}
-      </dl>
+        <dl className="live-metrics">
+          {cells.map((m, i) => (
+            <MetricCell key={m.label} metric={m} extra={i === 0 ? times : undefined} />
+          ))}
+        </dl>
 
-      <ul className="live-chips" aria-label={`${app.name} sources`}>
-        {chips(app).map((c) => (
-          <HealthChip key={c.key} chip={c} />
-        ))}
-      </ul>
+        <ul className="live-chips" aria-label={`${app.name} sources`}>
+          {chips(app).map((c) => (
+            <HealthChip key={c.key} chip={c} />
+          ))}
+        </ul>
 
-      <nav className="live-actions" aria-label={`${app.name} links`}>
-        <ActionLink href={app.links.store} primary>Open store page</ActionLink>
-        {app.links.checkout ? <ActionLink href={app.links.checkout}>Open checkout link</ActionLink> : null}
-        {app.links.board ? <ActionLink href={app.links.board}>{`Open ${app.board} board`}</ActionLink> : null}
-        {app.links.apk ? <ActionLink href={app.links.apk}>Current APK</ActionLink> : null}
-        <ActionLink href={app.links.release}>latest.json</ActionLink>
-        {app.links.candybar ? <ActionLink href={app.links.candybar}>Key reminder</ActionLink> : null}
-        {app.links.evidence.map((e) => (
-          <ActionLink key={e.href} href={e.href}>{e.label}</ActionLink>
-        ))}
-      </nav>
+        <nav className="live-actions" aria-label={`${app.name} links`}>
+          <ActionLink href={app.links.store} primary>Open store page</ActionLink>
+          {app.links.checkout ? <ActionLink href={app.links.checkout}>Open checkout link</ActionLink> : null}
+          {app.links.board ? <ActionLink href={app.links.board}>{`Open ${app.board} board`}</ActionLink> : null}
+          {app.links.apk ? <ActionLink href={app.links.apk}>Current APK</ActionLink> : null}
+          <ActionLink href={app.links.release}>latest.json</ActionLink>
+          {app.links.candybar ? <ActionLink href={app.links.candybar}>Key reminder</ActionLink> : null}
+          {app.links.evidence.map((e) => (
+            <ActionLink key={e.href} href={e.href}>{e.label}</ActionLink>
+          ))}
+        </nav>
+      </div>
 
       {board.length ? (
-        <section className="live-board" aria-label={`${app.board} board movement`}>
-          <h3 className="hub-label">{app.board} board, recent</h3>
-          <ul>
+        <section className="live-board" aria-labelledby={`live-board-${app.id}`}>
+          <div className="hub-panel-head is-quiet">
+            <NavIcon name="projects" />
+            <h3 id={`live-board-${app.id}`}>{app.board} board, recent</h3>
+            <span className="hub-panel-count">{board.length}<span className="hub-sr-only"> {board.length === 1 ? "ticket" : "tickets"}</span></span>
+            <span className="hub-panel-meta">latest movement · read-only</span>
+          </div>
+          <ul className="hub-panel-body">
             {board.map((t) => (
               <li key={t.key}>
                 <span className="live-ticket-key">{t.key}</span>
@@ -202,13 +215,19 @@ function Hero({ app, now }: { app: App; now: number }) {
 
 function Empty() {
   return (
-    <div className="hub-placeholder live-empty">
-      <span className="hub-label">No live apps yet</span>
-      <p>An app is promoted to this hub when its repo&apos;s <code className="hub-code">.launch.yaml</code> says <code className="hub-code">mode: live</code> with a valid <code className="hub-code">live:</code> block,
-        and the repo is a registered pjangler project. There is no separate list to edit.</p>
-      <p>The lifecycle is <code className="hub-code">launch</code> (racing to a finish line), then <code className="hub-code">live</code> (people can buy it and are using it).
-        Pre-launch and internal projects stay <code className="hub-code">steady</code>.</p>
-    </div>
+    <section className="hub-panel live-empty" aria-labelledby="live-empty">
+      <div className="hub-panel-head is-quiet">
+        <NavIcon name="live" />
+        <h2 id="live-empty">No live apps yet</h2>
+        <span className="hub-panel-meta">promotion is declared in each repo</span>
+      </div>
+      <div className="hub-panel-body">
+        <p>An app is promoted to this hub when its repo&apos;s <code className="hub-code">.launch.yaml</code> says <code className="hub-code">mode: live</code> with a valid <code className="hub-code">live:</code> block,
+          and the repo is a registered pjangler project. There is no separate list to edit.</p>
+        <p>The lifecycle is <code className="hub-code">launch</code> (racing to a finish line), then <code className="hub-code">live</code> (people can buy it and are using it).
+          Pre-launch and internal projects stay <code className="hub-code">steady</code>.</p>
+      </div>
+    </section>
   );
 }
 
@@ -266,11 +285,17 @@ export function LiveApp() {
         {data && !data.apps.length && !data.source.down ? <Empty /> : null}
 
         {data?.skipped.length ? (
-          <section className="live-skipped" aria-label="Invalid live blocks">
-            <h3 className="hub-label">Says live, not promoted</h3>
-            <ul>
+          <section className="hub-panel live-skipped" aria-labelledby="live-skipped">
+            <div className="hub-panel-head is-quiet">
+              <NavIcon name="diagnostics" />
+              <h2 id="live-skipped">Says live, not promoted</h2>
+              <span className="hub-panel-count">{data.skipped.length}<span className="hub-sr-only"> invalid live {data.skipped.length === 1 ? "block" : "blocks"}</span></span>
+              <span className="hub-panel-meta">mode: live with an invalid live: block · fix it in the repo</span>
+            </div>
+            <ul className="hub-panel-body">
               {data.skipped.map((s) => (
                 <li key={s.id}>
+                  <span className="hub-tag is-broken">invalid</span>
                   <strong>{s.name}</strong>
                   <span>{s.problems.join("; ")}</span>
                 </li>

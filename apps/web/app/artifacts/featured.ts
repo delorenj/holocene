@@ -1,11 +1,11 @@
 /** Pinned catalog artifacts, matched by their published original URL so a republish to the
  * same name (same v.delo.sh token, or same MinIO path) keeps its place without an edit here.
  * `search` narrows the catalog query; it must appear in the artifact's title or filenames. */
-export type FeaturedRef = { originalUrl: string; search: string; type: "all" | "images" | "videos" | "audio" | "pdfs" | "other"; note?: string };
+export type FeaturedRef = { originalUrl: string; search: string; type: "all" | "images" | "videos" | "audio" | "pdfs" | "other"; title?: string; note?: string };
 
 export const FEATURED: FeaturedRef[] = [
-  { originalUrl: "https://v.delo.sh/0803508f764df360/holocene-auto", search: "holocene-auto", type: "videos",
-    note: "Holocene Auto on the Civic: Agent Pad roster and Record button, filmed in the car." }
+  { originalUrl: "https://v.delo.sh/01848684aa8a9d02/holocene-auto-agent-pad", search: "holocene-auto-agent-pad", type: "videos",
+    title: "Holocene Auto", note: "Holocene Auto in the car: the Agent Pad roster and Record for Holocene, filmed on the dash." }
 ];
 
 export function featuredQuery(ref: FeaturedRef) {

@@ -40,13 +40,13 @@ function FeaturedEntry({ entry, zone, retry }: { entry: FeaturedRef; zone: strin
   </article>;
   return <article className="artifact-featured">
     <div className="artifact-featured-media">{item.category === "videos" && item.mediaUrl
-      ? <video controls playsInline preload={item.posterUrl ? "none" : "metadata"} poster={item.posterUrl} src={item.mediaUrl} aria-label={item.title} />
+      ? <video controls playsInline preload={item.posterUrl ? "none" : "metadata"} poster={item.posterUrl} src={item.mediaUrl} aria-label={entry.title ?? item.title} />
       : <Preview item={item} />}</div>
     <div className="artifact-featured-body">
       <p className="hub-chips"><span className="hub-tag">{item.category}</span><span className="hub-chip">{item.source}{item.project ? ` · ${item.project}` : ""}</span></p>
-      <h3>{item.title}</h3>
+      <h3>{entry.title ?? item.title}</h3>
       {entry.note ? <p>{entry.note}</p> : null}
-      {item.description && item.description !== entry.note && item.description !== item.title ? <p>{item.description}</p> : null}
+      {item.description && item.description !== entry.note && item.description.toLowerCase() !== (entry.title ?? item.title).toLowerCase() && item.description !== item.title ? <p>{item.description}</p> : null}
       <p className="artifact-date">{item.date ? `${item.dateKind === "published" ? "Published" : "Modified"} ${new Date(item.date).toLocaleString(undefined, { timeZone: zone })}` : "Date unknown"}</p>
       <div className="artifact-links"><a href={item.originalUrl} target="_blank" rel="noopener noreferrer">Open share page ↗</a></div>
     </div>

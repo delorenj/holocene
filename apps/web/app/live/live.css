@@ -43,25 +43,25 @@
 
 /* ---------- the hero card ---------- */
 
-.hub-root .live-hero {
+/* Every block on this page is a shared .hub-panel (../hub/hub.css); the hero is the loud one. */
+.hub-root .live-body .hub-panel { margin: 0; }
+.hub-root .live-hero { box-shadow: 6px 6px 0 var(--shadow); }
+.hub-root .live-hero.is-attention { box-shadow: 6px 6px 0 var(--live-warn); }
+.hub-root .live-hero.is-down { box-shadow: 6px 6px 0 var(--broken); }
+.hub-root .live-hero-body {
   position: relative;
   overflow: hidden;
-  padding: 26px 28px 22px;
-  background: var(--surface);
-  border: 3px solid var(--line-strong);
-  box-shadow: 8px 8px 0 var(--shadow);
+  padding: 22px 28px 24px;
   /* ruled ledger stock, with the red margin rule down the left */
   background-image:
     linear-gradient(to right, transparent 0 22px, var(--margin) 22px 23px, transparent 23px),
     repeating-linear-gradient(to bottom, transparent 0 27px, var(--rule) 27px 28px);
 }
-.hub-root .live-hero > * { position: relative; }
-.hub-root .live-hero.is-attention { box-shadow: 8px 8px 0 var(--live-warn); }
-.hub-root .live-hero.is-down { box-shadow: 8px 8px 0 var(--broken); }
+.hub-root .live-hero-body > * { position: relative; }
 
-.hub-root .live-ribbon {
+.hub-root .live-hero-body > .live-ribbon {
   position: absolute;
-  top: 30px;
+  top: 24px;
   right: -58px;
   width: 230px;
   padding: 3px 0;
@@ -75,14 +75,6 @@
   border-block: 1px solid var(--line-strong);
 }
 
-.hub-root .live-hero-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding-left: 18px;
-  padding-right: 120px;
-}
 .hub-root .live-badge {
   padding: 3px 10px;
   background: var(--pop);
@@ -96,17 +88,17 @@
   align-items: center;
   gap: 8px;
   font: 400 12px/16px var(--font-mono);
-  color: var(--ink-2);
 }
 .hub-root .live-platform-word {
   padding: 0 6px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid currentColor;
+  color: var(--h-ink);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .hub-root .live-name {
-  margin: 14px 0 0 18px;
+  margin: 4px 120px 0 18px;
   font: 600 64px/66px var(--font-display);
   letter-spacing: -0.025em;
   color: var(--ink);
@@ -172,12 +164,13 @@
   .hub-root .live-metric:nth-child(n + 3) { border-top: 2px solid var(--line-strong); }
 }
 @media (max-width: 600px) {
-  .hub-root .live-hero { padding: 20px 16px 16px; }
-  .hub-root .live-hero-head { padding-right: 0; }
+  .hub-root .live-hero-body { padding: 18px 16px 16px; }
+  .hub-root .live-name { margin-right: 72px; }
+  .hub-root .live-platform { margin-left: 0; flex-basis: 100%; }
   .hub-root .live-name { font-size: 46px; line-height: 50px; }
   .hub-root .live-tagline { font-size: 18px; line-height: 26px; }
   .hub-root .live-metric-value { font-size: 36px; line-height: 40px; }
-  .hub-root .live-ribbon { right: -64px; top: 26px; }
+  .hub-root .live-hero-body > .live-ribbon { right: -70px; top: 18px; }
 }
 
 /* ---------- source chips ---------- */
@@ -238,8 +231,10 @@
 
 /* ---------- board movement ---------- */
 
-.hub-root .live-board { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line-strong); }
-.hub-root .live-board ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.hub-root .live-board { border-top: 2px solid var(--line-strong); }
+.hub-root .live-board .hub-panel-head h3,
+.hub-root .live-skipped .hub-panel-head h2 { margin: 0; font: 650 15px/22px var(--font-sans); color: inherit; }
+.hub-root .live-board ul.hub-panel-body { margin: 0; padding: 8px 16px 12px; list-style: none; }
 .hub-root .live-board li {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) auto auto;
@@ -315,11 +310,8 @@
 /* ---------- empty, skipped, footnote ---------- */
 
 .hub-root .live-empty p { max-width: 70ch; }
-.hub-root .live-skipped {
-  padding: 12px 14px;
-  border: 2px dashed var(--live-warn);
-  background: var(--live-warn-soft);
-}
-.hub-root .live-skipped ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
-.hub-root .live-skipped li { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 12px/18px var(--font-mono); }
+.hub-root .live-skipped { border-style: dashed; border-color: var(--live-warn); }
+.hub-root .live-skipped ul.hub-panel-body { margin: 0; list-style: none; display: grid; gap: 8px; }
+.hub-root .live-skipped li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font: 400 12px/18px var(--font-mono); overflow-wrap: anywhere; }
+.hub-root .live-skipped li strong { font-family: var(--font-sans); font-size: 14px; }
 .hub-root .live-readonly { font: 400 11px/16px var(--font-mono); color: var(--ink-3); }
