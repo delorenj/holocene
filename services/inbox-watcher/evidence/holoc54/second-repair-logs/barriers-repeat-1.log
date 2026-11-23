@@ -1,0 +1,12 @@
+test_chunk_publisher_before_upload_during_upload_and_pre_fact (test_voice_publication.PublicationRaces.test_chunk_publisher_before_upload_during_upload_and_pre_fact) ... ok
+test_chunk_upload_overlaps_next_render_and_stale_removal_failure_is_fail_closed (test_voice_publication.PublicationRaces.test_chunk_upload_overlaps_next_render_and_stale_removal_failure_is_fail_closed) ... ok
+test_courtesy_and_progress_publication_revalidate_owner (test_voice_publication.PublicationRaces.test_courtesy_and_progress_publication_revalidate_owner) ... ok
+test_partial_identity_conflict_refuses_synth_but_real_reset_reselects (test_voice_publication.PublicationRaces.test_partial_identity_conflict_refuses_synth_but_real_reset_reselects) ... ok
+test_real_chunk_pipeline_conflict_after_first_announcement_fails_closed (test_voice_publication.PublicationRaces.test_real_chunk_pipeline_conflict_after_first_announcement_fails_closed) ... ok
+test_single_reply_post_render_upload_and_precommit_barriers (test_voice_publication.PublicationRaces.test_single_reply_post_render_upload_and_precommit_barriers) ... ok
+test_successful_commit_has_one_owner_for_fact_and_cursors (test_voice_publication.PublicationRaces.test_successful_commit_has_one_owner_for_fact_and_cursors) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.184s
+
+OK

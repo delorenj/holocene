@@ -1,0 +1,28 @@
+{
+  "second_voice": null,
+  "second_error": "voice_round_changed",
+  "first_voice": "carlin",
+  "voice_lock": {
+    "voice": "carlin",
+    "requested": "carlin",
+    "source": "inherited",
+    "profile": "holocene-pm",
+    "fallback": null,
+    "configured_voice": "carlin",
+    "configured_source": "inherited",
+    "availability": "available",
+    "effective_voice": "carlin",
+    "agent": "tile-a",
+    "identity": [
+      "cmd",
+      "tile-a"
+    ],
+    "stamp": "one",
+    "lock_id": "2bb80f81-3c17-4202-92f0-41112281d33e",
+    "rendered": true
+  },
+  "voiced_n": 1,
+  "previously_announced": {
+    "1": "fixture-first"
+  }
+}

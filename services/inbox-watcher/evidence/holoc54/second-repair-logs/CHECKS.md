@@ -27,7 +27,7 @@ Commands below use the prefix above, with full paths relative to the workdir.
 * `.../run_safe_suites.py test_inbox_watcher` → exit 0; **220 OK**. `watcher-checkpoint.log`.
 * `.../run_safe_suites.py test_converse test_converse_pipeline` → exit 0; **127 OK**. `converse-checkpoint.log`. Broad watcher and converse/pipeline run in separate processes to avoid shared emit-log contamination.
 * `.../run_safe_suites.py test_voice_publication` → **7 OK** in each of three fresh guarded repeat processes, exits 0. `barriers-repeat-{1,2,3}.log`.
-* `pnpm --filter @holocene/api typecheck` and `pnpm --filter @holocene/web typecheck` → both exit 0. `{api,web}-typecheck-checkpoint.log`. Only the pre-existing local npm interpolation warning appears (no token value).
+* `pnpm --filter @holocene/api typecheck` and `pnpm --filter @holocene/web typecheck` → both exit 0. `{api,web}-typecheck-checkpoint.log` (only trailing blank lines trimmed for `git diff --check`). Only the pre-existing local npm interpolation warning appears (no token value).
 * With `:services/inbox-watcher` appended to guarded `PYTHONPATH`, unchanged `../review-3943b21/quality/partial_identity_probe.py` → exit 0, `second_error=voice_round_changed`, `second_voice=null`, original carlin identity and announced cursor retained. `partial-probe-final.log`.
 * Same environment, unchanged `../review-3943b21/spec/post-render-race.py` → exit 1 from newly raised `StageError: reply round changed before publication`; the old reproducer does not catch the expected refusal. `post-render-probe-final.log`. Permanent barrier tests assert no upload or fact at this boundary.
 * `git diff --check` → exit 0 before checkpoint.
@@ -40,7 +40,7 @@ Commands below use the prefix above, with full paths relative to the workdir.
 2905482015373b4175e925a6d3843610f88bf80d8c20327040cb16f37460ec96  services/inbox-watcher/test_inbox_watcher.py
 ```
 
-The seven new methods contain 78 adversarial parameter subcases and two success cases. They verify post-render/pre-upload, upload-in-flight and precommit/pre-fact barriers, exact-object cleanup, no mutation of newer cursors, fail-closed behavior when removal fails, real first-chunk announcement followed by responder conflict, fresh-round reselection, and concurrent second render during first upload. Progress/hold cover pending-to-final promotion too.
+The seven new methods contain 78 scenario cases, including two success cases. They verify post-render/pre-upload, upload-in-flight and precommit/pre-fact barriers, exact-object cleanup, no mutation of newer cursors, fail-closed behavior when removal fails, real first-chunk announcement followed by responder conflict, fresh-round reselection, and concurrent second render during first upload. Progress/hold cover pending-to-final promotion too.
 
 ## Nonpassing intermediate runs retained
 
