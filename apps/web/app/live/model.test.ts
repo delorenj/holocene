@@ -89,12 +89,26 @@ test("keys owed: clear is calm, due shows the countdown, overdue shows the overr
   assert.deepEqual([clear.value, clear.tone, clear.note], ["0", "good", "all clear · 24 h promise"]);
   const due = keysMetric(f({ due: 2, urgency: "owed", soonestDueAt: new Date(NOW + 29 * 60_000).toISOString() }), NOW);
   assert.deepEqual([due.value, due.tone, due.note], ["2", "warn", "next due in 29m"]);
+  const boundary = f({ due: 1, urgency: "owed", soonestDueAt: new Date(NOW).toISOString() });
+  assert.equal(keysMetric(boundary, NOW).note, "next due in 0s");
+  assert.match(keysMetric(boundary, NOW + 1000).note ?? "", /refresh snapshot/);
   const late = keysMetric(f({ due: 1, overdue: 1, urgency: "overdue", worstOverdueSeconds: 3 * 3600 }), NOW);
   assert.deepEqual([late.value, late.tone, late.note], ["2", "bad", "1 overdue by 3h"]);
-  const blocked = keysMetric(f({ blocked: 1, blockedReasons: ["no_email"], urgency: "owed" }), NOW);
+  const blocked = keysMetric(f({ blocked: 1, blockedReasons: ["refunded"], urgency: "owed" }), NOW);
   assert.equal(blocked.tone, "warn");
-  assert.match(blocked.note ?? "", /no_email/);
-  assert.equal(keysMetric(app({}, { fulfilment: src(undefined, { status: "down", detail: "outstanding failed" }) }), NOW).tone, "muted");
+  assert.match(blocked.note ?? "", /refunded/);
+  const unknown = keysMetric(f({ other: 1, due: 2, urgency: "unknown" }), NOW);
+  assert.deepEqual([unknown.value, unknown.tone], ["–", "muted"]);
+  assert.match(unknown.note ?? "", /totals cannot be trusted/);
+  const stale = f({ due: 1, urgency: "owed" });
+  stale.sources.fulfilment.ageSeconds = 91;
+  assert.deepEqual([keysMetric(stale, NOW).value, keysMetric(stale, NOW).note], ["–", "snapshot stale; obligations unknown"]);
+  assert.ok(!statement(payload([stale]), undefined, NOW).includes("key owed"));
+  const failed = f({ due: 1, urgency: "owed" });
+  failed.sources.fulfilment.status = "down";
+  assert.equal(keysMetric(failed, NOW).value, "–");
+  assert.ok(!statement(payload([failed]), undefined, NOW).includes("key owed"));
+  assert.equal(keysMetric(app({}, { fulfilment: src(undefined, { status: "down", detail: "snapshot failed" }) }), NOW).tone, "muted");
 });
 
 test("version and storefront metrics read the release and the page", () => {
@@ -127,6 +141,9 @@ test("the page sentence: loading, API down, empty, invalid, healthy, owing", () 
   assert.equal(statement(payload([app()]), undefined, NOW), "1 app live. Everything reads well; no keys owed.");
   const owing = app({}, { fulfilment: src({ due: 1, overdue: 0, clear: 0, blocked: 0, other: 0, blockedReasons: [], urgency: "owed", soonestDueAt: new Date(NOW + 600_000).toISOString() }) });
   assert.equal(statement(payload([owing]), undefined, NOW), "1 app live. Demo: 1 key owed, next due in 10m.");
+  const unknown = app({}, { fulfilment: src({ due: 1, overdue: 0, clear: 0, blocked: 0, other: 1, blockedReasons: [], urgency: "unknown" }, { status: "warn" }) });
+  assert.match(statement(payload([unknown]), undefined, NOW), /unknown order states/);
+  assert.ok(!statement(payload([unknown]), undefined, NOW).includes("1 key owed"));
 });
 
 test("the celebration is for the first live app, once per browser", () => {

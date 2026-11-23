@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import Fastify from "fastify";
 import type { ProjectRecord } from "./hub-model.js";
 import { createLiveHub, registerLiveRoutes, type LiveDeps, type LivePayload } from "./live.js";
 
 // The hub's IO, with the world replaced by fakes: the same code path the live service runs, no network.
+
+const SNAPSHOT = ["uv", "run", "scripts/licensing/issuer.py", "--stripe-mode", "live", "--ledger", "~/.local/share/earshot/licenses/ledger.json", "--approved-catalog", "~/.local/share/earshot/licenses/approved-catalog.json", "--stripe-key-ref", "op://Vault/restricted/credential", "snapshot"];
+const envelope = (orders: Record<string, string> = {}) => JSON.stringify({ status: "ok", orders });
 
 const LAUNCH = (extra = "") => `
 mode: live
@@ -26,7 +32,7 @@ live:
   fulfilment:
     kind: manual-license-key
     promise_hours: 24
-    outstanding_argv: ["uv", "run", "scripts/issuer.py", "~/catalog.json", "outstanding"]
+    outstanding_argv: [${SNAPSHOT.map((a) => JSON.stringify(a)).join(", ")}]
     reminder_candybar: earshot-paid-key-reminder
 ${extra}`;
 
@@ -97,7 +103,7 @@ function setup(over: {
       if (custom instanceof Error) throw custom;
       if (custom) return custom;
       if (file === "op") return { stdout: SECRET };
-      return { stdout: "{}\n" };
+      return { stdout: envelope() };
     },
     now: () => clock.t,
     readText: (p) => files[p],
@@ -113,6 +119,7 @@ function setup(over: {
     home: "/home/me",
     today: () => "2026-11-20",
     opBin: "op",
+    fulfilmentKeyRef: "op://Vault/restricted/credential",
     waitMs: over.waitMs ?? 2_000
   };
   return { hub: createLiveHub(deps), calls, deps, clock };
@@ -181,21 +188,33 @@ test("Stripe is only ever read: GET, with the key from op at runtime, and the ke
   assert.ok(!out.includes("buyer@example.com") && !out.includes("Pat") && !out.includes("cs_live_1") && !out.includes("pi_1"));
 });
 
-test("fulfilment runs the declared argv in the repo root with TMPDIR=/tmp and ~/ expanded", async () => {
-  const h = setup({
-    run: (file) => (file === "uv" ? { stdout: JSON.stringify({ cs_1: "paid_unissued:due_in=1800s", cs_2: "paid_unissued:overdue_by=60s", cs_3: "clear:pending" }) } : undefined) as never
-  });
+test("fulfilment executes only the approved snapshot in the repo root and counts issued-undelivered", async () => {
+  const h = setup({ run: (file) => (file === "uv" ? { stdout: envelope({ cs_live_1: "issued_undelivered:due_in=1800s", cs_live_2: "issued_undelivered:overdue_by=60s", cs_live_3: "delivered" }) } : undefined) as never });
   const { apps } = await read(h);
   const call = h.calls.run.find((r) => r.file === "uv")!;
-  assert.deepEqual(call.args, ["run", "scripts/issuer.py", "/home/me/catalog.json", "outstanding"]);
+  assert.deepEqual(call.args, SNAPSHOT.slice(1).map((a) => a.startsWith("~/") ? `/home/me/${a.slice(2)}` : a));
   assert.equal(call.cwd, "/repos/earshot");
-  assert.equal(call.env, "/tmp");
+  assert.notEqual(call.env, "/tmp");
   const f = apps[0].sources.fulfilment.data!;
-  assert.equal(f.urgency, "overdue");
-  assert.equal(f.due, 1);
-  assert.equal(f.overdue, 1);
+  assert.deepEqual([f.due, f.overdue, f.clear, f.urgency], [1, 1, 1, "overdue"]);
   assert.equal(f.soonestDueAt, new Date(T0 + 1_800_000).toISOString());
 });
+
+test("legacy and injected declarations are unavailable without ever invoking the issuer", async () => {
+  for (const candidate of [
+    SNAPSHOT.slice(0, -1).concat("outstanding"),
+    SNAPSHOT.concat("issue"),
+    ["uv", "run", "--with", "danger", ...SNAPSHOT.slice(2)],
+    SNAPSHOT.map((s) => s === "op://Vault/restricted/credential" ? "op://Vault/checkout/credential" : s)
+  ]) {
+    const h = setup({ files: { "/repos/earshot/.launch.yaml": LAUNCH().replace(/outstanding_argv: \[.*\]/, `outstanding_argv: [${candidate.map((s) => JSON.stringify(s)).join(", ")}]`) } });
+    const p = await read(h);
+    assert.equal(p.apps[0].sources.fulfilment.status, "unavailable");
+    assert.equal(p.apps[0].sources.fulfilment.data, undefined);
+    assert.equal(h.calls.run.filter((c) => c.file === "uv").length, 0);
+  }
+});
+
 
 test("invalid live blocks are listed as skipped with the reasons, not silently dropped", async () => {
   const h = setup({
@@ -351,17 +370,23 @@ test("sales: more than one page is paged through with starting_after, GET only",
   assert.ok(h.calls.fetch.some((c) => c.url.includes("starting_after=b")));
 });
 
-test("fulfilment: a failing or garbled issuer is a down chip with a scrubbed reason; the request still answers", async () => {
-  const failing = await read(setup({ run: (file) => (file === "uv" ? Object.assign(new Error("boom"), { killed: true }) : (undefined as never)) }));
+test("fulfilment: failure or malformed snapshot is unknown without leaking provider details", async () => {
+  const secret = "buyer@example.com cs_live_a1B2c3D4e5F6g7H8i9 op://Vault/restricted/credential";
+  const failing = await read(setup({ run: (file) => (file === "uv" ? Object.assign(new Error(secret), { stderr: secret, killed: true }) : undefined) as never }));
   assert.equal(failing.apps[0].sources.fulfilment.status, "down");
-  assert.match(failing.apps[0].sources.fulfilment.detail ?? "", /timed out/);
-
-  const garbled = await read(setup({ run: (file) => (file === "uv" ? { stdout: "not json" } : (undefined as never)) }));
-  assert.equal(garbled.apps[0].sources.fulfilment.status, "down");
-
-  const blocked = await read(setup({ run: (file) => (file === "uv" ? { stdout: JSON.stringify({ cs_1: "blocked:no_email" }) } : (undefined as never)) }));
-  assert.equal(blocked.apps[0].sources.fulfilment.status, "warn");
-  assert.equal(blocked.apps[0].sources.fulfilment.data?.urgency, "owed");
+  assert.equal(failing.apps[0].sources.fulfilment.data, undefined);
+  assert.ok(!JSON.stringify(failing).includes(secret));
+  for (const stdout of ["not json", "{}", envelope({ cs_live_1: "clear:pending" }) + "\n" + secret, JSON.stringify({ status: "error", orders: {} })]) {
+    const h = setup({ run: (file) => (file === "uv" ? { stdout } : undefined) as never });
+    const p = await read(h);
+    assert.equal(p.apps[0].sources.fulfilment.status, "down");
+    assert.equal(p.apps[0].sources.fulfilment.data, undefined);
+    assert.ok(!JSON.stringify(p).includes(secret));
+    assert.equal(p.apps[0].sources.release.status, "ok");
+  }
+  const unknown = await read(setup({ run: (file) => (file === "uv" ? { stdout: envelope({ cs_live_1: "future_state", cs_live_2: "blocked:refunded" }) } : undefined) as never }));
+  assert.equal(unknown.apps[0].sources.fulfilment.status, "warn");
+  assert.deepEqual([unknown.apps[0].sources.fulfilment.data?.other, unknown.apps[0].sources.fulfilment.data?.blocked], [1, 1]);
 });
 
 test("reminder: unregistered is down, disabled or last-run-failed is a warning, Candybar down is down", async () => {
@@ -439,6 +464,45 @@ test("a cold source that is slow answers `pending` instead of hanging the reques
 });
 
 // ---------------------------------------------------------------- the route
+
+test("route snapshot consumer invokes no issue, sign, email, or notify action and hides purchase IDs", async () => {
+  const h = setup({ run: (file, args) => {
+    if (file !== "uv") return undefined as never;
+    assert.equal(args.at(-1), "snapshot");
+    assert.equal(args.includes("outstanding"), false);
+    assert.equal(args.some((a) => /^(issue|sign|email|notify|mark-delivered|resend)$/.test(a)), false);
+    return { stdout: envelope({ cs_live_secret123: "issued_undelivered:due_in=0s", cs_live_delivered123: "delivered" }) };
+  } });
+  const app = Fastify();
+  registerLiveRoutes(app, h.hub);
+  const response = await app.inject({ method: "GET", url: "/api/modules/live/apps" });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["cache-control"], "no-store");
+  const view = (response.json() as LivePayload).apps[0].sources.fulfilment;
+  assert.deepEqual([view.data?.due, view.data?.clear, view.data?.urgency], [1, 1, "owed"]);
+  assert.ok(!/cs_live_secret123|cs_live_delivered123|op:\/\//.test(response.body));
+  await app.close();
+});
+
+test("private fixture ledger bytes, mode and timestamps survive the API read", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "holoc58-ledger-"));
+  const file = join(dir, "ledger.json");
+  writeFileSync(file, '{"fixture":"unchanged"}', { mode: 0o600 });
+  const before = statSync(file);
+  const h = setup({ run: (exe, args) => {
+    if (exe !== "uv") return undefined as never;
+    assert.equal(args.at(-1), "snapshot");
+    assert.equal(readFileSync(file, "utf8"), '{"fixture":"unchanged"}');
+    return { stdout: envelope({ cs_live_1: "issued_undelivered:due_in=0s" }) };
+  } });
+  const app = Fastify();
+  registerLiveRoutes(app, h.hub);
+  assert.equal((await app.inject({ method: "GET", url: "/api/modules/live/apps" })).statusCode, 200);
+  assert.equal(readFileSync(file, "utf8"), '{"fixture":"unchanged"}');
+  const after = statSync(file);
+  assert.deepEqual([after.mode, after.mtimeMs, after.ctimeMs], [before.mode, before.mtimeMs, before.ctimeMs]);
+  await app.close();
+});
 
 test("GET /api/modules/live/apps serves the payload uncached, and ?force=1 refreshes", async () => {
   const h = setup();

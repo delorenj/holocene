@@ -15,7 +15,8 @@ import {
   refundRow,
   safeRelPath,
   scrubSecrets,
-  summarizeOutstanding,
+  snapshotArgv,
+  summarizeSnapshot,
   summarizeSales
 } from "./live-model.js";
 
@@ -249,49 +250,57 @@ test("buyer emails and Stripe object ids are scrubbed from error text, plain wor
 
 // ---------------------------------------------------------------- fulfilment
 
-test("outstanding is folded into due, overdue, clear and blocked counts with the urgency deadlines", () => {
+test("snapshot counts payment-time obligations until delivery, holds separately, and omits unpaid", () => {
   const now = Date.parse("2026-11-20T12:00:00Z");
-  const f = summarizeOutstanding(
-    {
-      cs_live_a: "paid_unissued:due_in=3600s",
-      cs_live_b: "paid_unissued:due_in=600s",
-      cs_live_c: "paid_unissued:overdue_by=120s",
-      cs_live_d: "paid_unissued:overdue_by=7200s",
-      cs_live_e: "clear:pending",
-      cs_live_f: "blocked:email bounced for pat@example.com",
-      cs_live_g: "something-new",
-      cs_live_h: "not_issuable:not_paid",
-      cs_live_i: "not_issuable:wrong_session_amount"
-    },
-    now,
-    24
-  )!;
-  assert.equal(f.due, 2);
-  assert.equal(f.overdue, 2);
-  assert.equal(f.clear, 1);
-  assert.equal(f.blocked, 2);
-  assert.equal(f.unpaid, 1);
-  assert.equal(f.other, 1);
-  assert.equal(f.soonestDueAt, "2026-11-20T12:10:00.000Z");
+  const f = summarizeSnapshot({ status: "ok", orders: {
+    cs_live_a: "paid_unissued:due_in=3600s",
+    cs_live_b: "issued_undelivered:due_in=0s",
+    cs_live_c: "paid_unissued:overdue_by=1s",
+    cs_live_d: "issued_undelivered:overdue_by=7200s",
+    cs_live_e: "delivered",
+    cs_live_f: "blocked:refunded",
+    cs_live_g: "blocked:disputed",
+    cs_live_h: "blocked:review_required",
+    cs_live_i: "new_provider_state"
+  } }, now, 24)!;
+  assert.deepEqual([f.due, f.overdue, f.clear, f.blocked, f.unpaid, f.other], [2, 2, 1, 3, 0, 1]);
+  assert.equal(f.soonestDueAt, new Date(now).toISOString());
   assert.equal(f.worstOverdueSeconds, 7200);
-  assert.deepEqual(f.blockedReasons, ["email", "wrong_session_amount"]);
+  assert.deepEqual(f.blockedReasons, ["refunded", "disputed", "review_required"]);
   assert.equal(f.promiseHours, 24);
-  assert.equal(fulfilmentUrgency(f), "overdue");
-  // Stripe session ids and the free text after the reason code are never returned.
-  const out = JSON.stringify(f);
-  assert.ok(!out.includes("cs_live") && !out.includes("pat@example.com"));
+  assert.equal(fulfilmentUrgency(f), "unknown");
+  assert.ok(!JSON.stringify(f).includes("cs_live"));
 });
 
-test("urgency: nothing owed is clear, due or blocked is owed, overdue wins", () => {
+test("snapshot is verified empty only for an exact successful envelope; malformed reads are unknown", () => {
   const now = Date.now();
-  assert.equal(fulfilmentUrgency(summarizeOutstanding({}, now)!), "clear");
-  assert.equal(fulfilmentUrgency(summarizeOutstanding({ a: "clear:pending" }, now)!), "clear");
-  assert.equal(fulfilmentUrgency(summarizeOutstanding({ a: "paid_unissued:due_in=5s" }, now)!), "owed");
-  assert.equal(fulfilmentUrgency(summarizeOutstanding({ a: "blocked:x" }, now)!), "owed");
-  assert.equal(fulfilmentUrgency(summarizeOutstanding({ a: "paid_unissued:due_in=5s", b: "paid_unissued:overdue_by=1s" }, now)!), "overdue");
+  assert.equal(fulfilmentUrgency(summarizeSnapshot({ status: "ok", orders: {} }, now)!), "clear");
+  assert.equal(fulfilmentUrgency(summarizeSnapshot({ status: "ok", orders: { cs_live_a: "issued_undelivered:due_in=0s" } }, now)!), "owed");
+  assert.equal(fulfilmentUrgency(summarizeSnapshot({ status: "ok", orders: { cs_live_a: "issued_undelivered:overdue_by=1s" } }, now)!), "overdue");
+  assert.equal(fulfilmentUrgency(summarizeSnapshot({ status: "ok", orders: { cs_live_a: "blocked:disputed" } }, now)!), "owed");
   assert.equal(fulfilmentUrgency(undefined), "unknown");
-  assert.equal(summarizeOutstanding("nope", now), undefined);
-  assert.equal(summarizeOutstanding([1], now), undefined);
+  const overflow = summarizeSnapshot({ status: "ok", orders: { cs_live_a: `issued_undelivered:due_in=${Number.MAX_SAFE_INTEGER}s` } }, now);
+  assert.deepEqual([overflow?.other, fulfilmentUrgency(overflow)], [1, "unknown"]);
+  for (const bad of ["nope", [1], {}, { status: "error", orders: {} }, { status: "ok" }, { status: "ok", orders: [] }, { status: "ok", orders: {}, email: "buyer@example.com" }, { status: "ok", orders: { "buyer@example.com": "delivered" } }]) {
+    assert.equal(summarizeSnapshot(bad, now), undefined);
+  }
+});
+
+test("only the exact read-only snapshot argv with independently approved restricted key is executable", () => {
+  const approved = "op://Vault/restricted/credential";
+  const checkout = "op://Vault/checkout/credential";
+  const argv = ["uv", "run", "scripts/licensing/issuer.py", "--stripe-mode", "live", "--ledger", "~/.local/share/earshot/licenses/ledger.json", "--approved-catalog", "~/.local/share/earshot/licenses/approved-catalog.json", "--stripe-key-ref", approved, "snapshot"];
+  assert.deepEqual(snapshotArgv(argv, "/home/me", approved, checkout), argv.map((x) => x.startsWith("~/") ? `/home/me/${x.slice(2)}` : x));
+  assert.equal(snapshotArgv(argv, "/home/me", undefined, checkout), undefined);
+  assert.equal(snapshotArgv(argv, "/home/me", checkout, checkout), undefined);
+  for (const changed of [
+    argv.slice(0, -1).concat("outstanding"), argv.concat("issue"),
+    ["python", ...argv.slice(1)], ["uv", "run", "--with", "evil", ...argv.slice(2)],
+    argv.map((x) => x === "live" ? "test" : x),
+    argv.map((x) => x === approved ? checkout : x),
+    argv.map((x) => x === "scripts/licensing/issuer.py" ? "scripts/licensing/issue.py" : x),
+    argv.map((x) => x === "~/.local/share/earshot/licenses/ledger.json" ? "~/fixture.json" : x)
+  ]) assert.equal(snapshotArgv(changed, "/home/me", approved, checkout), undefined);
 });
 
 test("argv expands a leading ~/ and nothing else", () => {

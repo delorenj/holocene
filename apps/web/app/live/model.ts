@@ -93,12 +93,19 @@ export function saleTimes(app: LiveApp): string | undefined {
 /** Keys owed to buyers: the promise is a time, so the metric says how close or how late it is. */
 export function keysMetric(app: LiveApp, nowMs: number): Metric {
   const s = app.sources.fulfilment;
+  if (s.status === "down" || s.status === "unavailable" || s.status === "pending" || (s.ageSeconds !== undefined && s.ageSeconds > s.maxSeconds)) {
+    return { label: "Keys owed", value: "–", note: s.ageSeconds !== undefined && s.ageSeconds > s.maxSeconds ? "snapshot stale; obligations unknown" : s.detail ?? "snapshot unavailable", tone: "muted" };
+  }
   const f = s.data;
-  if (!f) return { label: "Keys owed", value: "–", note: s.detail ?? (s.status === "pending" ? "asking the issuer…" : "no data"), tone: "muted" };
+  if (!f) return { label: "Keys owed", value: "–", note: s.detail ?? "snapshot has no data", tone: "muted" };
+  if (f.other > 0) return { label: "Keys owed", value: "–", note: `${f.other} unknown order state${f.other === 1 ? "" : "s"}; totals cannot be trusted`, tone: "muted" };
   const owed = f.due + f.overdue;
   const promise = f.promiseHours ? `${f.promiseHours} h promise` : undefined;
   if (f.overdue > 0) {
     return { label: "Keys owed", value: String(owed), note: `${f.overdue} overdue${f.worstOverdueSeconds !== undefined ? ` by ${duration(f.worstOverdueSeconds)}` : ""}`, tone: "bad" };
+  }
+  if (f.due > 0 && f.soonestDueAt && Date.parse(f.soonestDueAt) < nowMs) {
+    return { label: "Keys owed", value: String(owed), note: "payment deadline passed; refresh snapshot for overdue status", tone: "warn" };
   }
   if (f.due > 0) {
     const left = f.soonestDueAt ? Math.max(0, (Date.parse(f.soonestDueAt) - nowMs) / 1000) : undefined;
@@ -147,13 +154,16 @@ export function statement(p: LivePayload | undefined, error: string | undefined,
   const parts: string[] = [`${p.apps.length} app${p.apps.length === 1 ? "" : "s"} live.`];
   for (const a of p.apps) {
     const k = keysMetric(a, nowMs);
-    const owed = a.sources.fulfilment.data ? a.sources.fulfilment.data.due + a.sources.fulfilment.data.overdue : undefined;
+    const f = a.sources.fulfilment;
+    const trusted = f.data && f.status !== "down" && f.status !== "unavailable" && f.status !== "pending" && (f.ageSeconds === undefined || f.ageSeconds <= f.maxSeconds);
+    const owed = trusted && f.data?.other === 0 ? f.data.due + f.data.overdue : undefined;
     if (owed) parts.push(`${a.name}: ${owed} key${owed === 1 ? "" : "s"} owed, ${k.note}.`);
+    if (trusted && f.data?.other) parts.push(`${a.name}: key obligations include unknown order states.`);
     const state = overallState(a);
     if (state === "down") parts.push(`${a.name} has a source down.`);
     else if (state === "attention") parts.push(`${a.name} needs a look.`);
   }
-  if (parts.length === 1) parts.push(p.apps.every((a) => overallState(a) === "ok") ? "Everything reads well; no keys owed." : "");
+  if (parts.length === 1 && p.apps.every((a) => overallState(a) === "ok" && a.sources.fulfilment.data && a.sources.fulfilment.data.other === 0 && a.sources.fulfilment.status === "ok" && (a.sources.fulfilment.ageSeconds === undefined || a.sources.fulfilment.ageSeconds <= a.sources.fulfilment.maxSeconds))) parts.push("Everything reads well; no keys owed.");
   return parts.filter(Boolean).join(" ");
 }
 

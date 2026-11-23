@@ -11,7 +11,6 @@ import {
   apkLinkMatches,
   daysLive,
   disputeRow,
-  expandArgv,
   fulfilmentUrgency,
   githubWebUrl,
   judgeApk,
@@ -21,7 +20,8 @@ import {
   refundRow,
   safeRelPath,
   scrubSecrets,
-  summarizeOutstanding,
+  snapshotArgv,
+  summarizeSnapshot,
   summarizeSales,
   type ApkHead,
   type FulfilmentData,
@@ -34,9 +34,9 @@ import {
 } from "./live-model.js";
 
 // The Live hub: every registered pjangler project whose .launch.yaml says `mode: live`, with
-// what is true about it right now. Read-only in every direction: it GETs, HEADs and runs the
-// one read-only argv the live block declares. Nothing here writes to Stripe, the board, the
-// issuer or Candybar.
+// what is true about it right now. Fulfilment invokes only an explicitly declared, independently
+// approved read-only issuer snapshot; legacy outstanding declarations are unavailable.
+// No page read issues or delivers keys, sends mail, or writes a ledger.
 //
 // Each source is its own cached read with its own freshness and its own failure: a source
 // that is down reports `down` (or `unavailable` with the reason) and the request still
@@ -130,6 +130,8 @@ export type LiveDeps = {
   home: string;
   today: () => string;
   opBin: string;
+  /** Independently approved restricted read-only key reference for the snapshot. */
+  fulfilmentKeyRef?: string;
   /** How long one request waits on a cold source before answering `pending`. */
   waitMs: number;
 };
@@ -342,24 +344,26 @@ function cliReason(error: unknown): string {
 async function readFulfilment(deps: LiveDeps, decl: LiveDecl, repoPath: string): Promise<Probe<FulfilmentView>> {
   const f = decl.fulfilment;
   if (!f) return { status: "unavailable", detail: "the live block declares no fulfilment" };
-  const [file, ...args] = expandArgv(f.outstandingArgv, deps.home);
+  const argv = snapshotArgv(f.outstandingArgv, deps.home, deps.fulfilmentKeyRef, decl.checkout?.keyRef);
+  if (!argv) return { status: "unavailable", detail: "read-only fulfilment snapshot is not approved or declared; legacy outstanding cannot run" };
+  const [file, ...args] = argv;
   let out: RunResult;
   try {
-    out = await deps.run(file, args, { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: "/tmp" } });
-  } catch (error) {
-    return { status: "down", detail: `outstanding failed: ${scrubSecrets(cliReason(error))}` };
+    out = await deps.run(file, args, { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: process.env.TMPDIR ?? deps.home } });
+  } catch {
+    return { status: "down", detail: "fulfilment snapshot failed; ledger or provider state is unknown" };
   }
   let json: unknown;
   try {
-    json = JSON.parse(out.stdout.trim().split("\n").filter((l) => l.trim().startsWith("{")).pop() ?? out.stdout);
+    json = JSON.parse(out.stdout.trim());
   } catch {
-    return { status: "down", detail: "outstanding did not print JSON" };
+    return { status: "down", detail: "fulfilment snapshot returned invalid JSON; state is unknown" };
   }
-  const data = summarizeOutstanding(json, deps.now(), f.promiseHours);
-  if (!data) return { status: "down", detail: "outstanding did not print a JSON object" };
+  const data = summarizeSnapshot(json, deps.now(), f.promiseHours);
+  if (!data) return { status: "down", detail: "fulfilment snapshot returned an invalid envelope; state is unknown" };
   const view: FulfilmentView = { ...data, urgency: fulfilmentUrgency(data) };
-  if (data.blocked > 0) return { status: "warn", detail: `${data.blocked} blocked${data.blockedReasons.length ? ` (${data.blockedReasons.join(", ")})` : ""}`, data: view };
-  if (data.other > 0) return { status: "warn", detail: `${data.other} session(s) in a state this hub does not know`, data: view };
+  if (data.other > 0) return { status: "warn", detail: `${data.other} order(s) in an unknown state`, data: view };
+  if (data.blocked > 0) return { status: "warn", detail: `${data.blocked} blocked (${data.blockedReasons.join(", ")})`, data: view };
   return { status: "ok", data: view };
 }
 
@@ -577,6 +581,7 @@ export function defaultLiveDeps(sources: { projects: LiveDeps["projects"]; ticke
     home: homedir(),
     today: () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
     opBin: process.env.LIVE_OP_BIN ?? "op",
+    fulfilmentKeyRef: process.env.LIVE_FULFILMENT_READONLY_KEY_REF,
     waitMs: 8_000
   };
 }

@@ -333,55 +333,71 @@ export function scrubSecrets(message: string): string {
     .slice(0, 300);
 }
 
-// ---------------------------------------------------------------- fulfilment (the issuer's `outstanding`)
+// ---------------------------------------------------------------- fulfilment (the issuer's read-only snapshot)
 
 export type FulfilmentData = {
-  /** Paid, key not yet issued, still inside the promise. */
+  /** Paid orders without delivery evidence, including issued but undelivered keys. */
   due: number;
-  /** Paid, key not yet issued, past the promise. */
   overdue: number;
+  /** Orders with positive delivery evidence. */
   clear: number;
   blocked: number;
-  /** Checkouts opened on the payment link but never paid (`not_issuable:not_paid`): nothing is owed. */
+  /** The snapshot omits unpaid or abandoned checkouts entirely. */
   unpaid: number;
   other: number;
-  /** The soonest deadline among due keys, ISO. */
   soonestDueAt?: string;
-  /** The longest overrun among overdue keys, in seconds. */
   worstOverdueSeconds?: number;
-  /** Short machine words for blocked sessions (never free text). */
   blockedReasons: string[];
   promiseHours?: number;
 };
 
-/**
- * `outstanding` prints `{session: "paid_unissued:due_in=Ns" | "paid_unissued:overdue_by=Ns" | "clear:..." | "blocked:..." |
- * "not_issuable:<reason>"}`. `not_issuable:not_paid` is an open or abandoned checkout (nothing owed); any other
- * not_issuable reason is a session the issuer refuses, so it counts as blocked with that reason.
- * Session ids are Stripe ids: they are counted here and never returned.
- */
-export function summarizeOutstanding(raw: unknown, nowMs: number, promiseHours?: number): FulfilmentData | undefined {
-  if (!record(raw)) return undefined;
+/** Accept only the documented issuer invocation; a legacy outstanding declaration is never executable here. */
+export function snapshotArgv(argv: string[], home: string, approvedKeyRef?: string, checkoutKeyRef?: string): string[] | undefined {
+  const expected = [
+    "uv", "run", "scripts/licensing/issuer.py", "--stripe-mode", "live",
+    "--ledger", "~/.local/share/earshot/licenses/ledger.json",
+    "--approved-catalog", "~/.local/share/earshot/licenses/approved-catalog.json",
+    "--stripe-key-ref"
+  ];
+  if (argv.length !== expected.length + 2 || expected.some((v, i) => argv[i] !== v)) return undefined;
+  const keyRef = argv[expected.length];
+  if (!approvedKeyRef || !/^op:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(keyRef) || keyRef !== approvedKeyRef || keyRef === checkoutKeyRef || argv[expected.length + 1] !== "snapshot") return undefined;
+  if (!home.startsWith("/") || home.includes("\0") || home.split("/").some((part) => part === ".." || part === ".")) return undefined;
+  return expandArgv(argv, home);
+}
+
+/** Snapshot envelope is fail-closed: malformed/unknown states cannot imply an empty queue. */
+export function summarizeSnapshot(raw: unknown, nowMs: number, promiseHours?: number): FulfilmentData | undefined {
+  if (!record(raw) || raw.status !== "ok" || !record(raw.orders) || Object.keys(raw).some((k) => k !== "status" && k !== "orders")) return undefined;
   const out: FulfilmentData = { due: 0, overdue: 0, clear: 0, blocked: 0, unpaid: 0, other: 0, blockedReasons: [], promiseHours };
   let soonest: number | undefined;
   let worst: number | undefined;
-  for (const status of Object.values(raw)) {
-    const s = typeof status === "string" ? status : "";
-    let m: RegExpMatchArray | null;
-    if ((m = s.match(/^paid_unissued:due_in=(-?\d+)s?$/))) {
-      out.due += 1;
-      const secs = Math.max(0, Number(m[1]));
-      soonest = soonest === undefined ? secs : Math.min(soonest, secs);
-    } else if ((m = s.match(/^paid_unissued:overdue_by=(\d+)s?$/))) {
-      out.overdue += 1;
-      worst = Math.max(worst ?? 0, Number(m[1]));
-    } else if (s.startsWith("clear:") || s === "clear") out.clear += 1;
-    else if (s === "not_issuable:not_paid") out.unpaid += 1;
-    else if (s.startsWith("blocked") || s.startsWith("not_issuable:")) {
-      out.blocked += 1;
-      const reason = s.slice(s.startsWith("blocked") ? "blocked".length : "not_issuable".length).replace(/^[:\s]+/, "").match(/^[a-z][a-z0-9_-]{0,39}/i)?.[0];
-      if (reason && !out.blockedReasons.includes(reason)) out.blockedReasons.push(reason);
-    } else out.other += 1;
+  for (const [id, status] of Object.entries(raw.orders)) {
+    if (!/^cs_(?:live|test)_[A-Za-z0-9]+$/.test(id)) return undefined;
+    if (status === "delivered") out.clear++;
+    else if (status === "blocked:refunded" || status === "blocked:disputed" || status === "blocked:review_required") {
+      out.blocked++;
+      const reason = status.slice("blocked:".length);
+      if (!out.blockedReasons.includes(reason)) out.blockedReasons.push(reason);
+    } else if (typeof status === "string") {
+      const match = /^(paid_unissued|issued_undelivered):(due_in|overdue_by)=(0|[1-9]\d*)s$/.exec(status);
+      if (!match || !Number.isSafeInteger(Number(match[3])) || (match[2] === "overdue_by" && match[3] === "0")) {
+        out.other++;
+        continue;
+      }
+      const seconds = Number(match[3]);
+      if (!Number.isFinite(new Date(nowMs + seconds * 1000).getTime())) {
+        out.other++;
+        continue;
+      }
+      if (match[2] === "due_in") {
+        out.due++;
+        soonest = Math.min(soonest ?? seconds, seconds);
+      } else {
+        out.overdue++;
+        worst = Math.max(worst ?? seconds, seconds);
+      }
+    } else out.other++;
   }
   if (soonest !== undefined) out.soonestDueAt = new Date(nowMs + soonest * 1000).toISOString();
   if (worst !== undefined) out.worstOverdueSeconds = worst;
@@ -394,7 +410,7 @@ export type SourceStatus = "ok" | "warn" | "down" | "unavailable";
 
 /** The page's one urgency word for the money-owed state. */
 export function fulfilmentUrgency(f: FulfilmentData | undefined): "overdue" | "owed" | "clear" | "unknown" {
-  if (!f) return "unknown";
+  if (!f || f.other > 0) return "unknown";
   if (f.overdue > 0) return "overdue";
   if (f.due > 0 || f.blocked > 0) return "owed";
   return "clear";
