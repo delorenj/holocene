@@ -30,9 +30,9 @@ sends anything, but automaticai/free only checks that the free family is in scop
 policy (ops/routes.json free.members; none Anthropic today). For free, the desk's bound is after the fact: an answer from a
 route outside the proven scope is never used (route_out_of_scope). The free alias is opt-in per tile.
 
-Per tile (agent) the flag file carries `tiles: {<agent>: {voice, model}}`: the car reply voice and the desk model alias
-(car_desk_aliases.json), written under an fcntl lock by `memo_trace.py voice|model`, the car-desk skills and the desk's own
-phrase short-circuit ("use walken voice", "switch to deepseek pro"). A decision may also be action `tool` with `tool_name`
+Per tile (agent) the flag file carries the desk model alias (`car_desk_aliases.json`), written under an fcntl lock
+by `memo_trace.py model`, the car-set-model skill and the model phrase short-circuit. Legacy tile voice fields are
+ignored and preserved, never written; voice requests are refused with Flume guidance. A decision may be action `tool` with `tool_name`
 and `args`, validated against the tool.json contracts of the car-desk skill scope and run as the skill's entrypoint.
 
 Keys never live in a file: a route carries an op:// reference, read with `op read` on first use and kept in memory only.
@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import errno
 import fcntl
 import hashlib
 import http.client
@@ -52,6 +53,7 @@ import re
 import signal
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import threading
@@ -1712,11 +1714,7 @@ class ProfileVoice:
             return {**result, "fallback": "invalid_profile" if name is not None else "profile_missing"}
         result["profile"] = name
         try:
-            root = self.cards.profiles_dir.resolve()
-            path = (root / name / "config.yaml").resolve()
-            if not path.is_relative_to(root):
-                return {**result, "fallback": "invalid_profile_path"}
-            config = self.cards.profile_config(path)
+            config = self.cards.profile_config(self.cards.profiles_dir / name / "config.yaml")
             tts = config.get("tts") if isinstance(config, dict) else None
             if not isinstance(tts, dict):
                 return {**result, "fallback": "profile_voice_missing"}
@@ -1725,7 +1723,10 @@ class ProfileVoice:
             if value:
                 return {**result, "voice": value, "requested": value, "source": "inherited", "fallback": None}
             return {**result, "fallback": "profile_voice_missing"}
-        except (OSError, UnicodeError):
+        except OSError as exc:
+            return {**result, "fallback": ("invalid_profile_path" if exc.errno in (errno.ELOOP, errno.ENOTDIR)
+                                           else "profile_unreadable")}
+        except UnicodeError:
             return {**result, "fallback": "profile_unreadable"}
         except Exception:  # YAML errors must not leak config text (which may contain credentials).
             return {**result, "fallback": "profile_malformed"}
@@ -1755,15 +1756,37 @@ class CardCache:
         Python once a second held a core at ~50-100% for days (2026-11-21). Raises OSError when the file cannot be
         read (never cached, so a fixed permission is seen at once) and _ProfileMalformed when it does not parse
         (cached until the file changes). Callers must treat the returned object as read-only: it is shared."""
-        st = path.stat()
-        key = (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
-        with self._lock:
-            hit = self._profiles.get(path)
-            if hit is not None and hit[0] == key:
-                if hit[1] is _ProfileMalformed:
-                    raise _ProfileMalformed()
-                return hit[1]
-        text = path.read_text(encoding="utf-8")
+        # Never resolve then reopen a pathname. Pin the root and each component with
+        # no-follow dirfds, and read/cache only the opened regular file's inode.
+        root = self.profiles_dir.absolute()
+        path = path.absolute()
+        if path.parent.parent != root or path.name != "config.yaml" or not voice_name(path.parent.name):
+            raise OSError(errno.ELOOP, "invalid profile path")
+        with contextlib.ExitStack() as stack:
+            def opened(name, flags, **kw):
+                fd = os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, **kw)
+                stack.callback(os.close, fd)
+                return fd
+            rootfd = opened(root, os.O_RDONLY | os.O_DIRECTORY)
+            profilefd = opened(path.parent.name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=rootfd)
+            fd = opened("config.yaml", os.O_RDONLY | os.O_NONBLOCK, dir_fd=profilefd)
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_size > 1024 * 1024:
+                raise OSError(errno.EINVAL, "profile is not a bounded regular file")
+            key = (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size)
+            with self._lock:
+                hit = self._profiles.get(path)
+                if hit is not None and hit[0] == key:
+                    if hit[1] is _ProfileMalformed:
+                        raise _ProfileMalformed()
+                    return hit[1]
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                data = stream.read(1024 * 1024 + 1)
+            after = os.fstat(fd)
+            if (len(data) > 1024 * 1024 or
+                    key != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns, after.st_size)):
+                raise OSError(errno.EAGAIN, "profile changed during read")
+            text = data.decode("utf-8")
         try:
             import yaml  # type: ignore
             config = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
@@ -2431,7 +2454,7 @@ class Desk:
             if flag.get("error") or ("mode" not in flag and not flag.get("tiles") and not flag.get("routes")):
                 mode, err = "off", flag.get("error") or "flag file without a mode: converse is off"
             elif "mode" not in flag:
-                source = "env+flag"  # a file that only carries tile settings (memo:voice / memo:model): the env's mode
+                source = "env+flag"  # tile model or preserved legacy metadata does not change the env's mode
             elif fm in MODES:
                 mode, err = fm, None
             else:

@@ -104,7 +104,7 @@ class AssignedVoices(unittest.TestCase):
                 self.assertTrue(result["fallback"])
         self.config("infra-pm", "tts: {voice: brule}").unlink()
         self.assertEqual(self.choice("tile-b")["fallback"], "profile_unreadable")
-        with patch.object(Path, "read_text", side_effect=PermissionError("do not leak config")):
+        with patch.object(self.cards, "profile_config", side_effect=PermissionError("do not leak config")):
             self.assertEqual(self.choice("tile-b")["fallback"], "profile_unreadable")
 
     def test_identifiers_and_symlink_escape_fail_closed(self):
@@ -358,6 +358,168 @@ class AssignedVoices(unittest.TestCase):
             with self.assertRaises(iw.VoiceNotFound):
                 self.w._synth(m, "Legacy resume.", self.root)
         self.assertEqual(m["voice_lock"]["voice"], "carlin")
+
+    def test_slow_lookup_rechecks_responder_stamp_and_generation(self):
+        for cue in (False, True):
+            for change in ("responder", "round", "generation"):
+                with self.subTest(cue=cue, change=change):
+                    self.config("holocene-pm", "tts: {voice: carlin}")
+                    m = self.memo(reply_stamp="one")
+                    entered, release = threading.Event(), threading.Event()
+                    real, results, errors = self.w._voice_choice, [], []
+                    def lookup(snapshot):
+                        choice = real(snapshot)
+                        if not entered.is_set():
+                            entered.set()
+                            self.assertTrue(release.wait(3))
+                        return choice
+                    def work():
+                        try:
+                            results.append(self.w._cue_voice(m)["voice"] if cue else self.w._reply_voice(m))
+                        except BaseException as exc:
+                            errors.append(exc)
+                    with patch.object(self.w, "_voice_choice", side_effect=lookup):
+                        thread = threading.Thread(target=work)
+                        thread.start()
+                        self.assertTrue(entered.wait(3))
+                        # The mutex must remain available while profile/catalog I/O is blocked.
+                        with self.w.mu:
+                            if change == "responder":
+                                m.update(agent="tile-b", command_id="cmd-b")
+                                expected = "brule"
+                            elif change == "round":
+                                self.config("holocene-pm", "tts: {voice: walken}")
+                                m["reply_stamp"] = "two"
+                                expected = "walken"
+                            else:
+                                self.config("holocene-pm", "tts: {voice: walken}")
+                                self.w._reply_voice(m)
+                                expected = "walken"
+                        release.set()
+                        thread.join(4)
+                    self.assertFalse(thread.is_alive())
+                    self.assertEqual(errors, [])
+                    self.assertEqual(results, [expected])
+                    lock = m.get("voice_lock") or m["cue_voice_lock"]
+                    self.assertEqual(lock["identity"], self.w._voice_identity(m))
+                    self.assertEqual(lock["stamp"], m["reply_stamp"])
+                    self.assertEqual(lock["voice"], expected)
+                    if change == "generation":
+                        self.assertNotIn("cue_voice_lock", m)
+
+    def test_identityless_resume_reselects_unrendered_but_refuses_partial_audio(self):
+        old = {"stamp": "one", "voice": "carlin", "profile": "holocene-pm"}
+        m = self.memo(agent="tile-b", reply_stamp="one", voice_lock=dict(old))
+        self.assertEqual(self.w._reply_voice(m), "brule")
+        for partial in ({"voiced_n": 1}, {"reply_up": {"rkey": "old"}}, {}):
+            lock = {**old, **({"rendered": True} if not partial else {})}
+            m = self.memo(agent="tile-b", reply_stamp="one", voice_lock=lock, **partial)
+            with self.assertRaises(iw.StageError) as error:
+                self.w._reply_voice(m)
+            self.assertEqual(error.exception.code, "voice_lock_unbound")
+            self.assertEqual(m["voice_lock"], lock)
+
+    def test_cue_fallback_after_final_wins_never_creates_pending_rick(self):
+        m = self.memo(reply_stamp="one")
+        entered, release = threading.Event(), threading.Event()
+        errors, results = [], []
+        real = self.w._voice_choice
+        def slow(snapshot):
+            choice = real(snapshot)
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return choice
+        def cue():
+            try:
+                results.append(self.w._synth_cue(m, "Working.", self.root, iw.PROGRESS_TTS_STEPS))
+            except BaseException as exc:
+                errors.append(exc)
+        def missing(*a, **kw):
+            raise iw.VoiceNotFound("tts", "voice_not_found", "fixture", retryable=False)
+        with patch.object(self.w, "_voice_choice", side_effect=slow):
+            thread = threading.Thread(target=cue)
+            thread.start()
+            self.assertTrue(entered.wait(3))
+            with patch.object(self.w, "_voice_choice", side_effect=real):
+                self.w._synth(m, "Final.", self.root)
+            with patch.object(iw, "synthesize", side_effect=missing):
+                release.set()
+                thread.join(4)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [None])
+        self.assertNotIn("cue_voice_lock", m)
+        self.assertEqual(m["voice_lock"]["voice"], "carlin")
+        self.assertEqual([r[1] for r in self.renders], ["carlin"])
+
+    def test_responder_change_during_final_render_blocks_upload_entrypoint(self):
+        m = self.memo(reply_stamp="2026-11-22T01:00:00Z", reply_text="Old reply.", status="active")
+        entered, release = threading.Event(), threading.Event()
+        errors = []
+        def render(text, tmp, **kw):
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return self.fake_synth(text, tmp, **kw)
+        def speak():
+            try:
+                self.w.step_speak(m)
+            except BaseException as exc:
+                errors.append(exc)
+        with patch.object(iw, "synthesize", side_effect=render), patch.object(iw.mc_, "mc") as upload:
+            thread = threading.Thread(target=speak)
+            thread.start()
+            self.assertTrue(entered.wait(3))
+            with self.w.mu:
+                m.update(agent="tile-b", command_id="cmd-b")
+            release.set()
+            thread.join(4)
+            upload.assert_not_called()
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], iw.StageError)
+        self.assertEqual(errors[0].code, "voice_round_changed")
+        self.assertNotIn("rendered", m["voice_lock"])
+
+    def test_path_swap_at_profile_read_is_refused_even_with_cached_config(self):
+        self.assertEqual(self.choice()["voice"], "carlin")
+        outside = self.root / "outside.yaml"
+        outside.write_text("tts: {voice: walken}\nsecret: DO_NOT_LEAK_FIXTURE\n")
+        path = self.profiles / "holocene-pm" / "config.yaml"
+        original = self.cards.profile_config
+        def swap(p):
+            path.unlink()
+            path.symlink_to(outside)
+            return original(p)
+        with patch.object(self.cards, "profile_config", side_effect=swap):
+            result = self.choice()
+        self.assertEqual(result["fallback"], "invalid_profile_path")
+        self.assertEqual(result["voice"], "rick")
+        self.assertNotIn("DO_NOT_LEAK_FIXTURE", json.dumps(result))
+
+    def test_profile_dir_swap_after_dirfd_open_cannot_redirect_file_read(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "config.yaml").write_text("tts: {voice: walken}")
+        profile = self.profiles / "holocene-pm"
+        real = os.open
+        def swapped(name, flags, *args, **kw):
+            fd = real(name, flags, *args, **kw)
+            if name == "holocene-pm":
+                profile.rename(self.profiles / "held-profile")
+                profile.symlink_to(outside)
+            return fd
+        with patch.object(cv.os, "open", side_effect=swapped):
+            self.assertEqual(self.choice()["voice"], "carlin")
+        self.assertEqual(self.choice()["fallback"], "invalid_profile_path")
+
+    def test_profile_nonregular_and_oversize_are_bounded_fallback(self):
+        path = self.profiles / "holocene-pm" / "config.yaml"
+        path.unlink()
+        os.mkfifo(path)
+        self.assertEqual(self.choice()["fallback"], "profile_unreadable")
+        path.unlink()
+        path.write_bytes(b" " * (1024 * 1024 + 1))
+        self.assertEqual(self.choice()["fallback"], "profile_unreadable")
 
     def test_builtin_voice_refuses_and_preserves_file(self):
         result = self.desk._builtin_tool("tile-a", cv.TOOL_VOICE, {"voice": "Rick"}, "test")

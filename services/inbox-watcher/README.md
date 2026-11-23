@@ -853,40 +853,35 @@ route that fails any of them is thrown away and the memo takes the full-agent pa
 If every rung fails the memo takes today's path (`fallback_reason=all_routes_failed`, text-only transcript status restored): a memo is never
 failed for an LLM reason.
 
-**Tiles: a voice and a model per agent (HOLOC-23, 2026-10-22).** The flag file carries `tiles: {<agent>: {voice, model,
-voice_set_at/by, model_set_at/by}}`, written under an fcntl lock (`.converse.json.lock`; the watcher, the CLI and the skills
-all write the same file; `memo:converse on|off` keeps the map). A file that only holds tiles keeps the unit's mode.
+**Tiles and agent voice (HOLOC-54; replaces the HOLOC-23 voice picker).** Flume owns voice assignments.
+The flag file still carries per-agent model settings and may retain legacy `voice`, `voice_set_at/by` fields.
+Legacy voice metadata is ignored, not auto-migrated or deleted. Model/mode writers preserve it and unrelated fields
+under the existing fcntl lock (`.converse.json.lock`). A file that only holds tiles keeps the unit's mode.
 
 - **Voice inheritance**: the responding agent's registry `profile_name` selects its rendered Hermes `config.yaml`.
   `tts.voice` wins, then `tts.vox.voice`. The Adapter reuses `CardCache`'s registry/profile roots
-  (`MEMO_AGENT_REGISTRY`, `MEMO_HERMES_PROFILES`); there is no copied voice roster. Full-agent replies use the
-  gateway-confirmed profile; delegated follow-ups use the named target, not the original tile. Identifiers and resolved
-  paths are validated. Missing, malformed, unreadable or voiceless profiles use an observable emergency
-  `MEMO_VOX_VOICE`/Rick fallback. The watcher's own `VOX_VOICE` is not another agent's assignment.
-  A deliberate `tiles[agent].voice` overrides inheritance **only** for a verified car-origin memo. Browser and
-  unknown-origin memos still inherit the responding profile. Neither path writes profile/Telegram settings.
-  Overrides are per agent, not per device: a setting from the sim also applies on the Honda.
-  `default`/`--clear` removes the override and restores profile inheritance; naming Rick explicitly pins Rick.
-  Valid override choices come from Vox's list (`GET <vox>/voices`); display names, unique first/last words (`freeman`)
-  and spoken digits (`walken two` = walken2) resolve.
-  The voice is **locked per reply stamp** (`voice_lock` on the memo): chunks, joined output and retries/resume keep it.
-  Progress/hold cues freeze the responder decision before a reply stamp exists; the final reply inherits that decision.
-  A deliberate setting acknowledgement uses the new selection. Profile, registry and override changes affect the next
-  round, without changing an already-rendering reply.
+  (`MEMO_AGENT_REGISTRY`, `MEMO_HERMES_PROFILES`); there is no copied voice roster. The memo's reported profile
+  cannot override the registry; delegated follow-ups use the named target, not the original tile.
+  Identifiers are validated, directories/files opened with no-follow dirfds, and config reads bounded to 1 MiB.
+  Missing, malformed, unreadable or voiceless profiles use observable emergency `MEMO_VOX_VOICE`/Rick fallback.
+  Neither the watcher's `VOX_VOICE`, legacy `tiles[agent].voice`, nor `MEMO_PROGRESS_VOICE` assigns an agent voice.
+  Holocene does not write rendered profiles, fleet pins or Telegram settings.
+  The voice is **locked per command/responder/reply stamp**: chunks, joined output and retries/resume keep it.
+  Progress/hold cues freeze the responder decision before a reply stamp exists; the final reply promotes that decision.
+  Concurrent resolution must recheck round and lock generations before publication. Final locks win over delayed cues;
+  cue failures cannot change a final lock. Profile/registry edits take effect next round without a restart.
+  An old identity-less lock is re-resolved only if no partial audio is recorded; an identity-less partial reply refuses
+  resume (`voice_lock_unbound`) rather than guessing its speaker or mixing voices. Start a fresh round after inspection.
   A missing catalog voice falls back before rendering; a Vox `voice 'x' not found` response falls back immediately
   before any reply audio has rendered (`voice_fallback` log, no 1800 s TTS retry). If a voice disappears **after** a
   chunk has rendered, the reply fails non-retryably instead of mixing identities. `voiced`/`replied` facts carry `voice`
-  (used) and, on fallback, `voice_requested` + `voice_fallback`. Structured logs, memo locks, `memo:voice`,
-  `memo:converse status` and heartbeat tile diagnostics distinguish `inherited`, `car_override` and
-  `emergency_fallback` with profile/reason. Progress narration shares inheritance unless explicit `MEMO_PROGRESS_VOICE`
-  pins it (`progress_override` in logs); that pin never changes the final reply's assignment.
+  (used) and, on fallback, `voice_requested` + `voice_fallback`. Structured logs, memo locks, read-only `memo:voice`,
+  `memo:converse status` and heartbeat diagnostics distinguish `inherited` and `emergency_fallback` with profile/reason.
   Diagnostics separate `configured_voice`/`configured_source` from `effective_voice` and `availability`.
   A cached catalog lacking the requested voice shows the same emergency fallback as reply resolution.
   With no catalog knowledge, `availability=unknown` and `effective_voice=null`; the compatibility `voice` is only
   the requested candidate, not a verified available assignment. Heartbeat uses one cached snapshot without network
-  waits; `memo:voice` makes one bounded catalog lookup, including clear/default diagnostics.
-  Cue fallback owns its captured command, responder, reply stamp and lock generation: a stale narration cannot
-  mutate a rendered final lock or a newer round even when both selected the same voice.
+  waits; read-only `memo:voice` makes one bounded catalog lookup. Set/default/clear requests refuse with Flume guidance.
   Optional phrase warmup collects profiles and one catalog snapshot inside its background worker, never in
   the startup path. Empty/failed catalog reads have a 30-second negative-cache interval; no per-agent timeout loop.
   Set `MEMO_PHRASEBANK_WARM=0` in the watcher's process environment to skip **proactive startup warmup only**:
@@ -908,36 +903,24 @@ all write the same file; `memo:converse on|off` keeps the map). A file that only
   | `auto` | auto, autorouter | r1 gateway `automaticai/auto/fast` (22 s) = the default | 3.5-10.7 s (glm-5.3) |
   | `default` | default model, reset the model | none (clears the tile's model) | |
 
-**Switching from the car.** Two ways, one effect:
-1. **Setting phrases** (no LLM call; `path=setting_phrase`): a whole utterance like "use walken voice", "switch to the Walken
-   two voice", "switch the voice to Morgan Freeman", "reset the voice", "switch to deepseek pro", "use the free model",
-   "switch the model to auto", "reset the model". A bare name is a voice only next to the word voice ("switch to marge" is
-   an agent, not a voice); "use the default" alone names nothing. Whisper's spellings are matched next to the word voice:
-   one edit off a five-letter name, two off a longer one when four letters or more were heard, the nearest voice only when
-   no other is as near ("walkin", "USE WALK VOICE" = walken; walken2 is one edit further), and "face", glued or not, is
-   the word voice ("Use Rickface!" = rick).
-2. **The `tool` action**: the decision may be `{"action": "tool", "tool_name": "...", "args": {...}}`. The tools are the
-   Skillex skills of the desk's own scope, `MEMO_CONVERSE_TOOLS_DIR` = `~/.local/state/holocene-auto/car-desk-scope`
-   (`skillex init`, `inherit off`, `enable pack car-desk@0.1.0`): every `.agents/skills/*/SKILL.md` whose
-   `metadata.tool.consumers` names `car-desk`, with its `tool.json` (an OpenAI function object), read at start-up and again
-   on any mtime change. Today: `car_set_voice(voice)` (skill car-set-voice) and `car_set_model(model: deepseek-flash |
-   deepseek-pro | free | auto | default)` (skill car-set-model). They are listed in the system prompt's TOOLS block; the
-   model's args are validated against the schema (type, enum, required, additionalProperties false, maxLength) and the
-   skill's entrypoint runs with no shell, stdin closed, in a process group of its own, at most 3 s (a timeout kills the
-   whole group, so the skill's own writer child never lands a change the driver was told failed): `<entrypoint> --json --agent <tile> --by car --<arg>
-   <value>`; it writes through the watcher's own verb (below). Without the scope, a phrase still switches in process through
-   the same locked writer (`via=builtin`).
+**Settings from the car.** Model phrases ("switch to deepseek pro", "use the free model", "reset the model")
+and `car_set_model(model: deepseek-flash | deepseek-pro | free | auto | default)` retain the existing locked writer.
+Tools are loaded from the desk's Skillex scope (`MEMO_CONVERSE_TOOLS_DIR`) and validated against their `tool.json`
+contracts before their bounded, shell-free entrypoint runs. Shadow mode never runs a tool.
 
-The tool runs in the converse step before the decision is stored, so a restart re-applies the outcome and never runs it
-twice; shadow mode never runs a tool. What the driver hears is a template, spoken in the NEW voice: "Switched Holocene PM
-to Walken.", "Holocene PM now thinks with Deep Seek Pro.", "Holocene PM is back to the default voice.", or "I couldn't
-change the voice: there's no voice called bob." The routed fact carries `tool {tool, args, ok, via, exit, ms, error}`,
-`tile_model` (the alias that decided the turn), `tile_voice` (the voice the reply is spoken in) and `served_route`.
+Voice phrases ("use walken voice", "reset the voice") are recognized only to refuse them with:
+"Agent voices are assigned in Flume. Change this agent's voice there; this desk cannot change it."
+`car_set_voice` is not advertised. Even if an old skill remains installed or a model submits the retired tool name,
+the desk refuses it before invoking an entrypoint. The refusal is spoken in the current agent assignment, not a new voice.
+Model acknowledgements and routed fact fields are unchanged; `tile_voice` reports the inherited render choice.
 
-**CLI verbs (the watcher's own; the skills call them).** `mise run memo:voice <agent> [<voice>|--clear] [--json]` and
-`mise run memo:model <agent> [<alias>|--clear] [--json]` (`memo_trace.py voice|model`): validate, write the tile under the
-lock, print the result (exit 3 on a refused value). No restart: the watcher reads the file per reply / per turn. The skills
-themselves are run with `skillex`, never a mise task.
+**CLI verbs.** `mise run memo:voice <agent> [--json]` is a read-only assignment diagnostic. Legacy positional voice,
+`default` and `--clear` forms return exit 3 with Flume guidance and do not write the flag file. Use Flume's authorized
+assignment/render flow, not a Holocene tile override. `mise run memo:model <agent> [<alias>|--clear] [--json]`
+(`memo_trace.py model`) still validates and writes only model fields under the existing lock, preserving voice metadata
+and unrelated keys. Model and rendered-profile changes are picked up on subsequent turns/rounds without a watcher restart.
+See [HOLOC-54-voice-handoff.md](HOLOC-54-voice-handoff.md) for the labelled fixture comparison, conflict/retirement plan
+and the separate Telegram adapter parity blocker; Holocene source tests are not a live cross-channel acceptance claim.
 
 **State.** `state.json` `conversations` keyed `<device>|<agent>` (`conv_id`, `sid`, `turns[]` upserted by memo id,
 `pending` draft, `delegations[]`) and `conversations_closed` (the last 20). Idle `MEMO_CONVERSE_IDLE_S` (900 s) closes one
@@ -1047,16 +1030,14 @@ heard the stop tone and then nothing for up to ~27 s. Now (cues at 3 / 9 / 16 s 
 | still waiting at 16 s | one of "Almost there." / "Any second." (0.81 s / 0.97 s, measured on rick at 6 steps) | `MEMO_CONVERSE_HOLD_CUE3_S=16` (0 = no third cue) |
 | the desk handed the turn to the full agent (`conv.action=direct`) and it has been quiet 7 s after dispatch, then every 8 s, at most 3 | the same second-cue lines (the agent's own narration at 15 s ends them) | `MEMO_CONVERSE_HOLD_FALL_FIRST_S=7`, `_FALL_GAP_S=8`, `_FALL_MAX=3` |
 
-- **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES` / `HOLD_CUE3_LINES`, warmed per tile voice at
-  start-up), spoken in the responding profile's voice (or a deliberate car override; missing voices use the emergency
-  fallback), so a cue is a
+- **Voice and cost.** The lines are in the PhraseBank (`converse.HOLD_CUE_LINES` / `HOLD_CUE2_LINES` / `HOLD_CUE3_LINES`, warmed optionally in a background worker per registered profile voice), spoken in the responding profile's voice (missing voices use the emergency fallback), so a cached cue is a
   file copy (~1 ms, engine `phrasebank`), never a vox render on the critical path. The same line is never heard twice in a row
   per tile. Every line is about a second of speech or less, and that is **measured, not assumed**: the watcher probes the clip it
   is about to upload and drops one longer than `MEMO_CONVERSE_HOLD_MAX_CLIP_S` (1.2 s; `hold_cue_dropped` reason `too_long`,
   and the line is not used again until a restart). Historical measurements on `rick` (now emergency-only by default): One sec. 0.97 s, Thinking. 0.65 s,
   Hold on. 0.65 s, Hang on. 0.65 s, Still on it. 0.97 s, Still thinking. 0.97 s, Almost there. 0.81 s, Any second. 0.97 s on rick ("Almost done." rendered 1.29 s on rick and hit the 1.2 s cap live on 2026-10-22, so it was replaced; the candidates "Nearly there." 1.13 s and "Nearly done." 1.29 s were too long, and "Still here." and "Working on it." rendered 1.29 s, so they are not shipped). On the pad a cue occupies the speech queue for its length plus 1-2 s of audio-focus
   hand-off, so keep the lines short: a longer line delays other speech behind it. While the cue waits for its mark the watcher
-  also renders and banks the chosen line if the tile voice has no banked copy (a voice changed at run time), so the cue is a
+  also renders and banks the chosen line if the inherited voice has no banked copy (an assignment changed since warmup), so the cue is a
   file copy at the mark rather than a 1.5-3.5 s live render.
 - **Wire.** A cue is a progress clip: `progress/<yyyy>/<mm>/<dd>/<memo_id>-<n>h.ogg` (the `h` suffix marks a hold cue; it shares
   the `<n>` numbering with the agent's narration, so a later narration never overwrites a cue) announced as
@@ -1094,7 +1075,7 @@ under load (load average 70-85), not estimated.
 | Level probe beside Whisper | always | ffmpeg `volumedetect` (0.2-0.3 s) in front of the Whisper request | download -> transcript stage 1.07 / 1.35 s -> 0.79 s. A silent clip is still refused (after one GPU call) |
 | Ordered async facts | `MEMO_FACTS_ASYNC=1` | `bb-emit` subprocess (0.16-0.5 s under load) in front of Whisper, the desk and the next chunk | `received` / `transcribed` / `voiced` leave through one ordered thread; any other fact waits for it to drain first, so bus order is unchanged. A failed publish goes to the outbox; shutdown drains the queue |
 | Early push hint | `MEMO_PUSH_HINT_URL` | the pad waited for the fact to travel bb-emit -> NATS -> proxy | `received` / `transcribed` / `voiced` call the proxy's `/internal/push` first (~2 ms, own thread, fail-open); the NATS copy is dropped as a duplicate. Off in code; the unit sets the URL, and a watcher on any bucket but `holocene-auto` never hints, so a test or a scratch-bucket bench cannot reach the car's replay ring |
-| PhraseBank | `MEMO_PHRASEBANK=1` | a vox render of "Dropped. Nothing was sent.", "Okay. Talk soon." and the other fixed lines (1.5-3.5 s) | rendered once per voice and kept in `<state>/phrases/` (warmed at start-up at the lowest vox priority, learned on first use); a hit is a file copy, logged `phrasebank_hit`, engine `phrasebank` |
+| PhraseBank | `MEMO_PHRASEBANK=1` | a vox render of fixed lines | rendered once per inherited profile voice and kept in `<state>/phrases/` (optional background warmup, suppress with `MEMO_PHRASEBANK_WARM=0`; learned on first use); a hit is a file copy, logged `phrasebank_hit`, engine `phrasebank` |
 | Shorter first beat, no mid-reply gap | `MEMO_CONVERSE_CHUNK_CHARS=55,65,95,180,300`, `..._MIN_CHARS=60` | a 70-character first chunk, then 170 | vox renders in about 1.6 s + 0.018 s per character at 6 steps (26 chars 1.9 s, 46 chars 2.5 s, 66 chars 2.7 s, 100 chars 3.4 s) and speaks about 0.051 s per character. For no pause between chunks, chunk n+1 must render while chunk n plays: c(n+1) <= 2.8 c(n) - 89, hence 55 -> 65 -> 95 -> 180 -> 300. The first chunk is about 0.27 s sooner than at 70. The first cut (45,80,170,300) was 0.1 s faster still, but it left a 0.7-1.3 s pause after a 2.3 s first beat while a 69-93 character second chunk rendered (3.2-3.4 s, live turns 3a29f622 and 22019344). A reply under 60 characters is still one piece (a tail under 40 characters rejoins) |
 
 Controlled A/B of the real watcher on a scratch bucket (`holo-bench`; same Whisper, LLM ladder and vox; `bb-emit --check` as
@@ -1141,6 +1122,11 @@ cd ~/docker/stacks/websites/agent-pad && docker compose up -d --force-recreate a
 ```
 
 ## Verified live: tiles, tools and the new ladder (2026-10-22, sim emulator-5554)
+
+**Historical test log (HOLOC-23, superseded by HOLOC-54):** The following recorded turns happened before
+Flume became the sole voice writer. They are not instructions or current voice-switch behavior. The old
+`car_set_voice` and `memo:voice --clear` commands cited below now refuse with Flume guidance. The running
+watcher and Telegram parity must be verified separately after any authorized release.
 
 Watcher at 9de56bd + b9703c1 (restarted idle; heartbeat: routes r1/r2/r3, `key_status ok` per rung, r3 `scope ok`, tools
 `car_set_model`, `car_set_voice` loaded from the car-desk scope, 12 vox voices). Driver: `converse-e2e/tools/drive_converse.py`,

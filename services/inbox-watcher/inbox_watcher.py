@@ -2962,28 +2962,71 @@ class Watcher:
         stamp = choice.get("stamp")
         return same and (stamp == m.get("reply_stamp") or (stamp is None and m.get("reply_stamp") is not None))
 
-    def _cue_voice(self, m: dict) -> dict:
-        """Freeze pre-reply narration/cues for this responder round, then promote into the stamped reply."""
-        identity = self._voice_identity(m)
-        with self.mu:
-            final = m.get("voice_lock") or {}
-            if (final.get("stamp") == m.get("reply_stamp") and final.get("voice")
-                    and final.get("identity") == identity):
-                final.setdefault("lock_id", str(uuid.uuid4()))
-                return dict(final)
-            pending = m.get("cue_voice_lock") or {}
-            if self._cue_matches(m, pending):
-                pending.setdefault("lock_id", str(uuid.uuid4()))
-                return dict(pending)
-        choice = {**self._voice_choice(m), "identity": identity, "stamp": m.get("reply_stamp"),
-                  "lock_id": str(uuid.uuid4())}
-        with self.mu:
-            pending = m.get("cue_voice_lock") or {}
-            if not self._cue_matches(m, pending):
-                m["cue_voice_lock"] = choice
+    def _voice_snapshot(self, m: dict) -> tuple:
+        """Under mu: bind unlocked profile I/O to the round and both lock generations."""
+        return (self._voice_identity(m), m.get("reply_stamp"),
+                dict(m.get("voice_lock") or {}), dict(m.get("cue_voice_lock") or {}))
+
+    def _bound_reply_lock(self, m: dict) -> dict | None:
+        lock = m.get("voice_lock") or {}
+        if not lock.get("voice") or lock.get("stamp") != m.get("reply_stamp"):
+            return None
+        if lock.get("identity") == self._voice_identity(m):
+            lock.setdefault("lock_id", str(uuid.uuid4()))
+            return lock
+        # An unbound old lock cannot prove who spoke. Do not silently change a partial
+        # reply's voice either: an operator must start a fresh round for that resume.
+        if lock.get("identity") is None and (lock.get("rendered") or m.get("voiced_n") or m.get("reply_up")):
+            raise StageError("tts", "voice_lock_unbound", "legacy partial reply has no responder identity; start a new round",
+                             retryable=False)
+        return None
+
+    def _select_voice_lock(self, m: dict, *, cue: bool) -> dict:
+        """Publish only against the captured round/generations; slow I/O never holds mu."""
+        while True:
+            with self.mu:
+                final = self._bound_reply_lock(m)
+                if final:
+                    return dict(final)
+                snapshot = self._voice_snapshot(m)
+                pending = m.get("cue_voice_lock") or {}
+                if self._cue_matches(m, pending) and pending.get("voice"):
+                    choice = dict(pending)
+                    if cue:
+                        return choice
+                else:
+                    choice = None
+            if choice is None:
+                # The resolver receives an immutable responder snapshot, not the mutable memo.
+                choice = self._voice_choice({"agent": snapshot[0][1]})
+            with self.mu:
+                if snapshot != self._voice_snapshot(m):
+                    continue
+                choice = {**choice, "identity": snapshot[0], "stamp": snapshot[1],
+                          "lock_id": choice.get("lock_id") or str(uuid.uuid4())}
+                m["cue_voice_lock" if cue else "voice_lock"] = choice
+                if not cue:
+                    m.pop("cue_voice_lock", None)
                 self._log_voice(m, choice)
                 self.s.save()
-            return dict(m["cue_voice_lock"])
+                return dict(choice)
+
+    def _cue_voice(self, m: dict) -> dict:
+        """Capture cue ownership atomically with selection, never relabel stale work."""
+        while True:
+            choice = self._select_voice_lock(m, cue=True)
+            with self.mu:
+                final = m.get("voice_lock") or {}
+                pending = m.get("cue_voice_lock") or {}
+                is_final = (final.get("lock_id") == choice.get("lock_id")
+                            and final.get("identity") == self._voice_identity(m)
+                            and final.get("stamp") == m.get("reply_stamp"))
+                if not is_final and (pending.get("lock_id") != choice.get("lock_id")
+                                     or not self._cue_matches(m, choice)):
+                    continue
+                return {**choice, "cue_stamp": m.get("reply_stamp"),
+                        "cue_identity": self._voice_identity(m), "cue_profile": m.get("profile"),
+                        "cue_final": is_final}
 
     def _log_voice(self, m: dict, choice: dict) -> None:
         log("voice_resolved", "warn" if choice.get("fallback") else "info", memo_id=m.get("memo_id"),
@@ -2992,40 +3035,25 @@ class Watcher:
 
     def _reply_voice(self, m: dict) -> str:
         """Stamped audio identity survives chunks/retry/resume, even if assignments change mid-render."""
-        with self.mu:
-            stamp = m.get("reply_stamp")
-            vl = m.get("voice_lock")
-            if (isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice")
-                    and (vl.get("identity") is None or vl["identity"] == self._voice_identity(m))):
-                vl.setdefault("lock_id", str(uuid.uuid4()))
-                return vl["voice"]
-        with self.mu:
-            pending = m.get("cue_voice_lock") or {}
-        choice = (dict(pending) if self._cue_matches(m, pending)
-                  and pending.get("stamp") in (None, stamp) else self._voice_choice(m))
-        with self.mu:
-            vl = m.get("voice_lock")
-            if (isinstance(vl, dict) and vl.get("stamp") == stamp and vl.get("voice")
-                    and (vl.get("identity") is None or vl["identity"] == self._voice_identity(m))):
-                return vl["voice"]  # another render of this reply locked it first
-            m["voice_lock"] = {**choice, "stamp": stamp, "identity": self._voice_identity(m),
-                               "lock_id": choice.get("lock_id") or str(uuid.uuid4())}
-            m.pop("cue_voice_lock", None)
-            self._log_voice(m, choice)
-            self.s.save()  # persist before crossing the render boundary, not only after the first upload
-            return choice["voice"]
+        return self._select_voice_lock(m, cue=False)["voice"]
 
     def _cue_current(self, m: dict, choice: dict) -> bool:
-        """Under mu: a render owns only its captured command, responder, stamp and lock generation."""
+        """Under mu: only the captured pending generation (or final owner) can publish audio."""
+        final = m.get("voice_lock") or {}
+        lock = final if choice.get("cue_final") else (m.get("cue_voice_lock") or {})
         return (m.get("reply_stamp") == choice.get("cue_stamp")
                 and self._voice_identity(m) == choice.get("cue_identity")
+                and lock.get("lock_id") == choice.get("lock_id")
+                and lock.get("voice") == choice.get("voice")
+                and (choice.get("cue_final") or not self._bound_reply_lock(m))
                 and not self._cancelled(m))
 
     def _missing_voice(self, m: dict, choice: dict, *, cue: bool = False) -> dict | None:
         """Fallback can mutate only the exact unrendered lock that requested it, never a promoted/new reply."""
         requested = choice.get("requested") or choice["voice"]
         with self.mu:
-            if cue and not self._cue_current(m, choice):
+            if cue and (choice.get("cue_final") or self._bound_reply_lock(m)
+                        or not self._cue_current(m, choice)):
                 return None
             field = "cue_voice_lock" if cue else "voice_lock"
             lock = m.get(field) or {}
@@ -3033,6 +3061,8 @@ class Watcher:
                     and lock.get("voice") == choice["voice"])
             if not cue:
                 owns = (owns and lock.get("stamp") == choice.get("stamp") == m.get("reply_stamp")
+                        and lock.get("identity") == choice.get("identity") == self._voice_identity(m)
+                        and not self._cancelled(m)
                         and not lock.get("rendered") and not m.get("voiced_n"))
             if not owns:
                 return None
@@ -3048,8 +3078,8 @@ class Watcher:
     def _synth_cue(self, m: dict, text: str, tmp: Path, steps: int, *, progress: bool = False) -> tuple | None:
         choice = self._cue_voice(m)
         with self.mu:
-            choice.update(cue_stamp=m.get("reply_stamp"), cue_identity=self._voice_identity(m),
-                          cue_profile=m.get("profile"))
+            if not self._cue_current(m, choice):
+                return None
         voice = choice["voice"]
         hit = self.phrases.get(text, voice, steps)
         if hit is not None:
@@ -3057,6 +3087,9 @@ class Watcher:
             try:
                 shutil.copyfile(hit, out)
                 self.phrases.hits += 1
+                with self.mu:
+                    if not self._cue_current(m, choice):
+                        return None
                 return out, "phrasebank", choice, True
             except OSError:
                 pass
@@ -3080,9 +3113,8 @@ class Watcher:
         """synthesize() in this reply's locked voice. A voice vox does not know (removed or mistyped) falls back to the
         emergency voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
         stage for 30 minutes."""
-        v = self._reply_voice(m)
-        with self.mu:
-            choice = dict(m["voice_lock"])
+        choice = self._select_voice_lock(m, cue=False)
+        v = choice["voice"]
         banked = self.phrases.get(text, v, steps)
         if banked is not None:
             out = tmp / "reply.ogg"
@@ -3114,7 +3146,11 @@ class Watcher:
 
     def _voice_rendered(self, m: dict, choice: dict) -> None:
         with self.mu:
+            if self._cancelled(m):
+                return  # an in-flight cancellation suppresses all audio publication
             if (m.get("reply_stamp") != choice.get("stamp")
+                    or self._voice_identity(m) != choice.get("identity")
+                    or (m.get("voice_lock") or {}).get("voice") != choice.get("voice")
                     or (m.get("voice_lock") or {}).get("lock_id") != choice.get("lock_id")):
                 raise StageError("tts", "voice_round_changed", "reply round changed during render", retryable=False)
             if not m["voice_lock"].get("rendered"):
