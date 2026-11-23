@@ -5154,7 +5154,7 @@ def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None
         body["steps"] = steps
     req = urllib.request.Request(f"{mc_.VOX_URL}/synthesize-url", method="POST",
                                  data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **mc_.vox_headers()})
     try:
         with TTS_GATE.hold(prio):
             with urllib.request.urlopen(req, timeout=120) as resp:

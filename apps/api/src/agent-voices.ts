@@ -12,6 +12,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
+import { opRead, type Secrets } from "./avatars.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -47,9 +48,17 @@ export type VoiceDeps = {
   now: () => number;
 };
 
+/** Voxxy's auth headers: $VOX_API_KEY, else the op:// ref in $VOX_API_KEY_REF (the voxxy CLI's convention). */
+export async function voxAuthHeaders(env: NodeJS.ProcessEnv = process.env, secrets: Secrets = opRead): Promise<Record<string, string>> {
+  const ref = env.VOX_API_KEY_REF?.trim();
+  const key = env.VOX_API_KEY?.trim() || (ref ? await secrets(ref) : undefined);
+  return key ? { Authorization: `Bearer ${key}`, "X-API-Key": key } : {};
+}
+
 export function defaultVoiceDeps(): VoiceDeps {
   const flume = process.env.FLUME_BIN ?? "flume";
   const vox = (process.env.VOX_URL ?? "https://vox.delo.sh").replace(/\/+$/u, "");
+  let voxHeaders: Promise<Record<string, string>> | undefined;
   return {
     async runFlume(args) {
       try {
@@ -63,7 +72,9 @@ export function defaultVoiceDeps(): VoiceDeps {
       }
     },
     async fetchCatalog() {
-      const res = await fetch(`${vox}/voices`, { signal: AbortSignal.timeout(10_000) });
+      voxHeaders ??= voxAuthHeaders();
+      const res = await fetch(`${vox}/voices`, { headers: await voxHeaders, signal: AbortSignal.timeout(10_000) });
+      if (res.status === 401) voxHeaders = undefined; // read the key again next time (it may have rotated)
       if (!res.ok) throw new Error(`Vox answered HTTP ${res.status} for ${vox}/voices`);
       return parseCatalog(await res.json());
     },

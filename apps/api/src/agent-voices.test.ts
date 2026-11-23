@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import Fastify from "fastify";
-import { createAgentVoices, parseCatalog, parseFlumeVoice, registerAgentVoiceRoutes, type FlumeRun, type VoiceDeps } from "./agent-voices.js";
+import { createAgentVoices, parseCatalog, parseFlumeVoice, registerAgentVoiceRoutes, voxAuthHeaders, type FlumeRun, type VoiceDeps } from "./agent-voices.js";
 
 // The Agents page voice picker is a bridge to `flume identity voice`, never a second writer.
 // A fake flume and a fake Vox catalog stand in for the real ones.
@@ -195,4 +195,15 @@ test("routes: GET voice, PUT pin, 409 on a flume refusal, 400 on a bad body", as
   const badId = await app.inject({ method: "GET", url: "/api/modules/hub/agents/a%20b/voice" });
   assert.equal(badId.statusCode, 400);
   await app.close();
+});
+
+test("Voxxy auth headers: the key, else its op:// ref, else none", async () => {
+  const reads: string[] = [];
+  const secrets = async (ref: string) => { reads.push(ref); return "from-vault"; };
+  assert.deepEqual(await voxAuthHeaders({ VOX_API_KEY: " direct ", VOX_API_KEY_REF: "op://v/i/f" }, secrets), { Authorization: "Bearer direct", "X-API-Key": "direct" });
+  assert.deepEqual(reads, []);
+  assert.deepEqual(await voxAuthHeaders({ VOX_API_KEY_REF: "op://v/i/f" }, secrets), { Authorization: "Bearer from-vault", "X-API-Key": "from-vault" });
+  assert.deepEqual(reads, ["op://v/i/f"]);
+  assert.deepEqual(await voxAuthHeaders({}, secrets), {});
+  assert.deepEqual(await voxAuthHeaders({ VOX_API_KEY_REF: "op://v/i/f" }, async () => undefined), {});
 });
