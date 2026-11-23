@@ -2974,11 +2974,12 @@ class Watcher:
         if lock.get("identity") == self._voice_identity(m):
             lock.setdefault("lock_id", str(uuid.uuid4()))
             return lock
-        # An unbound old lock cannot prove who spoke. Do not silently change a partial
-        # reply's voice either: an operator must start a fresh round for that resume.
-        if lock.get("identity") is None and (lock.get("rendered") or m.get("voiced_n") or m.get("reply_up")):
-            raise StageError("tts", "voice_lock_unbound", "legacy partial reply has no responder identity; start a new round",
-                             retryable=False)
+        # A stamped partial round may never be rebound, even to an explicit new identity.
+        # Only a fresh stamp/reset can authorize another responder after rendering/announcement.
+        if (lock.get("rendered") or m.get("voiced_n") or m.get("voiced_keys")
+                or m.get("voiced_one") or m.get("reply_up")):
+            code = "voice_lock_unbound" if lock.get("identity") is None else "voice_round_changed"
+            raise StageError("tts", code, "partial reply responder changed; start a new round", retryable=False)
         return None
 
     def _select_voice_lock(self, m: dict, *, cue: bool) -> dict:
@@ -3109,7 +3110,8 @@ class Watcher:
         self.phrases.put(text, choice["voice"], steps, audio, engine)
         return audio, engine, choice, False
 
-    def _synth(self, m: dict, text: str, tmp: Path, steps: int | None = None, prio: int | None = None) -> tuple[Path, str]:
+    def _synth(self, m: dict, text: str, tmp: Path, steps: int | None = None, prio: int | None = None,
+               *, publication: dict | None = None) -> tuple[Path, str]:
         """synthesize() in this reply's locked voice. A voice vox does not know (removed or mistyped) falls back to the
         emergency voice at once and stays on it for the rest of the reply (voice_lock.fallback), instead of retrying the
         stage for 30 minutes."""
@@ -3122,14 +3124,14 @@ class Watcher:
                 shutil.copyfile(banked, out)
                 self.phrases.hits += 1
                 log("phrasebank_hit", memo_id=m.get("memo_id"), voice=v, chars=len(text))
-                self._voice_rendered(m, choice)
+                self._voice_rendered(m, choice, publication)
                 return out, "phrasebank"
             except OSError:
                 pass
         try:
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, v))
             self.phrases.put(text, v, steps, audio, engine)
-            self._voice_rendered(m, choice)
+            self._voice_rendered(m, choice, publication)
             return audio, engine
         except VoiceNotFound:
             if v == VOICE:
@@ -3141,10 +3143,65 @@ class Watcher:
                 raise
             audio, engine = synthesize(text, tmp, **synth_kw(steps, prio, VOICE))
             self.phrases.put(text, VOICE, steps, audio, engine)
-            self._voice_rendered(m, choice)
+            self._voice_rendered(m, choice, publication)
             return audio, engine
 
-    def _voice_rendered(self, m: dict, choice: dict) -> None:
+    @contextlib.contextmanager
+    def _audio_attempt(self, m: dict | None = None, owner: dict | None = None):
+        """Retract abandoned ownership, not a valid partial round's retryable upload failure."""
+        pending = []
+        try:
+            yield pending
+        finally:
+            with self.mu:
+                keep = m is not None and owner is not None and self._reply_current(m, owner)
+            if not keep:
+                self._discard_audio(pending)
+
+    def _reply_owner(self, m: dict, *, selected: bool = True) -> dict:
+        """Under mu: immutable publication token; never recover it from a mutable memo after rendering."""
+        return {**(dict(m.get("voice_lock") or {}) if selected else {}), "identity": self._voice_identity(m),
+                "stamp": m.get("reply_stamp"), "tile_agent": m.get("agent")}
+
+    def _reply_current(self, m: dict, owner: dict) -> bool:
+        """Under mu. A round token can precede selection; a rendered token also binds the lock generation/voice."""
+        lock = m.get("voice_lock") or {}
+        return (not self._cancelled(m) and self._voice_identity(m) == owner.get("identity")
+                and m.get("reply_stamp") == owner.get("stamp") and m.get("agent") == owner.get("tile_agent")
+                and (not owner.get("lock_id") or
+                     (lock.get("lock_id") == owner["lock_id"] and lock.get("voice") == owner.get("voice")
+                      and lock.get("identity") == owner.get("identity") and lock.get("stamp") == owner.get("stamp"))))
+
+    def _require_reply_current(self, m: dict, owner: dict) -> bool:
+        if self._cancelled(m):
+            return False
+        if not self._reply_current(m, owner):
+            raise StageError("tts", "voice_round_changed", "reply round changed before publication", retryable=False)
+        return True
+
+    def _render_reply_chunk(self, m: dict, text: str, tmp: Path, steps, prio, owner: dict) -> tuple:
+        with self.mu:
+            if not self._require_reply_current(m, owner):
+                return None, None, owner
+        rendered = {}
+        audio, engine = self._synth(m, text, tmp, steps, prio, publication=rendered)
+        with self.mu:
+            if not self._require_reply_current(m, owner):
+                return None, None, owner
+            if not rendered or not self._require_reply_current(m, rendered):
+                return None, None, owner
+        return audio, engine, rendered
+
+    def _discard_audio(self, keys) -> None:
+        """Best effort exact-object retraction, outside mu; never erase a newer round's memo cursors."""
+        for key in set(keys):
+            try:
+                ok = mc_.mc("rm", "--quiet", mc_.s3_url(key), timeout=15).returncode == 0
+            except Exception:  # noqa: BLE001 - stale uploads are never announced even if removal fails
+                ok = False
+            log("stale_audio_retracted" if ok else "stale_audio_retract_failed", "info" if ok else "warn", object=key)
+
+    def _voice_rendered(self, m: dict, choice: dict, publication: dict | None = None) -> None:
         with self.mu:
             if self._cancelled(m):
                 return  # an in-flight cancellation suppresses all audio publication
@@ -3157,6 +3214,8 @@ class Watcher:
                 m["voice_lock"]["rendered"] = True
                 m["voice_lock"]["effective_voice"] = m["voice_lock"]["voice"]
                 self.s.save()
+            if publication is not None:
+                publication.update(self._reply_owner(m))
 
     def warm_phrases(self) -> None:
         """Warm inherited and explicit car voices, using the same profile Adapter as replies."""
@@ -3211,10 +3270,19 @@ class Watcher:
         return {"voice": used, **({"voice_requested": fell, "voice_fallback": vl.get("fallback")} if fell else {})}
 
     def step_speak(self, m: dict) -> None:
+        attempt = {}
+        with self._audio_attempt(m, attempt) as pending:
+            self._step_speak(m, pending, attempt)
+
+    def _step_speak(self, m: dict, pending: list, attempt: dict) -> None:
         """Render the reply and put the car's copy up (replies/...). The phone decision and the replied fact are the next
         stage (step_mirror), on a worker of their own: a reply that waits for a car does not hold up the next voice."""
         with self.mu:
             if m.get("reply_up"):
+                self._bound_reply_lock(m)  # a resumed partial cannot be rebound to another responder
+                owner = m["reply_up"].get("voice_owner")
+                if owner and not self._require_reply_current(m, owner):
+                    return
                 # An earlier attempt got the car's copy up and only the phone decision failed (or the service restarted
                 # between the two): nothing to render again.
                 self.done_stage(m, "tts", "mirror", ms=0, reply_key=m["reply_up"].get("rkey"), resumed=True)
@@ -3231,6 +3299,7 @@ class Watcher:
             # One reply key per memo: a retry after a half-finished upload overwrites instead of
             # leaving a second object that the pad would play as a second reply.
             stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
+            round_owner = self._reply_owner(m, selected=False)
         t_speak = time.time()
         body = spoken_summary(reply_text, SPEAK_CHARS) if followup else clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
@@ -3256,30 +3325,27 @@ class Watcher:
             t0 = time.time()
             if len(parts) > 1:
                 # The car hears the first sentence while the rest renders; the full file below is joined from the chunks.
-                voiced = self._voice_chunks(m, parts, stamp, tmp, t_speak, steps=steps, prio=prio)
+                voiced = self._voice_chunks(m, parts, stamp, tmp, t_speak, steps=steps, prio=prio,
+                                            owner=round_owner)
                 if voiced is None:
-                    with self.mu:
-                        log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
-                            note="cancelled while the reply was being voiced chunk by chunk; the chunks are taken back")
-                        self.retract_reply(m, None, None)
                     return
-                audio, engine = voiced
+                audio, engine, owner = voiced
+                pending.extend(chunk_key_for(stamp, agent, mid, i, len(parts)) for i in range(1, len(parts) + 1))
             else:
-                audio, engine = self._synth(m, spoken, tmp, steps, prio)
+                audio, engine, owner = self._render_reply_chunk(m, spoken, tmp, steps, prio, round_owner)
+                if audio is None:
+                    return
+            attempt.update(owner)
             tts_s = time.time() - t0
             log("stage_done", memo_id=mid, key=key, agent=agent, stage="tts",
                 ms=int(tts_s * 1000), engine=engine, bytes=audio.stat().st_size, spoken_chars=len(spoken),
                 chunks=len(parts))
             with self.mu:
-                if self._cancelled(m):
-                    # Cancelled while the voice was being made: nothing has been uploaded yet, so nothing is spoken.
-                    log("step_dropped_after_cancel", "warn", memo_id=mid, key=key, agent=agent, stage="speak",
-                        note="the reply is neither spoken nor mirrored")
-                    if m.get("voiced_keys"):
-                        self.retract_reply(m, None, None)
+                if not self._require_reply_current(m, owner):
                     return
             rkey = reply_key_for(stamp, agent, mid)
             t1 = time.time()
+            pending.append(rkey)  # an ambiguous/failed upload may still have landed
             r = mc_.mc("cp", "--quiet", str(audio), mc_.s3_url(rkey), timeout=60)
             if r.returncode != 0:
                 raise StageError("reply_upload", "mc_cp_failed", f"mc cp rc={r.returncode}: {r.stderr.strip()[-300:]}")
@@ -3291,11 +3357,7 @@ class Watcher:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         with self.mu:
-            if self._cancelled(m):
-                # The cancel landed while the uploads were running: the memo stays cancelled and says nothing more.
-                log("speak_cancelled", "warn", memo_id=mid, key=key, agent=agent, reply_key=rkey, earshot_key=None,
-                    note="cancelled while the reply was uploading; no replied fact")
-                self.retract_reply(m, rkey, None)
+            if not self._require_reply_current(m, owner):
                 return
             m["reply_key"] = rkey
             if fast and journey > CONVERSE_SLOW_S:
@@ -3314,7 +3376,7 @@ class Watcher:
                 "spoken_chars": len(spoken), "chunks": len(parts), "journey_seconds": round(journey, 2), "t_speak": t_speak,
                 "late": late, "escalated": escalated,
                 "followup": (live_followup(m) or {}).get("n"), "background": bool(m.get("background_plan")),
-                "detached": detached_now(m)}
+                "detached": detached_now(m), "voice_owner": owner}
             if len(parts) == 1 and m.get("voiced_one") != rkey:
                 # A reply spoken as one file is "voiced" too, chunk 1 of 1 (its own file): the replied fact waits for the
                 # phone-or-car decision, so this is how /voice and memo:trace know from when the car could speak it.
@@ -3329,6 +3391,7 @@ class Watcher:
                     "since_reply_seconds": round(t_up - t_speak, 2),
                     "since_agent_done_seconds": round(t_up - done_ts, 2) if done_ts else None, "late": late,
                     "followup": (live_followup(m) or {}).get("n")})
+            pending.clear()
             self.done_stage(m, "tts", "mirror", ms=(t_up - t1) * 1000, reply_key=rkey, journey_s=round(journey, 1))
 
     def step_mirror(self, m: dict) -> None:
@@ -4041,14 +4104,22 @@ class Watcher:
     # -- chunked reply speech (worker thread, inside step_speak) --
 
     def _voice_chunks(self, m: dict, parts: list[str], stamp: datetime, tmp: Path, t_speak: float,
-                      steps: int | None = None, prio: int | None = None) -> tuple[Path, str] | None:
-        """Render the reply chunk by chunk, upload each one as soon as it is rendered (on a publisher thread, so the next
-        chunk's render starts at once) and announce it (audio.memo.voiced). Then join them into the full reply file.
-        (full audio, engine), or None when the memo was cancelled meanwhile (the caller takes the chunks back).
-        A failed render or upload raises StageError: the speak stage is retried, re-rendering the same chunk keys.
-        steps / prio: a fast desk turn renders at fewer vox steps and ahead of other renders (TtsGate), chunk by chunk."""
+                      steps: int | None = None, prio: int | None = None, *, owner: dict | None = None) -> tuple | None:
+        attempt = {}
+        with self._audio_attempt(m, attempt) as pending:
+            result = self._render_chunks(m, parts, stamp, tmp, t_speak, steps, prio, owner, pending, attempt)
+            if result is not None:
+                pending.clear()
+            return result
+
+    def _render_chunks(self, m: dict, parts: list[str], stamp, tmp: Path, t_speak: float,
+                       steps, prio, owner, pending: list, attempt: dict) -> tuple | None:
+        """Overlap synthesis/upload without holding mu; every job carries its rendered owner to commit."""
         prio = TtsGate.REPLY if prio is None else prio
         with self.mu:
+            owner = owner or self._reply_owner(m, selected=False)
+            if not self._require_reply_current(m, owner):
+                return None
             agent, mid, key = m["agent"], m["memo_id"], m["key"]
             m["reply_chunks"] = len(parts)
         n = len(parts)
@@ -4058,76 +4129,84 @@ class Watcher:
         try:
             for i, text in enumerate(parts, 1):
                 with self.mu:
-                    if self._cancelled(m):
+                    if not self._require_reply_current(m, owner):
                         return None
-                for f in futures:  # an upload that already failed stops the renders now, not after all of them
+                for f in futures:
                     if f.done() and f.exception() is not None:
                         raise f.exception()
                 d = tmp / f"c{i:02d}"
                 d.mkdir()
                 t0 = time.time()
-                audio, engine = self._synth(m, text, d, steps, prio)
+                audio, engine, owner = self._render_reply_chunk(m, text, d, steps, prio, owner)
+                if audio is None:
+                    return None
+                attempt.update(owner)
                 files.append(audio)
-                job = {"i": i, "n": n, "text": text, "audio": audio, "ckey": chunk_key_for(stamp, agent, mid, i, n),
+                ckey = chunk_key_for(stamp, agent, mid, i, n)
+                pending.append(ckey)
+                job = {"i": i, "n": n, "text": text, "audio": audio, "ckey": ckey, "owner": owner,
                        "rkey": rkey, "tts_s": time.time() - t0, "engine": engine, "t_speak": t_speak}
                 futures.append(pub.submit(self._publish_chunk, m, job))
             for f in futures:
-                f.result(timeout=120)  # a failed upload raises here and the stage is retried
+                f.result(timeout=120)
         finally:
             pub.shutdown(wait=True)
         with self.mu:
-            if self._cancelled(m):
+            if not self._require_reply_current(m, owner):
                 return None
         full = tmp / "reply.ogg"
         t0 = time.time()
         if concat_ogg(files, full):
             log("reply_joined", memo_id=mid, key=key, agent=agent, chunks=n, bytes=full.stat().st_size,
                 ms=int((time.time() - t0) * 1000))
-            return full, engine
-        # ffmpeg could not join them: the full file is rendered whole, as before chunking (slower, never lost)
+            return full, engine, owner
         log("reply_join_failed", "warn", memo_id=mid, key=key, agent=agent, chunks=n,
             note="rendering the full reply in one piece instead")
-        return self._synth(m, " ".join(parts), tmp, steps, prio)
+        audio, engine, owner = self._render_reply_chunk(m, " ".join(parts), tmp, steps, prio, owner)
+        return (audio, engine, owner) if audio is not None else None
 
     def _publish_chunk(self, m: dict, job: dict) -> None:
-        """Upload one rendered chunk and publish audio.memo.voiced for it (once per chunk, also across stage retries)."""
-        mid, key, agent = m["memo_id"], m["key"], m["agent"]
-        # Tagged kind=chunk: a bucket lifecycle rule expires chunks after a day (they only matter until the full file is up,
-        # which holds the same audio; `mc ilm rule add --tags kind=chunk --expire-days 1 delo/holocene-auto`).
-        r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", "--tags", CHUNK_TAGS, str(job["audio"]),
-                   mc_.s3_url(job["ckey"]), timeout=60)
-        if r.returncode != 0:
-            raise StageError("reply_upload", "mc_cp_failed", f"chunk {job['i']}/{job['n']}: mc cp rc={r.returncode}: "
-                             f"{r.stderr.strip()[-300:]}")
-        size = job["audio"].stat().st_size
-        with self.mu:
-            done = m.setdefault("voiced_keys", {})
-            first = str(job["i"]) not in done
-            done[str(job["i"])] = job["ckey"]
-            if self._cancelled(m):
-                return  # the caller sees the cancel and takes every uploaded chunk back
-            since = round(time.time() - job["t_speak"], 2)
-            m["voiced_n"] = len(done)
-            if job["i"] == 1:
-                m["voiced_first_s"] = since
-                m["voiced_first_ts"] = time.time()  # the car could start from here: the phone copy's grace counts from it
-            if job["i"] == job["n"]:
-                m["voiced_last_s"] = since
-            log("chunk_voiced", memo_id=mid, key=key, agent=agent, stage="tts", chunk=job["i"], chunks=job["n"],
-                chunk_key=job["ckey"], tts_ms=int(job["tts_s"] * 1000), since_reply_s=since, bytes=size,
-                chars=len(job["text"]))
-            if first:
-                done_ts = m.get("agent_done_ts")
-                self.fact_fast("voiced", m, {
-                    "reply_s3_key": job["rkey"], "chunk_s3_key": job["ckey"], "chunk": job["i"], "chunks": job["n"],
-                    "spoken_text": job["text"], "spoken_chars": len(job["text"]), "command_id": m.get("command_id"),
-                    "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], **self._voice_fields(m),
-                    "audio_bytes": size,
-                    "since_reply_seconds": since,
-                    "since_agent_done_seconds": round(time.time() - done_ts, 2) if done_ts else None,
-                    "late": bool(m.get("late")), "followup": (live_followup(m) or {}).get("n")})
-            self.status(m)
-            self.s.save()
+        """Only the exact rendered generation can upload/announce or advance chunk cursors."""
+        with self._audio_attempt(m, job["owner"]) as pending:
+            with self.mu:
+                if not self._require_reply_current(m, job["owner"]):
+                    return
+                mid, key, agent = m["memo_id"], m["key"], m["agent"]
+            pending.append(job["ckey"])
+            r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", "--tags", CHUNK_TAGS, str(job["audio"]),
+                       mc_.s3_url(job["ckey"]), timeout=60)
+            if r.returncode != 0:
+                raise StageError("reply_upload", "mc_cp_failed", f"chunk {job['i']}/{job['n']}: mc cp rc={r.returncode}: "
+                                 f"{r.stderr.strip()[-300:]}")
+            size = job["audio"].stat().st_size
+            with self.mu:
+                if not self._require_reply_current(m, job["owner"]):
+                    return
+                done = m.setdefault("voiced_keys", {})
+                first = str(job["i"]) not in done
+                done[str(job["i"])] = job["ckey"]
+                since = round(time.time() - job["t_speak"], 2)
+                m["voiced_n"] = len(done)
+                if job["i"] == 1:
+                    m["voiced_first_s"] = since
+                    m["voiced_first_ts"] = time.time()
+                if job["i"] == job["n"]:
+                    m["voiced_last_s"] = since
+                log("chunk_voiced", memo_id=mid, key=key, agent=agent, stage="tts", chunk=job["i"], chunks=job["n"],
+                    chunk_key=job["ckey"], tts_ms=int(job["tts_s"] * 1000), since_reply_s=since, bytes=size,
+                    chars=len(job["text"]))
+                if first:
+                    done_ts = m.get("agent_done_ts")
+                    self.fact_fast("voiced", m, {
+                        "reply_s3_key": job["rkey"], "chunk_s3_key": job["ckey"], "chunk": job["i"], "chunks": job["n"],
+                        "spoken_text": job["text"], "spoken_chars": len(job["text"]), "command_id": m.get("command_id"),
+                        "tts_seconds": round(job["tts_s"], 2), "tts_engine": job["engine"], **self._voice_fields(m),
+                        "audio_bytes": size, "since_reply_seconds": since,
+                        "since_agent_done_seconds": round(time.time() - done_ts, 2) if done_ts else None,
+                        "late": bool(m.get("late")), "followup": (live_followup(m) or {}).get("n")})
+                self.status(m)
+                self.s.save()
+                pending.clear()
 
     # ---- progress: what the agent says it is doing, while the driver waits --------------------------------------
     #
@@ -4268,6 +4347,7 @@ class Watcher:
             line = clean_for_speech(m.get("progress_full") or m["progress_text"], NARRATE_CHARS)
             job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["progress_cmd"],
                    "seq": m["progress_seq"], "n": n, "spoken": f"{name}: {line}", "line": line}
+        job["owner"] = self._reply_owner(m, selected=False)
         self.narrating.add(m["key"])
         # Claimed now, not when the upload lands: the gap runs from the decision, so a slow vox cannot cause two
         # renders of the same memo back to back.
@@ -4289,13 +4369,18 @@ class Watcher:
         """None while the memo's turn (the same command) is still running, else why the narration is dropped."""
         if m is None or self._cancelled(m):
             return "cancelled"
-        if m.get("command_id") != job["cid"]:
+        if (m.get("command_id") != job["cid"] or (job.get("agent") and m.get("agent") != job["agent"])
+                or (job.get("owner") and not self._reply_current(m, job["owner"]))):
             return "command_changed"
         if m.get("stage") != "await_agent":
             return "turn_finished"
         return None
 
     def _narrate(self, job: dict) -> None:
+        with self._audio_attempt() as pending:
+            self._narrate_audio(job, pending)
+
+    def _narrate_audio(self, job: dict, pending: list) -> None:
         key, mid = job["key"], job["mid"]
         tmp = Path(tempfile.mkdtemp(prefix="memo-progress-"))
         try:
@@ -4313,7 +4398,9 @@ class Watcher:
             calling = on_call()   # outside the lock: the render may have taken seconds, a call may have started
             with self.mu:
                 mm = self.s.memos.get(key)
-                why = self._still_working(mm, job) or ("operator_on_call" if calling else None)
+                why = self._still_working(mm, job)
+                why = why or ("voice_round_changed" if mm is None or not self._cue_current(mm, choice) else None)
+                why = why or ("operator_on_call" if calling else None)
                 if why == "operator_on_call" and mm is not None and "tag" not in job:
                     # dropped, not deferred: the progress line is marked as spoken (as _drop_narration_for_call does), or a
                     # call shorter than NARRATE_GAP_S would see the same stale line rendered and said after the hang-up
@@ -4325,6 +4412,7 @@ class Watcher:
                     tts_ms=int(tts_s * 1000))
                 return
             pkey = mc_.progress_key_for(key, job["n"], mid)
+            pending.append(pkey)
             r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(audio), mc_.s3_url(pkey), timeout=30)
             if r.returncode != 0:
                 raise RuntimeError(f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
@@ -4334,12 +4422,11 @@ class Watcher:
         with self.mu:
             m = self.s.memos.get(key)
             why = self._still_working(m, job)
-            if why in ("cancelled", "command_changed"):
-                log("narration_dropped", memo_id=mid, key=key, agent=job["agent"], n=job["n"], seq=job["seq"], reason=why,
-                    progress_key=pkey, note="uploaded before the memo moved on; the car drops a stale update")
+            if why in ("cancelled", "command_changed") or m is None or not self._cue_current(m, choice):
+                log("narration_dropped", memo_id=mid, key=key, agent=job["agent"], n=job["n"], seq=job["seq"],
+                    reason=why or "voice_round_changed", progress_key=pkey)
                 return
-            # A turn that finished during the upload keeps the object: the reply is still rendering, and the car's
-            # speech arbiter drops a progress update that would play after the reply.
+            # A stage-only completion may keep its progress clip; a promoted final lock/round may not.
             m.update(narr_count=job["n"], narr_key=pkey, narr_cmd=job["cid"], narr_src_seq=job["seq"],
                      narr_text=job["line"], narr_last_ts=time.time(), narr_hold=None)
             elapsed = time.time() - float(m.get("dispatched_ts") or time.time())
@@ -4355,6 +4442,7 @@ class Watcher:
                 "kind": job.get("tag")})
             self.status(m)
             self.s.save()
+            pending.clear()
 
 
     # ---- hold cue: a very short spoken line while the driver waits and nothing else is being said (HOLOC-23) ----------
@@ -4449,7 +4537,16 @@ class Watcher:
             return m.get("narr_count", 0) + 1
 
     def _hold_run(self, m: dict, n: int, text: str, tag: str, still, since: float, cid: str | None) -> None:
-        """Render (PhraseBank first), re-check, upload, re-check, announce. The claim from _hold_claim is released here."""
+        try:
+            with self._audio_attempt() as pending:
+                self._hold_audio(m, n, text, tag, still, since, cid, pending)
+        finally:
+            with self.mu:
+                self.narrating.discard(m["key"])
+
+    def _hold_audio(self, m: dict, n: int, text: str, tag: str, still, since: float, cid: str | None,
+                    pending: list) -> None:
+        """Render/check/upload/check; slow uploads and stale-object removals never hold mu."""
         key, mid, agent = m["key"], m["memo_id"], m["agent"]
         tmp = Path(tempfile.mkdtemp(prefix="memo-hold-"))
         try:
@@ -4470,31 +4567,26 @@ class Watcher:
                 return
             calling = on_call()
             with self.mu:
-                why = still(m) or ("operator_on_call" if calling else None)
+                why = still(m) or ("voice_round_changed" if not self._cue_current(m, choice) else None)
+                why = why or ("operator_on_call" if calling else None)
             if why:
                 log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="rendered", tts_ms=int(tts_s * 1000),
                     note="the answer is ready (or the operator is on a call): a stale cue is never uploaded")
                 return
             pkey = mc_.progress_key_for(key, n, mid, hold=True)
+            pending.append(pkey)
             r = mc_.mc("cp", "--quiet", "--attr", "Content-Type=audio/ogg", str(audio), mc_.s3_url(pkey), timeout=30)
             if r.returncode != 0:
                 raise RuntimeError(f"mc cp rc={r.returncode}: {r.stderr.strip()[-200:]}")
             size = audio.stat().st_size
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-            with self.mu:
-                self.narrating.discard(key)
         calling = on_call()
         with self.mu:
-            why = still(m) or ("operator_on_call" if calling else None)
+            why = still(m) or ("voice_round_changed" if not self._cue_current(m, choice) else None)
+            why = why or ("operator_on_call" if calling else None)
             if why:
-                removed = False
-                try:   # the decision landed during the upload: the object must not stay listed for the pad to pick up
-                    removed = mc_.mc("rm", "--quiet", mc_.s3_url(pkey), timeout=15).returncode == 0
-                except Exception:  # noqa: BLE001
-                    pass
-                log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="uploaded", progress_key=pkey,
-                    removed=removed, note="uploaded just before the answer: the object is removed so the pad cannot play it")
+                log("hold_cue_dropped", memo_id=mid, key=key, agent=agent, reason=why, stage="uploaded", progress_key=pkey)
                 return
             # the pad's cursor moves; narr_cmd / narr_last_ts / narr_src_seq stay the agent narration's. The clip is a hold cue:
             # its own text and kind in the status block (not the previous real line paired with the hold clip's key), and it is
@@ -4510,6 +4602,7 @@ class Watcher:
                 "voice": voice, "audio_bytes": size, "kind": tag})
             self.status(m)
             self.s.save()
+            pending.clear()
 
     def maybe_keepalive(self, m: dict) -> bool:
         """Under the lock, from poll_progress: a turn the desk handed to the full agent says "Still on it." when it has been
