@@ -12,5 +12,6 @@ test("stamps are UTC minutes and invalid input is shown verbatim", () => {
 });
 test("missing declarations are separated from unreadable or invalid ones", () => {
   const g = groupIssues([{ id: "a", name: "A", state: "missing", detail: "" }, { id: "b", name: "B", state: "unavailable", detail: "" }, { id: "c", name: "C", state: "invalid", detail: "" }]);
-  assert.deepEqual(g.missing.map((i) => i.id), ["a"]); assert.deepEqual(g.actionable.map((i) => i.id), ["b", "c"]);
+  assert.deepEqual(g.missing.map((i) => i.id), ["a"]); assert.deepEqual(g.unavailable.map((i) => i.id), ["b"]); assert.deepEqual(g.invalid.map((i) => i.id), ["c"]);
+  assert.deepEqual(groupIssues([{ id: "d", name: "D", state: "future", detail: "" }]).unavailable.map((i) => i.id), ["d"]);
 });

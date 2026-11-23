@@ -16,7 +16,10 @@ export function stamp(iso: string) {
   return Number.isNaN(at.getTime()) ? iso : at.toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 
-/** Unreadable or invalid declarations need attention; a missing declaration is the common, quiet case. */
+/** Invalid and unreadable declarations stay distinct and need attention; a missing declaration is the common, quiet case. */
 export function groupIssues(issues: ProductsPayload["issues"]) {
-  return { actionable: issues.filter((i) => i.state !== "missing"), missing: issues.filter((i) => i.state === "missing") };
+  const by = (state: string) => issues.filter((i) => i.state === state);
+  const known = new Set(["missing", "unavailable", "invalid"]);
+  // Any future state is surfaced with the unreadable group rather than hidden.
+  return { invalid: by("invalid"), unavailable: issues.filter((i) => i.state === "unavailable" || !known.has(i.state)), missing: by("missing") };
 }

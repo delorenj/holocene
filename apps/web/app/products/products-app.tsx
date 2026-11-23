@@ -42,7 +42,10 @@ export function ProductsApp() {
     return () => window.removeEventListener("popstate", sync);
   }, []);
   const lastGood = data?.registry.state === "down" || !!error;
-  const count = (s?: "launch" | "live") => data ? data.products.filter((p) => !s || p.stage === s).length : undefined;
+  // With the registry down and no snapshot, zero rows means "unknown", never "none".
+  const countsKnown = !!data && !(data.registry.state === "down" && !data.registry.snapshotAt);
+  const count = (s?: "launch" | "live") => countsKnown && data ? data.products.filter((p) => !s || p.stage === s).length : "–";
+  const flagged = data?.products.filter((p) => p.issue).length ?? 0;
   const issues = data ? groupIssues(data.issues) : undefined;
   return <div className="hub-root products-root" data-theme={theme}>
     <HubShell current={stage ? `products-${stage}` : "products"}><Brand /><div className="hub-header-end"><ThemeToggle theme={theme} onToggle={toggle} /></div></HubShell>
@@ -52,9 +55,14 @@ export function ProductsApp() {
           <p className="products-eyebrow">Catalog / Products</p>
           <h1>Products</h1>
           {data ? <ul className="hub-tally" aria-label="Directory summary">
-            <li className="is-strong">{count("launch")} preparing to launch</li>
-            <li>{count("live")} live</li>
-            {issues?.actionable.length ? <li className="is-warn">{issues.actionable.length} unreadable</li> : null}
+            {countsKnown ? <>
+              <li className="is-strong">{count("launch")} preparing to launch</li>
+              <li>{count("live")} live</li>
+              {lastGood ? <li className="is-warn">counts from last good snapshot</li> : null}
+            </> : <li className="is-warn">counts unknown · discovery incomplete</li>}
+            {flagged ? <li className="is-warn">{flagged} {flagged === 1 ? "product needs" : "products need"} attention</li> : null}
+            {issues?.unavailable.length ? <li className="is-warn">{issues.unavailable.length} unreadable</li> : null}
+            {issues?.invalid.length ? <li className="is-warn">{issues.invalid.length} invalid</li> : null}
           </ul> : null}
         </div>
         <div className="products-tools">
@@ -77,7 +85,7 @@ export function ProductsApp() {
             <div className={`hub-panel-head${s === "live" ? " is-quiet" : ""}`}>
               <NavIcon name={s === "launch" ? "launch" : "live"} />
               <h2 id={`products-${s}`}>{STAGE_LABEL[s]}</h2>
-              <span className="hub-panel-count" aria-label={`${products.length} ${products.length === 1 ? "product" : "products"}`}>{products.length}</span>
+              <span className="hub-panel-count">{countsKnown ? products.length : "–"}<span className="hub-sr-only"> {countsKnown ? (products.length === 1 ? "product" : "products") : "products, count unknown"}</span></span>
               <span className="hub-panel-meta">{s === "launch" ? "receipt-backed launch dashboards · open in a new tab" : "existing storefront and fulfilment view"}</span>
             </div>
             {products.length ? <>
@@ -86,11 +94,11 @@ export function ProductsApp() {
             </> : <p className="hub-panel-body products-empty">{lastGood || data.issues.length ? "No entries in the available snapshot; discovery is incomplete." : `No registered products declared ${s}.`}</p>}
           </section>;
         })}
-        {issues && (issues.actionable.length || issues.missing.length || lastGood) ? <section aria-labelledby="products-issues" className="hub-panel products-issues">
+        {issues && (issues.invalid.length || issues.unavailable.length || issues.missing.length || lastGood) ? <section aria-labelledby="products-issues" className="hub-panel products-issues">
           <div className="hub-panel-head is-quiet">
             <NavIcon name="diagnostics" />
             <h2 id="products-issues">Lifecycle source issues</h2>
-            <span className="hub-panel-count" aria-label={`${data.issues.length} issues`}>{data.issues.length}</span>
+            <span className="hub-panel-count">{data.issues.length}<span className="hub-sr-only"> {data.issues.length === 1 ? "issue" : "issues"}</span></span>
             <span className="hub-panel-meta">read-only discovery · never inferred as healthy or empty</span>
           </div>
           <div className="hub-panel-body products-issue-list">
@@ -99,7 +107,7 @@ export function ProductsApp() {
               <div><h3>Lifecycle discovery is incomplete</h3><p>Rows above come only from the last good snapshot. Retry read re-runs read-only discovery.</p></div>
               <button className="hub-btn" type="button" onClick={reload}>Retry read</button>
             </article> : null}
-            {issues.actionable.map((i) => <article key={i.id} className="products-issue-card">
+            {[...issues.invalid, ...issues.unavailable].map((i) => <article key={i.id} className="products-issue-card">
               <span className={`hub-tag ${i.state === "invalid" ? "is-broken" : "is-stuck"}`}>{i.state}</span>
               <div><h3>{i.name}</h3><p><code>{i.id}</code> · {i.detail}</p></div>
             </article>)}
