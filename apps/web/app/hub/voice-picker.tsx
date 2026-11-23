@@ -47,6 +47,7 @@ async function voiceCall(agentId: string, init?: RequestInit): Promise<AgentVoic
 export function VoicePicker({ agent }: { agent: Agent }) {
   const [catalog, setCatalog] = useState<VoiceOption[]>();
   const [catalogError, setCatalogError] = useState<string>();
+  const [catalogTry, setCatalogTry] = useState(0);
   const [current, setCurrent] = useState<AgentVoice>();
   const [readError, setReadError] = useState<string>();
   const [saving, setSaving] = useState<string | null>(null);
@@ -63,7 +64,7 @@ export function VoicePicker({ agent }: { agent: Agent }) {
     return () => {
       on = false;
     };
-  }, []);
+  }, [catalogTry]);
 
   useEffect(() => {
     live.current = agent.id;
@@ -71,16 +72,18 @@ export function VoicePicker({ agent }: { agent: Agent }) {
     setReadError(undefined);
     setResult(undefined);
     setSaving(null);
+    if (catalogError) setCatalogTry((n) => n + 1);
     voiceCall(agent.id).then(
       (v) => live.current === agent.id && setCurrent(v),
       (e) => live.current === agent.id && setReadError(e instanceof Error ? e.message : String(e))
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
 
   const pinned = current?.source === "pinned" ? current.voice : null;
   const value = saving ?? (pinned ?? INHERIT);
   const refused = current && !current.ok ? current.blockers : [];
-  const disabled = !current || !current.ok || saving !== null || !catalog;
+  const disabled = !current || !current.ok || saving !== null;
   const known = new Set((catalog ?? []).map((v) => v.name));
 
   const choose = async (next: string) => {
@@ -125,7 +128,7 @@ export function VoicePicker({ agent }: { agent: Agent }) {
           onChange={(e) => void choose(e.target.value)}
         >
           <option value={INHERIT}>{`Fleet default${current?.fleetDefault ? ` (${current.fleetDefault})` : ""}`}</option>
-          {pinned && !known.has(pinned) ? <option value={pinned}>{`${pinned} · not in Vox`}</option> : null}
+          {pinned && !known.has(pinned) ? <option value={pinned}>{catalog ? `${pinned} · not in Vox` : pinned}</option> : null}
           {(catalog ?? []).map((v) => (
             <option key={v.name} value={v.name}>{label(v)}</option>
           ))}
@@ -147,7 +150,13 @@ export function VoicePicker({ agent }: { agent: Agent }) {
           <span>{refused.map((b) => b.detail).join("; ")}</span>
         </p>
       ) : null}
-      {catalogError ? <p className="voice-msg tone-error"><Glyph signal="broken" size={8} /><span>Vox catalog unavailable: {catalogError}</span></p> : null}
+      {catalogError ? (
+        <p className="voice-msg tone-error">
+          <Glyph signal="broken" size={8} />
+          <span>Vox catalog unavailable: {catalogError}. You can still clear the pin.</span>
+          <button type="button" className="hub-btn is-ghost" onClick={() => (setCatalogError(undefined), setCatalogTry((n) => n + 1))}>Retry</button>
+        </p>
+      ) : null}
       {result ? (
         <p className={`voice-msg tone-${result.tone}`} role="status">
           <Glyph signal={result.tone === "ok" ? "cleared" : result.tone === "warn" ? "stuck" : "broken"} size={8} />

@@ -18,9 +18,11 @@ const execFileAsync = promisify(execFile);
 /** Same shape Flume enforces for desk ids and voice slugs (voice.ts VOICE_SLUG). */
 export const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const CATALOG_TTL_MS = 60_000;
+/** After a failed refresh, serve the last good list this long before asking Vox again. */
+const CATALOG_RETRY_MS = 15_000;
 
 export type VoiceOption = { name: string; displayName: string; tags: string[]; persona?: string };
-export type VoiceCatalog = { voices: VoiceOption[]; fetchedAt: string; source: string };
+export type VoiceCatalog = { voices: VoiceOption[]; fetchedAt: string; source: string; stale?: boolean };
 
 export type AgentVoice = {
   ok: boolean;
@@ -109,7 +111,8 @@ export function parseFlumeVoice(agentId: string, run: FlumeRun): AgentVoice {
     fleetDefault: typeof doc.fleet_default === "string" ? doc.fleet_default : null,
     changed: doc.changed === true,
     blockers,
-    detail: typeof doc.detail === "string" ? doc.detail : ""
+    // A flume that threw prints only {ok:false, error}: keep its message rather than a bare exit code.
+    detail: typeof doc.detail === "string" && doc.detail ? doc.detail : typeof doc.error === "string" ? doc.error : ""
   };
   if (doc.gateway && typeof doc.gateway === "object") out.gateway = { action: String(doc.gateway.action ?? ""), confirmed: doc.gateway.confirmed === true, detail: String(doc.gateway.detail ?? "") };
   if (!out.ok && !out.blockers.length) out.blockers.push({ code: "flume-failed", detail: out.detail || `flume exited ${run.code}` });
@@ -125,12 +128,14 @@ export class HttpError extends Error {
 export function createAgentVoices(deps: VoiceDeps) {
   let cached: VoiceCatalog | undefined;
   let cachedAt = 0;
+  let failedAt = -Infinity;
   let inflight: Promise<VoiceCatalog> | undefined;
   // One write at a time: each one rewrites a desk's delta and rendered config and may cycle it through the gateway.
   let writes: Promise<unknown> = Promise.resolve();
 
   async function catalog(force = false): Promise<VoiceCatalog> {
     if (!force && cached && deps.now() - cachedAt < CATALOG_TTL_MS) return cached;
+    if (!force && cached && deps.now() - failedAt < CATALOG_RETRY_MS) return { ...cached, stale: true };
     inflight ??= (async () => {
       try {
         const voices = await deps.fetchCatalog();
@@ -144,7 +149,8 @@ export function createAgentVoices(deps: VoiceDeps) {
     try {
       return await inflight;
     } catch (e) {
-      if (cached) return cached; // Vox blipped: keep offering the last good list
+      failedAt = deps.now();
+      if (cached) return { ...cached, stale: true }; // Vox blipped: keep offering the last good list
       throw e;
     }
   }
@@ -192,11 +198,11 @@ export function registerAgentVoiceRoutes(app: FastifyInstance, voices = createAg
 
   app.put<{ Params: { agentId: string }; Body: { voice?: unknown } }>("/api/modules/hub/agents/:agentId/voice", async (req, reply) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    if (!("voice" in body) || !(body.voice === null || typeof body.voice === "string")) {
+    if (!("voice" in body) || !(body.voice === null || (typeof body.voice === "string" && body.voice !== ""))) {
       return reply.code(400).send({ error: 'send {"voice": "<vox voice slug>"} to pin, or {"voice": null} to inherit the fleet default' });
     }
     try {
-      const result = await voices.assign(req.params.agentId, body.voice === null || body.voice === "" ? null : body.voice);
+      const result = await voices.assign(req.params.agentId, body.voice);
       return result.ok ? result : reply.code(409).send(result);
     } catch (e) {
       return fail(reply, e);

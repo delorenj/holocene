@@ -67,6 +67,10 @@ test("parseFlumeVoice maps a show report and refuses to guess on garbage", () =>
   const refused = parseFlumeVoice("dumply", { code: 1, stdout: report({ ok: false, speaks: { voice: null, source: "none" }, blockers: [{ code: "unknown-employee", detail: "no definition" }], detail: "refused" }), stderr: "" });
   assert.equal(refused.ok, false);
   assert.deepEqual(refused.blockers, [{ code: "unknown-employee", detail: "no definition" }]);
+
+  const threw = parseFlumeVoice("holocene-pm", { code: 1, stdout: JSON.stringify({ ok: false, error: "YAMLParseError: bad indent" }), stderr: "" });
+  assert.equal(threw.ok, false);
+  assert.match(threw.blockers[0].detail, /YAMLParseError/);
 });
 
 test("assign pins through flume --assign --apply, clear through --clear --apply", async () => {
@@ -145,8 +149,17 @@ test("catalog caches for a minute and serves the last good list when Vox blips",
   assert.equal(fetches, 1);
   tick(61_000);
   down = true;
-  assert.equal((await v.catalog()).voices[0].name, "rick");
+  const stale = await v.catalog();
+  assert.equal(stale.voices[0].name, "rick");
+  assert.equal(stale.stale, true);
   assert.equal(fetches, 2);
+  await v.catalog(); // inside the retry window: no new Vox hit
+  assert.equal(fetches, 2);
+  tick(16_000);
+  down = false;
+  const fresh = await v.catalog();
+  assert.equal(fresh.stale, undefined);
+  assert.equal(fetches, 3);
 });
 
 test("routes: GET voice, PUT pin, 409 on a flume refusal, 400 on a bad body", async () => {
@@ -176,6 +189,8 @@ test("routes: GET voice, PUT pin, 409 on a flume refusal, 400 on a bad body", as
 
   const bad = await app.inject({ method: "PUT", url: "/api/modules/hub/agents/holocene-pm/voice", payload: { nope: 1 } });
   assert.equal(bad.statusCode, 400);
+  const empty = await app.inject({ method: "PUT", url: "/api/modules/hub/agents/holocene-pm/voice", payload: { voice: "" } });
+  assert.equal(empty.statusCode, 400, "an empty string never clears a pin; only null does");
 
   const badId = await app.inject({ method: "GET", url: "/api/modules/hub/agents/a%20b/voice" });
   assert.equal(badId.statusCode, 400);
