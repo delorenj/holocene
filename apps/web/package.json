@@ -9,7 +9,7 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next dist",
-    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\" \"app/hub/navigation-model.test.ts\" \"app/products/products-model.test.ts\"",
+    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\" \"app/hub/navigation-model.test.ts\" \"app/products/products-model.test.ts\" \"app/artifacts/featured.test.ts\"",
     "test:products-browser": "node --test app/products/products.browser.mjs",
     "test:artifacts-browser": "node --test app/artifacts/artifacts.browser.mjs"
   },
