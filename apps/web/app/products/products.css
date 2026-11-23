@@ -16,6 +16,10 @@
 .hub-root .product-action { display: inline-block; padding: 9px 12px; border: 2px solid var(--ink); color: var(--ink); font-weight: 650; text-decoration: none; box-shadow: 2px 2px 0 var(--shadow); }
 .hub-root .product-action:hover { text-decoration: underline; text-underline-offset: 3px; }
 .hub-root .product-unavailable { color: var(--ink-3); }
+.hub-root .product-state { margin: 12px 0; padding: 10px 12px; border-left: 3px solid var(--broken); background: var(--x-wash); color: var(--ink-2); }
+.hub-root .product-state p { margin: 3px 0; }
+.hub-root .product-state strong { color: var(--ink); }
+.hub-root .product-state .product-provenance { margin-top: 8px; }
 .hub-root .products-issues { padding-top: 12px; border-top: 1px solid var(--line-strong); }
 .hub-root .products-issues summary { cursor: pointer; font-weight: 650; padding: 8px 0; }
 .hub-root .products-issues summary:focus-visible { outline: 2px solid var(--pop); outline-offset: 2px; }

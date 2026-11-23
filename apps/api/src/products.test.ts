@@ -46,6 +46,17 @@ test("directory joins authoritative identity and links, promotion moves same ID 
   assert.equal(d.products.filter((p) => p.id === "launch").length, 1);
   assert.equal(d.products[0].stage, "live"); assert.equal(d.products[0].destination?.href, "/live");
 });
+test("every registered launch declaration remains listed without scripts, receipts, or gates; steady excluded", async () => {
+  const h = setup(); h.projects([p("launch"), p("no-script"), p("no-receipt"), p("steady")]);
+  h.modes["no-script"] = "mode: launch"; h.modes["no-receipt"] = "mode: launch";
+  h.deps.receipt = async (project) => { if (project.id === "no-receipt") throw Error("missing"); return receipt(); };
+  const d = await h.directory.read();
+  assert.deepEqual(d.products.map((x) => x.id), ["launch", "no-receipt", "no-script"]);
+  assert.equal(d.products.find((x) => x.id === "no-receipt")?.launch?.state, "unknown");
+  assert.equal(d.products.find((x) => x.id === "no-receipt")?.destination, undefined);
+  assert.equal(d.products.find((x) => x.id === "no-script")?.launch?.state, "unknown");
+  assert.ok(!JSON.stringify(d).includes("repoPath"));
+});
 test("registry outage first read vs last-good snapshot vs healthy empty are distinct, errors never serialize secrets", async () => {
   const h = setup();
   await h.directory.read(); h.advance();

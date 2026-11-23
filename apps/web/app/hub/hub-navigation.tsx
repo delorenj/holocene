@@ -2,13 +2,15 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useId, useState } from "react";
-import { currentGroup, nativeModifiedClick, NAV_GROUPS, PRODUCT_LINKS, type NavItem } from "./navigation-model";
+import { currentGroup, nativeModifiedClick, NAV_GROUPS, PRODUCT_LINKS, PROJECT_LINKS, projectsAncestor, type NavItem } from "./navigation-model";
 
 export type NavigationProps = { current?: string; onSelect?: (id: string) => boolean };
 function Hierarchy({ current, onSelect, close }: NavigationProps & { close?: () => void }) {
   const id = useId();
   const ancestor = currentGroup(current);
   const [expanded, setExpanded] = useState<string[]>(ancestor ? [ancestor] : []);
+  const [projectsOpen, setProjectsOpen] = useState(() => projectsAncestor(current));
+  useEffect(() => { if (projectsAncestor(current)) setProjectsOpen(true); }, [current]);
   useEffect(() => { if (ancestor) setExpanded((old) => old.includes(ancestor) ? old : [...old, ancestor]); }, [ancestor]);
   const link = (item: NavItem) => <a key={item.id} href={item.href} className={`hub-nav-link${item.id === "products" ? " is-major" : ""}`} aria-current={current === item.id ? "page" : undefined}
     onClick={(e) => {
@@ -17,7 +19,13 @@ function Hierarchy({ current, onSelect, close }: NavigationProps & { close?: () 
       close?.();
     }}>{item.label}</a>;
   return <nav aria-label="Primary navigation">
-    <div className={`hub-nav-products${current?.startsWith("products") ? " is-ancestor" : ""}`}>{PRODUCT_LINKS.map(link)}</div>
+    <div className={`hub-nav-products${current === "products" ? " is-ancestor" : ""}`}>{PRODUCT_LINKS.map(link)}</div>
+    <div className={`hub-nav-group hub-nav-projects${projectsAncestor(current) ? " is-ancestor" : ""}`}>
+      <button type="button" className="hub-nav-group-toggle" aria-expanded={projectsOpen} aria-controls={`${id}-projects`} onClick={() => setProjectsOpen((old) => !old)}>
+        <span>Projects</span><span aria-hidden="true">{projectsOpen ? "−" : "+"}</span>{projectsAncestor(current) ? <span className="hub-sr-only">, current group</span> : null}
+      </button>
+      <div id={`${id}-projects`} hidden={!projectsOpen}>{PROJECT_LINKS.map(link)}</div>
+    </div>
     {NAV_GROUPS.map((group) => {
       const open = expanded.includes(group.id);
       return <div key={group.id} className={`hub-nav-group${ancestor === group.id ? " is-ancestor" : ""}`}>

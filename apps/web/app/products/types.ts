@@ -2,6 +2,7 @@ export type Product = {
   id: string; name: string; stage: "launch" | "live";
   declaration: { commit: string };
   destination?: { href: string; label: string; publishedAt?: string };
+  launch?: { state: "attention" | "unknown" | "stale"; openActions?: number; ownerBlockers?: number; nextStep: string; observedAt?: string; source: "launch dashboard receipt" };
   issue?: string;
 };
 export type ProductsPayload = {

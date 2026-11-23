@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import type { ProjectRecord } from "./hub-model.js";
 import { safeRelPath } from "./live-model.js";
-import { classifyProduct, publication, type Product, type ProductIssue } from "./products-model.js";
+import { classifyProduct, launchEvidence, publication, type Product, type ProductIssue } from "./products-model.js";
 
 const exec = promisify(execFile);
 const MAX_BYTES = 128 * 1024;
@@ -95,8 +95,11 @@ export function createProductsDirectory(deps: ProductsDeps) {
         const product: Product = { id: p.id, name: p.name, stage: classification.stage, declaration: { commit: decl.commit }, issue: classification.issue };
         if (product.stage === "live") product.destination = { href: "/live", label: "Open Live management" };
         else {
+          product.launch = launchEvidence(undefined, now);
           try {
-            product.destination = publication(await deps.receipt(p));
+            const evidence = await deps.receipt(p);
+            product.destination = publication(evidence);
+            product.launch = launchEvidence(evidence, now);
             if (!product.destination) product.issue = "Publication receipt is invalid or has an unsafe dashboard URL.";
           } catch { product.issue = "Publication receipt unavailable; no dashboard link can be resolved."; }
         }
