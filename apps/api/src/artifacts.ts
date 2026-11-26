@@ -87,13 +87,14 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
       const kind = category(filename);
       const date = validDate(file.modified) ?? newest;
       // A dated folder is the publication day publish.py chose; a modified time is only that.
-      const day = dated ? segments[1] : localDay(date);
+      // An undated bundle takes its newest file's day for every member, so it never splits.
+      const day = dated ? segments[1] : localDay(loose ? date : newest);
       return { id: `${bucket}:${file.key}`, source: bucket, project: group.project,
         title: isPrimary && !loose ? label(group.name) : label(filename.split("/").at(-1)!),
         filenames: isPrimary && !loose ? files.map(rel) : [filename], category: kind,
         originalUrl: url, mediaUrl: kind !== "other" ? url : undefined,
         date, dateKind: date ? "modified" : "unknown",
-        collection: bucket === "projects" ? group.project : "share", day, dayKind: dated ? "published" : day ? "modified" : "unknown",
+        collection: bucket === "projects" ? projectCollection(group.project!) : "share", day, dayKind: dated ? "published" : day ? "modified" : "unknown",
         layout: bucket === "share" ? "share" : dated ? "dated" : "session",
         publication: loose ? `${bucket}:${file.key}` : `${bucket}:${prefix}`, primary: isPrimary || loose,
         baseUrl: `${BASE}/${bucket}/${encodeKey(prefix)}/`, hubUrl: dated ? hubs.get(`${segments[0]}/${segments[1]}`) : undefined };
@@ -206,6 +207,8 @@ export function boundaries(day: string, endDay: string, zone: string): [number, 
   const next = new Date(Date.parse(`${endDay}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
   return [startOfDay(day), startOfDay(next)];
 }
+/** A project folder named like a non-project collection stays its own collection. */
+export const projectCollection = (project: string) => project === "share" || project === "video" ? `projects/${project}` : project;
 const collectionOf = (item: Artifact) => item.collection ?? item.project ?? item.source;
 const dayOf = (item: Artifact) => item.day ?? "undated";
 // Newest day first; undated sorts after every dated day.
@@ -288,7 +291,7 @@ function filterArtifacts(items: Artifact[], q: CatalogQuery) {
 
 /** Search results grouped into Collection → Day: the gallery's "By day" view. */
 export function queryDayGroups(items: Artifact[], q: CatalogQuery) {
-  const { matches, page, limit, excludedUnknownDates } = filterArtifacts(items, { ...q, group: "days" });
+  const { matches, page, limit, excludedUnknownDates } = filterArtifacts(items, { ...q, group: q.group ?? "days" });
   const totals = dayIndex(items);
   const groups = new Map<string, DayGroup & { primaries: string[]; others: string[] }>();
   for (const item of matches) {

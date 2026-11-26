@@ -109,11 +109,12 @@ function inline(src: string, baseUrl: string): string {
   let s = src.replace(/\u0000/g, "");
   s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_m, _t, code: string) => keep(`<code>${escapeHtml(code.trim())}</code>`));
   s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|~<>])/g, (_m, ch: string) => keep(escapeHtml(ch)));
-  s = s.replace(/!\[([^\]]*)\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"([^"]*)")?\s*\)/g, (m, alt: string, url: string, title?: string) => {
+  // Link parts never span a "[", so each attempt stops at the next bracket: linear on "[[[[…" runs.
+  s = s.replace(/!\[([^[\]]*)\]\(\s*(<[^<>[\]\n]*>|[^)\s[\]]+)(?:\s+"([^"[\]\n]*)")?\s*\)/g, (m, alt: string, url: string, title?: string) => {
     const safe = safeMarkdownUrl(url, baseUrl, true);
     return keep(safe ? `<img src="${escapeHtml(safe.href)}" alt="${escapeHtml(alt)}"${title ? ` title="${escapeHtml(title)}"` : ""} loading="lazy">` : escapeHtml(m));
   });
-  s = s.replace(/\[([^\]]+)\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"([^"]*)")?\s*\)/g, (_m, text: string, url: string) => {
+  s = s.replace(/\[([^[\]]+)\]\(\s*(<[^<>[\]\n]*>|[^)\s[\]]+)(?:\s+"([^"[\]\n]*)")?\s*\)/g, (_m, text: string, url: string) => {
     const safe = safeMarkdownUrl(url, baseUrl);
     if (!safe) return text;
     return keep(`<a href="${escapeHtml(safe.href)}"${safe.external ? ' target="_blank" rel="noopener noreferrer"' : ""}>`) + text + keep("</a>");
@@ -127,17 +128,19 @@ function inline(src: string, baseUrl: string): string {
     return lead + (safe ? keep(`<a href="${escapeHtml(safe.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`) : url);
   });
   s = escapeHtml(s);
-  s = s.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "<strong>$2</strong>")
-    .replace(/(^|[^\w*])\*(?=\S)([\s\S]*?\S)\*(?!\*)/g, "$1<em>$2</em>")
-    .replace(/(^|[^\w])_(?=\S)([\s\S]*?\S)_(?![\w])/g, "$1<em>$2</em>")
-    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>")
+  // A span never crosses its own next delimiter, so an unclosed run stops there: linear on "**a **a …".
+  s = s.replace(/(\*\*|__)(?=\S)((?:(?!\1)[\s\S])*?\S)\1/g, "<strong>$2</strong>")
+    .replace(/(^|[^\w*])\*(?=\S)([^*]*?\S)\*(?!\*)/g, "$1<em>$2</em>")
+    .replace(/(^|[^\w])_(?=\S)([^_]*?\S)_(?![\w])/g, "$1<em>$2</em>")
+    .replace(/~~(?=\S)((?:(?!~~)[\s\S])*?\S)~~/g, "<del>$1</del>")
     .replace(/(?: {2,}|\\)\n/g, "<br>\n");
   return s.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => slots[Number(i)]);
 }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^`\s]*)[^`]*$/;
 const HEADING = /^ {0,3}(#{1,6})(?:\s+(.*?))?(?:\s+#+)?\s*$/;
-const RULE = /^ {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/;
+// Strip blanks, then match single-character runs: a grouped `(?:\*\s*){3,}` overflows V8's stack on a multi-MB line.
+const RULE = { test: (line: string) => /^ {0,3}[-*_]/.test(line) && /^(?:\*{3,}|-{3,}|_{3,})$/.test(line.replace(/\s+/g, "")) };
 const ITEM = /^( *)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const TABLE_DELIM = /^\s*\|?\s*:?-{1,}:?\s*(?:\|\s*:?-{1,}:?\s*)*\|?\s*$/;

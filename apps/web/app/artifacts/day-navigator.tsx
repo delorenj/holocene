@@ -79,7 +79,7 @@ export function DayNavigator({ state, theme, onNavigate, onClose }: { state: Nav
     try { await navigator.clipboard.writeText(link); setCopied({ ok: true, link }); }
     catch { setCopied({ ok: false, link }); }
   };
-  const onKey = (event: React.KeyboardEvent) => {
+  const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
     const tag = (event.target as HTMLElement).tagName;
     if (["INPUT", "SELECT", "TEXTAREA", "VIDEO", "AUDIO"].includes(tag) || event.altKey || event.metaKey || event.ctrlKey) return;
@@ -87,8 +87,17 @@ export function DayNavigator({ state, theme, onNavigate, onClose }: { state: Nav
     if (event.key === "ArrowLeft" && previous) { event.preventDefault(); select(previous); }
   };
   const groups = publications(items);
+  // Listen on the document: a click that disables the focused Previous/Next button drops
+  // focus to <body>, outside the dialog, and Escape/arrows must keep working.
+  const keyHandler = useRef(onKey);
+  keyHandler.current = onKey;
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => keyHandler.current(event);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
 
-  return <div className="artifact-nav" role="dialog" aria-modal="true" aria-labelledby="artifact-nav-title" tabIndex={-1} ref={root} onKeyDown={onKey}>
+  return <div className="artifact-nav" role="dialog" aria-modal="true" aria-labelledby="artifact-nav-title" tabIndex={-1} ref={root}>
     <header className="artifact-nav-head">
       <button type="button" className="artifact-nav-close" onClick={onClose}>← Gallery</button>
       <div className="artifact-nav-place">
@@ -106,6 +115,7 @@ export function DayNavigator({ state, theme, onNavigate, onClose }: { state: Nav
       <section className="artifact-nav-main" aria-label="Selected artifact">
         {error ? <div className="artifact-alert" role="alert">{error} <button type="button" onClick={() => setRetry((v) => v + 1)}>Retry</button></div> : null}
         {data && !data.complete ? <p className="artifact-alert">Some catalog sources are unavailable; this day may be incomplete.</p> : null}
+        {data && data.total > items.length ? <p className="artifact-alert" role="status">Showing the first {items.length} of {data.total} artifacts on this day.</p> : null}
         {missing ? <p className="artifact-alert" role="status">That artifact is no longer in this day. Showing the first artifact instead.</p> : null}
         {data && !items.length ? <p className="artifact-empty">No artifacts on this day in {collectionLabel(state.project)}.</p> : null}
         {selected ? <>

@@ -256,6 +256,21 @@ test("legacy session and share placement use the America/New_York day of the mod
   assert.deepEqual([video.collection, video.day, video.dayKind, video.layout, video.baseUrl], ["video", "2026-11-19", "published", "video", "https://v.delo.sh/ccccccccdddddddd/"]);
 });
 
+test("an undated bundle stays on one day; project folders named share/video keep their own collection", () => {
+  const split = normalizeMinio("projects", [row("proj/sess-uuid/site/index.html", "2026-11-25T04:59:00Z"), row("proj/sess-uuid/site/report.pdf", "2026-11-25T05:01:00Z"), row("proj/sess-uuid/site/notes.md", "2026-12-02T15:00:00Z")]);
+  assert.equal(split.length, 3);
+  assert.deepEqual([...new Set(split.map((i) => i.day))], ["2026-12-02"], "every member takes the bundle's newest day");
+  const loose = normalizeMinio("projects", [row("proj/sess/a.md", "2026-11-25T04:59:00Z"), row("proj/sess/b.md", "2026-11-26T15:00:00Z")]);
+  assert.deepEqual(loose.map((i) => i.day).sort(), ["2026-11-24", "2026-11-26"], "loose files are their own publications");
+  const named = normalizeMinio("projects", [row("share/2026-11-25/x/index.html"), row("video/2026-11-25/y/index.html")]);
+  assert.deepEqual(named.map((i) => i.collection), ["projects/share", "projects/video"]);
+  const items = [...named, ...normalizeMinio("share", [row("abcdef0123456789abcdef01/deck/index.html", "2026-11-25T15:00:00Z")])];
+  assert.equal(queryArtifacts(items, { project: "share", day: "2026-11-25" }).total, 1, "share bucket only");
+  assert.equal(queryArtifacts(items, { project: "projects/share", day: "2026-11-25" }).total, 1, "the project folder only");
+  assert.throws(() => queryDayGroups(items, { group: "x" }), /Invalid group/);
+  assert.equal(queryDayGroups(items, {}).groups.length, 3);
+});
+
 test("day groups reveal where search matches live; day view orders publications and links adjacent days", () => {
   const rows = [
     row("brennan/s1/position-a/index.html", "2026-11-10T22:00:00Z"), row("brennan/s1/position-b/index.html", "2026-11-10T14:00:00Z"),

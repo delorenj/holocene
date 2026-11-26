@@ -2,7 +2,7 @@
 title: 'HOLOC-69: browse artifacts by project and day with an embedded day navigator'
 type: 'feature'
 created: '2026-11-26'
-status: 'in-review'
+status: 'done'
 baseline_revision: '4b205f03eb6d4a072e1e62e1f3fcf3041d98418a'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,10 @@ context:
   - '{project-root}/apps/web/app/artifacts/artifacts-app.tsx'
   - '{project-root}/_bmad-output/implementation-artifacts/HOLOC-53-candidate-verification.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - 'Gallery poster for R2 token 01848684aa8a9d02 (holocene-auto-agent-pad-b79ebf254e.jpg) is blocked by Chrome ORB; pre-existing HOLOC-53 gallery posterUrl, outside this diff. Check the object Content-Type on v.delo.sh.'
+  - 'PDF pane embeds the s3.delo.sh original unsandboxed, chosen by .pdf extension (a sandbox breaks Chrome''s PDF viewer). A .pdf key stored as text/html would run in the s3.delo.sh origin without a click. Hardening: HEAD the Content-Type (via the signed document route) before embedding; same exposure as Open original today.'
+  - 'Code-span regex is O(n*sqrt(n)) on runs of distinct backtick lengths (4 MB of "``a" renders in ~0.4 s); acceptable, revisit if Markdown cap rises.' 
 ---
 
 <intent-contract>
@@ -99,6 +102,24 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-11-26 — Review pass
+
+Two independent reviews of `f6bf004` (both verdict pass, 0 blocking). Each claim was checked in code; real defects caused by this change were patched with the smallest fix, pre-existing or accepted trade-offs deferred above.
+
+| # | Finding | Verdict | Disposition |
+|---|---------|---------|-------------|
+| 1 | Escape/arrow keys stop after a click disables the focused Previous/Next (focus drops to `<body>`, outside the dialog's `onKeyDown`) | medium (real, this change) | **Patched** `day-navigator.tsx`: the key handler moved to a `document` keydown listener (latest closure via ref) for the navigator's lifetime. Live: after Next/Previous disabled, `activeElement` = BODY, ArrowLeft/ArrowRight move and Escape closes (1440 + 390). |
+| 2 | Gallery poster for one R2 video blocked by ORB | low (pre-existing, HOLOC-53) | **Deferred** — the baseline gallery loads the same `posterUrl`; navigator video view unaffected. |
+| 3 | Isolation fixture visible as a live artifact (holocene / 2026-11-26) | low (intentional) | **Kept** — deliberate, documented acceptance evidence in the holocene project; the browser suite and future regressions use it. No change. |
+| 4 | Isolation holds against the live deployment (null origin, CSP, no cookies, no top navigation) | false (confirmation, not a defect) | No action. |
+| 5 | Catalog/document/download private; no new clock or infra change | false (confirmation) | No action. |
+| 6 | Legacy session bundle splits across days because each file takes its own modified day | medium (real, this change; no live split today) | **Patched** `artifacts.ts`: a non-dated, non-loose group places every member on the NY day of its newest file (`localDay(loose ? date : newest)`); loose files stay their own publications. Test added. |
+| 7 | Markdown link/image regex quadratic on unbalanced `[` runs | medium (real, this change) | **Patched** `artifact-documents.ts`: link parts never span `[`/`]` (and `<…>`/title never span a newline), so each attempt stops at the next bracket. Re-measuring found the same class in emphasis (`**a `, `a *`, `_a `, `~~a ` ~1 s at 80k) and a V8 stack overflow in the horizontal-rule regex on a multi-MB `***` line; both patched the same way (spans never cross their own next delimiter; rule = strip blanks then single-char runs). Deployed dist at 4 MB: every pattern ≤ 90 ms except code spans 0.39 s (deferred). Regression test added. |
+| 8 | A project folder named `share` or `video` merges with the share bucket / R2 collection | low (real, this change) | **Patched** `artifacts.ts`: `projectCollection()` maps those two project names to `projects/share` / `projects/video` (a `/` cannot appear in a folder segment). Test added; no live project uses either name. |
+| 9 | PDF pane is an unsandboxed s3.delo.sh frame chosen by extension | low (accepted trade-off) | **Deferred** — a sandbox breaks Chrome's PDF viewer; exposure equals Open original; hardening recorded above. |
+| 10 | `group=` accepts any value; a day view caps at 1000 with no paging | low (real, this change) | **Patched**: `queryDayGroups` validates the caller's `group` (`group=x` → 400 live); the navigator shows "Showing the first N of M artifacts on this day" when `total > items.length` (largest live day 71, so not shown today). |
+| 11 | Live browser acceptance passes at 1440 and 390 | false (confirmation) | No action; re-run after patches (below). |
+
 ## Design Notes
 
 Why `srcdoc` over a direct `s3.delo.sh` iframe: a direct frame runs under the object's own (absent) CSP, so artifact scripts could reach any network target; an injected meta CSP only exists in a document we build. The `srcdoc` frame without `allow-same-origin` has an opaque origin, so `document.cookie`/`localStorage` throw, `parent`/`top` are cross-origin, and same-site cookie rules treat its requests as cross-site; `connect-src 'none'` removes the network API on top. The original link stays one click away for full fidelity (e.g. pages that need `fetch`).
@@ -115,3 +136,16 @@ Why `srcdoc` over a direct `s3.delo.sh` iframe: a direct frame runs under the ob
 - Live headless acceptance against the container at 1440 and 390: search → day → Brennan report, adjacent navigation, bundle, legacy layout, hostile fixture isolation, originals/download/copy -- expected: no page errors, scrollWidth == viewport.
 
 **Results (2026-11-26):** API typecheck and web typecheck exit 0; `@holocene/api` tests 368/368; `@holocene/web` tests 102/102; `artifacts.browser.mjs` 7/7 against the live container (3 HOLOC-53/61 tests plus 4 navigator tests: deep link + adjacent artifact/day + close, View day + Back, hostile HTML/Markdown isolation, 390px width). Live-data acceptance (`/tmp/holoc69/accept.mjs`, headless Chrome against `holocene-web:3001`): search `position` → View day opened `james-brennan` / Tue Nov 10 2026 ("day of last modification", session folder) with "The Position: Jim Brennan (IPM Home Services), 2026-11-10 (evening)" rendered in a sandbox whose `self.origin` is `null`; Next/Previous artifact and Previous/Next day round-trip in the URL; Open original answered 200; Download returned `attachment; filename="index.html"`; Copy link wrote the address-bar deep link, which reopened the same artifact in a fresh tab. Bundle "Who Hands Out the Work?" listed 5 files and loaded its Roboto/Noto fonts from the original folder. Hostile fixture: parent DOM, parent global, `top.location`, cookie, localStorage, top navigation → SecurityError; fetch to holocene.delo.sh / relative / 127.0.0.1:4000 and sync XHR → refused by `connect-src 'none'`; relative image loaded; zero frame requests reached Holocene; the dated day showed its "Published day index" hub link. Hostile Markdown: 0 scripts, 0 `img[src=x]`, 0 `javascript:` links, table and relative image rendered. By day for `brennan` listed project days newest first and opened the navigator. No page errors at 1440 or 390; `scrollWidth` 1440/1440 and 390/390 (gallery and navigator). `https://holocene.delo.sh/artifacts` answers 307 (Google OAuth edge).
+
+## Auto Run Result
+
+**Summary:** HOLOC-69 finalized. Two independent reviews passed with 0 blocking findings; 11 findings triaged (5 patched, 2 deferred, 1 kept as intentional, 3 confirmations). Patches are deployed with `mise run deploy` (API dist rebuilt 2026-11-26 03:40, `holocene-web` recreated) and re-verified live.
+
+**Files:** `apps/api/src/artifacts.ts` (bundle day = newest file, reserved project collections, `group` validation), `apps/api/src/artifact-documents.ts` (linear link/emphasis/rule parsing), `apps/web/app/artifacts/day-navigator.tsx` (document-level keys, over-cap notice), `apps/api/src/artifacts.test.ts`, `apps/api/src/artifact-documents.test.ts`, this spec.
+
+**Findings breakdown:** high 0 · medium 3 (patched: keys after disable, bundle day split, Markdown ReDoS incl. emphasis + rule overflow) · low 5 (patched 2: namespace collision, group/cap; deferred 2: ORB poster pre-existing, PDF frame trade-off; kept 1: isolation fixture) · false/confirmation 3.
+
+**Verification:** API + web typecheck exit 0; `@holocene/api` 370/370; `@holocene/web` 102/102; `artifacts.browser.mjs` 7/7 against the live container (incl. hostile HTML/Markdown isolation and 390px). Live headless Chrome against `holocene-web:3001` at 1440 and 390: no pageerror, `scrollWidth` 1440/1440 and 390/390 for gallery and navigator; on project holocene / 2026-11-26 Next and Previous clicked until disabled (focus on BODY) then ArrowLeft/ArrowRight still moved the selection and Escape closed to `/artifacts`; `/api/artifacts/catalog?group=x` 400, `group=days` 200 (144 day groups), day view 200. Deployed renderer on 4 MB adversarial Markdown: `[`, `![`, `[a](`, `[a](<`, `[a](x "`, `a *`, `a _`, `_a `, `**a `, `__a `, `~~a `, `*`, `- `, `<http://x` all ≤ 90 ms; code spans 393 ms. Public edge `https://holocene.delo.sh/artifacts` 307 (Google OAuth); unsigned API catalog 401.
+
+**Residual risks:** PDF pane trusts the `.pdf` extension (deferred hardening); ORB-blocked poster on one R2 video (pre-existing); code-span regex super-linear but bounded (~0.4 s at the 4 MB cap); a day with more than 1000 artifacts shows only the first 1000 (now labelled, no paging); the hostile isolation fixture remains visible in the holocene project by design.
+

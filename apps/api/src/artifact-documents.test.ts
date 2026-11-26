@@ -85,3 +85,16 @@ test("text documents are escaped, JSON is pretty-printed and truncation is label
   assert.match(doc, /Showing the first 1024 KB/);
   assert.match(doc, /script-src 'none'/);
 });
+
+test("Markdown links and emphasis stay linear on adversarial delimiter runs", () => {
+  for (const unit of ["[", "![", "[a](", "[a](<", '[a](x "', "a *", "a _", "_a ", "**a ", "__a ", "~~a "]) {
+    const started = performance.now();
+    renderMarkdown(unit.repeat(Math.ceil(200_000 / unit.length)), BASE, "x.md");
+    assert.ok(performance.now() - started < 2000, `${JSON.stringify(unit)} runs render quickly`);
+  }
+  assert.match(markdownToHtml("[docs](https://example.com/a \"T\") and ![i](img.png)", BASE), /<a href="https:\/\/example.com\/a"[^>]*>docs<\/a>.*<img src="https:\/\/s3.delo.sh\/projects\/demo\/2026-11-20\/site\/img.png"/);
+  assert.equal(renderMarkdown("*".repeat(4_000_000), BASE, "x.md").includes("<hr>"), true, "a giant rule line renders, no stack overflow");
+  for (const rule of ["***", "- - -", "  _ _ _  ", "-----"]) assert.equal(markdownToHtml(`a\n\n${rule}\n\nb`, BASE).includes("<hr>"), true, rule);
+  assert.equal(markdownToHtml("a\n\n-*-\n", BASE).includes("<hr>"), false);
+  assert.equal(markdownToHtml("**bold *it* bold** and ~~gone~~ and _em_", BASE).includes("<strong>bold <em>it</em> bold</strong> and <del>gone</del> and <em>em</em>"), true);
+});
