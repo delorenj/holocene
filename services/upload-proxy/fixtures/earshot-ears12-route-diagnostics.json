@@ -1,0 +1,53 @@
+{
+  "description": "Representative EARS-12 beacon bodies, shaped exactly as the Android client serializes them (Beacon.toJson -> AudioState.toJson / PlaybackDiagnostic.toJson, which omits media_level when unreadable and last_zero when no zero was seen). Not live delivery evidence.",
+  "source": {
+    "repo": "delorenj/earshot",
+    "worktree": "/home/delorenj/code/earshot/.worktrees/ears-12-route-diagnostics",
+    "branch": "ears-12-route-diagnostics",
+    "commit": "d9b63d64c472e94091155d8bf6edaab8b045688f",
+    "files": [
+      "app/src/main/java/sh/delo/earshot/core/MediaOutput.kt",
+      "app/src/main/java/sh/delo/earshot/core/AudioState.kt",
+      "app/src/main/java/sh/delo/earshot/core/Beacon.kt",
+      "host/fixtures/route-diagnostics-proxy-contract.json",
+      "host/test_earshot.py"
+    ]
+  },
+  "route_enum": ["speaker", "wired", "bluetooth", "unknown"],
+  "silent_reason": "played silent (media volume zero)",
+  "beacons": {
+    "started_positive_speaker": {
+      "channel": "phone", "key": "phone/2026/10/19/120000123Z-hello.ogg", "phase": "started",
+      "at": "2026-10-19T12:00:02.600Z", "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0",
+      "playback": {"route": "speaker", "media_level": 9, "zero_on_any_start": false, "latest": {"route": "speaker", "media_level": 9}}
+    },
+    "started_zero_bluetooth": {
+      "channel": "phone", "key": "phone/2026/10/19/120000123Z-hello.ogg", "phase": "started",
+      "at": "2026-10-19T12:00:02.600Z", "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0",
+      "playback": {"route": "bluetooth", "media_level": 0, "zero_on_any_start": true,
+                   "latest": {"route": "bluetooth", "media_level": 0}, "last_zero": {"route": "bluetooth", "media_level": 0}}
+    },
+    "finished_route_change_unreadable": {
+      "channel": "phone", "key": "phone/2026/10/19/120000123Z-hello.ogg", "phase": "finished",
+      "at": "2026-10-19T12:00:06.000Z", "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0",
+      "error": "played silent (media volume zero)",
+      "audio": {"ringer_mode": "normal", "interruption_filter": "all", "streams": {"music": {"cur": 0, "max": 15}}, "media_route": "wired"},
+      "playback": {"route": "speaker", "media_level": 9, "zero_on_any_start": true,
+                   "latest": {"route": "wired"}, "last_zero": {"route": "bluetooth", "media_level": 0}}
+    },
+    "heartbeat_route": {
+      "channel": "phone", "phase": "heartbeat", "at": "2026-10-19T12:00:09.000Z", "device": "S26", "app_version": "0.1.0",
+      "audio": {"ringer_mode": "normal", "interruption_filter": "all", "streams": {"music": {"cur": 9, "max": 15}}, "media_route": "bluetooth"}
+    },
+    "beta_minimal_reason_only": {
+      "channel": "phone", "key": "phone/2026/10/19/120000123Z-hello.ogg", "phase": "finished",
+      "at": "2026-10-19T12:00:06.000Z", "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.1.0",
+      "error": "played silent (media volume zero)"
+    },
+    "old_client_receipt": {
+      "channel": "phone", "key": "phone/2026/10/19/120000123Z-hello.ogg", "phase": "finished",
+      "at": "2026-10-19T12:00:06.000Z", "last_modified": "2026-10-19T12:00:00.000Z", "device": "S26", "app_version": "0.0.9",
+      "audio": {"ringer_mode": "normal", "interruption_filter": "all", "streams": {"music": {"cur": 9, "max": 15}}}
+    }
+  }
+}

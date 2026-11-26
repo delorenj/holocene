@@ -614,6 +614,165 @@ class EarshotInCallTelemetry(unittest.TestCase):
         self.assertEqual(env["data"]["key"], EKEY)
 
 
+EARS12 = json.loads((HERE / "fixtures" / "earshot-ears12-route-diagnostics.json").read_text())
+E12 = EARS12["beacons"]
+SILENT = EARS12["silent_reason"]
+
+
+class EarshotRouteDiagnostics(unittest.TestCase):
+    """HOLOC-65: the EARS-12 media route and playback snapshots, driven from the exact checkpoint payloads in
+    fixtures/earshot-ears12-route-diagnostics.json (earshot ears-12-route-diagnostics @ d9b63d6). Telemetry only."""
+
+    def clean(self, beacon):
+        clean, why = up.validate_heard(beacon)
+        self.assertIsNone(why)
+        return clean
+
+    def test_checkpoint_payloads_round_trip_unchanged(self):
+        for name, beacon in E12.items():
+            clean = self.clean(beacon)
+            if name == "finished_route_change_unreadable":
+                # Android omits an unreadable level; the proxy keeps it as an explicit null.
+                self.assertEqual(clean["playback"]["latest"], {"route": "wired", "media_level": None})
+                self.assertEqual(clean["audio"], beacon["audio"])
+                self.assertEqual(clean["playback"]["route"], "speaker")
+                self.assertEqual(clean["playback"]["last_zero"], {"route": "bluetooth", "media_level": 0})
+            elif name.startswith("started"):
+                self.assertEqual(clean["playback"], {**beacon["playback"], "latest": clean["playback"]["latest"]})
+            self.assertEqual(clean.get("audio"), beacon.get("audio"), name)
+
+    def test_every_route_category_is_kept_and_nothing_else_is(self):
+        for route in EARS12["route_enum"]:
+            clean = self.clean({**E12["heartbeat_route"], "audio": {**E12["heartbeat_route"]["audio"], "media_route": route}})
+            self.assertEqual(clean["audio"]["media_route"], route)
+            clean = self.clean({**E12["started_positive_speaker"], "playback": {"route": route, "media_level": 3, "zero_on_any_start": False}})
+            self.assertEqual(clean["playback"], {"route": route, "media_level": 3, "zero_on_any_start": False})
+        for bad in ("car", "Speaker", "", None, 3, ["speaker"], {"a": 1}, "AA:BB:CC:DD:EE:FF"):
+            clean = self.clean({**E12["heartbeat_route"], "audio": {**E12["heartbeat_route"]["audio"], "media_route": bad}})
+            self.assertNotIn("media_route", clean["audio"], bad)     # the field goes, the audio block and beacon stay
+            self.assertEqual(clean["audio"]["streams"], E12["heartbeat_route"]["audio"]["streams"])
+            clean = self.clean({**E12["started_zero_bluetooth"], "playback": {**E12["started_zero_bluetooth"]["playback"], "route": bad}})
+            self.assertNotIn("playback", clean, bad)                  # no first observation: no guess, beacon still accepted
+
+    def test_unreadable_levels_are_null_never_zero_and_never_dropped(self):
+        for level in (None, -1, 1001, "9", 3.5, True, [], {}):
+            pb = {"route": "wired", "zero_on_any_start": False, "latest": {"route": "wired"}, "last_zero": {"route": "unknown"}}
+            if level is not None:
+                pb["media_level"] = level
+            clean = self.clean({**E12["started_positive_speaker"], "playback": pb})["playback"]
+            self.assertIn("media_level", clean)
+            self.assertIsNone(clean["media_level"], level)
+            self.assertIsNone(clean["latest"]["media_level"])
+            self.assertIsNone(clean["last_zero"]["media_level"])
+        zero = self.clean(E12["started_zero_bluetooth"])["playback"]
+        self.assertEqual(zero["media_level"], 0)
+        self.assertIs(type(zero["media_level"]), int)
+
+    def test_unknown_and_invalid_fields_are_dropped_not_the_beacon(self):
+        pb = {**E12["finished_route_change_unreadable"]["playback"], "device_name": "Pixel Buds", "address": "AA:BB:CC:DD:EE:FF",
+              "id": 42, "latest": {"route": "wired", "media_level": 4, "product_name": "Car", "address": "x"},
+              "last_zero": {"route": "satellite", "media_level": 0}}
+        beacon = {**E12["finished_route_change_unreadable"], "playback": pb, "devices": ["x"], "audio": {
+            **E12["finished_route_change_unreadable"]["audio"], "device_name": "Car", "media_route_address": "AA"}}
+        clean = self.clean(beacon)
+        self.assertEqual(clean["playback"], {"route": "speaker", "media_level": 9, "zero_on_any_start": True,
+                                             "latest": {"route": "wired", "media_level": 4}})
+        self.assertNotIn("devices", clean)
+        self.assertEqual(set(clean["audio"]), {"ringer_mode", "interruption_filter", "streams", "media_route"})
+        flat = json.dumps(clean)
+        for leak in ("Pixel", "Buds", "AA:BB", "Car", "product_name", "address", "device_name"):
+            self.assertNotIn(leak, flat)
+
+    def test_a_malformed_playback_block_costs_only_itself(self):
+        good = E12["started_zero_bluetooth"]["playback"]
+        for bad in ("speaker", 7, [], [good], None, {}, {"route": "speaker"},
+                    {**good, "zero_on_any_start": "true"}, {**good, "zero_on_any_start": 1}, {**good, "zero_on_any_start": None}):
+            clean = self.clean({**E12["started_zero_bluetooth"], "playback": bad})
+            self.assertNotIn("playback", clean, bad)
+            self.assertEqual(clean["phase"], "started")
+        clean = self.clean({**E12["started_zero_bluetooth"], "playback": {**good, "latest": "wired", "last_zero": [1]}})
+        self.assertEqual(clean["playback"], {"route": "bluetooth", "media_level": 0, "zero_on_any_start": True})
+
+    def test_playback_is_bounded_by_its_allow_list(self):
+        pb = {**E12["started_zero_bluetooth"]["playback"], **{f"k{i}": "x" * 1000 for i in range(500)}}
+        pb["latest"] = {**pb["latest"], **{f"k{i}": "y" * 1000 for i in range(500)}}
+        clean = self.clean({**E12["started_zero_bluetooth"], "playback": pb})
+        self.assertLess(len(json.dumps(clean["playback"])), 400)
+        self.assertEqual(set(clean["playback"]), {"route", "media_level", "zero_on_any_start", "latest", "last_zero"})
+
+    def test_a_heartbeat_never_carries_playback(self):
+        clean = self.clean({**E12["heartbeat_route"], "playback": E12["started_zero_bluetooth"]["playback"]})
+        self.assertNotIn("playback", clean)
+        self.assertEqual(clean["audio"]["media_route"], "bluetooth")
+
+    def test_old_clients_are_unchanged(self):
+        for beacon in (E12["old_client_receipt"], BEACON, HEARTBEAT, E12["beta_minimal_reason_only"]):
+            clean = self.clean(beacon)
+            self.assertNotIn("playback", clean)
+            self.assertNotIn("media_route", clean.get("audio", {}))
+        self.assertEqual(self.clean(E12["old_client_receipt"])["audio"], E12["old_client_receipt"]["audio"])
+
+    def test_beta_receipt_keeps_the_minimal_reason_and_gains_no_detail(self):
+        clean = self.clean(E12["beta_minimal_reason_only"])
+        self.assertEqual(clean["error"], SILENT)
+        self.assertEqual(set(clean) - {"channel", "key", "phase", "at", "last_modified", "device", "app_version", "error"}, set())
+        env = up.build_heard_envelope(clean, "ua")
+        self.assertEqual(env["data"]["error"], SILENT)
+
+    def test_retries_keep_the_start_snapshot_and_a_later_route_never_replaces_it(self):
+        start = self.clean(E12["started_positive_speaker"])
+        self.assertEqual(self.clean(json.loads(json.dumps(E12["started_positive_speaker"]))), start)   # a retry is byte-identical
+        later = self.clean(E12["finished_route_change_unreadable"])
+        self.assertEqual(start["playback"]["route"], "speaker")
+        self.assertEqual(start["playback"]["media_level"], 9)
+        self.assertEqual(later["playback"]["route"], start["playback"]["route"])   # the receipt's start is the immutable first
+        self.assertEqual(later["playback"]["latest"]["route"], "wired")          # the route change rides in latest only
+        self.assertEqual(later["playback"]["last_zero"]["route"], "bluetooth")
+        self.assertIs(later["playback"]["zero_on_any_start"], True)
+
+    def test_audio_route_and_playback_never_reach_the_bloodbank_fact(self):
+        for name in ("started_zero_bluetooth", "finished_route_change_unreadable"):
+            clean = self.clean(E12[name])
+            self.assertIn("playback", clean)
+            env = up.build_heard_envelope(clean, "ua")
+            for field in ("audio", "playback", "channels", "incall", "call", "media_route", "media_level"):
+                self.assertNotIn(field, env["data"], (name, field))
+            blob = json.dumps(env)
+            for token in ("media_route", "media_level", "zero_on_any_start", "last_zero", '"route"'):
+                self.assertNotIn(token, blob, (name, token))
+            self.assertEqual(env["data"]["key"], E12[name]["key"])
+            self.assertEqual(env["data"]["phase"], E12[name]["phase"])
+        env = up.build_heard_envelope(self.clean(E12["finished_route_change_unreadable"]), "ua")
+        self.assertEqual(env["data"]["error"], SILENT)                           # the minimal reason stays on the fact
+        self.assertEqual(set(env["data"]), {"channel", "phase", "at", "device", "app_version", "key", "last_modified", "error",
+                                            "event_id", "occurred_at", "client_user_agent"})
+
+    @unittest.skipUnless((Path("/home/delorenj/code/earshot/.worktrees/ears-12-route-diagnostics/host/earshot.py")).exists(),
+                         "EARS-12 checkpoint worktree not present")
+    def test_checkpoint_cli_reads_what_the_proxy_persists(self):
+        """Round trip: validator -> persisted record -> the checkpoint's own status/trace code, without editing it."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ears12_earshot", "/home/delorenj/code/earshot/.worktrees/ears-12-route-diagnostics/host/earshot.py")
+        e = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(e)
+        lines = []
+        for name in ("started_positive_speaker", "finished_route_change_unreadable"):
+            rec = {"ts": "2026-10-19T12:00:09.000Z", "svc": up.SERVICE, "event": "heard", "status": 200, **self.clean(E12[name])}
+            lines.append(json.dumps(rec))
+        key = E12["started_zero_bluetooth"]["key"]
+        lm = datetime(2026, 10, 19, 12, 0, 0, tzinfo=timezone.utc)
+        out = e.format_trace(key, e.assemble_trace(lm, e.parse_beacon_lines(lines, key)))
+        self.assertIn("media at start [S26]: route speaker, level 9; played silent", out)   # the start survives the route change
+        self.assertNotIn("media at start [S26]: route wired", out)                            # the later route never replaces it
+        heartbeat = {"ts": "2026-10-19T12:00:09.000Z", "svc": up.SERVICE, "event": "heard", "status": 200, **self.clean(E12["heartbeat_route"])}
+        self.assertIn("music 9/15  route bluetooth", e.format_audio(heartbeat["audio"]))
+        done = e.format_trace(key, e.assemble_trace(lm, e.parse_beacon_lines([lines[1]], key)))
+        self.assertIn("media at start [S26]: route speaker, level 9; played silent (media volume zero)", done)
+        self.assertIn("latest start/settlement: route wired, level unreadable", done)
+        self.assertIn("last zero: route bluetooth, level 0", done)
+
+
 class BeaconJsonl(unittest.TestCase):
     def test_every_accepted_beacon_lands_as_one_json_line(self):
         with tempfile.TemporaryDirectory() as d:
@@ -721,6 +880,23 @@ class HttpEarshotLifecycle(unittest.TestCase):
         lines = [json.loads(x) for x in self.jsonl.read_text().splitlines()]
         mine = [r for r in lines if r.get("key") == EKEY]
         self.assertEqual(mine[-1]["last_modified"], BEACON["last_modified"])
+
+    def test_route_diagnostics_are_persisted_and_kept_out_of_the_published_fact(self):
+        n0 = len(self.published)
+        for name in ("started_zero_bluetooth", "finished_route_change_unreadable", "beta_minimal_reason_only"):
+            self.assertIn(b" 200 ", self.post(json.dumps({**E12[name], "device": "RT-" + name}).encode()))
+        self.assertIn(b" 200 ", self.post(json.dumps({**E12["heartbeat_route"], "device": "RT-hb"}).encode()))
+        self.assertEqual(len(self.published), n0 + 3)                   # the heartbeat still publishes nothing
+        rows = {r["device"]: r for r in (json.loads(x) for x in self.jsonl.read_text().splitlines()) if r["device"].startswith("RT-")}
+        self.assertEqual(rows["RT-started_zero_bluetooth"]["playback"]["route"], "bluetooth")
+        self.assertEqual(rows["RT-finished_route_change_unreadable"]["playback"]["latest"], {"route": "wired", "media_level": None})
+        self.assertEqual(rows["RT-finished_route_change_unreadable"]["audio"]["media_route"], "wired")
+        self.assertEqual(rows["RT-hb"]["audio"]["media_route"], "bluetooth")
+        self.assertNotIn("playback", rows["RT-beta_minimal_reason_only"])
+        self.assertEqual(rows["RT-beta_minimal_reason_only"]["error"], SILENT)
+        for env, _key in self.published[n0:]:
+            self.assertNotIn("playback", env["data"])
+            self.assertNotIn("audio", env["data"])
 
     def test_rejected_beacons_persist_nothing(self):
         import json
