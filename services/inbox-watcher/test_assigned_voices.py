@@ -411,6 +411,53 @@ class AssignedVoices(unittest.TestCase):
                     if change == "generation":
                         self.assertNotIn("cue_voice_lock", m)
 
+    def test_holoc66_responder_flip_at_every_seam_never_attaches_previous_voice(self):
+        """HOLOC-66: tile-a/carlin -> tile-b/brule between the identity read and voice resolution (any seam, cue
+        or reply). The committed lock must carry the responder identity/agent/voice captured under mu together."""
+        def flip(m):
+            with self.w.mu:
+                m.update(agent="tile-b", command_id="cmd-b")
+
+        for cue in (False, True):
+            for seam in ("after_snapshot", "before_resolve", "after_resolve"):
+                with self.subTest(cue=cue, seam=seam):
+                    m = self.memo(reply_stamp="one")
+                    real_snapshot, real_choice = self.w._voice_snapshot, self.w._voice_choice
+                    asked, state = [], {"snap": 0, "flipped": False}
+
+                    def snapshot(mm):
+                        out = real_snapshot(mm)
+                        state["snap"] += 1
+                        if seam == "after_snapshot" and state["snap"] == 1:
+                            flip(mm)  # memo mutates right after the identity read, before any resolver call
+                        return out
+
+                    def choice(snap, *a, **kw):
+                        asked.append(snap.get("agent"))
+                        if seam == "before_resolve" and not state["flipped"]:
+                            state["flipped"] = True
+                            flip(m)
+                        out = real_choice(snap, *a, **kw)
+                        if seam == "after_resolve" and not state["flipped"]:
+                            state["flipped"] = True
+                            flip(m)
+                        return out
+
+                    with patch.object(self.w, "_voice_snapshot", side_effect=snapshot), \
+                            patch.object(self.w, "_voice_choice", side_effect=choice):
+                        got = self.w._cue_voice(m) if cue else self.w._select_voice_lock(m, cue=False)
+                    # the first resolution was for the identity read under mu (tile-a), never a fresh memo read,
+                    # and it was discarded because the snapshot no longer matched; the committed one is tile-b's
+                    self.assertEqual(asked[0], "tile-a")
+                    self.assertEqual(asked[-1], "tile-b")
+                    self.assertEqual(got["voice"], "brule")
+                    lock = m["cue_voice_lock"] if cue else m["voice_lock"]
+                    self.assertEqual(lock["voice"], "brule")
+                    self.assertEqual(lock["agent"], "tile-b")
+                    self.assertEqual(lock["identity"], ["cmd-b", "tile-b"])
+                    self.assertEqual(lock["identity"], self.w._voice_identity(m))
+                    self.assertEqual(lock["stamp"], "one")
+
     def test_identityless_resume_reselects_unrendered_but_refuses_partial_audio(self):
         old = {"stamp": "one", "voice": "carlin", "profile": "holocene-pm"}
         m = self.memo(agent="tile-b", reply_stamp="one", voice_lock=dict(old))
