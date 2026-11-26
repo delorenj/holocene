@@ -2,7 +2,7 @@
 title: 'HOLOC-57 Products directory and hierarchical sidebar'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-review'
+status: 'done'
 baseline_commit: '3fe12c684fef0de56c64b757381dc9da3f8bdbe1'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -100,3 +100,12 @@ Selected direction, with mandatory corrections: compact Ledger rows and explicit
 - `pnpm --filter @holocene/api typecheck` and `pnpm --filter @holocene/web typecheck`.
 - `pnpm --filter @holocene/api test` and `pnpm --filter @holocene/web test`, after adding new test files to explicit lists.
 - Focused browser suite against worktree-only loopback services with isolated deps/build output; synthetic-source tests plus real destination opens. Evidence matrix and auth limitations are in the companion. No production command in this phase.
+
+## Auto Run Result
+
+Status: done (2026-11-26, bmad-build-auto continuation)
+
+- Summary: Products directory, shared hierarchical sidebar and phone drawer landed (`ba05af2`), then the Stitch Ledger revision `0afe3cf2` (`981e892`, `d8ab3dc`) and the Agents inspector revision (`6130fc9`, `e86bbd0`, spec `spec-stitch-agents-inspector-sidebar.md`).
+- Reviews: independent spec and quality rechecks passed all eight criteria locally (`holoc-57/reviews/spec-recheck/README.md`, `holoc-57/reviews/quality-recheck/README.md`).
+- AC8 live acceptance: the remaining gate was deployment authority. Jarad's standing approval (2026-11-15: releases, deploys and merges are not reserved) covers it. `holocene-web` was rebuilt from main and is healthy; the live `/products` page was verified logged-in on 2026-11-23 (four product rows, stage filter, receipt links, Earshot `/live`, no console errors). On 2026-11-26 the rebuilt container rendered every hub inspector in headless Chromium with no page errors and no 390px overflow; `https://holocene.delo.sh` answers through the edge Google auth.
+- Residual risk: the 2026-11-26 browser pass ran against the container directly, not through the authenticated edge; the authenticated pass is the 2026-11-23 one.
