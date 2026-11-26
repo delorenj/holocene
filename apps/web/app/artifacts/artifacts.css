@@ -46,3 +46,67 @@
 .artifacts-shell .artifact-featured-body p{margin:0;color:var(--ink-2)}
 .artifacts-shell .artifact-featured-body .hub-chips{display:flex}
 @media(max-width:850px){.artifacts-shell .artifact-featured{grid-template-columns:minmax(0,1fr)}}
+/* HOLOC-69: place breadcrumb, By day groups and the day navigator */
+.artifacts-shell .artifact-place{font:12px/1.4 var(--font-mono);color:var(--ink-2)}
+.artifacts-shell .artifact-place span{color:var(--ink-3)}
+.artifacts-shell .artifact-links .artifact-view{border:1px solid var(--line-strong);background:var(--ink);color:var(--ground);padding:6px 12px;min-height:36px;font-weight:700}
+.artifacts-shell .artifact-day-titles{margin:0;padding-left:18px;color:var(--ink-2);display:grid;gap:4px}
+.artifacts-shell .artifact-nav{position:fixed;inset:0;z-index:60;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--ground);color:var(--ink);outline:none}
+.artifacts-shell .artifact-nav-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:16px;align-items:center;padding:12px clamp(16px,2vw,24px);border-bottom:2px solid var(--line-strong);background:var(--surface)}
+.artifacts-shell .artifact-nav-place{min-width:0}
+.artifacts-shell .artifact-nav-place h2{margin:2px 0;font:500 clamp(22px,2.4vw,30px)/1.15 var(--font-display)}
+.artifacts-shell .artifact-nav-sub{margin:0;font:12px/1.4 var(--font-mono);color:var(--ink-2)}
+.artifacts-shell .artifact-nav-days{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.artifacts-shell .artifact-nav button,.artifacts-shell .artifact-nav .artifact-nav-btn{border:1px solid var(--line-strong);padding:7px 12px;min-height:40px;background:var(--ground);color:var(--ink);font:600 13px/1.2 var(--font-sans);text-decoration:none;display:inline-flex;align-items:center}
+.artifacts-shell .artifact-nav a{color:var(--pop);font-weight:700;text-underline-offset:3px}
+.artifacts-shell .artifact-nav .artifact-nav-btn{color:var(--ink)}
+.artifacts-shell .artifact-nav .artifact-nav-close{background:var(--ink);color:var(--ground)}
+.artifacts-shell .artifact-nav-body{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);min-height:0}
+.artifacts-shell .artifact-nav-list{order:-1;overflow:auto;border-right:2px solid var(--line-strong);background:var(--sunken);padding:8px}
+.artifacts-shell .artifact-nav-list ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.artifacts-shell .artifact-nav-pub{margin-bottom:8px}
+.artifacts-shell .artifact-nav-pubhead{margin:8px 4px 4px;font:600 11px/1.3 var(--font-mono);text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);overflow-wrap:anywhere}
+.artifacts-shell .artifact-nav-pubhead span{color:var(--ink-3)}
+.artifacts-shell .artifact-nav .artifact-nav-entry{width:100%;display:grid;grid-template-columns:48px minmax(0,1fr);gap:10px;align-items:center;text-align:left;padding:6px;min-height:56px;border:1px solid transparent;background:transparent}
+.artifacts-shell .artifact-nav .artifact-nav-entry:hover{border-color:var(--line-strong);background:var(--surface)}
+.artifacts-shell .artifact-nav .artifact-nav-entry[aria-current="true"]{border-color:var(--ink);background:var(--surface);box-shadow:3px 3px 0 var(--shadow)}
+.artifacts-shell .artifact-nav-thumb{width:48px;height:40px;display:flex;align-items:center;justify-content:center;background:var(--ground);border:1px solid var(--line);font:700 10px/1 var(--font-mono);color:var(--ink-2);overflow:hidden}
+.artifacts-shell .artifact-nav-thumb img{width:100%;height:100%;object-fit:cover}
+.artifacts-shell .artifact-nav-entrytext{min-width:0;display:grid;gap:2px}
+.artifacts-shell .artifact-nav-entrytext strong{font:600 13px/1.3 var(--font-sans);overflow-wrap:anywhere}
+.artifacts-shell .artifact-nav-entrytext span{font:11px/1.3 var(--font-mono);color:var(--ink-2)}
+.artifacts-shell .artifact-nav-main{min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px;padding:12px clamp(12px,2vw,20px);overflow:auto}
+.artifacts-shell .artifact-nav-main>.artifact-alert,.artifacts-shell .artifact-nav-main>.artifact-empty{margin:0}
+.artifacts-shell .artifact-nav-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 16px;align-items:end}
+.artifacts-shell .artifact-nav-title{min-width:0;display:grid;gap:3px}
+.artifacts-shell .artifact-nav-title h3{margin:0;font:500 clamp(20px,2vw,26px)/1.2 var(--font-display);overflow-wrap:anywhere}
+.artifacts-shell .artifact-nav-title p{margin:0}
+.artifacts-shell .artifact-nav-file{font-size:13px;color:var(--ink-2)}
+.artifacts-shell .artifact-nav .artifact-nav-link{border:0;padding:0;min-height:0;background:none;color:var(--pop);text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:700}
+.artifacts-shell .artifact-nav-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.artifacts-shell .artifact-nav-copied{grid-column:1/-1;margin:0;font-size:13px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.artifacts-shell .artifact-nav-copied input{flex:1;min-width:0}
+.artifacts-shell .artifact-nav-stage{flex:1 1 auto;min-height:min(70vh,520px);border:2px solid var(--line-strong);background:var(--sunken);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.artifacts-shell .artifact-nav-frame{flex:1 1 auto;align-self:stretch;width:100%;min-height:min(70vh,520px);border:0;display:block;background:#fff}
+.artifacts-shell .artifact-nav-media{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.artifacts-shell .artifact-nav-fallback{padding:24px;text-align:center;color:var(--ink-2);display:grid;gap:12px;justify-items:center}
+.artifacts-shell .artifact-nav-files{border:1px solid var(--line-strong);background:var(--surface);padding:8px 12px}
+.artifacts-shell .artifact-nav-files summary{cursor:pointer;font:600 13px/1.6 var(--font-mono)}
+.artifacts-shell .artifact-nav-files ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px;max-height:240px;overflow:auto}
+.artifacts-shell .artifact-nav-files li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:4px 2px;border-top:1px solid var(--line);font-size:13px}
+.artifacts-shell .artifact-nav-files li.is-current{background:var(--pop-soft)}
+.artifacts-shell .artifact-nav-filename{font-family:var(--font-mono);overflow-wrap:anywhere;min-width:0}
+.artifacts-shell .artifact-nav-filelinks{display:flex;gap:12px}
+@media(max-width:850px){
+  /* Block flow: grid rows with min-height:0 would shrink the viewer inside the fixed overlay. */
+  .artifacts-shell .artifact-nav{display:block;overflow:auto}
+  .artifacts-shell .artifact-nav-head{grid-template-columns:minmax(0,1fr);gap:8px}
+  .artifacts-shell .artifact-nav-days{justify-content:flex-start}
+  .artifacts-shell .artifact-nav-body{grid-template-columns:minmax(0,1fr);min-height:auto}
+  .artifacts-shell .artifact-nav-list{order:0;border-right:0;border-top:2px solid var(--line-strong);overflow:visible}
+  .artifacts-shell .artifact-nav-main{overflow:visible;min-height:auto}
+  .artifacts-shell .artifact-nav-toolbar{grid-template-columns:minmax(0,1fr)}
+  .artifacts-shell .artifact-nav-actions{justify-content:flex-start}
+  .artifacts-shell .artifact-nav-stage,.artifacts-shell .artifact-nav-frame{min-height:65vh}
+}
+@media(max-width:480px){.artifacts-shell .artifact-nav-actions>*{flex:1 1 calc(50% - 6px);justify-content:center}}

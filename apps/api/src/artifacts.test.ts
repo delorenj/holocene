@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import Fastify from "fastify";
-import { authorizeArtifacts, boundaries, createArtifactCatalog, decodeHtmlEntities, extractHtmlMetadata, listMinio, normalizeMinio, normalizeR2, queryArtifacts, registerArtifactRoutes, safePublishedUrl } from "./artifacts.js";
+import { authorizeArtifacts, boundaries, createArtifactCatalog, decodeHtmlEntities, extractHtmlMetadata, listMinio, normalizeMinio, normalizeR2, queryArtifacts, queryDayGroups, registerArtifactRoutes, resolveTarget, safePublishedUrl } from "./artifacts.js";
 import type { Artifact } from "./artifacts.js";
 
 const row = (key: string, modified = "2026-11-20T12:00:00Z") => ({ key, modified });
@@ -223,4 +223,109 @@ test("partial failure, stale snapshot and full failure remain explicit", async (
   const second = await catalog(true); assert.equal(second.sources.projects.stale, true); assert.equal(second.items.length, 1);
   const full = await createArtifactCatalog({ projects: async () => { throw Error("x"); }, share: async () => { throw Error("x"); }, r2: async () => { throw Error("x"); } })();
   assert.equal(full.items.length, 0); assert.ok(Object.values(full.sources).every((s) => !s.ok));
+});
+
+// ---- HOLOC-69: Collection → Day → Publication placement, day groups, day view, documents ----
+test("dated folders give a published day, hubs are navigation only, bundles keep every file reachable", () => {
+  const rows = [row("tolt/2026-11-25/report/index.html", "2026-11-26T04:30:00Z"), row("tolt/2026-11-25/report/style.css"), row("tolt/2026-11-25/report/chart.png"),
+    row("tolt/2026-11-25/index-abcdef1234567890.html"), row("tolt/index-abcdef1234567890.html"), row("tolt/2026-11-24/notes/notes.md", "2026-11-24T15:00:00Z")];
+  const items = normalizeMinio("projects", rows);
+  assert.equal(items.length, 3, "hubs are not artifacts");
+  const primary = items.find((i) => i.id === "projects:tolt/2026-11-25/report/index.html")!;
+  assert.deepEqual([primary.collection, primary.day, primary.dayKind, primary.layout, primary.primary], ["tolt", "2026-11-25", "published", "dated", true]);
+  assert.equal(primary.dateKind, "modified", "the instant stays a modified time");
+  assert.equal(primary.hubUrl, "https://s3.delo.sh/projects/tolt/2026-11-25/index-abcdef1234567890.html");
+  assert.equal(primary.baseUrl, "https://s3.delo.sh/projects/tolt/2026-11-25/report/");
+  assert.deepEqual(primary.filenames, ["chart.png", "index.html", "style.css"]);
+  const chart = items.find((i) => i.category === "images")!;
+  assert.equal(chart.publication, primary.publication);
+  assert.equal(chart.primary, false);
+  assert.equal(items.find((i) => i.day === "2026-11-24")!.hubUrl, undefined);
+});
+
+test("legacy session and share placement use the America/New_York day of the modified time", () => {
+  const [late] = normalizeMinio("projects", [row("james-brennan/3fbcf2a0/position/index.html", "2026-11-11T03:30:00Z")]);
+  assert.deepEqual([late.collection, late.day, late.dayKind, late.layout], ["james-brennan", "2026-11-10", "modified", "session"]);
+  const [next] = normalizeMinio("projects", [row("james-brennan/3fbcf2a0/position/index.html", "2026-11-11T05:00:00Z")]);
+  assert.equal(next.day, "2026-11-11");
+  const [undated] = normalizeMinio("projects", [{ key: "old/session/loose.txt" }]);
+  assert.deepEqual([undated.day, undated.dayKind, undated.publication, undated.primary], [undefined, "unknown", "projects:old/session/loose.txt", true]);
+  const [shared] = normalizeMinio("share", [row("abcdef0123456789abcdef01/deck/index.html")]);
+  assert.deepEqual([shared.collection, shared.layout, shared.dayKind, shared.baseUrl], ["share", "share", "modified", "https://s3.delo.sh/share/abcdef0123456789abcdef01/deck/"]);
+  const [video] = normalizeR2([row("ccccccccdddddddd/member", "2026-11-20T02:00:00Z"), row("ccccccccdddddddd/vid.mp4")], { "ccccccccdddddddd/member": { published: "2026-11-19T12:00:00Z" } });
+  assert.deepEqual([video.collection, video.day, video.dayKind, video.layout, video.baseUrl], ["video", "2026-11-19", "published", "video", "https://v.delo.sh/ccccccccdddddddd/"]);
+});
+
+test("day groups reveal where search matches live; day view orders publications and links adjacent days", () => {
+  const rows = [
+    row("brennan/s1/position-a/index.html", "2026-11-10T22:00:00Z"), row("brennan/s1/position-b/index.html", "2026-11-10T14:00:00Z"),
+    row("brennan/s2/teams/index.html", "2026-11-09T14:00:00Z"), row("brennan/s2/teams/fonts/a.woff2", "2026-11-09T14:00:00Z"),
+    row("brennan/2026-11-12/brief/index.html", "2026-11-12T15:00:00Z"), row("brennan/2026-11-12/brief/photo.jpg", "2026-11-12T15:00:00Z"),
+    row("other/2026-11-10/x/index.html", "2026-11-10T15:00:00Z"), { key: "brennan/s3/undated.txt" }];
+  const items = normalizeMinio("projects", rows);
+  const grouped = queryDayGroups(items, { search: "position" });
+  assert.deepEqual(grouped.groups.map((g) => [g.collection, g.day, g.matched, g.count]), [["brennan", "2026-11-10", 2, 2]]);
+  const all = queryDayGroups(items, { project: "brennan" });
+  assert.deepEqual(all.groups.map((g) => g.day), ["2026-11-12", "2026-11-10", "2026-11-09", "undated"]);
+  assert.deepEqual(all.groups[0].dayKinds, ["published"]);
+  const day = queryArtifacts(items, { project: "brennan", day: "2026-11-10", limit: "1000" });
+  assert.deepEqual(day.items.map((i) => i.title), ["position a", "position b"], "newest publication first");
+  assert.deepEqual([day.navigation?.previous?.day, day.navigation?.next?.day], ["2026-11-09", "2026-11-12"]);
+  const brief = queryArtifacts(items, { project: "brennan", day: "2026-11-12" });
+  assert.deepEqual(brief.items.map((i) => i.primary), [true, false], "primary before its originals");
+  assert.equal(queryArtifacts(items, { project: "brennan", day: "undated" }).navigation?.next?.day, "2026-11-09");
+  const missing = queryArtifacts(items, { project: "brennan", day: "2026-11-11" });
+  assert.deepEqual([missing.total, missing.navigation?.previous?.day, missing.navigation?.next?.day], [0, "2026-11-10", "2026-11-12"]);
+  for (const bad of [{ day: "2026-11-10" }, { project: "brennan", day: "2026-02-30" }, { project: "", day: "2026-11-10" }, { group: "weeks" }]) assert.throws(() => queryArtifacts(items, bad));
+  assert.equal(queryArtifacts(items, { search: "2026-11-12" }).total, 2, "search reaches the day");
+  // Dated folders filter by their calendar day; session items by their instant in the request zone.
+  assert.equal(queryArtifacts(items, { from: "2026-11-12", to: "2026-11-12", zone: "America/New_York" }).total, 2);
+  assert.throws(() => queryArtifacts(items, { limit: "1000" }), "large pages only for one day");
+});
+
+test("document endpoint resolves only catalog targets, wraps HTML in CSP, refuses binaries and unsigned callers", async (t) => {
+  const prior = process.env.TELEGRAM_HQ_BOT_TOKEN;
+  process.env.TELEGRAM_HQ_BOT_TOKEN = "unit-test-only";
+  t.after(() => { if (prior === undefined) delete process.env.TELEGRAM_HQ_BOT_TOKEN; else process.env.TELEGRAM_HQ_BOT_TOKEN = prior; });
+  const items = normalizeMinio("projects", [row("demo/2026-11-20/site/index.html"), row("demo/2026-11-20/site/notes.md"), row("demo/2026-11-20/site/data.zip"), row("demo/2026-11-20/site/fonts/a.woff2")]);
+  const fetched: Array<{ url: string; credentials?: string }> = [];
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    fetched.push({ url, credentials: init?.credentials });
+    if (url.endsWith(".zip")) return new Response("PK", { headers: { "content-type": "application/zip" } });
+    if (url.endsWith(".md")) return new Response("# Notes\n<script>alert(1)</script>", { headers: { "content-type": "text/plain" } });
+    return new Response("<!doctype html><title>Site</title><script>fetch('/api')</script>", { headers: { "content-type": "text/html" } });
+  }) as typeof fetch;
+  const app = Fastify();
+  registerArtifactRoutes(app, createArtifactCatalog({ projects: async () => items, share: async () => [], r2: async () => [] }), fetcher);
+  const headers = () => { const timestamp = String(Date.now()); return { "x-artifacts-timestamp": timestamp, "x-artifacts-signature": createHmac("sha256", "unit-test-only").update(`artifacts:${timestamp}`).digest("hex") }; };
+  const id = encodeURIComponent("projects:demo/2026-11-20/site/index.html");
+  assert.equal((await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${id}` })).statusCode, 401);
+  assert.equal((await app.inject({ method: "GET", url: `/api/modules/artifacts/download?id=${id}` })).statusCode, 401);
+  const html = await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${id}`, headers: headers() });
+  assert.equal(html.statusCode, 200);
+  const doc = html.json();
+  assert.equal(doc.kind, "html");
+  assert.match(doc.srcdoc, /^<!doctype html><base href="https:\/\/s3\.delo\.sh\/projects\/demo\/2026-11-20\/site\/" target="_blank"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; [^"]*connect-src 'none'/);
+  const md = (await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${id}&file=notes.md`, headers: headers() })).json();
+  assert.equal(md.kind, "markdown");
+  assert.doesNotMatch(md.srcdoc, /<script>alert/);
+  assert.match(md.srcdoc, /script-src 'none'/);
+  assert.equal((await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${id}&file=data.zip`, headers: headers() })).statusCode, 415);
+  assert.equal((await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${id}&file=../../secret.html`, headers: headers() })).statusCode, 404);
+  assert.equal((await app.inject({ method: "GET", url: `/api/modules/artifacts/document?id=${encodeURIComponent("projects:not/listed/x.html")}`, headers: headers() })).statusCode, 404);
+  const download = await app.inject({ method: "GET", url: `/api/modules/artifacts/download?id=${id}&file=fonts/a.woff2`, headers: headers() });
+  assert.equal(download.statusCode, 200);
+  assert.match(String(download.headers["content-disposition"]), /^attachment; filename="a\.woff2"/);
+  assert.equal(download.headers["x-content-type-options"], "nosniff");
+  assert.ok(fetched.every((f) => f.credentials === "omit" && f.url.startsWith("https://s3.delo.sh/projects/demo/2026-11-20/site/")));
+  await app.close();
+});
+
+test("resolveTarget keeps downloads on the published hosts and R2 downloads take the video file", () => {
+  const [video] = normalizeR2([row("ccccccccdddddddd/member"), row("ccccccccdddddddd/vid.mp4")]);
+  assert.equal(resolveTarget(video, undefined, true)?.url, "https://v.delo.sh/ccccccccdddddddd/vid.mp4");
+  assert.equal(resolveTarget(video, "vid.mp4")?.url, "https://v.delo.sh/ccccccccdddddddd/vid.mp4");
+  assert.equal(resolveTarget(video, "other.mp4"), undefined);
+  assert.equal(resolveTarget({ ...video, originalUrl: "https://evil.test/x" }), undefined);
 });
