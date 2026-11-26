@@ -90,7 +90,8 @@ test("real registered products: desktop and phone navigate every receipt dashboa
       const action = page.locator(`[data-product-id="${id}"]`).getByRole("link"); const href = await action.getAttribute("href");
       assert.equal(await action.getAttribute("rel"), "noreferrer noopener");
       const [popup] = await Promise.all([page.waitForEvent("popup"), action.click()]);
-      await popup.waitForLoadState("domcontentloaded");
+      // A noopener popup starts at about:blank; wait for the real navigation instead of racing it.
+      await popup.waitForURL(href); await popup.waitForLoadState("domcontentloaded");
       assert.equal(popup.url(), href); const title = await popup.title(); assert.match(title.toLowerCase(), new RegExp(id === "greeninbetween" ? "greeninbetween" : id));
       assert.ok((await popup.locator("body").innerText()).length > 100); assert.equal(await popup.evaluate(() => window.opener === null), true);
       await popup.screenshot({ path: `${out}/dashboard-${id}-${viewport.width}.png`, fullPage: false });

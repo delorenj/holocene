@@ -143,7 +143,7 @@ description = "The fast in-car desk's conversation: turns (model@route, ms), the
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' conv"
 
 [tasks."memo:voice"]
-description = "A tile's car reply voice (car only; Telegram/Hermes untouched), persisted in the desk's flag file: memo:voice <agent> [<voice>|--clear] [--json]"
+description = "Read-only registered agent voice diagnostic; set/clear refused with Flume handoff"
 run = "/usr/bin/python3 -B '{{config_root}}/services/inbox-watcher/memo_trace.py' voice"
 
 [tasks."memo:model"]

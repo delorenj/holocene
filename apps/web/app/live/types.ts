@@ -71,6 +71,8 @@ export type LiveApp = {
   liveSince: string;
   daysLive: number;
   firstPromoted: boolean;
+  /** Published demo video share URL (`live.video`), embedded at the foot of the card. */
+  video?: string;
   storeUrl: string;
   links: {
     store: string;
@@ -96,5 +98,19 @@ export type LivePayload = {
   today: string;
   source: { name: string; down?: boolean; detail?: string };
   apps: LiveApp[];
-  skipped: Array<{ id: string; name: string; problems: string[] }>;
+  /** Declared with `showcase:`: in use, headed for promotion, not live. Optional so an older API still renders. */
+  onDeck?: OnDeckApp[];
+  skipped: Array<{ id: string; name: string; problems: string[]; block?: "live" | "showcase" }>;
+};
+
+export type OnDeckApp = {
+  id: string;
+  name: string;
+  tagline: string;
+  mode: string;
+  platform?: string;
+  package?: string;
+  note?: string;
+  video?: string;
+  links: { board?: string; evidence: Array<{ label: string; href: string }> };
 };

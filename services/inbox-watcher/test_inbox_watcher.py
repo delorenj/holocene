@@ -4271,7 +4271,7 @@ class PhoneRetryOnCall(MemoHarness, unittest.TestCase):
         key, m = self.to_await("call-narr")
         job = {"key": m["key"], "mid": m["memo_id"], "agent": m["agent"], "cid": m["command_id"], "seq": 7, "n": 1,
                "spoken": "Holocene, working.", "line": "working"}
-        fake = (Path("/dev/null"), "vox", {"voice": "v"}, None)
+        fake = (Path("/dev/null"), "vox", self.w._cue_voice(m), None)
         with unittest.mock.patch.object(self.w, "_synth_cue", return_value=fake), \
                 unittest.mock.patch.object(iw, "call_state", return_value={"on_call": True}), \
                 unittest.mock.patch.object(iw.mc_, "mc", side_effect=AssertionError("nothing is uploaded on a call")):

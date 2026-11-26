@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import {
   celebrationKey, chipFor, chipState, chips, confettiPieces, duration, keysMetric, metrics, money, overallState, promotedBadge,
@@ -89,12 +90,26 @@ test("keys owed: clear is calm, due shows the countdown, overdue shows the overr
   assert.deepEqual([clear.value, clear.tone, clear.note], ["0", "good", "all clear · 24 h promise"]);
   const due = keysMetric(f({ due: 2, urgency: "owed", soonestDueAt: new Date(NOW + 29 * 60_000).toISOString() }), NOW);
   assert.deepEqual([due.value, due.tone, due.note], ["2", "warn", "next due in 29m"]);
+  const boundary = f({ due: 1, urgency: "owed", soonestDueAt: new Date(NOW).toISOString() });
+  assert.equal(keysMetric(boundary, NOW).note, "next due in 0s");
+  assert.match(keysMetric(boundary, NOW + 1000).note ?? "", /refresh snapshot/);
   const late = keysMetric(f({ due: 1, overdue: 1, urgency: "overdue", worstOverdueSeconds: 3 * 3600 }), NOW);
   assert.deepEqual([late.value, late.tone, late.note], ["2", "bad", "1 overdue by 3h"]);
-  const blocked = keysMetric(f({ blocked: 1, blockedReasons: ["no_email"], urgency: "owed" }), NOW);
+  const blocked = keysMetric(f({ blocked: 1, blockedReasons: ["refunded"], urgency: "owed" }), NOW);
   assert.equal(blocked.tone, "warn");
-  assert.match(blocked.note ?? "", /no_email/);
-  assert.equal(keysMetric(app({}, { fulfilment: src(undefined, { status: "down", detail: "outstanding failed" }) }), NOW).tone, "muted");
+  assert.match(blocked.note ?? "", /refunded/);
+  const unknown = keysMetric(f({ other: 1, due: 2, urgency: "unknown" }), NOW);
+  assert.deepEqual([unknown.value, unknown.tone], ["–", "muted"]);
+  assert.match(unknown.note ?? "", /totals cannot be trusted/);
+  const stale = f({ due: 1, urgency: "owed" });
+  stale.sources.fulfilment.ageSeconds = 91;
+  assert.deepEqual([keysMetric(stale, NOW).value, keysMetric(stale, NOW).note], ["–", "snapshot stale; obligations unknown"]);
+  assert.ok(!statement(payload([stale]), undefined, NOW).includes("key owed"));
+  const failed = f({ due: 1, urgency: "owed" });
+  failed.sources.fulfilment.status = "down";
+  assert.equal(keysMetric(failed, NOW).value, "–");
+  assert.ok(!statement(payload([failed]), undefined, NOW).includes("key owed"));
+  assert.equal(keysMetric(app({}, { fulfilment: src(undefined, { status: "down", detail: "snapshot failed" }) }), NOW).tone, "muted");
 });
 
 test("version and storefront metrics read the release and the page", () => {
@@ -127,6 +142,56 @@ test("the page sentence: loading, API down, empty, invalid, healthy, owing", () 
   assert.equal(statement(payload([app()]), undefined, NOW), "1 app live. Everything reads well; no keys owed.");
   const owing = app({}, { fulfilment: src({ due: 1, overdue: 0, clear: 0, blocked: 0, other: 0, blockedReasons: [], urgency: "owed", soonestDueAt: new Date(NOW + 600_000).toISOString() }) });
   assert.equal(statement(payload([owing]), undefined, NOW), "1 app live. Demo: 1 key owed, next due in 10m.");
+  const unknown = app({}, { fulfilment: src({ due: 1, overdue: 0, clear: 0, blocked: 0, other: 1, blockedReasons: [], urgency: "unknown" }, { status: "warn" }) });
+  assert.match(statement(payload([unknown]), undefined, NOW), /unknown order states/);
+  assert.ok(!statement(payload([unknown]), undefined, NOW).includes("1 key owed"));
+});
+
+test("source freshness advances from checkedAt or generatedAt plus age", () => {
+  const fresh = app();
+  fresh.sources.fulfilment.checkedAt = new Date(NOW).toISOString();
+  fresh.sources.fulfilment.ageSeconds = 0;
+  assert.equal(keysMetric(fresh, NOW + 90_000).value, "0");
+  assert.equal(keysMetric(fresh, NOW + 91_000).value, "–");
+  assert.equal(chipFor("fulfilment", fresh.sources.fulfilment, NOW + 600_000).fresh, "10m");
+  delete fresh.sources.fulfilment.checkedAt;
+  fresh.sources.fulfilment.ageSeconds = 30;
+  assert.equal(keysMetric(fresh, NOW + 61_000, new Date(NOW).toISOString()).value, "–");
+  delete fresh.sources.fulfilment.ageSeconds;
+  assert.equal(keysMetric(fresh, NOW).value, "–");
+  assert.doesNotMatch(statement(payload([fresh]), undefined, NOW), /Everything reads well; no keys owed/);
+});
+
+test("retained payload after a failed poll renders stale keys, chips and hero in the real LiveApp", () => {
+  const require = createRequire(import.meta.url);
+  const React = require("react") as typeof import("react");
+  (globalThis as typeof globalThis & { React: typeof React }).React = React;
+  const { renderToStaticMarkup } = require("react-dom/server") as typeof import("react-dom/server");
+  const { LiveApp: Component } = require("./live-app.tsx") as typeof import("./live-app");
+  const data = payload([app()]);
+  for (const source of Object.values(data.apps[0].sources)) {
+    source.checkedAt = new Date(NOW).toISOString();
+    source.ageSeconds = 0;
+  }
+  const original = React.useState;
+  let index = 0;
+  (React as { useState: typeof React.useState }).useState = ((initial: unknown) => {
+    const current = index++;
+    if (current === 1) initial = data;
+    if (current === 2) initial = "503 Service Unavailable";
+    if (current === 4) initial = NOW + 600_000;
+    return original(initial);
+  }) as typeof React.useState;
+  try {
+    const html = renderToStaticMarkup(React.createElement(Component));
+    assert.match(html, /snapshot stale; obligations unknown/);
+    assert.match(html, /live-hero is-attention/);
+    assert.match(html, /live-chip is-stale[^>]*title="fulfilment: stale[^"]*read 10m ago/);
+    assert.match(html, /Showing the last good read/);
+    assert.doesNotMatch(html, /Everything reads well; no keys owed|all clear · 24 h promise|live-metric is-good[^>]*>.*Keys owed/);
+  } finally {
+    (React as { useState: typeof React.useState }).useState = original;
+  }
 });
 
 test("the celebration is for the first live app, once per browser", () => {

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import { projectDefinition, projectLastRun, type LastRun } from "./candybar.js";
@@ -11,7 +11,6 @@ import {
   apkLinkMatches,
   daysLive,
   disputeRow,
-  expandArgv,
   fulfilmentUrgency,
   githubWebUrl,
   judgeApk,
@@ -21,7 +20,8 @@ import {
   refundRow,
   safeRelPath,
   scrubSecrets,
-  summarizeOutstanding,
+  snapshotArgv,
+  summarizeSnapshot,
   summarizeSales,
   type ApkHead,
   type FulfilmentData,
@@ -29,14 +29,15 @@ import {
   type PaidSession,
   type ReleaseData,
   type SalesData,
+  type Showcase,
   type SourceStatus,
   type StorefrontData
 } from "./live-model.js";
 
 // The Live hub: every registered pjangler project whose .launch.yaml says `mode: live`, with
-// what is true about it right now. Read-only in every direction: it GETs, HEADs and runs the
-// one read-only argv the live block declares. Nothing here writes to Stripe, the board, the
-// issuer or Candybar.
+// what is true about it right now. Fulfilment invokes only an explicitly declared, independently
+// approved read-only issuer snapshot; legacy outstanding declarations are unavailable.
+// No page read issues or delivers keys, sends mail, or writes a ledger.
 //
 // Each source is its own cached read with its own freshness and its own failure: a source
 // that is down reports `down` (or `unavailable` with the reason) and the request still
@@ -82,6 +83,8 @@ export type LiveApp = {
   /** The earliest promotion on the hub. Derived, never stored. */
   firstPromoted: boolean;
   storeUrl: string;
+  /** Published demo video share URL from `live.video`. */
+  video?: string;
   links: {
     store: string;
     checkout?: string;
@@ -101,13 +104,27 @@ export type LiveApp = {
   };
 };
 
-export type LiveSkipped = { id: string; name: string; problems: string[] };
+export type LiveSkipped = { id: string; name: string; problems: string[]; /** Which block broke: a live promotion or an on-deck showcase. */ block?: "live" | "showcase" };
+
+/** A product on the "On deck" shelf: declared with `showcase:`, in use, not promoted. Nothing here is probed. */
+export type OnDeckApp = {
+  id: string;
+  name: string;
+  tagline: string;
+  mode: string;
+  platform?: string;
+  package?: string;
+  note?: string;
+  video?: string;
+  links: { board?: string; evidence: Array<{ label: string; href: string }> };
+};
 
 export type LivePayload = {
   generatedAt: string;
   today: string;
   source: { name: string; down?: boolean; detail?: string };
   apps: LiveApp[];
+  onDeck: OnDeckApp[];
   skipped: LiveSkipped[];
 };
 
@@ -130,6 +147,10 @@ export type LiveDeps = {
   home: string;
   today: () => string;
   opBin: string;
+  /** Independently approved restricted read-only key reference for the snapshot. */
+  fulfilmentKeyRef?: string;
+  /** Owner-approved source resolver; undefined means snapshot execution is unavailable. */
+  approvedSnapshotSource: (repoPath: string) => string | undefined;
   /** How long one request waits on a cold source before answering `pending`. */
   waitMs: number;
 };
@@ -339,27 +360,44 @@ function cliReason(error: unknown): string {
   return stderr || (typeof e?.code === "string" ? e.code : e?.message) || "failed";
 }
 
+function approvedSnapshotSource(approvedRepo: string | undefined, repoPath: string): string | undefined {
+  if (!approvedRepo || !isAbsolute(approvedRepo) || !isAbsolute(repoPath)) return undefined;
+  try {
+    const repo = realpathSync(approvedRepo);
+    if (repo !== approvedRepo || realpathSync(repoPath) !== repo || repoPath !== repo) return undefined;
+    const script = join(repo, "scripts/licensing/issuer.py");
+    if (lstatSync(script).isSymbolicLink() || !lstatSync(script).isFile() || realpathSync(script) !== script) return undefined;
+    return script;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readFulfilment(deps: LiveDeps, decl: LiveDecl, repoPath: string): Promise<Probe<FulfilmentView>> {
   const f = decl.fulfilment;
   if (!f) return { status: "unavailable", detail: "the live block declares no fulfilment" };
-  const [file, ...args] = expandArgv(f.outstandingArgv, deps.home);
+  const argv = snapshotArgv(f.outstandingArgv, deps.home, deps.fulfilmentKeyRef, decl.checkout?.keyRef);
+  const script = deps.approvedSnapshotSource(repoPath);
+  if (!argv || !script) return { status: "unavailable", detail: "read-only fulfilment snapshot is not approved or declared; legacy outstanding cannot run" };
+  const [file, , , ...rest] = argv;
+  const startedAt = deps.now();
   let out: RunResult;
   try {
-    out = await deps.run(file, args, { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: "/tmp" } });
-  } catch (error) {
-    return { status: "down", detail: `outstanding failed: ${scrubSecrets(cliReason(error))}` };
+    out = await deps.run(file, ["run", script, ...rest], { cwd: repoPath, timeoutMs: OUTSTANDING_TIMEOUT_MS, env: { ...process.env, TMPDIR: process.env.TMPDIR ?? deps.home } });
+  } catch {
+    return { status: "down", detail: "fulfilment snapshot failed; ledger or provider state is unknown" };
   }
   let json: unknown;
   try {
-    json = JSON.parse(out.stdout.trim().split("\n").filter((l) => l.trim().startsWith("{")).pop() ?? out.stdout);
+    json = JSON.parse(out.stdout.trim());
   } catch {
-    return { status: "down", detail: "outstanding did not print JSON" };
+    return { status: "down", detail: "fulfilment snapshot returned invalid JSON; state is unknown" };
   }
-  const data = summarizeOutstanding(json, deps.now(), f.promiseHours);
-  if (!data) return { status: "down", detail: "outstanding did not print a JSON object" };
+  const data = summarizeSnapshot(json, startedAt, f.promiseHours, deps.now());
+  if (!data) return { status: "down", detail: "fulfilment snapshot returned an invalid envelope; state is unknown" };
   const view: FulfilmentView = { ...data, urgency: fulfilmentUrgency(data) };
-  if (data.blocked > 0) return { status: "warn", detail: `${data.blocked} blocked${data.blockedReasons.length ? ` (${data.blockedReasons.join(", ")})` : ""}`, data: view };
-  if (data.other > 0) return { status: "warn", detail: `${data.other} session(s) in a state this hub does not know`, data: view };
+  if (data.other > 0) return { status: "warn", detail: `${data.other} order(s) in an unknown state`, data: view };
+  if (data.blocked > 0) return { status: "warn", detail: `${data.blocked} blocked (${data.blockedReasons.join(", ")})`, data: view };
   return { status: "ok", data: view };
 }
 
@@ -399,13 +437,14 @@ async function readCandybarList(deps: LiveDeps): Promise<Probe<Array<{ id: strin
 // ---------------------------------------------------------------- discovery
 
 type Found = { project: ProjectRecord; repoPath: string; decl: LiveDecl };
+type Deck = { project: ProjectRecord; repoPath: string; mode: string; showcase: Showcase };
 
 function repoRemote(deps: LiveDeps, repoPath: string): string | undefined {
   const cfg = deps.readText(join(repoPath, ".git", "config"));
   return cfg?.match(/\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/)?.[1];
 }
 
-function evidenceLinks(deps: LiveDeps, repoPath: string, decl: LiveDecl): Array<{ label: string; href: string }> {
+function evidenceLinks(deps: LiveDeps, repoPath: string, decl: Pick<LiveDecl, "contract">): Array<{ label: string; href: string }> {
   const gh = githubWebUrl(repoRemote(deps, repoPath));
   if (!gh) return [];
   const out: Array<{ label: string; href: string }> = [];
@@ -426,12 +465,13 @@ function evidenceLinks(deps: LiveDeps, repoPath: string, decl: LiveDecl): Array<
 export function createLiveHub(deps: LiveDeps) {
   const memo = new Memo(deps);
   // The last discovery that pjangler actually answered. A pjangler outage must not make a live app vanish from the hub.
-  let lastGood: { found: Found[]; skipped: LiveSkipped[] } | undefined;
+  let lastGood: { found: Found[]; deck: Deck[]; skipped: LiveSkipped[] } | undefined;
 
   async function discover(force: boolean) {
-    const hit = await memo.get<{ found: Found[]; skipped: LiveSkipped[]; down?: string }>("discovery", TTL.discovery, force, async () => {
+    const hit = await memo.get<{ found: Found[]; deck: Deck[]; skipped: LiveSkipped[]; down?: string }>("discovery", TTL.discovery, force, async () => {
       const { projects, down } = await deps.projects();
       const found: Found[] = [];
+      const deck: Deck[] = [];
       const skipped: LiveSkipped[] = [];
       const seen = new Set<string>();
       for (const project of projects) {
@@ -450,14 +490,20 @@ export function createLiveHub(deps: LiveDeps) {
           found.push({ project, repoPath: dir, decl: read.decl });
         } else if (read.kind === "invalid") {
           seen.add(real);
-          skipped.push({ id: project.id, name: project.name, problems: read.problems });
+          skipped.push({ id: project.id, name: project.name, problems: read.problems, block: "live" });
+        } else if (read.kind === "not-live" && read.showcase) {
+          seen.add(real);
+          deck.push({ project, repoPath: dir, mode: read.mode, showcase: read.showcase });
+        } else if (read.kind === "not-live" && read.showcaseProblems) {
+          seen.add(real);
+          skipped.push({ id: project.id, name: project.name, problems: read.showcaseProblems, block: "showcase" });
         }
       }
-      if (down) return { status: "warn" as SourceStatus, detail: down, data: { found: lastGood?.found ?? found, skipped: lastGood?.skipped ?? skipped, down } };
-      lastGood = { found, skipped };
-      return { status: "ok" as SourceStatus, data: { found, skipped, down } };
+      if (down) return { status: "warn" as SourceStatus, detail: down, data: { found: lastGood?.found ?? found, deck: lastGood?.deck ?? deck, skipped: lastGood?.skipped ?? skipped, down } };
+      lastGood = { found, deck, skipped };
+      return { status: "ok" as SourceStatus, data: { found, deck, skipped, down } };
     });
-    return hit?.data ?? { found: lastGood?.found ?? [], skipped: lastGood?.skipped ?? [], down: hit?.detail ?? "discovery is still reading" };
+    return hit?.data ?? { found: lastGood?.found ?? [], deck: lastGood?.deck ?? [], skipped: lastGood?.skipped ?? [], down: hit?.detail ?? "discovery is still reading" };
   }
 
   async function sources(f: Found, force: boolean): Promise<LiveApp["sources"]> {
@@ -500,6 +546,9 @@ export function createLiveHub(deps: LiveDeps) {
     };
   }
 
+  const boardUrl = (project: ProjectRecord) =>
+    project.boardId && project.workspace ? `${deps.planeUrl}/${project.workspace}/projects/${project.boardId}/issues/` : undefined;
+
   async function read(opts: { force?: boolean } = {}): Promise<LivePayload> {
     const force = opts.force === true;
     const d = await discover(force);
@@ -509,7 +558,7 @@ export function createLiveHub(deps: LiveDeps) {
       ordered.map(async (f, index): Promise<LiveApp> => {
         const s = await sources(f, force);
         const { decl, project } = f;
-        const board = project.boardId && project.workspace ? `${deps.planeUrl}/${project.workspace}/projects/${project.boardId}/issues/` : undefined;
+        const board = boardUrl(project);
         return {
           id: project.id,
           name: decl.name,
@@ -525,6 +574,7 @@ export function createLiveHub(deps: LiveDeps) {
           daysLive: daysLive(decl.liveSince, today),
           firstPromoted: index === 0,
           storeUrl: decl.storeUrl,
+          video: decl.video,
           links: {
             store: decl.storeUrl,
             checkout: s.storefront.data?.checkoutUrl,
@@ -543,6 +593,19 @@ export function createLiveHub(deps: LiveDeps) {
       today,
       source: { name: "pjangler", ...(d.down ? { down: true, detail: d.down } : {}) },
       apps,
+      onDeck: [...d.deck]
+        .sort((a, b) => a.showcase.name.localeCompare(b.showcase.name))
+        .map(({ project, repoPath, mode, showcase }): OnDeckApp => ({
+          id: project.id,
+          name: showcase.name,
+          tagline: showcase.tagline,
+          mode,
+          platform: showcase.platform,
+          package: showcase.package,
+          note: showcase.note,
+          video: showcase.video,
+          links: { board: boardUrl(project), evidence: evidenceLinks(deps, repoPath, { contract: [] }) }
+        })),
       skipped: d.skipped
     };
   }
@@ -577,6 +640,8 @@ export function defaultLiveDeps(sources: { projects: LiveDeps["projects"]; ticke
     home: homedir(),
     today: () => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
     opBin: process.env.LIVE_OP_BIN ?? "op",
+    fulfilmentKeyRef: process.env.LIVE_FULFILMENT_READONLY_KEY_REF,
+    approvedSnapshotSource: (repoPath) => approvedSnapshotSource(process.env.LIVE_FULFILMENT_TRUSTED_REPO, repoPath),
     waitMs: 8_000
   };
 }

@@ -20,6 +20,7 @@ test("manual refresh is consumed once; normal search and mode changes do not for
   const seen = [];
   await page.route("**/api/artifacts/catalog?**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.searchParams.get("featured") === "1") return route.fulfill({ json: catalog("nomatch") });
     seen.push(url.searchParams);
     await route.fulfill({ json: catalog(url.searchParams.get("search")) });
   });
@@ -74,6 +75,7 @@ test("automatic recovery retries once and subsequent filter changes use cached c
   const seen = [];
   await page.route("**/api/artifacts/catalog?**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.searchParams.get("featured") === "1") return route.fulfill({ json: catalog("nomatch") });
     seen.push(url.searchParams);
     await route.fulfill({ json: catalog(url.searchParams.get("search"), seen.length !== 1) });
   });

@@ -57,6 +57,32 @@ def candystore_base(env=None) -> str:
 CANDYSTORE_URL = candystore_base()
 NATS_MONITOR_URL = os.environ.get("MEMO_NATS_MONITOR_URL", "http://127.0.0.1:8222")
 VOX_URL = os.environ.get("MEMO_VOX_URL", "https://vox.delo.sh")
+_VOX_KEY: list = []  # [value or None] once read; the key is never written anywhere
+
+
+def vox_headers(env=None) -> dict:
+    """Auth headers for vox: $VOX_API_KEY, else the op:// ref in $VOX_API_KEY_REF (read once).
+
+    The same convention as the voxxy CLI and the Hermes vox plugin. No key, no headers:
+    vox then answers 401 and the caller's error says so.
+    """
+    if env is None and _VOX_KEY:
+        key = _VOX_KEY[0]
+    else:
+        env = os.environ if env is None else env
+        key = (env.get("VOX_API_KEY") or "").strip() or None
+        ref = (env.get("VOX_API_KEY_REF") or "").strip()
+        if key is None and ref:
+            try:
+                done = subprocess.run(["op", "read", "--no-newline", ref], capture_output=True,
+                                      text=True, timeout=20, stdin=subprocess.DEVNULL)
+                key = done.stdout.strip() if done.returncode == 0 else None
+            except (OSError, subprocess.TimeoutExpired):
+                key = None
+            key = key or None
+        if env is os.environ:
+            _VOX_KEY[:] = [key]
+    return {"Authorization": f"Bearer {key}", "X-API-Key": key} if key else {}
 # Two gateway lanes, one durable consumer each (bloodbank/docs/interactive-command-lane.md).
 # interactive = a human is waiting (voice memos), reserved slots; batch = grooming and PM fan-out.
 GATEWAY_CONSUMERS = {

@@ -40,3 +40,11 @@ services/inbox-watcher/inbox-watcher-state.json
 
 # Generated opencode skill-permission projection (rewritten by skill sync)
 /opencode.json
+
+# Local verification evidence and scratch renders (runtime droppings, never source)
+/runtime/verification/
+/holocene-auto.mp4
+
+# Verification run logs stay local; reviews and probes are tracked.
+/services/inbox-watcher/evidence/**/*.log
+/services/inbox-watcher/evidence/**/*.tar.gz
