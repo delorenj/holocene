@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { test } from "node:test";
 import Fastify from "fastify";
 import type { ProjectRecord } from "./hub-model.js";
@@ -602,4 +602,58 @@ test("GET /api/modules/live/apps serves the payload uncached, and ?force=1 refre
   await app.inject({ method: "GET", url: "/api/modules/live/apps?force=1" });
   assert.ok(h.calls.fetch.length > before);
   await app.close();
+});
+
+test("HOLOC-67: the approved source binds to one canonical repo path; every other spelling or repo gets no script", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "holoc67-")));
+  const repo = join(root, "trusted");
+  const other = join(root, "other");
+  for (const dir of [repo, other]) {
+    mkdirSync(join(dir, "scripts/licensing"), { recursive: true });
+    writeFileSync(join(dir, "scripts/licensing/issuer.py"), "print('{}')\n");
+  }
+  const old = process.env.LIVE_FULFILMENT_TRUSTED_REPO;
+  const base = setup();
+  const source = () => defaultLiveDeps({ projects: base.deps.projects, tickets: base.deps.tickets }).approvedSnapshotSource;
+  try {
+    process.env.LIVE_FULFILMENT_TRUSTED_REPO = repo;
+    assert.equal(source()(repo), join(repo, "scripts/licensing/issuer.py"));
+    for (const spelling of [other, `${repo}/`, `${repo}/.`, `${repo}/../trusted`, `${other}/../trusted`, join(repo, "scripts"), "trusted", "./trusted", relative(process.cwd(), repo), ""]) {
+      assert.equal(source()(spelling), undefined, `repoPath ${JSON.stringify(spelling)} must not resolve the approved script`);
+    }
+    for (const approved of [undefined, "", "trusted", `${repo}/`, `${repo}/../trusted`, other]) {
+      if (approved === undefined) delete process.env.LIVE_FULFILMENT_TRUSTED_REPO;
+      else process.env.LIVE_FULFILMENT_TRUSTED_REPO = approved;
+      assert.equal(source()(repo), undefined, `approved repo ${JSON.stringify(approved)} must not approve ${repo}`);
+    }
+    process.env.LIVE_FULFILMENT_TRUSTED_REPO = repo;
+    const scriptPath = join(repo, "scripts/licensing/issuer.py");
+    rmSync(scriptPath);
+    mkdirSync(scriptPath);
+    assert.equal(source()(repo), undefined, "a directory in place of the script is not a script");
+  } finally {
+    if (old === undefined) delete process.env.LIVE_FULFILMENT_TRUSTED_REPO;
+    else process.env.LIVE_FULFILMENT_TRUSTED_REPO = old;
+  }
+});
+
+test("HOLOC-67: a repo-declared argv with another executable or script path is never run, even for the approved repo", async () => {
+  for (const mutate of [
+    (a: string[]) => { a[0] = "/tmp/evil"; },
+    (a: string[]) => { a[2] = "./evil.py"; },
+    (a: string[]) => { a[2] = "../other/scripts/licensing/issuer.py"; },
+    (a: string[]) => { a[2] = "/tmp/issuer.py"; },
+    (a: string[]) => { a.splice(2, 0, "-c", "print(1)"); },
+    (a: string[]) => { a[1] = "tool"; }
+  ]) {
+    const argv = [...SNAPSHOT];
+    mutate(argv);
+    const run = (() => { throw new Error("must not execute"); }) as never;
+    const h = setup({ run, files: { "/repos/earshot/.launch.yaml": LAUNCH().replace(`[${SNAPSHOT.map((a) => JSON.stringify(a)).join(", ")}]`, JSON.stringify(argv)) } });
+    const app = Fastify();
+    registerLiveRoutes(app, h.hub);
+    const body = (await app.inject({ method: "GET", url: "/api/modules/live/apps" })).json() as LivePayload;
+    assert.equal(body.apps[0]?.sources.fulfilment.status, "unavailable");
+    await app.close();
+  }
 });
