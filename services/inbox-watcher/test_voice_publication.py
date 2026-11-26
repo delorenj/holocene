@@ -197,42 +197,160 @@ class PublicationRaces(unittest.TestCase):
                     self.w._synth(m, "Fresh round.", self.root)
                     self.assertEqual(self.renders[-1][1], "brule")
 
-    def test_real_chunk_pipeline_conflict_after_first_announcement_fails_closed(self):
+    def store(self):
+        """Fake object store: transport records every operation, tracks live keys and whether mu was held for it."""
+        store = SimpleNamespace(live=set(), ops=[], held=[], fail_cp=set())
+        def transport(action, *a, **kw):
+            key = a[-1]
+            store.ops.append((action, key))
+            store.held.append(self.w.mu._is_owned())
+            if action == "cp" and any(f in key for f in store.fail_cp):
+                return SimpleNamespace(returncode=1, stderr="fixture upload refused")
+            if action == "cp":
+                store.live.add(key)
+            elif action == "rm":
+                store.live.discard(key)
+            return SimpleNamespace(returncode=0, stderr="")
+        store.transport = transport
+        return store
+
+    def test_real_chunk_pipeline_conflict_after_first_announcement_keeps_announced_audio(self):
+        """Policy: a responder/command conflict preserves announced chunks and cursors and only refuses further chunks."""
+        for kind in ("responder", "command"):
+            with self.subTest(kind=kind):
+                self.renders.clear()
+                m = self.ready()
+                entered, release, first = threading.Event(), threading.Event(), threading.Event()
+                real_render = self.w._render_reply_chunk
+                seen = []
+                def fact(action, memo, payload):
+                    seen.append((copy.deepcopy(memo), dict(payload)))
+                    first.set()
+                self.w.fact_fast.side_effect = fact
+                def render(memo, text, *a, **kw):
+                    if text == "Second chunk.":
+                        self.assertTrue(first.wait(5))
+                        entered.set()
+                        self.assertTrue(release.wait(5))
+                    return real_render(memo, text, *a, **kw)
+                store = self.store()
+                with tempfile.TemporaryDirectory() as tmp, \
+                     patch.object(self.w, "_render_reply_chunk", side_effect=render), \
+                     patch.object(iw.mc_, "mc", side_effect=store.transport):
+                    errors = self.interleave(lambda: self.w._voice_chunks(
+                        m, ["First chunk.", "Second chunk."], iw.mc_.parse_iso(m["reply_stamp"]),
+                        Path(tmp), time.time()), entered, release, lambda: self.mutate(m, kind))
+                self.assertEqual([e.code for e in errors], ["voice_round_changed"])
+                self.assertEqual([v for _, v, _ in self.renders], ["carlin"])  # the changed round got no further chunk
+                self.assertEqual(len(seen), 1)
+                self.assertEqual(seen[0][1]["command_id"], "cmd")
+                self.assertEqual(seen[0][1]["voice"], "carlin")
+                self.assertEqual(seen[0][0]["agent"], "tile-a")
+                # the announced object is never deleted while a cursor advertises it
+                announced = list(m["voiced_keys"].values())
+                self.assertEqual(m["voiced_n"], 1)
+                self.assertEqual(len(announced), 1)
+                self.assertIn("c01of02", announced[0])
+                self.assertEqual([k for a, k in store.ops if a == "rm"], [])
+                self.assertEqual({iw.mc_.s3_url(k) for k in announced}, store.live)
+                self.assertEqual(m["voice_lock"]["identity"], ["cmd", "tile-a"])
+                self.assertFalse(any(store.held))
+
+    def test_conflict_discards_only_unannounced_pending_keys(self):
         m = self.ready()
+        store = self.store()
+        announced = "replies/fixture-announced-c01of03.opus"
+        unannounced = "replies/fixture-unannounced-c02of03.opus"
+        m["voiced_keys"], m["voiced_n"] = {"1": announced}, 1
+        store.live.update({iw.mc_.s3_url(announced), iw.mc_.s3_url(unannounced)})
+        owner = self.w._reply_owner(m, selected=False)
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            with self.w._audio_attempt(m, owner) as pending:
+                pending.extend([announced, unannounced])
+                self.mutate(m, "responder")
+        self.assertEqual(sorted(k for a, k in store.ops if a == "rm"), [iw.mc_.s3_url(unannounced)])
+        self.assertEqual(m["voiced_keys"], {"1": announced})
+        self.assertEqual(m["voiced_n"], 1)
+
+    def retry_cancel_fixture(self, *, via_step_speak):
+        """First attempt announces chunk one and loses chunk two's upload; the retry is cancelled mid chunk-one render."""
+        m = self.ready()
+        store = self.store()
+        parts = ["First chunk.", "Second chunk."]
+        newer = "replies/newer-round-c01of01.opus"
+        stamp = iw.mc_.parse_iso(m["reply_stamp"])
+        def run():
+            if via_step_speak:
+                with patch.object(iw, "split_for_speech", return_value=parts):
+                    self.w.step_speak(m)
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    return self.w._voice_chunks(m, parts, stamp, Path(tmp), time.time())
+        store.fail_cp = {"c02of02"}
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            with self.assertRaises(iw.StageError) as error:
+                run()
+        self.assertEqual(error.exception.code, "mc_cp_failed")
+        # retryable failure: the valid same-owner partial stays announced and playable
+        announced = list(m["voiced_keys"].values())
+        self.assertEqual(len(announced), 1)
+        self.assertEqual(m["voiced_n"], 1)
+        self.assertEqual({iw.mc_.s3_url(announced[0])}, store.live)
+        self.assertNotIn("rm", [a for a, _ in store.ops])
+        # a newer round's object and cursor that the cancelled retry must never touch
+        m["voiced_keys"]["9"] = newer
+        store.live.add(iw.mc_.s3_url(newer))
+        return m, store, run, announced[0], newer
+
+    def test_cancel_during_partial_round_retry_render_withdraws_announced_chunks(self):
+        for via_step_speak in (False, True):
+            with self.subTest(via_step_speak=via_step_speak):
+                m, store, run, announced, newer = self.retry_cancel_fixture(via_step_speak=via_step_speak)
+                store.fail_cp = set()
+                store.ops.clear(), store.held.clear()
+                self.w.fact_fast.reset_mock()
+                entered, release = threading.Event(), threading.Event()
+                real = self.w._render_reply_chunk
+                def render(memo, text, *a, **kw):
+                    entered.set()  # the retry's chunk-one render: the cancel lands here, before any new queueing
+                    self.assertTrue(release.wait(5))
+                    return real(memo, text, *a, **kw)
+                with patch.object(self.w, "_render_reply_chunk", side_effect=render), \
+                     patch.object(iw.mc_, "mc", side_effect=store.transport):
+                    errors = self.interleave(run, entered, release, lambda: self.mutate(m, "cancel"))
+                self.assertEqual(errors, [])
+                removed = [k for a, k in store.ops if a == "rm"]
+                self.assertEqual(removed, [iw.mc_.s3_url(announced)])
+                self.assertEqual([a for a, _ in store.ops if a == "cp"], [])  # nothing new went up
+                self.assertEqual(store.live, {iw.mc_.s3_url(newer)})
+                # the cancelled round's cursor is gone; the newer round's entry and its object are untouched
+                self.assertEqual(m["voiced_keys"], {"9": newer})
+                self.assertEqual(m["voiced_n"], 1)
+                self.assertFalse(any(store.held), "removal must run outside the memo mutex")
+                self.w.fact_fast.assert_not_called()
+
+    def test_cancel_after_all_chunks_announced_clears_every_cursor(self):
+        m = self.ready()
+        store = self.store()
         entered, release = threading.Event(), threading.Event()
-        first = threading.Event()
-        real_render = self.w._render_reply_chunk
-        seen = []
-        def fact(action, memo, payload):
-            seen.append((copy.deepcopy(memo), dict(payload)))
-            if payload["chunk"] == 1:
-                first.set()
-        self.w.fact_fast.side_effect = fact
+        real = self.w._render_reply_chunk
         def render(memo, text, *a, **kw):
             if text == "Second chunk.":
-                self.assertTrue(first.wait(5))
                 entered.set()
                 self.assertTrue(release.wait(5))
-            return real_render(memo, text, *a, **kw)
-        calls = []
-        def transport(*a, **kw):
-            calls.append(a)
-            return SimpleNamespace(returncode=0, stderr="")
+            return real(memo, text, *a, **kw)
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(self.w, "_render_reply_chunk", side_effect=render), \
-             patch.object(iw.mc_, "mc", side_effect=transport):
+             patch.object(iw.mc_, "mc", side_effect=store.transport):
             errors = self.interleave(lambda: self.w._voice_chunks(
-                m, ["First chunk.", "Second chunk."], iw.mc_.parse_iso(m["reply_stamp"]),
-                Path(tmp), time.time()), entered, release, lambda: m.update(agent="tile-b", command_id="cmd-b"))
-        self.assertEqual([e.code for e in errors], ["voice_round_changed"])
-        self.assertEqual([v for _, v, _ in self.renders], ["carlin"])
-        self.assertEqual(len(seen), 1)
-        self.assertEqual(seen[0][1]["command_id"], "cmd")
-        self.assertEqual(seen[0][1]["voice"], "carlin")
-        self.assertEqual(seen[0][0]["agent"], "tile-a")
-        self.assertEqual(m["voiced_n"], 1)
-        self.assertEqual(m["voice_lock"]["identity"], ["cmd", "tile-a"])
-        self.assertTrue(any(a[0] == "rm" and "c01of02" in a[-1] for a in calls))
+                m, ["First chunk.", "Second chunk."], iw.mc_.parse_iso(m["reply_stamp"]), Path(tmp), time.time()),
+                entered, release, lambda: self.mutate(m, "cancel"))
+        self.assertEqual(errors, [])
+        self.assertEqual(store.live, set())
+        for field in ("voiced_keys", "voiced_n", "voiced_first_s", "voiced_first_ts", "voiced_last_s"):
+            self.assertNotIn(field, m)
+        self.assertFalse(any(store.held))
 
     def test_chunk_upload_overlaps_next_render_and_stale_removal_failure_is_fail_closed(self):
         m = self.ready()

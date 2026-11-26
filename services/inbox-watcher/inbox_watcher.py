@@ -3148,15 +3148,47 @@ class Watcher:
 
     @contextlib.contextmanager
     def _audio_attempt(self, m: dict | None = None, owner: dict | None = None):
-        """Retract abandoned ownership, not a valid partial round's retryable upload failure."""
+        """Retract abandoned ownership, not a valid partial round's retryable upload failure.
+
+        Two distinct policies for an attempt that is no longer current (HOLOC-54-voice-handoff.md):
+        * responder/command/stamp conflict: only still-unannounced pending keys are discarded. An announced chunk (a key in
+          voiced_keys) is never deleted, so the cursors and the objects always agree; the round is merely refused further chunks.
+        * cancellation: every announced chunk of the cancelled round (named by owner["chunk_prefix"]) is withdrawn together
+          with its cursors, under mu, and the objects are removed outside it. Another round's keys never match the prefix."""
         pending = []
         try:
             yield pending
         finally:
             with self.mu:
                 keep = m is not None and owner is not None and self._reply_current(m, owner)
-            if not keep:
-                self._discard_audio(pending)
+                doomed = set() if keep else set(pending)
+                if m is not None and not keep:
+                    if self._cancelled(m):
+                        doomed |= self._withdraw_announced(m, (owner or {}).get("chunk_prefix"))
+                    else:
+                        kept = doomed & set((m.get("voiced_keys") or {}).values())
+                        if kept:
+                            doomed -= kept
+                            log("announced_audio_kept", "info", memo_id=m.get("memo_id"), objects=sorted(kept),
+                                note="round conflict: announced chunks stay playable and keep their cursors")
+            self._discard_audio(doomed)
+
+    def _withdraw_announced(self, m: dict, prefix: str | None) -> set:
+        """Under mu: forget this cancelled round's announced chunks (cursor and timing fields) and name their objects."""
+        done = m.get("voiced_keys") or {}
+        mine = {i: k for i, k in done.items() if prefix and isinstance(k, str) and k.startswith(prefix)}
+        if not mine:
+            return set()
+        for i in mine:
+            done.pop(i)
+        if done:
+            m["voiced_n"] = len(done)
+        else:
+            for k in ("voiced_keys", "voiced_n", "voiced_first_s", "voiced_first_ts", "voiced_last_s"):
+                m.pop(k, None)
+        self.status(m)
+        self.s.save()
+        return set(mine.values())
 
     def _reply_owner(self, m: dict, *, selected: bool = True) -> dict:
         """Under mu: immutable publication token; never recover it from a mutable memo after rendering."""
@@ -3300,6 +3332,7 @@ class Watcher:
             # leaving a second object that the pad would play as a second reply.
             stamp = mc_.parse_iso(m.setdefault("reply_stamp", iso(now_utc())))
             round_owner = self._reply_owner(m, selected=False)
+            attempt["chunk_prefix"] = chunk_prefix_for(stamp, agent, mid)
         t_speak = time.time()
         body = spoken_summary(reply_text, SPEAK_CHARS) if followup else clean_for_speech(reply_text, SPEAK_CHARS)
         if not body:
@@ -4105,7 +4138,9 @@ class Watcher:
 
     def _voice_chunks(self, m: dict, parts: list[str], stamp: datetime, tmp: Path, t_speak: float,
                       steps: int | None = None, prio: int | None = None, *, owner: dict | None = None) -> tuple | None:
-        attempt = {}
+        with self.mu:
+            tile = (owner or {}).get("tile_agent") or m["agent"]
+        attempt = {"chunk_prefix": chunk_prefix_for(stamp, tile, m["memo_id"])}
         with self._audio_attempt(m, attempt) as pending:
             result = self._render_chunks(m, parts, stamp, tmp, t_speak, steps, prio, owner, pending, attempt)
             if result is not None:
@@ -5039,6 +5074,11 @@ def chunk_key_for(stamp: datetime, agent: str, mid: str, i: int, n: int) -> str:
     just before the full file (a '-' sorts before '.'), so a listing shows a reply's chunks first and its full file last;
     the count in the name lets a pad that only lists (no push) know when it has them all."""
     return f"{REPLIES_PREFIX}/{stamp:%Y/%m/%d}/{stamp:%H%M%S}Z-{agent}-{mid}-c{i:02d}of{n:02d}.opus"
+
+
+def chunk_prefix_for(stamp: datetime, agent: str, mid: str) -> str:
+    """The common prefix of every chunk key of one reply round (everything before `<ii>of<nn>.opus`)."""
+    return chunk_key_for(stamp, agent, mid, 1, 1)[:-len("01of01.opus")]
 
 
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+(?=\S)")

@@ -16,6 +16,34 @@ Flume alone owns the agent voice assignment. The watcher resolves the responding
 
 For a real migration, an authorized operator should make a **sanitized read-only** inventory of `tiles` (include voice, voice_set_at/by if present, model presence and unrelated keys) and of registered profile names and effective rendered TTS values, without exporting config text or secrets. Record source file hashes/timestamps and source status; compare by registered agent ID. Review each conflict with the Flume assignment owner; update only Flume's canonical assignment via its authorized process, render and verify the profile there. Validate the new round while old rounds finish. Only after explicit authorization, back up the flag file with protected permissions and retire legacy voice/voice_set_at/voice_set_by under the existing flag lock, preserving mode, routes, model, and unknown fields; do **not** run cleanup from this candidate. If an inventory cannot read a profile, leave it unresolved instead of manufacturing an assignment.
 
+## Announced-audio policy (third repair; independent re-review required)
+
+Two distinct cases, two policies, both enforced in `_audio_attempt` (the only place stale attempts retract objects):
+
+1. **Responder/command/stamp conflict after chunk one was announced: preserve.** An announced chunk is one whose key is in
+   `voiced_keys` (the cursor the pad, `/voice` and the status object advertise). Such an object is **never deleted**, so
+   `voiced_keys`, `voiced_n`, the `audio.memo.voiced` fact and the stored object always agree. The conflicting attempt is
+   refused (`voice_round_changed`, no further chunk is rendered or uploaded: the round stays bound to its original
+   responder) and only its still-unannounced pending keys are discarded, best effort, outside `mu`. The preserved chunks are
+   valid audio of the original owner and expire by the bucket lifecycle rule; a later `memo:cancel` of that memo withdraws them
+   (policy 2). A fresh round/`start_followup` reset is unchanged and selects the next responder.
+2. **Cancellation (`memo:cancel`): withdraw.** When the attempt finds the memo cancelled it removes every previously announced
+   chunk of **that round**, plus its own pending keys. Under `mu` it deletes those entries from `voiced_keys` and fixes
+   `voiced_n` (all of `voiced_keys`, `voiced_n`, `voiced_first_s/ts`, `voiced_last_s` go when none remain), then refreshes
+   status; the objects are removed outside `mu`. A key belongs to the cancelled round only if it carries the round's
+   deterministic chunk prefix (`chunk_prefix_for(stamp, tile agent, memo id)`, seeded into the attempt before any render), so
+   a newer round's objects and cursors are never touched. This covers cancellation during a partial-round **retry** render,
+   when the retry has not queued anything of its own yet, in `_voice_chunks` and in `step_speak`. Retryable upload failures
+   (not cancelled, same owner) still keep valid partials. The already-emitted `audio.memo.voiced` event is immutable; the
+   cancel `failed` fact is the retraction record and the status object stops advertising the chunks.
+
+Tests (`test_voice_publication.py`, real `_voice_chunks`/`_publish_chunk`/`step_speak`, fixture synth, in-memory object store
+recording every operation and whether `mu` was held): `..._conflict_after_first_announcement_keeps_announced_audio`
+(responder and command; replaces the old test that asserted the delete-while-advertised behaviour),
+`test_conflict_discards_only_unannounced_pending_keys`,
+`test_cancel_during_partial_round_retry_render_withdraws_announced_chunks` (via `_voice_chunks` and `step_speak`; asserts a
+newer round's key survives), `test_cancel_after_all_chunks_announced_clears_every_cursor`. All six new cases fail on `fc168df`.
+
 ## Second repair checkpoint (local-only; independent re-review required)
 
 Parent candidate `3943b21064624575356e4cf435c346f114204bc2` failed both final reviews despite its passing sequential suites. Those exact reports and reproducers are preserved unchanged in `evidence/holoc54/review-3943b21/{spec,quality}/`; their FAIL verdicts still describe that parent. No independent review of this second repair has occurred in this worker (child agents forbidden).
