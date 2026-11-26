@@ -398,7 +398,9 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
         tag={<><Glyph signal={a.signal} size={8} title={a.state} /> {heldTag(a.state, a.heldSeconds)}</>}
         tagSignal={a.signal}
       >
-        <span className={`insp-state sig-text-${a.signal}`}>{signalWord(a.signal)}{a.blockKind ? ` · ${a.blockKind}` : ""}</span>
+        {signalWord(a.signal).toLowerCase() !== a.state.toLowerCase() || a.blockKind ? (
+          <span className={`insp-state sig-text-${a.signal}`}>{signalWord(a.signal)}{a.blockKind ? ` · ${a.blockKind}` : ""}</span>
+        ) : null}
         <InspTiles
           label="Runtime"
           facts={[
