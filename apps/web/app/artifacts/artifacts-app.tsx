@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { HubShell } from "../hub/hub-shell";
 import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
+import { NavIcon } from "../hub/nav-icons";
+import { usePublished } from "../hub/published-video";
+import { FEATURED, type FeaturedRef } from "./featured";
 
 type Category = "all" | "images" | "videos" | "audio" | "pdfs" | "other";
 type Item = { id: string; source: string; project?: string; title: string; description?: string; filenames: string[]; category: Category; originalUrl: string; mediaUrl?: string; posterUrl?: string; date?: string; dateKind: string; gallery?: string; galleryUrl?: string; variant?: string };
@@ -17,6 +20,29 @@ function Preview({ item }: { item: Item }) {
   if (item.category === "audio") return <audio controls preload="none" src={item.mediaUrl} onError={() => setBroken(true)} />;
   if (item.category === "pdfs") return <div className="artifact-fallback">PDF · Open the published original to view the document.</div>;
   return <div className="artifact-fallback">Open the published original to view this file.</div>;
+}
+
+const sourceTag = (state: { ok: boolean; stale: boolean }) => state.ok ? "is-cleared" : state.stale ? "is-stuck" : "is-broken";
+
+function FeaturedEntry({ entry, zone, retry }: { entry: FeaturedRef; zone: string; retry: number }) {
+  const state = usePublished<Item>(entry, zone, retry);
+  const item = state.item;
+  if (!item) return <article className="artifact-featured is-placeholder">
+    <p role="status">{state.status === "loading" ? "Loading featured artifact…" : state.status === "missing" ? "This featured artifact is no longer in the catalog." : "Featured artifact unavailable while catalog sources are incomplete."} <a href={entry.originalUrl} target="_blank" rel="noopener noreferrer">Open the published original ↗</a></p>
+  </article>;
+  return <article className="artifact-featured">
+    <div className="artifact-featured-media">{item.category === "videos" && item.mediaUrl
+      ? <video controls playsInline preload={item.posterUrl ? "none" : "metadata"} poster={item.posterUrl} src={item.mediaUrl} aria-label={entry.title ?? item.title} />
+      : <Preview item={item} />}</div>
+    <div className="artifact-featured-body">
+      <p className="hub-chips"><span className="hub-tag">{item.category}</span><span className="hub-chip">{item.source}{item.project ? ` · ${item.project}` : ""}</span></p>
+      <h3>{entry.title ?? item.title}</h3>
+      {entry.note ? <p>{entry.note}</p> : null}
+      {item.description && item.description !== entry.note && item.description.toLowerCase() !== (entry.title ?? item.title).toLowerCase() && item.description !== item.title ? <p>{item.description}</p> : null}
+      <p className="artifact-date">{item.date ? `${item.dateKind === "published" ? "Published" : "Modified"} ${new Date(item.date).toLocaleString(undefined, { timeZone: zone })}` : "Date unknown"}</p>
+      <div className="artifact-links"><a href={item.originalUrl} target="_blank" rel="noopener noreferrer">Open share page ↗</a></div>
+    </div>
+  </article>;
 }
 
 export function ArtifactsApp() {
@@ -68,7 +94,13 @@ export function ArtifactsApp() {
   return <main className="hub-root artifacts-shell" data-theme={theme}>
     <HubShell current="artifacts"><Brand /><div className="hub-header-end"><ThemeToggle theme={theme} onToggle={toggleTheme} /></div></HubShell>
     <div className="artifact-content" id="hub-content" tabIndex={-1}><div className="artifact-heading"><p className="hub-label">Published library</p><h1>Artifacts</h1><p>Files in MinIO and video publications in R2, together.</p></div>
-    <section className="artifact-controls" aria-label="Browse artifacts">
+    {FEATURED.length ? <section className="hub-panel artifact-featured-panel" aria-labelledby="artifacts-featured">
+      <div className="hub-panel-head"><NavIcon name="genesis" /><h2 id="artifacts-featured">Featured</h2><span className="hub-panel-count">{FEATURED.length}<span className="hub-sr-only"> pinned</span></span><span className="hub-panel-meta">pinned by published URL · plays from R2</span></div>
+      <div className="hub-panel-body artifact-featured-list">{FEATURED.map((entry) => <FeaturedEntry key={entry.originalUrl} entry={entry} zone={zone.name} retry={retry} />)}</div>
+    </section> : null}
+    <section className="hub-panel artifact-browse" aria-labelledby="artifacts-browse">
+    <div className="hub-panel-head is-quiet"><NavIcon name="settings" /><h2 id="artifacts-browse">Browse</h2><span className="hub-panel-meta">search, type and date filters</span></div>
+    <div className="artifact-controls" aria-label="Browse artifacts" role="group">
       <div className="artifact-modes" aria-label="Gallery mode">
         {([["files", "All files"], ["pictures", "Picture gallery"], ["video", "Video gallery"]] as const).map(([id, text]) => <button key={id} type="button" aria-pressed={mode === id} onClick={() => changeMode(id)}>{text}</button>)}
       </div>
@@ -80,25 +112,27 @@ export function ArtifactsApp() {
         <button type="button" onClick={() => { setFrom(""); setTo(""); setPage(1); }}>Clear dates</button>
       </div>
       <p className="artifact-timezone">Dates use {zone.name}{zone.fallback ? " (UTC fallback; browser timezone unavailable)" : " (browser timezone)"}. Each selected day includes local midnight, excluding midnight of the following day. Items without a known date are excluded from date filters.</p>
-    </section>
-    <section className="artifact-results" aria-live="polite">
+    </div></section>
+    <section className="hub-panel artifact-results-panel" aria-labelledby="artifacts-results">
+    <div className="hub-panel-head"><NavIcon name="artifacts" /><h2 id="artifacts-results">Results</h2>{!loading && data && !error ? <span className="hub-panel-count">{data.total}<span className="hub-sr-only"> {data.total === 1 ? "result" : "results"}</span></span> : null}<span className="hub-panel-meta">{mode === "files" ? "all published files" : mode === "pictures" ? "picture gallery" : "video gallery"}</span></div>
+    <div className="artifact-results" aria-live="polite">
       {error && <div className="artifact-alert" role="alert">{error} <button type="button" onClick={refresh}>Retry</button></div>}
       {loading && <p>Loading catalog…</p>}
       {!loading && data && !error && <>
         <div className="artifact-status"><strong>{data.total} {data.total === 1 ? "result" : "results"}</strong><button type="button" onClick={refresh}>Refresh sources</button></div>
-        <ul className="artifact-sources">{Object.entries(data.sources).map(([name, state]) => <li key={name}>{name}: {state.ok ? "available" : state.stale ? "unavailable · showing cached snapshot" : "unavailable"}{state.fetchedAt ? ` · fetched ${new Date(state.fetchedAt).toLocaleString()}` : " · no snapshot"}</li>)}</ul>
+        <ul className="artifact-sources">{Object.entries(data.sources).map(([name, state]) => <li key={name} className="hub-chip"><span className={`hub-tag ${sourceTag(state)}`}>{state.ok ? "ok" : state.stale ? "stale" : "down"}</span> {name}: {state.ok ? "available" : state.stale ? "unavailable · showing cached snapshot" : "unavailable"}{state.fetchedAt ? ` · fetched ${new Date(state.fetchedAt).toLocaleString()}` : " · no snapshot"}</li>)}</ul>
         {!data.complete && <p className="artifact-alert">{Object.values(data.sources).some((s) => s.ok || s.stale) ? "Results are incomplete. One or more sources are unavailable; cached items may be stale." : "All sources are unavailable. No current catalog could be loaded."} Retrying automatically while this page is open; Refresh sources retries now.</p>}
         {data.excludedUnknownDates > 0 && <p>{data.excludedUnknownDates} undated items excluded by the date filter.</p>}
         {!data.items.length && <p className="artifact-empty">{data.complete ? "No artifacts match these filters." : "No results from the available sources. Other sources may still contain matches."}</p>}
         <div className={`artifact-grid ${mode !== "files" ? "is-gallery" : ""}`}>{data.items.map((item) => <article className="artifact-card" key={item.id}>
           <div className="artifact-preview"><Preview key={item.id} item={item} /></div>
-          <div className="artifact-card-body"><p className="artifact-meta">{item.project ? `${item.project} · ` : ""}{item.source} · {item.category}{item.variant ? ` · variant ${item.variant}` : ""}</p>
-            <h2>{item.title}</h2>{item.description && <p>{item.description}</p>}{item.gallery && <p className="artifact-gallery-label">Gallery: {item.gallery}</p>}
+          <div className="artifact-card-body"><p className="artifact-meta"><span className="hub-tag">{item.category}</span> {item.project ? `${item.project} · ` : ""}{item.source}{item.variant ? ` · variant ${item.variant}` : ""}</p>
+            <h3>{item.title}</h3>{item.description && <p>{item.description}</p>}{item.gallery && <p className="artifact-gallery-label">Gallery: {item.gallery}</p>}
             <p className="artifact-date">{item.date ? `${item.dateKind === "published" ? "Published" : "Modified"} ${new Date(item.date).toLocaleString(undefined, { timeZone: zone.name })}` : "Date unknown"}</p>
             <div className="artifact-links"><a href={item.originalUrl} target="_blank" rel="noopener noreferrer">Open original ↗</a>{item.galleryUrl && <a href={item.galleryUrl} target="_blank" rel="noopener noreferrer">Open gallery ↗</a>}</div>
           </div></article>)}</div>
         {data.total > data.limit && <nav className="artifact-pagination" aria-label="Result pages"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.total / data.limit)}</span><button disabled={page * data.limit >= data.total} onClick={() => setPage(page + 1)}>Next</button></nav>}
       </>}
-    </section></div>
+    </div></section></div>
   </main>;
 }

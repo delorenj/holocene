@@ -241,6 +241,30 @@ test("invalid live blocks are listed as skipped with the reasons, not silently d
   assert.ok(p.skipped[0].problems.some((x) => x.includes("live.store_url")));
 });
 
+test("a non-live project with a showcase is on deck with its demo video; a broken showcase is skipped with reasons", async () => {
+  const h = setup({
+    files: {
+      "/repos/auto/.launch.yaml": "mode: steady\nshowcase:\n  name: Holocene Auto\n  tagline: Talk to the fleet from the car.\n  platform: android-automotive\n  package: io.automaticai.holocene\n  video: https://v.delo.sh/0184/holocene-auto-agent-pad\n",
+      "/repos/bad/.launch.yaml": "mode: steady\nshowcase:\n  name: Bad\n  video: http://example.com/x.mp4\n"
+    },
+    projects: async () => ({ projects: [project("earshot", "/repos/earshot"), project("auto", "/repos/auto"), project("bad", "/repos/bad"), project("other", "/repos/other")] })
+  });
+  const p = await read(h);
+  assert.deepEqual(p.apps.map((a) => a.id), ["earshot"]);
+  assert.equal(p.onDeck.length, 1);
+  const d = p.onDeck[0];
+  assert.equal(d.name, "Holocene Auto");
+  assert.equal(d.mode, "steady");
+  assert.equal(d.video, "https://v.delo.sh/0184/holocene-auto-agent-pad");
+  assert.equal(d.package, "io.automaticai.holocene");
+  assert.ok(d.links.board?.startsWith("https://plane.example.io/"));
+  assert.deepEqual(p.skipped.map((x) => [x.id, x.block]), [["bad", "showcase"]]);
+  assert.ok(p.skipped[0].problems.some((x) => x.includes("showcase.tagline")));
+  assert.ok(p.skipped[0].problems.some((x) => x.includes("showcase.video")));
+  // nothing on deck is probed: no fetch or run names the showcase project
+  assert.ok(!h.calls.fetch.some((c) => c.url.includes("holocene")));
+});
+
 test("with no live app the page gets an empty list, not an error; the first promotion is the earliest live_since", async () => {
   const none = setup({ files: { "/repos/earshot/.launch.yaml": "mode: launch\n" } });
   const p = await read(none);

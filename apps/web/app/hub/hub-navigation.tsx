@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useId, useState } from "react";
+import { NavIcon } from "./nav-icons";
 import { currentGroup, nativeModifiedClick, NAV_GROUPS, PRODUCT_LINKS, type NavItem } from "./navigation-model";
 
 export type NavigationProps = { current?: string; onSelect?: (id: string) => boolean };
@@ -15,14 +16,14 @@ function Hierarchy({ current, onSelect, close }: NavigationProps & { close?: () 
       if (nativeModifiedClick(e)) return;
       if (onSelect?.(item.id)) e.preventDefault();
       close?.();
-    }}>{item.label}</a>;
+    }}><NavIcon name={item.icon} /><span>{item.label}</span></a>;
   return <nav aria-label="Primary navigation">
     <div className={`hub-nav-products${current?.startsWith("products") ? " is-ancestor" : ""}`}>{PRODUCT_LINKS.map(link)}</div>
     {NAV_GROUPS.map((group) => {
       const open = expanded.includes(group.id);
       return <div key={group.id} className={`hub-nav-group${ancestor === group.id ? " is-ancestor" : ""}`}>
         <button type="button" className="hub-nav-group-toggle" aria-expanded={open} aria-controls={`${id}-${group.id}`} onClick={() => setExpanded((old) => open ? old.filter((g) => g !== group.id) : [...old, group.id])}>
-          <span>{group.label}</span><span aria-hidden="true">{open ? "−" : "+"}</span>{ancestor === group.id ? <span className="hub-sr-only">, current group</span> : null}
+          <span>{group.label}</span><NavIcon name="chevron" size={16} className={open ? "is-open" : undefined} />{ancestor === group.id ? <span className="hub-sr-only">, current group</span> : null}
         </button>
         <div id={`${id}-${group.id}`} hidden={!open}>{group.items.map(link)}</div>
       </div>;

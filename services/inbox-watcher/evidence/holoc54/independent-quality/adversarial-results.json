@@ -1,0 +1,287 @@
+[
+  {
+    "case": "two_agent_three_mocked_channels_model_preservation",
+    "rows": [
+      {
+        "transport": "car",
+        "agent": "tile-a",
+        "voice": "carlin",
+        "profile": "holocene-pm"
+      },
+      {
+        "transport": "car",
+        "agent": "tile-b",
+        "voice": "brule",
+        "profile": "infra-pm"
+      },
+      {
+        "transport": "browser",
+        "agent": "tile-a",
+        "voice": "carlin",
+        "profile": "holocene-pm"
+      },
+      {
+        "transport": "browser",
+        "agent": "tile-b",
+        "voice": "brule",
+        "profile": "infra-pm"
+      },
+      {
+        "transport": "telegram",
+        "agent": "tile-a",
+        "voice": "carlin",
+        "profile": "holocene-pm"
+      },
+      {
+        "transport": "telegram",
+        "agent": "tile-b",
+        "voice": "brule",
+        "profile": "infra-pm"
+      }
+    ],
+    "model_clear_preserved": {
+      "voice": "rick",
+      "custom": "keep",
+      "model_set_at": "2026-11-23T03:51:44Z",
+      "model_set_by": "cli"
+    },
+    "defect_observed": false
+  },
+  {
+    "case": "stale_resolver_different_responder",
+    "returned": {
+      "voice": "carlin"
+    },
+    "memo_identity": [
+      "cmd-b",
+      "tile-b"
+    ],
+    "stamp": "one",
+    "lock": {
+      "voice": "carlin",
+      "requested": "carlin",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "carlin",
+      "agent": "tile-a",
+      "stamp": "one",
+      "identity": [
+        "cmd-b",
+        "tile-b"
+      ],
+      "lock_id": "70afe5f1-5328-411f-8c76-560c62502d17"
+    },
+    "next_call_voice": "carlin",
+    "current_assignment": "brule",
+    "defect_observed": true
+  },
+  {
+    "case": "stale_resolver_same_responder_new_round",
+    "returned": {
+      "voice": "carlin"
+    },
+    "memo_identity": [
+      "cmd-next",
+      "tile-a"
+    ],
+    "stamp": "two",
+    "lock": {
+      "voice": "walken",
+      "requested": "walken",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "walken",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "walken",
+      "agent": "tile-a",
+      "stamp": "two",
+      "identity": [
+        "cmd-next",
+        "tile-a"
+      ],
+      "lock_id": "7077a7f0-0b44-4677-92ba-ea021c71d626"
+    },
+    "next_call_voice": "walken",
+    "current_assignment": "walken",
+    "defect_observed": false
+  },
+  {
+    "case": "stale_cue_slow_resolver_new_responder",
+    "renders": [
+      [
+        "Working.",
+        "carlin",
+        6
+      ]
+    ],
+    "returned_choice": {
+      "voice": "carlin",
+      "requested": "carlin",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "carlin",
+      "agent": "tile-a",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "stamp": "two",
+      "lock_id": "5770e02e-727c-450e-a413-503055dd0504",
+      "cue_stamp": "two",
+      "cue_identity": [
+        "cmd-b",
+        "tile-b"
+      ],
+      "cue_profile": null
+    },
+    "error": null,
+    "current_identity": [
+      "cmd-b",
+      "tile-b"
+    ],
+    "current_assignment": "brule",
+    "defect_observed": true
+  },
+  {
+    "case": "delayed_cue_creation_after_final_lock",
+    "cue_choice": {
+      "voice": "carlin",
+      "requested": "carlin",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "carlin",
+      "agent": "tile-a",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "stamp": "one",
+      "lock_id": "19579d4c-56e2-493b-bda1-bb88dd1cf983",
+      "cue_stamp": "one",
+      "cue_identity": [
+        "cmd",
+        "tile-a"
+      ]
+    },
+    "fallback": {
+      "voice": "rick",
+      "requested": "carlin",
+      "source": "emergency_fallback",
+      "profile": "holocene-pm",
+      "fallback": "voice_not_found",
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "unavailable",
+      "effective_voice": "rick",
+      "agent": "tile-a",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "stamp": "one",
+      "lock_id": "19579d4c-56e2-493b-bda1-bb88dd1cf983",
+      "cue_stamp": "one",
+      "cue_identity": [
+        "cmd",
+        "tile-a"
+      ]
+    },
+    "final_lock": {
+      "voice": "carlin",
+      "requested": "carlin",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "carlin",
+      "agent": "tile-a",
+      "stamp": "one",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "lock_id": "6591dffb-83e1-46f5-bf48-19eb2657fb25"
+    },
+    "pending_lock": {
+      "voice": "rick",
+      "requested": "carlin",
+      "source": "emergency_fallback",
+      "profile": "holocene-pm",
+      "fallback": "voice_not_found",
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "unavailable",
+      "effective_voice": "rick",
+      "agent": "tile-a",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "stamp": "one",
+      "lock_id": "19579d4c-56e2-493b-bda1-bb88dd1cf983"
+    },
+    "defect_observed": true
+  },
+  {
+    "case": "responder_change_during_final_render",
+    "out": {
+      "result": "/home/delorenj/.hermes/profiles/holocene-pm/cache/scratch/holoc54-quality/assigned-voice-test-i96x5ov8/mock.ogg"
+    },
+    "voice_lock": {
+      "voice": "carlin",
+      "requested": "carlin",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "carlin",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "carlin",
+      "agent": "tile-a",
+      "stamp": "one",
+      "identity": [
+        "cmd",
+        "tile-a"
+      ],
+      "lock_id": "e1893cd5-c0a7-4322-9b86-886fa3aba0b1",
+      "rendered": true
+    },
+    "current_identity": [
+      "cmd-b",
+      "tile-b"
+    ],
+    "defect_observed": true
+  },
+  {
+    "case": "profile_symlink_swap_after_validation",
+    "choice": {
+      "voice": "walken",
+      "requested": "walken",
+      "source": "inherited",
+      "profile": "holocene-pm",
+      "fallback": null,
+      "configured_voice": "walken",
+      "configured_source": "inherited",
+      "availability": "available",
+      "effective_voice": "walken"
+    },
+    "defect_observed": true,
+    "sentinel_leaked": false
+  }
+]

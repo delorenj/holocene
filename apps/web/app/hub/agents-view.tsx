@@ -2,20 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rectOf, stackPath, treePath, useDrag, usePositions, type Pos, type Rect } from "./canvas";
-import { Age, BandTrack, BoxIcon, CopyRef, Glyph, formatDuration, signalWord, sinceSeconds } from "./ui";
+import { Age, BandTrack, BoxIcon, CopyRef, Glyph, InspActions, InspHead, InspSection, InspTiles, StatusTag, formatDuration, signalWord, sinceSeconds } from "./ui";
+import { bySignal, directReports, heldTag } from "./inspector-model";
 import type { Agent, AgentsPayload, Contractor, Evidence, HubEvent, Signal } from "./types";
+import { VoicePicker } from "./voice-picker";
 
 type NodeKind = "ceo" | "director" | "pm" | "contractor" | "inactive";
 type LaidNode = { id: string; kind: NodeKind; x: number; y: number; w: number; h: number; agent?: Agent; contractor?: Contractor };
 type LaidEdge = { id: string; from: string; to: string; shape: "tree" | "stack"; inferred: boolean };
 
 const SIZE = { ceo: [160, 48], director: [208, 112], pm: [192, 112], contractor: [168, 80], inactive: [216, 0] } as const;
-const ORDER: Signal[] = ["you", "broken", "stuck", "working", "unknown", "quiet", "cleared"];
 const PM_ROW_GAP = 24;
-
-function bySignal(a: Agent, b: Agent) {
-  return ORDER.indexOf(a.signal) - ORDER.indexOf(b.signal) || a.name.localeCompare(b.name);
-}
 
 function inactiveHeight(rows: number) {
   return 82 + rows * 18;
@@ -320,10 +317,6 @@ function NodeBody({ node, now, inactive, open }: { node: LaidNode; now: number; 
   );
 }
 
-function stateText(a: Agent) {
-  return [a.state, a.blockKind].filter(Boolean).join(" · ");
-}
-
 function basisText(a: Agent) {
   const p = a.project!;
   const how = p.basis === "project_path" ? "Matched on project_path." : p.basis === "repo" ? "Matched on repo name only." : "Matched on the Plane board id.";
@@ -335,83 +328,107 @@ function ProjectBlock({ label, a, onOpenProject, note }: { label: string; a: Age
   const p = a.project;
   if (!p) {
     return (
-      <div className="hub-missing">
-        <Glyph signal="unknown" size={8} />
-        <span>No project record. Nothing in pjangler matches this agent&rsquo;s project_path or repo name.</span>
-      </div>
+      <InspSection label={label}>
+        <div className="hub-missing">
+          <Glyph signal="unknown" size={8} />
+          <span>No project record. Nothing in pjangler matches this agent&rsquo;s project_path or repo name.</span>
+        </div>
+      </InspSection>
     );
   }
   return (
-    <section className="hub-link-block" aria-label="Attached project">
-      <div className="link-head">
-        <span className="hub-label">{label}</span>
-        <span className="link-source">pjangler</span>
-      </div>
+    <InspSection label={label} aside={<StatusTag>{p.status ? `${p.id} · ${p.status}` : p.id}</StatusTag>} className="insp-project">
       <div className="link-title">
         <BoxIcon size={16} />
         <button type="button" className="hub-textlink" onClick={() => onOpenProject(p.id)}>{p.name}</button>
-        <span className="link-id">{p.id}</span>
-        {p.status ? <span className="link-status">{p.status}</span> : null}
+        <span className="link-source">pjangler</span>
       </div>
-      <dl className="link-facts">
+      <div className="insp-field"><CopyRef value={p.repoPath} /></div>
+      <dl className="insp-facts">
         <dt>Board</dt>
         <dd>{p.board ? `${p.board}${p.workspace ? ` · Plane workspace ${p.workspace}` : ""}` : "not bound"}</dd>
-        <dt>Repo</dt>
-        <dd><CopyRef value={p.repoPath} /></dd>
       </dl>
       <p className="link-basis">
         <Glyph signal={p.indexed ? "quiet" : "stuck"} size={8} />
         <span>{note ?? basisText(a)}</span>
       </p>
-    </section>
+    </InspSection>
+  );
+}
+
+function TicketSection({ ticket }: { ticket: NonNullable<Agent["ticket"]> }) {
+  return (
+    <InspSection label="Working on" aside={ticket.state ? <StatusTag>{ticket.state}</StatusTag> : undefined}>
+      <div className="ticket-line">
+        <CopyRef value={ticket.key} />
+        <span className="ticket-title" title={ticket.title}>{ticket.title}</span>
+      </div>
+      <BandTrack ticket={ticket} />
+      <span className="insp-meta">{ticket.labels.join(" · ") || (ticket.state ? "No labels" : "No Plane state seen yet")}</span>
+      <span className="hub-note">Plane lifecycle band. Krebs phases show here once Krebs emits them.</span>
+    </InspSection>
   );
 }
 
 function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: AgentsPayload; now: number; onFocus: (id: string) => void; onOpenProject: (id: string) => void }) {
   const boss = data.agents.find((x) => x.id === a.reportsTo);
   const kids = data.contractors.filter((c) => c.parent === a.id);
-  const directs = data.agents.filter((x) => x.reportsTo === a.id);
+  const directs = directReports(data.agents, a.id);
+  const settingsHref = `/settings?agent=${encodeURIComponent(a.id)}`;
   return (
     <>
-      <header className="insp-head">
-        <span className="hub-label">{a.role === "director" ? "Director" : "Project manager"}</span>
-        <div className="insp-title">
-          <Glyph signal={a.signal} size={12} title={a.state} />
-          <a className={`insp-avatar${a.avatar ? "" : " is-empty"}`} href={`/settings?agent=${encodeURIComponent(a.id)}`} title={a.avatar ? "Change avatar" : "Set an avatar"} aria-label={a.avatar ? `Change ${a.name}'s avatar` : `Set an avatar for ${a.name}`}>
+      <InspHead
+        eyebrow={a.role === "director" ? "Director" : "Project manager"}
+        title={a.name}
+        sub={`${a.id}${a.role === "director" && a.declaredRole !== "director" ? ` · registry role ${a.declaredRole}` : ""}`}
+        icon={
+          <a className={`insp-avatar${a.avatar ? "" : " is-empty"}`} href={settingsHref} title={a.avatar ? "Change avatar" : "Set an avatar"} aria-label={a.avatar ? `Change ${a.name}'s avatar` : `Set an avatar for ${a.name}`}>
             {a.avatar ? <img src={a.avatar} alt="" /> : a.name.charAt(0)}
           </a>
-          <h2>{a.name}</h2>
-          <Age seconds={a.heldSeconds} verb="held" />
-        </div>
-        <span className="insp-id">{a.id}{a.role === "director" && a.declaredRole !== "director" ? ` · registry role ${a.declaredRole}` : ""}</span>
-        <span className={`insp-state sig-text-${a.signal}`}>{stateText(a)} · {signalWord(a.signal)}</span>
-        <span className="insp-meta">gateway {a.gateway}{a.tools !== undefined ? ` · ${a.tools} tools` : ""}{a.subs ? ` · ${a.subs} subagent lanes` : ""}</span>
-      </header>
+        }
+        tag={<><Glyph signal={a.signal} size={8} title={a.state} /> {heldTag(a.state, a.heldSeconds)}</>}
+        tagSignal={a.signal}
+      >
+        {signalWord(a.signal).toLowerCase() !== a.state.toLowerCase() || a.blockKind ? (
+          <span className={`insp-state sig-text-${a.signal}`}>{signalWord(a.signal)}{a.blockKind ? ` · ${a.blockKind}` : ""}</span>
+        ) : null}
+        <InspTiles
+          label="Runtime"
+          facts={[
+            { label: "Gateway", value: a.gateway, signal: a.gateway === "active" ? "cleared" : a.gateway === "inactive" ? "quiet" : "unknown" },
+            { label: "Last moved", value: a.lastActiveAt ? `${formatDuration(sinceSeconds(a.lastActiveAt, now) ?? 0)} ago` : "never" },
+            { label: "Tools", value: a.tools },
+            { label: "Subagent lanes", value: a.subs || undefined }
+          ]}
+        />
+      </InspHead>
+      {a.ticket ? <TicketSection ticket={a.ticket} /> : null}
       <ProjectBlock label={a.role === "director" ? "Directs project" : "Attached to"} a={a} onOpenProject={onOpenProject} />
-      <div className="insp-section">
-        <span className="hub-label">Reports to</span>
+      <VoicePicker agent={a} />
+      <InspSection label="Reports to">
         <button type="button" className="hub-row" onClick={() => onFocus(boss ? boss.id : "ceo")}>
           {boss ? <Glyph signal={boss.signal} size={8} /> : <Glyph signal="quiet" size={8} />}
           <span className="row-name">{boss ? boss.name : "You"}</span>
           <span className="row-meta">{a.reportsBasis === "recorded" ? "reports_to in the registry" : boss ? "inferred: repo sits under its project" : "no director above it"}</span>
         </button>
-      </div>
-      <EvidenceBlock a={a} now={now} />
-      {a.ticket ? (
-        <div className="insp-section">
-          <span className="hub-label">Working on</span>
-          <div className="ticket-line">
-            <CopyRef value={a.ticket.key} />
-            <span>{a.ticket.title}</span>
+      </InspSection>
+      {directs.length ? (
+        <InspSection label="Directs" aside={<span className="insp-count">{directs.length}</span>}>
+          <div className="insp-chips">
+            {directs.map((d) => {
+              const what = `${d.name}: ${d.project?.id ?? "no project record"} · ${heldTag(d.state, d.heldSeconds)}`;
+              return (
+                <button key={d.id} type="button" className="insp-chip" onClick={() => onFocus(d.id)} title={what} aria-label={what}>
+                  <Glyph signal={d.signal} size={8} />
+                  <span>{d.id}</span>
+                </button>
+              );
+            })}
           </div>
-          <BandTrack ticket={a.ticket} />
-          <span className="insp-meta">{[a.ticket.state, ...a.ticket.labels].filter(Boolean).join(" · ") || "No Plane state seen yet"}</span>
-          <span className="hub-note">Plane lifecycle band. Krebs phases show here once Krebs emits them.</span>
-        </div>
+        </InspSection>
       ) : null}
       {kids.length ? (
-        <div className="insp-section">
-          <span className="hub-label">Contractors · {kids.length}</span>
+        <InspSection label="Contractors" aside={<span className="insp-count">{kids.length}</span>}>
           {kids.map((c) => (
             <button key={c.id} type="button" className="hub-row" onClick={() => onFocus(c.id)}>
               <Glyph signal="working" size={8} />
@@ -419,20 +436,15 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
               <span className="row-meta">{c.via === "scope" ? "worker scope" : "subagent"} · {formatDuration(sinceSeconds(c.startedAt, now) ?? 0)}</span>
             </button>
           ))}
-        </div>
+        </InspSection>
       ) : null}
-      {a.role === "director" && directs.length ? (
-        <div className="insp-section">
-          <span className="hub-label">Directs · {directs.length}</span>
-          {directs.map((d) => (
-            <button key={d.id} type="button" className="hub-row" onClick={() => onFocus(d.id)}>
-              <Glyph signal={d.signal} size={8} />
-              <span className="row-name">{d.name}</span>
-              <span className="row-meta">{d.project?.id ?? "no project record"} · {d.state}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <EvidenceBlock a={a} now={now} />
+      <InspActions>
+        {a.project ? (
+          <button type="button" className="hub-btn is-primary" onClick={() => onOpenProject(a.project!.id)}>Open project</button>
+        ) : null}
+        <a className="hub-btn" href={settingsHref}>Agent settings</a>
+      </InspActions>
     </>
   );
 }
@@ -448,17 +460,15 @@ const STATE_WORD: Record<Evidence["state"], string> = { idle: "idle", done: "fin
 function EvidenceBlock({ a, now }: { a: Agent; now: number }) {
   if (!a.evidence.length) {
     return (
-      <div className="insp-section">
-        <span className="hub-label">Evidence</span>
+      <InspSection label="Evidence">
         <p className="hub-note">
           {a.state === "unknown" ? "No agent event has named this agent in the last two hours." : "No live session. It last moved " + (a.lastActiveAt ? `${formatDuration(sinceSeconds(a.lastActiveAt, now) ?? 0)} ago.` : "never.")}
         </p>
-      </div>
+      </InspSection>
     );
   }
   return (
-    <div className="insp-section">
-      <span className="hub-label">Evidence · {a.evidence.length}</span>
+    <InspSection label="Evidence" aside={<span className="insp-count">{a.evidence.length}</span>}>
       {a.evidence.map((e, i) => (
         <div key={i} className="hub-evidence">
           <Glyph signal={e.state === "active" ? "working" : e.state === "done" ? "cleared" : e.state === "error" ? "broken" : e.state === "hitl" ? "you" : "quiet"} size={8} />
@@ -471,26 +481,25 @@ function EvidenceBlock({ a, now }: { a: Agent; now: number }) {
           </span>
         </div>
       ))}
-    </div>
+    </InspSection>
   );
 }
 
 function ContractorPanel({ c, parent, now, onFocus, onOpenProject }: { c: Contractor; parent?: Agent; now: number; onFocus: (id: string) => void; onOpenProject: (id: string) => void }) {
+  const up = sinceSeconds(c.startedAt, now);
   return (
     <>
-      <header className="insp-head">
-        <span className="hub-label">Contractor · ephemeral</span>
-        <div className="insp-title">
-          <Glyph signal="working" size={12} />
-          <h2>{c.ticket ? `${c.ticket} contractor` : c.via === "scope" ? "Worker scope" : "Subagent"}</h2>
-          <Age seconds={sinceSeconds(c.startedAt, now)} verb="up" />
-        </div>
-        <span className="insp-id">{c.ref}</span>
+      <InspHead
+        eyebrow="Contractor · ephemeral"
+        title={c.ticket ? `${c.ticket} contractor` : c.via === "scope" ? "Worker scope" : "Subagent"}
+        sub={c.ref}
+        tag={<><Glyph signal="working" size={8} /> {[c.state, up !== undefined ? formatDuration(up) : undefined].filter(Boolean).join(" · ")}</>}
+        tagSignal="working"
+      >
         <span className="insp-state">{c.via === "scope" ? "running · systemd scope, no ASM state of its own" : "open · since agent.invocation.started"}</span>
-      </header>
+      </InspHead>
       {c.via === "subagent" ? (
-        <div className="insp-section">
-          <span className="hub-label">Bloodbank event</span>
+        <InspSection label="Bloodbank event">
           <div className="hub-row is-plain">
             <Glyph signal={c.receipt ? "cleared" : "unknown"} size={8} />
             <span className="row-name">bloodbank.agent.invocation.started</span>
@@ -501,42 +510,51 @@ function ContractorPanel({ c, parent, now, onFocus, onOpenProject }: { c: Contra
             <span className="row-name">{c.receipt ? `Hook hub receipt · ${c.receipt.native}` : "Hook hub receipt"}</span>
             <span className="row-meta">{c.receipt ? <><CopyRef value={c.receipt.invocationId} /> · {c.receipt.publishStatus ?? c.receipt.status}</> : "none found in the collected receipts"}</span>
           </div>
-        </div>
+        </InspSection>
       ) : null}
       {parent ? <ProjectBlock label="Inherits project" a={parent} onOpenProject={onOpenProject} note={`From ${parent.name}. Contractors have no registry row.`} /> : null}
       {parent ? (
-        <div className="insp-section">
-          <span className="hub-label">Delegated by</span>
+        <InspSection label="Delegated by">
           <button type="button" className="hub-row" onClick={() => onFocus(parent.id)}>
             <Glyph signal={parent.signal} size={8} />
             <span className="row-name">{parent.name}</span>
             <span className="row-meta">{c.via === "scope" ? "--profile in the unit description" : "parent_invocation_id"}</span>
           </button>
-        </div>
+        </InspSection>
       ) : null}
       {c.description ? (
-        <div className="insp-section">
-          <span className="hub-label">Unit description</span>
+        <InspSection label="Unit description">
           <code className="hub-code">{c.description}</code>
-        </div>
+        </InspSection>
       ) : null}
       <p className="hub-note">Stateless: no memory and no registry row. It leaves the canvas when its {c.via === "scope" ? "scope exits" : "parent completes it"}.</p>
+      {parent ? (
+        <InspActions>
+          <button type="button" className="hub-btn is-primary" onClick={() => onFocus(parent.id)}>Open {parent.name}</button>
+        </InspActions>
+      ) : null}
     </>
   );
 }
 
 function CeoPanel({ data, onFocus }: { data: AgentsPayload; onFocus: (id: string) => void }) {
   const ids = new Set(data.agents.map((a) => a.id));
-  const direct = data.agents.filter((a) => (a.reportsTo === "ceo" || !ids.has(a.reportsTo)) && (a.active || a.role === "director"));
+  const direct = data.agents.filter((a) => (a.reportsTo === "ceo" || !ids.has(a.reportsTo)) && (a.active || a.role === "director")).sort(bySignal);
+  const s = data.stats;
   return (
     <>
-      <header className="insp-head">
-        <span className="hub-label">Operator</span>
-        <div className="insp-title"><h2>You</h2></div>
-        <span className="insp-id">CEO</span>
-      </header>
-      <div className="insp-section">
-        <span className="hub-label">Reports to you</span>
+      <InspHead eyebrow="Operator" title="You" sub="CEO · every director reports here" tag={s.waiting ? `${s.waiting} need you` : undefined} tagSignal="you">
+        <InspTiles
+          label="Fleet"
+          facts={[
+            { label: "Active", value: `${s.active} of ${s.agents}`, signal: s.active ? "working" : undefined },
+            { label: "Needs you", value: s.waiting, signal: s.waiting ? "you" : undefined },
+            { label: "No project record", value: s.noProject, signal: s.noProject ? "stuck" : undefined },
+            { label: "Contractors", value: s.contractors }
+          ]}
+        />
+      </InspHead>
+      <InspSection label="Reports to you" aside={<span className="insp-count">{direct.length}</span>}>
         {direct.map((a) => (
           <button key={a.id} type="button" className="hub-row" onClick={() => onFocus(a.id)}>
             <Glyph signal={a.signal} size={8} />
@@ -544,7 +562,7 @@ function CeoPanel({ data, onFocus }: { data: AgentsPayload; onFocus: (id: string
             <span className="row-meta">{a.role} · {a.project?.id ?? "no project record"}</span>
           </button>
         ))}
-      </div>
+      </InspSection>
     </>
   );
 }
@@ -553,13 +571,16 @@ function InactivePanel({ inactive, now, total, onOpenProject }: { inactive: Agen
   const unlinked = inactive.filter((a) => !a.project).length;
   return (
     <>
-      <header className="insp-head">
-        <span className="hub-label">Collapsed</span>
-        <div className="insp-title"><h2>Inactive agents</h2></div>
-        <span className="insp-id">{inactive.length} of {total} idle, gone or without a running gateway</span>
-      </header>
-      <div className="insp-section">
-        <span className="hub-label">Most recent first</span>
+      <InspHead eyebrow="Collapsed" title="Inactive agents" sub={`${inactive.length} of ${total} idle, gone or without a running gateway`} tag={`${inactive.length} inactive`}>
+        <InspTiles
+          label="Inactive agents"
+          facts={[
+            { label: "Linked", value: inactive.length - unlinked },
+            { label: "No project record", value: unlinked, signal: unlinked ? "stuck" : undefined }
+          ]}
+        />
+      </InspHead>
+      <InspSection label="Most recent first">
         {inactive.map((a) =>
           a.project ? (
             <button key={a.id} type="button" className="hub-row" onClick={() => onOpenProject(a.project!.id)}>
@@ -575,7 +596,7 @@ function InactivePanel({ inactive, now, total, onOpenProject }: { inactive: Agen
             </div>
           )
         )}
-      </div>
+      </InspSection>
       {unlinked ? <p className="hub-note">{unlinked} of these match no pjangler project by project_path or repo name.</p> : null}
     </>
   );

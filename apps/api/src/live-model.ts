@@ -47,11 +47,27 @@ export type LiveDecl = {
   support?: string;
   checkout?: LiveCheckout;
   fulfilment?: LiveFulfilment;
+  /** A published demo video (v.delo.sh or s3.delo.sh share URL), embedded at the foot of the app's card. */
+  video?: string;
+};
+
+/**
+ * `showcase:` puts a product that is not promoted yet on the Live hub's "On deck" shelf: it is in real
+ * use, it is headed for promotion, and the page shows what it is and its demo. Any mode but `live`
+ * may carry one; a live app says the same things in its `live:` block.
+ */
+export type Showcase = {
+  name: string;
+  tagline: string;
+  platform?: string;
+  package?: string;
+  note?: string;
+  video?: string;
 };
 
 export type LaunchRead =
   | { kind: "absent" }
-  | { kind: "not-live"; mode: string }
+  | { kind: "not-live"; mode: string; showcase?: Showcase; showcaseProblems?: string[] }
   | { kind: "live"; decl: LiveDecl }
   | { kind: "invalid"; mode: "live"; problems: string[] };
 
@@ -60,6 +76,36 @@ export function dayOf(v: unknown): string | undefined {
   if (v instanceof Date && Number.isFinite(v.getTime())) return v.toISOString().slice(0, 10);
   const s = text(v);
   return s && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(`${s}T00:00:00Z`)) ? s : undefined;
+}
+
+/** A share URL from the artifacts publisher: https on v.delo.sh (R2 video) or s3.delo.sh (MinIO), no query or fragment. */
+export function publishedVideoUrl(v: unknown): string | undefined {
+  const s = text(v);
+  if (!s) return undefined;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:" || !["v.delo.sh", "s3.delo.sh"].includes(u.hostname) || u.port || u.username || u.search || u.hash) return undefined;
+    return u.pathname.split("/").filter(Boolean).length >= 2 ? u.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseShowcase(raw: unknown): { showcase?: Showcase; problems: string[] } {
+  if (raw === undefined) return { problems: [] };
+  if (!record(raw)) return { problems: ["showcase: must be a mapping"] };
+  const problems: string[] = [];
+  const name = text(raw.name);
+  const tagline = text(raw.tagline);
+  if (!name) problems.push("showcase.name is missing");
+  if (!tagline) problems.push("showcase.tagline is missing");
+  const video = publishedVideoUrl(raw.video);
+  if (raw.video !== undefined && !video) problems.push("showcase.video must be a v.delo.sh or s3.delo.sh share URL");
+  if (problems.length || !name || !tagline) return { problems };
+  return {
+    problems,
+    showcase: { name, tagline, platform: text(raw.platform), package: text(raw.package), note: text(raw.note), video }
+  };
 }
 
 const httpsUrl = (v: unknown): string | undefined => {
@@ -91,7 +137,10 @@ export function parseLaunchFile(raw: string | undefined): LaunchRead {
   }
   if (!record(doc)) return { kind: "absent" };
   const mode = (text(doc.mode) ?? "steady").toLowerCase();
-  if (mode !== "live") return { kind: "not-live", mode };
+  if (mode !== "live") {
+    const { showcase, problems } = parseShowcase(doc.showcase);
+    return { kind: "not-live", mode, ...(showcase ? { showcase } : {}), ...(problems.length ? { showcaseProblems: problems } : {}) };
+  }
 
   const problems: string[] = [];
   const need = (label: string, value: string | undefined): string => {
@@ -137,6 +186,9 @@ export function parseLaunchFile(raw: string | undefined): LaunchRead {
     }
   }
 
+  const video = publishedVideoUrl(l.video);
+  if (l.video !== undefined && !video) problems.push("live.video must be a v.delo.sh or s3.delo.sh share URL");
+
   if (problems.length) return { kind: "invalid", mode: "live", problems };
   return {
     kind: "live",
@@ -156,7 +208,8 @@ export function parseLaunchFile(raw: string | undefined): LaunchRead {
       board,
       support: text(l.support),
       checkout,
-      fulfilment
+      fulfilment,
+      video
     }
   };
 }

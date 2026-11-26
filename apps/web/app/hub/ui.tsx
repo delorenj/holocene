@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { formatDuration, visibleFacts } from "./inspector-model";
 import type { Signal, Source, Ticket } from "./types";
 
 // Small atoms from the 33GOD kit, ported for the Next app: the seven signal glyphs,
@@ -31,18 +32,7 @@ export function Glyph({ signal, size = 10, title }: { signal: Signal; size?: num
 
 export const signalWord = (s: Signal) => SIGNAL_WORD[s];
 
-const pad = (n: number) => String(n).padStart(2, "0");
-/** 14s · 12m · 1h 06m · 2h · 4d 02h · 98d */
-export function formatDuration(total: number): string {
-  const s = Math.max(0, Math.round(total));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}h ${pad(m % 60)}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  return d >= 10 ? `${d}d` : `${d}d ${pad(h % 24)}h`;
-}
+export { formatDuration };
 
 export function sinceSeconds(iso: string | undefined, now: number): number | undefined {
   if (!iso) return undefined;
@@ -114,6 +104,73 @@ export function BandTrack({ ticket }: { ticket: Ticket }) {
       ))}
     </ol>
   );
+}
+
+// ---------- inspector primitives (Stitch 7d0b73a7 / d470bfc8 layout, real data only) ----------
+// Every hub detail sidebar (Agents, Projects) builds from these, so one change reaches all of them.
+
+const TAG_TONE: Partial<Record<Signal, string>> = { you: "you", broken: "broken", stuck: "stuck", working: "working", cleared: "cleared" };
+
+/** Status tag tinted by a signal. Quiet and unknown stay neutral. */
+export function StatusTag({ signal, children, className }: { signal?: Signal; children: ReactNode; className?: string }) {
+  const tone = signal ? TAG_TONE[signal] : undefined;
+  return <span className={`hub-tag${tone ? ` is-${tone}` : ""}${className ? ` ${className}` : ""}`}>{children}</span>;
+}
+
+/** Inspector header: identity tile, eyebrow, name and id, with the status tag on the right. */
+export function InspHead({
+  eyebrow, title, sub, icon, tag, tagSignal, children
+}: { eyebrow: string; title: string; sub?: ReactNode; icon?: ReactNode; tag?: ReactNode; tagSignal?: Signal; children?: ReactNode }) {
+  return (
+    <header className="insp-head">
+      <div className="insp-headrow">
+        {icon ? <span className="insp-icon">{icon}</span> : null}
+        <div className="insp-headtext">
+          <span className="hub-label">{eyebrow}</span>
+          <h2>{title}</h2>
+          {sub ? <span className="insp-id">{sub}</span> : null}
+        </div>
+        {tag ? <StatusTag signal={tagSignal} className="insp-tag">{tag}</StatusTag> : null}
+      </div>
+      {children}
+    </header>
+  );
+}
+
+export type InspFact = { label: string; value: ReactNode; signal?: Signal };
+
+/** Two-up fact tiles. Only sourced values: an empty value hides its tile rather than inventing one. */
+export function InspTiles({ facts, label }: { facts: InspFact[]; label: string }) {
+  const shown = visibleFacts(facts);
+  if (!shown.length) return null;
+  return (
+    <dl className="insp-tiles" aria-label={label}>
+      {shown.map((f) => (
+        <div key={f.label} className="insp-tile">
+          <dt>{f.label}</dt>
+          <dd className={f.signal ? `sig-text-${f.signal}` : undefined}>{f.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Section with a label on the left and an optional tag or count on the right. */
+export function InspSection({ label, aside, children, className }: { label: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section className={`insp-section${className ? ` ${className}` : ""}`}>
+      <div className="insp-section-head">
+        <span className="hub-label">{label}</span>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Actions pinned to the bottom of the inspector. Only routes and handlers that already exist. */
+export function InspActions({ children }: { children: ReactNode }) {
+  return <div className="insp-actions">{children}</div>;
 }
 
 export function BoxIcon({ size = 12 }: { size?: number }) {
