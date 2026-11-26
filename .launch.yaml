@@ -1,0 +1,12 @@
+# Lifecycle declaration, read by Holocene's Products and Live hubs (apps/api/src/live-model.ts).
+# steady: no launch race is running. The showcase block puts Holocene Auto on the Live hub's
+# "On deck" shelf (in daily use, headed for promotion). Promote it with `mode: live` and a full
+# `live:` block (store, release, board, checkout) when it is ready to sell.
+mode: steady
+showcase:
+  name: Holocene Auto
+  tagline: "Talk to your agent fleet from the car: tap a face on the Agent Pad, record a memo, hear the reply."
+  platform: android-automotive
+  package: io.automaticai.holocene
+  note: "In daily use on the Civic. Not for sale yet."
+  video: https://v.delo.sh/01848684aa8a9d02/holocene-auto-agent-pad

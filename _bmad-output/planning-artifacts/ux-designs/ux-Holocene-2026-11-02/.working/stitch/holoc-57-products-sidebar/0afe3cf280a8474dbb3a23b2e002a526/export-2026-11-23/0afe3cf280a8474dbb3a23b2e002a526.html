@@ -1,0 +1,488 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_dashboard" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,600;0,700;1,400&amp;family=Courier+Prime:ital,wght@0,400;0,700;1,400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "tertiary-fixed": "#e5e2dc",
+          "on-error-container": "#93000a",
+          "tertiary-container": "#1c1c18",
+          "on-secondary": "#ffffff",
+          "surface-container-low": "#f5f4ef",
+          "error": "#ba1a1a",
+          "on-secondary-fixed-variant": "#8e1300",
+          "on-tertiary-fixed": "#1c1c18",
+          "on-error": "#ffffff",
+          "tertiary-fixed-dim": "#c9c6c0",
+          "on-primary-fixed": "#1c1c19",
+          "on-primary": "#ffffff",
+          "surface-container-lowest": "#ffffff",
+          "secondary": "#b4280f",
+          "primary-container": "#1c1c19",
+          "surface-dim": "#dbdad5",
+          "secondary-container": "#fe5d3f",
+          "on-background": "#1b1c19",
+          "surface-tint": "#5f5e5b",
+          "surface-variant": "#e3e3de",
+          "on-surface": "#1b1c19",
+          "on-tertiary-container": "#85847e",
+          "surface-container-highest": "#e3e3de",
+          "primary-fixed-dim": "#c9c6c2",
+          "on-tertiary": "#ffffff",
+          "on-primary-container": "#858480",
+          "on-secondary-container": "#5d0900",
+          "secondary-fixed-dim": "#ffb4a5",
+          "primary": "#000000",
+          "secondary-fixed": "#ffdad3",
+          "on-secondary-fixed": "#3e0400",
+          "on-surface-variant": "#474741",
+          "on-tertiary-fixed-variant": "#474742",
+          "inverse-on-surface": "#f2f1ec",
+          "error-container": "#ffdad6",
+          "inverse-primary": "#c9c6c2",
+          "background": "#faf9f4",
+          "tertiary": "#000000",
+          "surface-bright": "#faf9f4",
+          "on-primary-fixed-variant": "#474744",
+          "surface-container-high": "#e9e8e3",
+          "inverse-surface": "#30312e",
+          "outline": "#787770",
+          "primary-fixed": "#e5e2de",
+          "surface": "#faf9f4",
+          "outline-variant": "#c8c7be",
+          "surface-container": "#efeee9"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "space-sm": "0.5rem",
+          "gutter-desktop": "1.5rem",
+          "gutter": "1rem",
+          "space-xl": "2.5rem",
+          "margin-tablet": "1.5rem",
+          "space-lg": "1.5rem",
+          "space-xs": "0.25rem",
+          "space-md": "1rem",
+          "margin": "1rem",
+          "margin-desktop": "2.5rem"
+        },
+        "fontFamily": {
+          "label-md": [
+            "Atkinson Hyperlegible Next"
+          ],
+          "code-sm": [
+            "Courier Prime"
+          ],
+          "label-sm": [
+            "Atkinson Hyperlegible Next"
+          ],
+          "code-md": [
+            "Courier Prime"
+          ],
+          "headline-lg-mobile": [
+            "Newsreader"
+          ],
+          "body-sm": [
+            "Atkinson Hyperlegible Next"
+          ],
+          "display-mobile": [
+            "Newsreader"
+          ],
+          "headline-md": [
+            "Newsreader"
+          ],
+          "body-lg": [
+            "Atkinson Hyperlegible Next"
+          ],
+          "body-md": [
+            "Atkinson Hyperlegible Next"
+          ],
+          "headline-sm": [
+            "Newsreader"
+          ],
+          "headline-lg": [
+            "Newsreader"
+          ],
+          "display": [
+            "Newsreader"
+          ]
+        },
+        "fontSize": {
+          "label-md": [
+            "13px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "600"
+            }
+          ],
+          "code-sm": [
+            "11px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "400"
+            }
+          ],
+          "label-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.04em",
+              "fontWeight": "700"
+            }
+          ],
+          "code-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-lg-mobile": [
+            "26px",
+            {
+              "lineHeight": "34px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "400"
+            }
+          ],
+          "display-mobile": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-md": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.005em",
+              "fontWeight": "500"
+            }
+          ],
+          "body-lg": [
+            "16px",
+            {
+              "lineHeight": "24px",
+              "fontWeight": "400"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-sm": [
+            "20px",
+            {
+              "lineHeight": "28px",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-lg": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "display": [
+            "44px",
+            {
+              "lineHeight": "52px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-background font-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 h-10 bg-primary-container z-50 px-gutter border-b border-primary flex items-center justify-between select-none"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-label-sm text-label-sm uppercase tracking-wider text-inverse-on-surface font-bold">33GOD // HOLOCENE</span><span class="font-code-sm text-code-sm text-on-primary-container px-space-xs py-0.5 bg-tertiary-container border border-outline/30">HOLOC-57</span></div><div class="h-3 w-px bg-outline/40"></div><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-primary-container">catalog sync:</span><span class="font-code-sm text-code-sm text-inverse-on-surface">42s ago · commit a8f2d91</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm text-on-primary-container">operator:</span><span class="font-code-sm text-code-sm text-inverse-on-surface font-semibold">Jarad</span></div><div class="h-3 w-px bg-outline/40"></div><button class="flex items-center gap-space-xs px-space-sm py-0.5 bg-tertiary-container border border-outline/40 text-inverse-on-surface hover:text-on-primary hover:border-outline text-code-sm font-code-sm transition-colors" type="button"><span class="material-symbols-outlined text-[14px]">search</span><span>Search</span><kbd class="font-code-sm text-code-sm text-on-primary-container ml-1">Cmd+K</kbd></button><button aria-label="Toggle Day/Night mode" class="p-1 text-on-primary-container hover:text-inverse-on-surface flex items-center justify-center transition-colors" type="button"><span class="material-symbols-outlined text-[16px]">light_mode</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><aside class="fixed left-0 top-10 bottom-0 w-[232px] bg-surface-container-low border-r border-outline/30 z-40 overflow-y-auto flex flex-col justify-between py-space-sm"><div class="flex flex-col gap-space-md"><nav class="flex flex-col" data-active-classes="bg-surface-container text-on-surface border-l-2 border-secondary font-semibold pl-[14px]"><div class="px-space-md pb-1.5"><span class="font-code-sm text-[10px] uppercase tracking-widest text-outline font-bold">Ledger Scope</span></div><div class="flex flex-col"><a aria-current="page" class="flex items-center justify-between px-space-md py-1.5 bg-surface-container text-on-surface border-l-2 border-secondary font-semibold pl-[14px] transition-colors" data-path="products" href="#"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[16px] text-secondary">inventory_2</span><span class="font-label-md text-label-md">Products</span></span><span class="font-code-sm text-code-sm px-1.5 py-0.2 bg-secondary text-on-secondary font-bold">12</span></a><div class="flex flex-col pl-space-md pr-space-md py-1 gap-0.5 border-l border-outline/20 ml-6 my-1"><a class="px-2 py-1 font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors rounded-none" data-path="launch-queue" href="#">Launch Queue</a><a class="px-2 py-1 font-body-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors rounded-none" data-path="live" href="#">Live</a></div></div><div class="mt-space-sm pt-space-xs border-t border-outline/20"><div class="px-space-md py-1.5"><span class="font-code-sm text-[10px] uppercase tracking-widest text-outline font-bold">Workspace</span></div><div class="flex flex-col px-space-xs gap-0.5"><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="agents" href="#"><span class="material-symbols-outlined text-[15px]">smart_toy</span><span>Agents</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="projects" href="#"><span class="material-symbols-outlined text-[15px]">folder_open</span><span>Projects</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="genesis" href="#"><span class="material-symbols-outlined text-[15px]">auto_awesome</span><span>Genesis</span></a></div></div><div class="mt-space-sm pt-space-xs border-t border-outline/20"><div class="px-space-md py-1.5"><span class="font-code-sm text-[10px] uppercase tracking-widest text-outline font-bold">Media</span></div><div class="flex flex-col px-space-xs gap-0.5"><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="voice" href="#"><span class="material-symbols-outlined text-[15px]">mic</span><span>Voice</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="audio" href="#"><span class="material-symbols-outlined text-[15px]">graphic_eq</span><span>Audio</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="transcripts" href="#"><span class="material-symbols-outlined text-[15px]">description</span><span>Transcripts</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="artifacts" href="#"><span class="material-symbols-outlined text-[15px]">layers</span><span>Artifacts</span></a></div></div><div class="mt-space-sm pt-space-xs border-t border-outline/20"><div class="px-space-md py-1.5"><span class="font-code-sm text-[10px] uppercase tracking-widest text-outline font-bold">System</span></div><div class="flex flex-col px-space-xs gap-0.5"><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[15px]">tune</span><span>Settings</span></a><a class="flex items-center gap-space-xs px-space-sm py-1 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="integrations" href="#"><span class="material-symbols-outlined text-[15px]">hub</span><span>Integrations</span></a></div></div></nav></div><div class="px-space-md py-space-xs border-t border-outline/20 flex items-center justify-between"><span class="font-code-sm text-code-sm text-on-surface-variant">v2.14.0-rec</span><span class="w-2 h-2 rounded-full bg-secondary-container"></span></div></aside><div class="pl-[232px]"><main class="w-full min-h-screen pt-10 px-gutter-desktop pb-space-xl bg-background"><div class="flex flex-col w-full">
+<!-- Top Ledger Metadata & Stable Route Dispatch Banner -->
+<div class="w-full bg-surface-container-low border border-primary p-space-md shadow-[2px_2px_0px_0px_#23231f]">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm pb-space-sm border-b border-primary/20">
+<div class="flex items-center gap-space-sm flex-wrap">
+<span class="font-code-sm text-code-sm uppercase tracking-wider text-on-surface-variant font-bold">Catalog</span>
+<span class="font-code-sm text-code-sm text-outline">/</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-bold">Products</span>
+<span class="font-code-sm text-code-sm px-space-xs py-0.5 bg-surface-container border border-primary text-on-surface">source: .launch.yaml</span>
+<span class="font-code-sm text-code-sm px-space-xs py-0.5 bg-surface-container-high text-on-surface-variant">sync: commit a8f2d91</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[15px] text-secondary">bookmark_added</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Route: <span class="text-on-surface font-semibold">/products</span></span>
+</div>
+</div>
+<div class="pt-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex flex-col sm:flex-row sm:items-center gap-space-md">
+<h1 class="font-display text-headline-lg font-semibold text-primary tracking-tight">
+          Product Directory
+        </h1>
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="font-code-sm text-code-sm px-2 py-0.5 bg-secondary text-on-secondary font-bold">3 Launching</span>
+<span class="font-code-sm text-code-sm px-2 py-0.5 bg-primary text-on-primary font-bold">1 Active</span>
+<span class="font-code-sm text-code-sm px-2 py-0.5 bg-surface-container border border-primary/30 text-on-surface font-semibold">Total: 4</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm self-start lg:self-center">
+<div class="flex items-center border border-primary bg-surface-container-lowest px-space-sm py-1">
+<span class="material-symbols-outlined text-[15px] text-on-surface-variant mr-1.5">filter_list</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant mr-1">Filter:</span>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold">All (4)</span>
+</div>
+<div class="flex items-center gap-space-xs bg-surface-container px-space-sm py-1 border border-primary/40 font-code-sm text-code-sm">
+<span class="text-on-surface-variant">STATUS:</span>
+<span class="text-on-surface font-bold">STABLE</span>
+<span class="inline-block w-2 h-2 bg-secondary ml-1"></span>
+</div>
+</div>
+</div>
+</div>
+<!-- Main Directory Ledger Section -->
+<div class="mt-space-lg flex flex-col gap-space-xl">
+<!-- Group 1: Preparing to launch -->
+<section class="flex flex-col">
+<!-- Section Header Stripe -->
+<div class="flex items-center justify-between bg-primary-container text-inverse-on-surface px-space-md py-space-xs border border-primary">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[18px] text-secondary">rocket_launch</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-inverse-on-surface">Launch Queue</span>
+<span class="font-code-sm text-code-sm px-1.5 py-0.2 bg-secondary text-on-secondary font-bold">3</span>
+</div>
+<div class="hidden sm:flex items-center gap-space-md font-code-sm text-code-sm text-on-primary-container">
+<span>PIPELINE: S3</span>
+<span class="text-outline">|</span>
+<span>STATUS: READY</span>
+</div>
+</div>
+<!-- Ledger Table Architecture -->
+<div class="border-x border-b border-primary bg-surface-container-lowest shadow-[2px_2px_0px_0px_#23231f]">
+<!-- Table Column Specifier (Desktop) -->
+<div class="hidden md:grid grid-cols-12 bg-surface-container-low border-b border-primary text-on-surface-variant font-code-sm text-code-sm uppercase px-space-md py-2">
+<div class="col-span-4">Product / Path</div>
+<div class="col-span-5">Receipt / Target / Stamped</div>
+<div class="col-span-3 text-right">Actions</div>
+</div>
+<!-- Product Row 1: Tower of Lost Things -->
+<div class="p-space-md border-b border-primary hover:bg-surface-container-low transition-colors">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-md items-start md:items-center">
+<div class="md:col-span-4 flex flex-col gap-1"><div class="flex items-center gap-space-sm"><img src="https://s3.delo.sh/projects/tolt/2026-11-18/tolt-icon-candidates/icon-1-glow-teal.png" alt="Tower of Lost Things thumbnail" class="w-12 h-12 rounded border border-outline/30 object-cover flex-shrink-0 bg-surface-container"><div class="flex flex-col gap-1"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container border border-primary/40 text-on-surface font-semibold">01</span><span class="font-headline-sm text-headline-sm text-primary tracking-tight">Tower of Lost Things</span></div><div class="flex items-center gap-space-xs pl-0.5 font-code-sm text-code-sm text-on-surface-variant"><span>ID:</span><span class="text-on-surface font-semibold">proj-tolt-01</span><span class="text-outline">/</span><span>apps/games/tolt</span></div></div></div></div>
+<div class="md:col-span-5 flex flex-col gap-1">
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-secondary">receipt_long</span>
+<span class="font-semibold text-secondary">s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant pl-4">
+<span>Last Build: 2026-11-18 14:02 UTC</span>
+<span class="text-outline">·</span>
+<span>Manifest: .launch.yaml</span>
+</div>
+</div>
+<div class="md:col-span-3 flex md:justify-end items-center">
+<a class="w-full md:w-auto inline-flex items-center justify-center gap-space-xs px-space-md py-2 bg-surface-container-lowest hover:bg-surface-container-high border border-primary text-primary font-label-md text-label-md shadow-[2px_2px_0px_0px_#23231f] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" href="https://s3.delo.sh/projects/tolt/2026-11-18/launch-dashboard/index.html" rel="noopener noreferrer" target="_blank">
+<span>Open Launch Dashboard</span>
+<span class="material-symbols-outlined text-[15px]">arrow_outward</span>
+</a>
+</div>
+</div>
+</div>
+<!-- Product Row 2: Green In Between -->
+<div class="p-space-md border-b border-primary hover:bg-surface-container-low transition-colors">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-md items-start md:items-center">
+<div class="md:col-span-4 flex flex-col gap-1"><div class="flex items-center gap-space-sm"><img src="https://s3.delo.sh/projects/greeninbetween/2026-11-19/pool186-corrected-candidate/play/app-icon.png" alt="Green In Between thumbnail" class="w-12 h-12 rounded border border-outline/30 object-cover flex-shrink-0 bg-surface-container"><div class="flex flex-col gap-1"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container border border-primary/40 text-on-surface font-semibold">02</span><span class="font-headline-sm text-headline-sm text-primary tracking-tight">Green In Between</span></div><div class="flex items-center gap-space-xs pl-0.5 font-code-sm text-code-sm text-on-surface-variant"><span>ID:</span><span class="text-on-surface font-semibold">proj-gib-04</span><span class="text-outline">/</span><span>apps/interactive/greeninbetween</span></div></div></div></div>
+<div class="md:col-span-5 flex flex-col gap-1">
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-secondary">receipt_long</span>
+<span class="font-semibold text-secondary">s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant pl-4">
+<span>Last Build: 2026-11-18 11:35 UTC</span>
+<span class="text-outline">·</span>
+<span>Manifest: .launch.yaml</span>
+</div>
+</div>
+<div class="md:col-span-3 flex md:justify-end items-center">
+<a class="w-full md:w-auto inline-flex items-center justify-center gap-space-xs px-space-md py-2 bg-surface-container-lowest hover:bg-surface-container-high border border-primary text-primary font-label-md text-label-md shadow-[2px_2px_0px_0px_#23231f] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" href="https://s3.delo.sh/projects/greeninbetween/2026-11-18/launch-dashboard/index.html" rel="noopener noreferrer" target="_blank">
+<span>Open Launch Dashboard</span>
+<span class="material-symbols-outlined text-[15px]">arrow_outward</span>
+</a>
+</div>
+</div>
+</div>
+<!-- Product Row 3: Gruvato -->
+<div class="p-space-md hover:bg-surface-container-low transition-colors">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-md items-start md:items-center">
+<div class="md:col-span-4 flex flex-col gap-1"><div class="flex items-center gap-space-sm"><img src="https://s3.delo.sh/projects/gruvato/762c2dcf-bccd-4d55-90de-5482cacde04a/deslop-round2-review/logo/ideogram/wordmark.png" alt="Gruvato thumbnail" class="w-12 h-12 rounded border border-outline/30 object-contain p-0.5 flex-shrink-0 bg-[#1c1c18]"><div class="flex flex-col gap-1"><div class="flex items-center gap-space-xs"><span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container border border-primary/40 text-on-surface font-semibold">03</span><span class="font-headline-sm text-headline-sm text-primary tracking-tight">Gruvato</span></div><div class="flex items-center gap-space-xs pl-0.5 font-code-sm text-code-sm text-on-surface-variant"><span>ID:</span><span class="text-on-surface font-semibold">proj-gruv-02</span><span class="text-outline">/</span><span>audio/synth/gruvato</span></div></div></div></div>
+<div class="md:col-span-5 flex flex-col gap-1">
+<div class="flex items-center gap-1 font-code-sm text-code-sm text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-secondary">receipt_long</span>
+<span class="font-semibold text-secondary">s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard</span>
+</div>
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface-variant pl-4">
+<span>Last Build: 2026-11-18 09:18 UTC</span>
+<span class="text-outline">·</span>
+<span>Manifest: .launch.yaml</span>
+</div>
+</div>
+<div class="md:col-span-3 flex md:justify-end items-center">
+<a class="w-full md:w-auto inline-flex items-center justify-center gap-space-xs px-space-md py-2 bg-surface-container-lowest hover:bg-surface-container-high border border-primary text-primary font-label-md text-label-md shadow-[2px_2px_0px_0px_#23231f] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" href="https://s3.delo.sh/projects/gruvato/2026-11-18/launch-dashboard/index.html" rel="noopener noreferrer" target="_blank">
+<span>Open Launch Dashboard</span>
+<span class="material-symbols-outlined text-[15px]">arrow_outward</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Group 2: Live Products -->
+<section class="flex flex-col">
+<!-- Section Header Stripe -->
+<div class="flex items-center justify-between bg-surface-container text-on-surface px-space-md py-space-xs border border-primary">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[18px] text-on-surface">verified</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Live Products</span>
+<span class="font-code-sm text-code-sm px-1.5 py-0.2 bg-primary text-on-primary font-bold">1</span>
+</div>
+<div class="hidden sm:flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span>STOREFRONT ROUTER</span>
+<span class="text-outline">|</span>
+<span>STATUS: ACTIVE</span>
+</div>
+</div>
+<!-- Ledger Pane: Earshot -->
+<div class="border-x border-b border-primary bg-surface-container-lowest p-space-md shadow-[2px_2px_0px_0px_#23231f]">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-md items-center">
+<div class="md:col-span-4 flex flex-col gap-1">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-sm text-headline-sm text-primary tracking-tight">Earshot</span>
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container border border-primary/40 text-on-surface uppercase">Production</span>
+</div>
+<div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
+<span>ID:</span>
+<span class="text-on-surface font-semibold">proj-earshot-prod</span>
+<span class="text-outline">/</span>
+<span>apps/audio/earshot</span>
+</div>
+</div>
+<div class="md:col-span-5 flex flex-col gap-1">
+<div class="flex items-center gap-space-sm font-code-sm text-code-sm text-on-surface">
+<span class="font-semibold">Target: Production Storefront</span>
+<span class="text-outline">·</span>
+<span>Orders: Active</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">
+              Fulfillment route active · Health: 100% OK
+            </div>
+</div>
+<div class="md:col-span-3 flex md:justify-end items-center">
+<a class="w-full md:w-auto inline-flex items-center justify-center gap-space-xs px-space-md py-2 bg-primary hover:bg-inverse-surface border border-primary text-on-primary font-label-md text-label-md shadow-[2px_2px_0px_0px_#23231f] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" data-path="live" href="#">
+<span>Manage Storefront</span>
+<span class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: Diagnostic & Publication Diagnostics -->
+<section class="flex flex-col bg-surface-container-low border border-primary p-space-lg shadow-[2px_2px_0px_0px_#23231f]">
+<div class="flex flex-col md:flex-row md:items-center justify-between pb-space-sm border-b border-primary/30 gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[18px] text-secondary">tune</span>
+<span class="font-label-md text-label-md uppercase tracking-wider text-primary font-bold">Catalog Diagnostics</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant">SPEC: REV-4.1</span>
+</div>
+<!-- Reference Grid -->
+<div class="mt-space-md flex flex-col gap-space-md">
+<!-- Case A: Missing Receipt State -->
+<div class="bg-surface-container-lowest border border-dashed border-primary p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex flex-col gap-1 max-w-2xl">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-error-container text-on-error-container font-bold uppercase">Missing Manifest</span>
+<span class="font-label-md text-label-md text-error font-semibold">Artifact Index Unresolved</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant mt-1">
+              Target: <span class="text-on-surface font-semibold">[unresolved_candidate]</span> · Stage: Launch · S3 artifact receipt missing
+            </div>
+</div>
+<div class="flex items-center gap-space-sm flex-wrap self-start lg:self-center">
+<button class="px-space-sm py-1.5 bg-surface-variant text-outline cursor-not-allowed border border-outline font-label-md text-label-md" disabled="" type="button">
+              Unavailable
+            </button>
+<button class="px-space-sm py-1.5 bg-surface-container-lowest hover:bg-surface-container text-primary border border-primary font-label-md text-label-md shadow-[2px_2px_0px_0px_#23231f] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" type="button">
+              Retry Sync
+            </button>
+</div>
+</div>
+<!-- Case B: Failed Source Catalog Sync -->
+<div class="bg-surface-container-lowest border border-primary p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex items-start gap-space-sm max-w-3xl">
+<span class="material-symbols-outlined text-[20px] text-secondary mt-0.5">warning</span>
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container-high text-on-surface font-bold uppercase">Cache Stale</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">Git Snapshot In Use</span>
+</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant mt-1">
+              Upstream sync timed out · Fallback snapshot commit: <span class="text-primary font-bold">7b19a0c</span> (18m ago)
+            </div>
+</div>
+</div>
+<div class="flex items-center gap-space-xs self-start lg:self-center font-code-sm text-code-sm px-space-sm py-1 bg-surface-container border border-primary/30 text-on-surface">
+<span class="material-symbols-outlined text-[14px]">cached</span>
+<span>SERVING_CACHE</span>
+</div>
+</div>
+<!-- Case C: Active Read in Flight -->
+<div class="bg-surface-container-lowest border border-primary p-space-md flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<div class="w-3 h-3 border-2 border-secondary border-t-transparent animate-spin"></div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm px-1.5 py-0.5 bg-surface-container text-on-surface font-bold uppercase">Manifest Syncing</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">Workspace Re-index Active</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant mt-0.5">
+                Scanning .launch.yaml manifests across 14 workspace trees (2 remaining)
+              </span>
+</div>
+</div>
+<div class="font-code-sm text-code-sm text-secondary font-bold">
+            PARSER_BUSY [85%]
+          </div>
+</div>
+</div>
+</section>
+</div>
+<!-- Ruled Colophon / Footer -->
+<footer class="mt-space-xl pt-space-md pb-space-sm border-t-2 border-primary flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm font-code-sm text-code-sm text-on-surface-variant">
+<div class="flex items-center gap-space-sm flex-wrap">
+<span class="text-primary font-bold">Holocene Ledger v4.1</span>
+<span class="text-outline">·</span>
+<span>Operator: <span class="text-on-surface font-semibold">Jarad</span></span>
+<span class="text-outline">·</span>
+<span>Status: Online</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="inline-block w-1.5 h-1.5 bg-secondary"></span>
+<span class="uppercase tracking-wider">IMMUTABLE ARCHIVE RECORD</span>
+</div>
+</footer>
+</div></main></div>
+
+</body></html>

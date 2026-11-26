@@ -29,6 +29,7 @@ import {
   type PaidSession,
   type ReleaseData,
   type SalesData,
+  type Showcase,
   type SourceStatus,
   type StorefrontData
 } from "./live-model.js";
@@ -82,6 +83,8 @@ export type LiveApp = {
   /** The earliest promotion on the hub. Derived, never stored. */
   firstPromoted: boolean;
   storeUrl: string;
+  /** Published demo video share URL from `live.video`. */
+  video?: string;
   links: {
     store: string;
     checkout?: string;
@@ -101,13 +104,27 @@ export type LiveApp = {
   };
 };
 
-export type LiveSkipped = { id: string; name: string; problems: string[] };
+export type LiveSkipped = { id: string; name: string; problems: string[]; /** Which block broke: a live promotion or an on-deck showcase. */ block?: "live" | "showcase" };
+
+/** A product on the "On deck" shelf: declared with `showcase:`, in use, not promoted. Nothing here is probed. */
+export type OnDeckApp = {
+  id: string;
+  name: string;
+  tagline: string;
+  mode: string;
+  platform?: string;
+  package?: string;
+  note?: string;
+  video?: string;
+  links: { board?: string; evidence: Array<{ label: string; href: string }> };
+};
 
 export type LivePayload = {
   generatedAt: string;
   today: string;
   source: { name: string; down?: boolean; detail?: string };
   apps: LiveApp[];
+  onDeck: OnDeckApp[];
   skipped: LiveSkipped[];
 };
 
@@ -399,13 +416,14 @@ async function readCandybarList(deps: LiveDeps): Promise<Probe<Array<{ id: strin
 // ---------------------------------------------------------------- discovery
 
 type Found = { project: ProjectRecord; repoPath: string; decl: LiveDecl };
+type Deck = { project: ProjectRecord; repoPath: string; mode: string; showcase: Showcase };
 
 function repoRemote(deps: LiveDeps, repoPath: string): string | undefined {
   const cfg = deps.readText(join(repoPath, ".git", "config"));
   return cfg?.match(/\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/)?.[1];
 }
 
-function evidenceLinks(deps: LiveDeps, repoPath: string, decl: LiveDecl): Array<{ label: string; href: string }> {
+function evidenceLinks(deps: LiveDeps, repoPath: string, decl: Pick<LiveDecl, "contract">): Array<{ label: string; href: string }> {
   const gh = githubWebUrl(repoRemote(deps, repoPath));
   if (!gh) return [];
   const out: Array<{ label: string; href: string }> = [];
@@ -426,12 +444,13 @@ function evidenceLinks(deps: LiveDeps, repoPath: string, decl: LiveDecl): Array<
 export function createLiveHub(deps: LiveDeps) {
   const memo = new Memo(deps);
   // The last discovery that pjangler actually answered. A pjangler outage must not make a live app vanish from the hub.
-  let lastGood: { found: Found[]; skipped: LiveSkipped[] } | undefined;
+  let lastGood: { found: Found[]; deck: Deck[]; skipped: LiveSkipped[] } | undefined;
 
   async function discover(force: boolean) {
-    const hit = await memo.get<{ found: Found[]; skipped: LiveSkipped[]; down?: string }>("discovery", TTL.discovery, force, async () => {
+    const hit = await memo.get<{ found: Found[]; deck: Deck[]; skipped: LiveSkipped[]; down?: string }>("discovery", TTL.discovery, force, async () => {
       const { projects, down } = await deps.projects();
       const found: Found[] = [];
+      const deck: Deck[] = [];
       const skipped: LiveSkipped[] = [];
       const seen = new Set<string>();
       for (const project of projects) {
@@ -450,14 +469,20 @@ export function createLiveHub(deps: LiveDeps) {
           found.push({ project, repoPath: dir, decl: read.decl });
         } else if (read.kind === "invalid") {
           seen.add(real);
-          skipped.push({ id: project.id, name: project.name, problems: read.problems });
+          skipped.push({ id: project.id, name: project.name, problems: read.problems, block: "live" });
+        } else if (read.kind === "not-live" && read.showcase) {
+          seen.add(real);
+          deck.push({ project, repoPath: dir, mode: read.mode, showcase: read.showcase });
+        } else if (read.kind === "not-live" && read.showcaseProblems) {
+          seen.add(real);
+          skipped.push({ id: project.id, name: project.name, problems: read.showcaseProblems, block: "showcase" });
         }
       }
-      if (down) return { status: "warn" as SourceStatus, detail: down, data: { found: lastGood?.found ?? found, skipped: lastGood?.skipped ?? skipped, down } };
-      lastGood = { found, skipped };
-      return { status: "ok" as SourceStatus, data: { found, skipped, down } };
+      if (down) return { status: "warn" as SourceStatus, detail: down, data: { found: lastGood?.found ?? found, deck: lastGood?.deck ?? deck, skipped: lastGood?.skipped ?? skipped, down } };
+      lastGood = { found, deck, skipped };
+      return { status: "ok" as SourceStatus, data: { found, deck, skipped, down } };
     });
-    return hit?.data ?? { found: lastGood?.found ?? [], skipped: lastGood?.skipped ?? [], down: hit?.detail ?? "discovery is still reading" };
+    return hit?.data ?? { found: lastGood?.found ?? [], deck: lastGood?.deck ?? [], skipped: lastGood?.skipped ?? [], down: hit?.detail ?? "discovery is still reading" };
   }
 
   async function sources(f: Found, force: boolean): Promise<LiveApp["sources"]> {
@@ -500,6 +525,9 @@ export function createLiveHub(deps: LiveDeps) {
     };
   }
 
+  const boardUrl = (project: ProjectRecord) =>
+    project.boardId && project.workspace ? `${deps.planeUrl}/${project.workspace}/projects/${project.boardId}/issues/` : undefined;
+
   async function read(opts: { force?: boolean } = {}): Promise<LivePayload> {
     const force = opts.force === true;
     const d = await discover(force);
@@ -509,7 +537,7 @@ export function createLiveHub(deps: LiveDeps) {
       ordered.map(async (f, index): Promise<LiveApp> => {
         const s = await sources(f, force);
         const { decl, project } = f;
-        const board = project.boardId && project.workspace ? `${deps.planeUrl}/${project.workspace}/projects/${project.boardId}/issues/` : undefined;
+        const board = boardUrl(project);
         return {
           id: project.id,
           name: decl.name,
@@ -525,6 +553,7 @@ export function createLiveHub(deps: LiveDeps) {
           daysLive: daysLive(decl.liveSince, today),
           firstPromoted: index === 0,
           storeUrl: decl.storeUrl,
+          video: decl.video,
           links: {
             store: decl.storeUrl,
             checkout: s.storefront.data?.checkoutUrl,
@@ -543,6 +572,19 @@ export function createLiveHub(deps: LiveDeps) {
       today,
       source: { name: "pjangler", ...(d.down ? { down: true, detail: d.down } : {}) },
       apps,
+      onDeck: [...d.deck]
+        .sort((a, b) => a.showcase.name.localeCompare(b.showcase.name))
+        .map(({ project, repoPath, mode, showcase }): OnDeckApp => ({
+          id: project.id,
+          name: showcase.name,
+          tagline: showcase.tagline,
+          mode,
+          platform: showcase.platform,
+          package: showcase.package,
+          note: showcase.note,
+          video: showcase.video,
+          links: { board: boardUrl(project), evidence: evidenceLinks(deps, repoPath, { contract: [] }) }
+        })),
       skipped: d.skipped
     };
   }

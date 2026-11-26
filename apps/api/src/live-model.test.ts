@@ -12,6 +12,7 @@ import {
   paidSession,
   parseLaunchFile,
   projectRelease,
+  publishedVideoUrl,
   refundRow,
   safeRelPath,
   scrubSecrets,
@@ -296,4 +297,17 @@ test("urgency: nothing owed is clear, due or blocked is owed, overdue wins", () 
 
 test("argv expands a leading ~/ and nothing else", () => {
   assert.deepEqual(expandArgv(["uv", "~/x.json", "a~b", "~"], "/home/me"), ["uv", "/home/me/x.json", "a~b", "/home/me"]);
+});
+
+test("a demo video is only a published share URL: https on v.delo.sh or s3.delo.sh, no query", () => {
+  assert.equal(publishedVideoUrl("https://v.delo.sh/0184/holocene-auto"), "https://v.delo.sh/0184/holocene-auto");
+  assert.equal(publishedVideoUrl("https://s3.delo.sh/projects/x/2026-11-23/demo/index.html"), "https://s3.delo.sh/projects/x/2026-11-23/demo/index.html");
+  for (const bad of ["http://v.delo.sh/a/b", "https://evil.example/a/b", "https://v.delo.sh/a", "https://v.delo.sh/a/b?x=1", "javascript:alert(1)", 42])
+    assert.equal(publishedVideoUrl(bad), undefined, String(bad));
+  const live = parseLaunchFile(EARSHOT_LAUNCH.replace("  board: EARS", "  board: EARS\n  video: https://v.delo.sh/abc/earshot-demo"));
+  assert.equal(live.kind === "live" && live.decl.video, "https://v.delo.sh/abc/earshot-demo");
+  const badLive = parseLaunchFile(EARSHOT_LAUNCH.replace("  board: EARS", "  board: EARS\n  video: https://youtube.com/watch"));
+  assert.ok(badLive.kind === "invalid" && badLive.problems.some((p) => p.includes("live.video")));
+  const steady = parseLaunchFile("mode: steady\nshowcase:\n  name: Auto\n  tagline: In the car.\n");
+  assert.ok(steady.kind === "not-live" && steady.showcase?.name === "Auto" && !steady.showcaseProblems);
 });

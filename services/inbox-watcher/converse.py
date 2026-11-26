@@ -2345,7 +2345,9 @@ class VoiceCatalog:
 
     def _http(self, timeout: float) -> list[dict]:
         import urllib.request
-        with urllib.request.urlopen(f"{self.url}/voices", timeout=timeout) as resp:
+        from memo_common import vox_headers
+        request = urllib.request.Request(f"{self.url}/voices", headers=vox_headers())
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
             data = json.loads(resp.read())
         return data if isinstance(data, list) else (data.get("voices") or [])
 
