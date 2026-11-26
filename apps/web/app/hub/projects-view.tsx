@@ -267,7 +267,7 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
       ) : null}
       {p.repoPath ? (
         <InspSection label="Repo">
-          <div className="insp-field" aria-label="Repo path"><CopyRef value={p.repoPath} /></div>
+          <div className="insp-field"><CopyRef value={p.repoPath} /></div>
           {p.kind === "parent" ? (
             <dl className="insp-facts">
               <dt>Children</dt>

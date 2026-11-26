@@ -915,8 +915,7 @@ html[data-hub-theme="ledger-night"] body {
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
-.hub-root .hub-inspector > .insp-head + *,
-.hub-root .hub-inspector > .insp-actions {
+.hub-root .hub-inspector > .insp-head + * {
   padding-top: 0;
   border-top: 0;
 }
@@ -953,7 +952,7 @@ html[data-hub-theme="ledger-night"] body {
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
-.hub-root .insp-tag {
+.hub-root .hub-tag.insp-tag {
   flex: 0 1 auto;
   max-width: 48%;
   display: inline-flex;
@@ -1074,6 +1073,7 @@ html[data-hub-theme="ledger-night"] body {
 }
 .hub-root .insp-actions {
   position: sticky;
+  /* Chrome deflates the sticky rect by the inspector's 16px padding; -16px pins the bar to the border. */
   bottom: -16px;
   z-index: 1;
   display: flex;

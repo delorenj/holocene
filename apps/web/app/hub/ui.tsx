@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { formatDuration, visibleFacts } from "./inspector-model";
 import type { Signal, Source, Ticket } from "./types";
 
 // Small atoms from the 33GOD kit, ported for the Next app: the seven signal glyphs,
@@ -31,18 +32,7 @@ export function Glyph({ signal, size = 10, title }: { signal: Signal; size?: num
 
 export const signalWord = (s: Signal) => SIGNAL_WORD[s];
 
-const pad = (n: number) => String(n).padStart(2, "0");
-/** 14s · 12m · 1h 06m · 2h · 4d 02h · 98d */
-export function formatDuration(total: number): string {
-  const s = Math.max(0, Math.round(total));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}h ${pad(m % 60)}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  return d >= 10 ? `${d}d` : `${d}d ${pad(h % 24)}h`;
-}
+export { formatDuration };
 
 export function sinceSeconds(iso: string | undefined, now: number): number | undefined {
   if (!iso) return undefined;
@@ -151,7 +141,7 @@ export type InspFact = { label: string; value: ReactNode; signal?: Signal };
 
 /** Two-up fact tiles. Only sourced values: an empty value hides its tile rather than inventing one. */
 export function InspTiles({ facts, label }: { facts: InspFact[]; label: string }) {
-  const shown = facts.filter((f) => f.value !== undefined && f.value !== null && f.value !== "");
+  const shown = visibleFacts(facts);
   if (!shown.length) return null;
   return (
     <dl className="insp-tiles" aria-label={label}>

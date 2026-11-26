@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rectOf, stackPath, treePath, useDrag, usePositions, type Pos, type Rect } from "./canvas";
 import { Age, BandTrack, BoxIcon, CopyRef, Glyph, InspActions, InspHead, InspSection, InspTiles, StatusTag, formatDuration, signalWord, sinceSeconds } from "./ui";
+import { bySignal, directReports, heldTag } from "./inspector-model";
 import type { Agent, AgentsPayload, Contractor, Evidence, HubEvent, Signal } from "./types";
 import { VoicePicker } from "./voice-picker";
 
@@ -11,12 +12,7 @@ type LaidNode = { id: string; kind: NodeKind; x: number; y: number; w: number; h
 type LaidEdge = { id: string; from: string; to: string; shape: "tree" | "stack"; inferred: boolean };
 
 const SIZE = { ceo: [160, 48], director: [208, 112], pm: [192, 112], contractor: [168, 80], inactive: [216, 0] } as const;
-const ORDER: Signal[] = ["you", "broken", "stuck", "working", "unknown", "quiet", "cleared"];
 const PM_ROW_GAP = 24;
-
-function bySignal(a: Agent, b: Agent) {
-  return ORDER.indexOf(a.signal) - ORDER.indexOf(b.signal) || a.name.localeCompare(b.name);
-}
 
 function inactiveHeight(rows: number) {
   return 82 + rows * 18;
@@ -347,7 +343,7 @@ function ProjectBlock({ label, a, onOpenProject, note }: { label: string; a: Age
         <button type="button" className="hub-textlink" onClick={() => onOpenProject(p.id)}>{p.name}</button>
         <span className="link-source">pjangler</span>
       </div>
-      <div className="insp-field" aria-label="Repo path"><CopyRef value={p.repoPath} /></div>
+      <div className="insp-field"><CopyRef value={p.repoPath} /></div>
       <dl className="insp-facts">
         <dt>Board</dt>
         <dd>{p.board ? `${p.board}${p.workspace ? ` · Plane workspace ${p.workspace}` : ""}` : "not bound"}</dd>
@@ -358,11 +354,6 @@ function ProjectBlock({ label, a, onOpenProject, note }: { label: string; a: Age
       </p>
     </InspSection>
   );
-}
-
-/** "idle · 14m": the status tag every agent header and chip reuses. */
-function heldTag(state: string, heldSeconds?: number) {
-  return [state, heldSeconds !== undefined ? formatDuration(heldSeconds) : undefined].filter(Boolean).join(" · ");
 }
 
 function TicketSection({ ticket }: { ticket: NonNullable<Agent["ticket"]> }) {
@@ -382,7 +373,7 @@ function TicketSection({ ticket }: { ticket: NonNullable<Agent["ticket"]> }) {
 function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: AgentsPayload; now: number; onFocus: (id: string) => void; onOpenProject: (id: string) => void }) {
   const boss = data.agents.find((x) => x.id === a.reportsTo);
   const kids = data.contractors.filter((c) => c.parent === a.id);
-  const directs = data.agents.filter((x) => x.reportsTo === a.id && x.id !== a.id).sort(bySignal);
+  const directs = directReports(data.agents, a.id);
   const settingsHref = `/settings?agent=${encodeURIComponent(a.id)}`;
   return (
     <>
@@ -407,7 +398,7 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
             { label: "Gateway", value: a.gateway, signal: a.gateway === "active" ? "cleared" : a.gateway === "inactive" ? "quiet" : "unknown" },
             { label: "Last moved", value: a.lastActiveAt ? `${formatDuration(sinceSeconds(a.lastActiveAt, now) ?? 0)} ago` : "never" },
             { label: "Tools", value: a.tools },
-            { label: "Subagent lanes", value: a.subs }
+            { label: "Subagent lanes", value: a.subs || undefined }
           ]}
         />
       </InspHead>
@@ -427,7 +418,7 @@ function AgentPanel({ a, data, now, onFocus, onOpenProject }: { a: Agent; data: 
             {directs.map((d) => {
               const what = `${d.name}: ${d.project?.id ?? "no project record"} · ${heldTag(d.state, d.heldSeconds)}`;
               return (
-                <button key={d.id} type="button" className={`insp-chip sig-edge-${d.signal}`} onClick={() => onFocus(d.id)} title={what} aria-label={what}>
+                <button key={d.id} type="button" className="insp-chip" onClick={() => onFocus(d.id)} title={what} aria-label={what}>
                   <Glyph signal={d.signal} size={8} />
                   <span>{d.id}</span>
                 </button>
