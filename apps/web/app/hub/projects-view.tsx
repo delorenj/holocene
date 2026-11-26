@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { depPath, rectOf, useDrag, usePositions, type Pos, type Rect } from "./canvas";
-import { Age, BandTrack, ComponentIcon, CopyRef, Glyph } from "./ui";
+import { BandTrack, ComponentIcon, CopyRef, Glyph, InspActions, InspHead, InspSection, InspTiles, StatusTag, formatDuration } from "./ui";
 import type { Edge, Project, ProjectsPayload } from "./types";
 
 type LaidNode = { id: string; x: number; y: number; w: number; h: number; p: Project; bus?: boolean };
@@ -224,26 +224,33 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
   void now;
   return (
     <>
-      <header className="insp-head">
-        <span className="hub-label">{kindLabel}</span>
-        <div className="insp-title"><h2>{p.name}</h2></div>
-        <span className="insp-id">
-          {p.kind === "external" ? "not a pjangler project" : p.projectId ? `${p.projectId}${p.board ? ` · board ${p.board}` : " · no board bound"}${p.status ? ` · ${p.status}` : ""}` : "not a pjangler project"}
-        </span>
+      <InspHead
+        eyebrow={kindLabel}
+        title={p.name}
+        sub={p.kind === "external" ? "not a pjangler project" : p.projectId ? `${p.projectId}${p.board ? ` · board ${p.board}` : " · no board bound"}` : "not a pjangler project"}
+        tag={p.status}
+      >
         {p.what ? <p className="insp-what">{p.what}</p> : null}
-      </header>
+        <InspTiles
+          label="Project facts"
+          facts={[
+            { label: "Tickets in flight", value: p.kind === "external" ? undefined : p.tickets.length },
+            { label: "Depends on", value: deps.length || undefined },
+            { label: "Used by", value: users.length || undefined },
+            { label: "Indexed", value: p.registered ? (p.indexed ? "pjangler" : ".project.json only") : undefined, signal: p.registered && !p.indexed ? "stuck" : undefined }
+          ]}
+        />
+      </InspHead>
       {p.pm ? (
-        <section className="hub-link-block" aria-label="Project manager">
-          <div className="link-head">
-            <span className="hub-label">{p.kind === "parent" ? "Director" : "Project manager"}</span>
-            <span className="link-source">agents registry</span>
-          </div>
-          <div className="link-title">
-            <Glyph signal={p.pm.signal} size={10} title={p.pm.state} />
-            <button type="button" className="hub-textlink" onClick={() => onOpenAgent(p.pm!.id)}>{p.pm.name}</button>
-            <span className="link-id">{p.pm.id}</span>
-            <span className="link-status"><Age seconds={p.pm.heldSeconds} /></span>
-          </div>
+        <InspSection
+          label={p.kind === "parent" ? "Director" : "Project manager"}
+          aside={<StatusTag signal={p.pm.signal}><Glyph signal={p.pm.signal} size={8} title={p.pm.state} /> {[p.pm.state, p.pm.heldSeconds !== undefined ? formatDuration(p.pm.heldSeconds) : undefined].filter(Boolean).join(" · ")}</StatusTag>}
+        >
+          <button type="button" className="hub-row" onClick={() => onOpenAgent(p.pm!.id)}>
+            <Glyph signal={p.pm.signal} size={8} />
+            <span className="row-name">{p.pm.name}</span>
+            <span className="row-meta">{p.pm.id} · agents registry</span>
+          </button>
           <p className="link-basis">
             <Glyph signal={p.indexed ? "quiet" : "stuck"} size={8} />
             <span>
@@ -251,7 +258,7 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
               {p.indexed ? "" : " Not in the pjangler index yet; read from .project.json."}
             </span>
           </p>
-        </section>
+        </InspSection>
       ) : p.kind !== "external" ? (
         <div className="hub-missing">
           <Glyph signal="unknown" size={8} />
@@ -259,22 +266,20 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
         </div>
       ) : null}
       {p.repoPath ? (
-        <dl className="insp-facts">
-          <dt>Repo</dt>
-          <dd><CopyRef value={p.repoPath} /></dd>
+        <InspSection label="Repo">
+          <div className="insp-field" aria-label="Repo path"><CopyRef value={p.repoPath} /></div>
           {p.kind === "parent" ? (
-            <>
+            <dl className="insp-facts">
               <dt>Children</dt>
               <dd>{children.length} registered: {children.map((c) => c.projectId ?? c.id).join(", ") || "none"}</dd>
-            </>
+            </dl>
           ) : null}
-        </dl>
+        </InspSection>
       ) : null}
       {deps.length ? <DepList label="Depends on" edges={deps} pick={(e) => e.to} name={name} onFocus={onFocus} /> : null}
       {users.length ? <DepList label="Used by" edges={users} pick={(e) => e.from} name={name} onFocus={onFocus} /> : null}
       {p.tickets.length ? (
-        <div className="insp-section">
-          <span className="hub-label">Tickets in flight</span>
+        <InspSection label="Tickets in flight" aside={<span className="insp-count">{p.tickets.length}</span>}>
           {p.tickets.map((t) => (
             <div key={t.key} className="ticket-block">
               <div className="ticket-line">
@@ -285,7 +290,12 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
               <span className="insp-meta">{[t.state, ...t.labels].filter(Boolean).join(" · ")}</span>
             </div>
           ))}
-        </div>
+        </InspSection>
+      ) : null}
+      {p.pm ? (
+        <InspActions>
+          <button type="button" className="hub-btn is-primary" onClick={() => onOpenAgent(p.pm!.id)}>Open {p.kind === "parent" ? "director" : "PM"}</button>
+        </InspActions>
       ) : null}
     </>
   );
@@ -293,8 +303,7 @@ function ProjectPanel({ p, data, now, onFocus, onOpenAgent }: { p: Project; data
 
 function DepList({ label, edges, pick, name, onFocus }: { label: string; edges: Edge[]; pick: (e: Edge) => string; name: (id: string) => string; onFocus: (id: string) => void }) {
   return (
-    <div className="insp-section">
-      <span className="hub-label">{label}</span>
+    <InspSection label={label} aside={<span className="insp-count">{edges.length}</span>}>
       {edges.map((e) => (
         <button key={`${e.from}>${e.to}`} type="button" className="hub-row is-dep" onClick={() => onFocus(pick(e))}>
           <span className="row-name">{name(pick(e))}</span>
@@ -302,6 +311,6 @@ function DepList({ label, edges, pick, name, onFocus }: { label: string; edges: 
           <span className="row-meta">{e.detail}</span>
         </button>
       ))}
-    </div>
+    </InspSection>
   );
 }

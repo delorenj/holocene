@@ -27,3 +27,13 @@ Jarad asked to incorporate this revision of A. Accepted, reconciled with the cor
 - Products: eyebrow + `Products` heading, a tally of real counts, a segmented stage filter with counts, source chips (source, PJ read time and age, registry tag), each lifecycle stage as a panel deck with column labels on desktop, numbered rows, a receipt column (host/path in `--working`, stamp time) and a right-aligned action. A Lifecycle source issues panel shows unreadable/invalid declarations as cards and collapses missing declarations into one disclosure.
 - Rejected from the mock as invented or ungrounded: image thumbnails, "Last Build", target/orders/health, parser percentages, nav total badge, footer version/status line, the "Launch Queue" rename and `//` brand labels.
 
+
+## 2026-11-26 revision: Agents inspector sidebar (Stitch `7d0b73a7…`, `d470bfc8…`)
+
+[Provenance and rejection list](.working/stitch/agents-sidebar-20261126/handoff.md). Shared inspector primitives in `apps/web/app/hub/ui.tsx` (`InspHead`, `InspTiles`, `InspSection`, `InspActions`, `StatusTag`) shape every hub detail sidebar (Agents, Projects):
+
+- Identity row with avatar/icon tile, eyebrow, name, id and a signal-tinted `hub-tag` on the right.
+- Sourced two-up fact tiles on the sunken stock; an absent value hides its tile.
+- Sections ruled by 1px lines, label in `--ink-3`, tag or inverse count on the right. Working on leads; the project is a flat section with a repo field (the inverse link card is retired); directs are mono chips.
+- Pinned action bar (2px top rule, primary button in `--pop`) with existing destinations only.
+- Rejected: missions, uptime/health, live-sync badge, Ping, Inspect Session, invented counters.
