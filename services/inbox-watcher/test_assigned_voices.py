@@ -46,6 +46,7 @@ class AssignedVoices(unittest.TestCase):
         self.w.phrases.enabled = True
         self.w.hold_long = set()
         self.w.narrating = set()
+        self.w._withdrawn_audio = set()
         self.w.fact = Mock()
         self.w.status = Mock()
         self.renders = []

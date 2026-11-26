@@ -959,6 +959,7 @@ class Watcher:
         # 45 s (or 20 min) transcription no longer stops discovery, polling and the heartbeat.
         self.mu = threading.RLock()
         self.running: set[str] = set()
+        self._withdrawn_audio: set[str] = set()         # announced chunk objects a cancel withdrew; removed outside mu (_drain_withdrawn_audio)
         self._release_due: list[tuple[str, str]] = []   # (memo, reply_key) takes to give back, outside the lock (_drain_release_due)
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
                       "io": concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix="io"),
@@ -1386,6 +1387,9 @@ class Watcher:
         log("memo_cancelled", "warn", memo_id=m["memo_id"], key=m["key"], agent=m["agent"], stage=stage,
             after_dispatch=after, command_id=m.get("command_id") if after else None,
             retry_with=f"mise run memo:retry {m['memo_id']}")
+        # One withdrawal routine for every cancel timing: with or without an audio attempt in flight, the cancelled round's
+        # announced chunks leave the cursors now (under the caller's mu) and their objects are removed outside it.
+        self._withdrawn_audio |= self._withdraw_announced(m, self._round_chunk_prefix(m), refresh=False)
         self.status(m)
         self.s.save()
 
@@ -1470,6 +1474,7 @@ class Watcher:
                                       for k in ("voice", "source", "profile", "requested", "fallback", "stamp")},
                             "step_s": int(time.time() - m["step_started_ts"]) if m.get("step_started_ts") else None}
                            for m in self.active()]})
+        self._drain_withdrawn_audio()
 
     def start_discovery_watch(self) -> None:
         """A thread that lists inbox/ every DISCOVER_FAST_S and wakes the tick as soon as it sees a key the state does not
@@ -3173,8 +3178,29 @@ class Watcher:
                                 note="round conflict: announced chunks stay playable and keep their cursors")
             self._discard_audio(doomed)
 
-    def _withdraw_announced(self, m: dict, prefix: str | None) -> set:
-        """Under mu: forget this cancelled round's announced chunks (cursor and timing fields) and name their objects."""
+    def _round_chunk_prefix(self, m: dict) -> str | None:
+        """Under mu: the deterministic chunk prefix of the memo's current reply round (None before any round started)."""
+        stamp, agent = m.get("reply_stamp"), m.get("agent")
+        if not stamp or not agent:
+            return None
+        try:
+            return chunk_prefix_for(mc_.parse_iso(stamp), agent, m["memo_id"])
+        except (TypeError, ValueError):
+            return None
+
+    def _drain_withdrawn_audio(self) -> None:
+        """Outside mu: remove the objects of chunks that memo:cancel withdrew from their cursors (see cancel_memo)."""
+        with self.mu:
+            doomed, self._withdrawn_audio = self._withdrawn_audio, set()
+            # a memo:retry in the same tick may already have re-announced a deterministic key: that one is live again
+            doomed -= {k for x in self.s.memos.values() for k in (x.get("voiced_keys") or {}).values()}
+        if doomed:
+            self._discard_audio(doomed)
+
+    def _withdraw_announced(self, m: dict, prefix: str | None, refresh: bool = True) -> set:
+        """Under mu: forget this cancelled round's announced chunks (cursor and timing fields) and name their objects.
+        Each key leaves voiced_keys exactly once, so whichever caller (cancel_memo or a still-running attempt) takes it
+        owns its removal and a later caller finds nothing to delete."""
         done = m.get("voiced_keys") or {}
         mine = {i: k for i, k in done.items() if prefix and isinstance(k, str) and k.startswith(prefix)}
         if not mine:
@@ -3186,8 +3212,9 @@ class Watcher:
         else:
             for k in ("voiced_keys", "voiced_n", "voiced_first_s", "voiced_first_ts", "voiced_last_s"):
                 m.pop(k, None)
-        self.status(m)
-        self.s.save()
+        if refresh:
+            self.status(m)
+            self.s.save()
         return set(mine.values())
 
     def _reply_owner(self, m: dict, *, selected: bool = True) -> dict:

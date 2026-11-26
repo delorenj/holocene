@@ -352,6 +352,75 @@ class PublicationRaces(unittest.TestCase):
             self.assertNotIn(field, m)
         self.assertFalse(any(store.held))
 
+    def cancel_idle(self, m):
+        """memo:cancel with no audio attempt running: cancel_memo runs under mu (as in tick), the objects go outside it."""
+        with self.w.mu:
+            self.w.cancel_memo(m)
+
+    def assert_late_attempt_is_inert(self, m, store, prefix):
+        """An attempt that outlived the cancel finishes: nothing is deleted twice and no cursor comes back."""
+        before = list(store.ops)
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            with self.w._audio_attempt(m, {"chunk_prefix": prefix}) as pending:
+                pass
+        self.assertEqual(store.ops, before)
+
+    def test_idle_cancel_between_attempts_withdraws_announced_chunk(self):
+        """A retryable chunk-two failure leaves chunk one announced; a cancel before the next attempt must withdraw it."""
+        m, store, run, announced, newer = self.retry_cancel_fixture(via_step_speak=False)
+        prefix = iw.chunk_prefix_for(iw.mc_.parse_iso(m["reply_stamp"]), m["agent"], m["memo_id"])
+        store.ops.clear(), store.held.clear()
+        self.cancel_idle(m)
+        # cursors are fixed under mu at once; no object I/O happened under it
+        self.assertEqual(m["voiced_keys"], {"9": newer})
+        self.assertEqual(m["voiced_n"], 1)
+        self.assertEqual(store.ops, [])
+        self.assertEqual(self.w._withdrawn_audio, {announced})
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            self.w._drain_withdrawn_audio()
+        self.assertEqual([k for a, k in store.ops if a == "rm"], [iw.mc_.s3_url(announced)])
+        self.assertEqual(store.live, {iw.mc_.s3_url(newer)})
+        self.assertFalse(any(store.held), "removal must run outside the memo mutex")
+        self.assertEqual(self.w._withdrawn_audio, set())
+        self.assert_late_attempt_is_inert(m, store, prefix)
+        self.assertEqual(m["voiced_keys"], {"9": newer})
+
+    def test_idle_cancel_after_all_chunks_announced_clears_every_cursor_and_object(self):
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        stamp = iw.mc_.parse_iso(m["reply_stamp"])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(iw.mc_, "mc", side_effect=store.transport):
+            self.w._voice_chunks(m, ["First chunk.", "Second chunk."], stamp, Path(tmp), time.time())
+        self.assertEqual(len(m["voiced_keys"]), 2)
+        self.assertEqual(len(store.live), 2)
+        store.ops.clear(), store.held.clear()
+        self.cancel_idle(m)
+        for field in ("voiced_keys", "voiced_n", "voiced_first_s", "voiced_first_ts", "voiced_last_s"):
+            self.assertNotIn(field, m)
+        self.assertEqual(store.ops, [])
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            self.w._drain_withdrawn_audio()
+        self.assertEqual(store.live, set())
+        self.assertEqual(len([1 for a, _ in store.ops if a == "rm"]), 2)
+        self.assertFalse(any(store.held))
+        self.assert_late_attempt_is_inert(m, store, iw.chunk_prefix_for(stamp, m["agent"], m["memo_id"]))
+
+    def test_idle_cancel_leaves_newer_round_and_other_memos_untouched(self):
+        m, store, run, announced, newer = self.retry_cancel_fixture(via_step_speak=False)
+        # a newer round of the same memo (later stamp) and a same-stamp chunk of another memo are announced too
+        later = iw.chunk_key_for(iw.mc_.parse_iso("2026-11-22T03:00:00Z"), m["agent"], m["memo_id"], 1, 1)
+        other = iw.chunk_key_for(iw.mc_.parse_iso(m["reply_stamp"]), m["agent"], "othermemo", 1, 1)
+        m["voiced_keys"].update({"7": later, "8": other})
+        store.live.update(iw.mc_.s3_url(k) for k in (later, other))
+        store.ops.clear()
+        self.cancel_idle(m)
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            self.w._drain_withdrawn_audio()
+        self.assertEqual(m["voiced_keys"], {"9": newer, "7": later, "8": other})
+        self.assertEqual([k for a, k in store.ops if a == "rm"], [iw.mc_.s3_url(announced)])
+        self.assertEqual(store.live, {iw.mc_.s3_url(k) for k in (newer, later, other)})
+
     def test_chunk_upload_overlaps_next_render_and_stale_removal_failure_is_fail_closed(self):
         m = self.ready()
         entered, release, second_rendered = threading.Event(), threading.Event(), threading.Event()

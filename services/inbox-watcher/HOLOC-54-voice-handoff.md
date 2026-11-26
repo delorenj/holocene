@@ -36,6 +36,7 @@ Two distinct cases, two policies, both enforced in `_audio_attempt` (the only pl
    when the retry has not queued anything of its own yet, in `_voice_chunks` and in `step_speak`. Retryable upload failures
    (not cancelled, same owner) still keep valid partials. The already-emitted `audio.memo.voiced` event is immutable; the
    cancel `failed` fact is the retraction record and the status object stops advertising the chunks.
+   Cancellation withdraws through one routine whatever its timing: `cancel_memo` itself drops the round's announced chunks from the cursors under `mu` (matched by the round's chunk prefix, so a newer round is never touched) and queues their objects, which the tick removes outside `mu` (`_drain_withdrawn_audio`), so a cancel between attempts is covered as well as one during an attempt. Each key leaves `voiced_keys` exactly once, so an attempt that outlives the cancel finds nothing left to delete and cannot double-delete or resurrect a cursor.
 
 Tests (`test_voice_publication.py`, real `_voice_chunks`/`_publish_chunk`/`step_speak`, fixture synth, in-memory object store
 recording every operation and whether `mu` was held): `..._conflict_after_first_announcement_keeps_announced_audio`
