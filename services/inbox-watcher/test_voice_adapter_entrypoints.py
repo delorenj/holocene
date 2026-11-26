@@ -6,6 +6,7 @@ The Telegram probe intentionally documents the external VOX_VOICE override block
 """
 import ast
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -64,13 +65,17 @@ class Entrypoints(unittest.TestCase):
                 self.assertEqual(self.w.fact_fast.call_args.args[0], "voiced")
 
     def test_actual_hermes_telegram_auto_tts_function_and_vox_precedence(self):
-        gateway = HERMES / 'gateway/platforms/base.py'
+        gateway = HERMES / 'gateway/platforms/base_auto_tts.py'
         if not gateway.is_file() or not VOX_PLUGIN.is_file():
             self.skipTest('read-only installed Hermes/Vox sources unavailable on this host')
-        namespace = {'asyncio': asyncio, 'Path': Path, 'Optional': typing.Optional,
-                     'build_auto_tts_output_path': lambda p: str(self.root / 'tts.ogg'),
-                     'logger': SimpleNamespace(warning=Mock())}
-        synth = unchanged_method(gateway, 'BasePlatformAdapter', '_synthesize_auto_tts', namespace)
+        # Hermes moved auto-TTS synthesis out of BasePlatformAdapter into base_auto_tts.py; the
+        # unchanged module-level functions are extracted the same way as before.
+        namespace = {'asyncio': asyncio, 'json': json, 'contextlib': contextlib, 'Path': Path,
+                     'Optional': typing.Optional, 'logger': SimpleNamespace(warning=Mock())}
+        unchanged_method(gateway, None, '_profile_scope', namespace)
+        unchanged_method(gateway, None, '_synthesize', namespace)
+        synth = unchanged_method(gateway, None, 'synthesize_auto_tts', namespace)
+        build_path = lambda platform: str(self.root / 'tts.ogg')
         fake_tts = types.ModuleType('tools.tts_tool')
         seen = []
         fake_tts.check_tts_requirements = lambda: True
@@ -83,7 +88,7 @@ class Entrypoints(unittest.TestCase):
         tools.tts_tool = fake_tts
         adapter = SimpleNamespace(platform='telegram', name='telegram', prepare_tts_text=lambda s: s)
         with patch.dict(sys.modules, {'tools': tools, 'tools.tts_tool': fake_tts}):
-            paths, requested = asyncio.run(synth(adapter, 'Fixture response'))
+            paths, requested = asyncio.run(synth(adapter, 'Fixture response', None, build_path))
         self.assertEqual(paths, [requested])
         self.assertEqual(seen, [{'text': 'Fixture response', 'output_path': requested}])
         self.assertNotIn('voice', seen[0])  # Telegram gateway doesn't forward a Holocene voice lock.
