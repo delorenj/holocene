@@ -36,7 +36,26 @@ Two distinct cases, two policies, both enforced in `_audio_attempt` (the only pl
    when the retry has not queued anything of its own yet, in `_voice_chunks` and in `step_speak`. Retryable upload failures
    (not cancelled, same owner) still keep valid partials. The already-emitted `audio.memo.voiced` event is immutable; the
    cancel `failed` fact is the retraction record and the status object stops advertising the chunks.
-   Single owner: an audio attempt in flight (`_audio_attempts`) withdraws a cancelled round's announced chunks itself when it ends, so `cancel_memo` queues nothing then, while an idle cancel drops the cursors under `mu` and queues the objects in `_withdrawn_audio` for the tick's `_drain_withdrawn_audio` (outside `mu`), so each object is removed exactly once whatever the timing. A memo with keys still queued or being removed is busy exactly like a running one (`_audio_busy`): its keys leave `_withdrawn_audio` only after the rm finishes, and `memo:retry` (kept in `control/`, order preserved) and late-rescue wait for that, because `reply_stamp` is unchanged and a retried worker would re-announce the same deterministic keys.
+   **Guarantees (cancel withdrawal)**, enforced in `_audio_attempt`, `cancel_memo`, `_drain_withdrawn_audio`:
+   - *Never deleted while advertised.* An announced key (one listed in `voiced_keys`) is removed only by the party that
+     withdraws it from `voiced_keys`, in that same `mu` section (`_withdraw_announced`). An attempt whose pending list still
+     holds an advertised key leaves it to the withdrawing owner (the round's last attempt out, or `cancel_memo` when no
+     attempt is in flight); it never deletes it itself.
+   - *Each object removed once per round.* Whoever takes a key for removal (unannounced pending keys and withdrawn announced
+     keys alike) records it in `_audio_claimed[memo]` under `mu`; sibling attempts of the same round skip claimed keys. The set
+     is dropped when the memo's last attempt ends. An idle cancel (no attempt in flight, `_audio_attempts`) drops the cursors
+     under `mu` and queues the objects in `_withdrawn_audio` for the tick's `_drain_withdrawn_audio` (outside `mu`); an
+     in-flight attempt owns the withdrawal and `cancel_memo` queues nothing then.
+   - *The queue survives restarts.* The withdrawn keys are written into the memo (`withdrawn_audio`) in the same save that
+     clears the cursors, whichever party withdrew them, and are forgotten (and saved) only after the rm has been attempted.
+     `Watcher.__init__` reloads them (`_load_withdrawn_audio`), the first tick's drain removes them, and `shutdown()` drains
+     once. Object I/O is always outside `mu`.
+   - *Draining memos wait; running memos behave as before.* A memo with keys queued or being removed is draining
+     (`_audio_draining`): `memo:retry` (kept in `control/`, order preserved) and late-rescue wait for the rm, because
+     `reply_stamp` is unchanged and a retried worker would re-announce the same deterministic keys. A cancel is never held:
+     a cancel newer than a deferred retry is taken at once and drops that retry (`control_superseded`). A merely running memo
+     is not draining: its retry is refused at once and its cancel applies at once, as before.
+   - The tick-end drain has a lock-free fast path when nothing is queued (no lock operation in the common case).
 
 Tests (`test_voice_publication.py`, real `_voice_chunks`/`_publish_chunk`/`step_speak`, fixture synth, in-memory object store
 recording every operation and whether `mu` was held): `..._conflict_after_first_announcement_keeps_announced_audio`
@@ -44,6 +63,7 @@ recording every operation and whether `mu` was held): `..._conflict_after_first_
 `test_conflict_discards_only_unannounced_pending_keys`,
 `test_cancel_during_partial_round_retry_render_withdraws_announced_chunks` (via `_voice_chunks` and `step_speak`; asserts a
 newer round's key survives), `test_cancel_after_all_chunks_announced_clears_every_cursor`. All six new cases fail on `fc168df`.
+The guarantees above are pinned by probes P, R1, R2, H3 and a seeded H4 stress in `test_voice_publication.py` (`test_probe_p_*`, `test_probe_r1_*`, `test_probe_r2_*`, `test_cancel_during_chunk_upload_*`, `test_h4_seeded_stress_*`, plus the persistence, shutdown and fast-path tests).
 
 ## Second repair checkpoint (local-only; independent re-review required)
 

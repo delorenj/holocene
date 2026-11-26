@@ -960,9 +960,14 @@ class Watcher:
         self.mu = threading.RLock()
         self.running: set[str] = set()
         # memo key -> announced chunk objects an IDLE cancel withdrew. A key stays here until its rm has finished
-        # (_drain_withdrawn_audio), and a memo with keys here is busy exactly like a running one (_audio_busy).
+        # (_drain_withdrawn_audio); a memo with keys here is draining (_audio_draining): retry/late-rescue wait. Mirrored in the
+        # memo's state.json field `withdrawn_audio` and reloaded at start-up (_load_withdrawn_audio).
         self._withdrawn_audio: dict[str, set[str]] = {}
         self._audio_attempts: dict[str, int] = {}       # memo key -> _audio_attempt()s in flight: they own a cancel's withdrawal
+        # memo key -> objects an attempt of the CURRENT attempt-group already took for removal (unannounced pending keys and
+        # withdrawn announced ones): sibling attempts of one round never remove the same object twice. Dropped when the
+        # last attempt of the memo ends (a retry starts a new round of attempts).
+        self._audio_claimed: dict[str, set[str]] = {}
         self._drain_mu = threading.Lock()               # one drain at a time, so no key is removed twice
         self._release_due: list[tuple[str, str]] = []   # (memo, reply_key) takes to give back, outside the lock (_drain_release_due)
         self.pools = {"transcribe": concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="transcribe"),
@@ -993,6 +998,15 @@ class Watcher:
         self.fresh_listing: tuple | None = None   # a listing the discovery thread saw a new object in, for the next tick
         self.fast_listed_at = 0.0                 # when the discovery thread last listed (the tick skips its own then)
         self.wake = WakeChannel()                 # is the upload proxy's wake proven live (listing is the backstop then)
+        self._load_withdrawn_audio()
+
+    def _load_withdrawn_audio(self) -> None:
+        """Startup: objects a previous process stopped advertising (state.json `withdrawn_audio`, saved with the cursor clear)
+        but never finished removing are queued again; the first tick's drain removes them."""
+        for m in self.s.memos.values():
+            keys = m.get("withdrawn_audio")
+            if isinstance(keys, list) and keys:
+                self._withdrawn_audio.setdefault(m["key"], set()).update(k for k in keys if isinstance(k, str))
 
     def choose_lane(self) -> tuple[str, str | None]:
         """(lane, reason). The configured lane, unless it is interactive and the BATCH lane is the better bet.
@@ -1029,6 +1043,10 @@ class Watcher:
         self.facts.wait_idle(10.0)  # queued facts are published before the process goes
         for p in self.pools.values():
             p.shutdown(wait=wait, cancel_futures=not wait)
+        try:
+            self._drain_withdrawn_audio()  # withdrawn chunk objects are removed before the process goes (outside mu)
+        except Exception as e:  # noqa: BLE001
+            log("shutdown_drain_failed", "error", error=f"{type(e).__name__}: {e}"[:200])
         # the drain may have moved last_fact_id or put a failed publish in the outbox: persist it, or a restart loses it
         try:
             with self.mu:
@@ -1314,19 +1332,27 @@ class Watcher:
                     files.append((f.stat().st_mtime_ns, f.name, f))
                 except OSError:
                     continue  # taken by another reader between the listing and the stat
-        deferred: set[str] = set()
+        deferred: dict[str, list[Path]] = {}
         for _, name, f in sorted(files):
             verb, _, mid = name.partition("-")
             m = next((x for x in self.s.memos.values() if x["memo_id"] == mid), None)
-            if m is not None and (mid in deferred or (verb == "retry" and self._audio_busy(m))):
+            if m is not None and verb == "retry" and (mid in deferred or self._audio_draining(m)):
                 # A cancel's withdrawn chunk objects are still being removed: a retry now could re-announce the same
-                # deterministic key under the rm. The file stays; it (and any later file for this memo, to keep the order)
-                # is taken on the next tick, once the drain has finished.
+                # deterministic key under the rm. The file stays; it (and any later retry for this memo) is taken on the
+                # next tick, once the drain has finished. Only retries wait: a cancel is never held.
                 if mid not in deferred:
                     log("control_deferred", "info", memo_id=mid, key=m["key"], verb=verb,
                         reason="withdrawn audio is still being removed")
-                deferred.add(mid)
+                deferred.setdefault(mid, []).append(f)
                 continue
+            if m is not None and verb == "cancel" and mid in deferred:
+                # the operator's last word is cancel: the retry it overtook is dropped, not run after the drain
+                for older in deferred.pop(mid):
+                    try:
+                        older.unlink()
+                    except OSError:
+                        pass
+                    log("control_superseded", "info", memo_id=mid, key=m["key"], file=older.name, by="cancel")
             try:
                 f.unlink()
             except OSError:
@@ -1339,7 +1365,7 @@ class Watcher:
     def _control_retry(self, m: dict | None, mid: str) -> None:
         if m is None:
             log("retry_refused", "warn", memo_id=mid, reason="unknown memo")
-        elif self._audio_busy(m) and m["key"] not in self.running and m.get("status") != "active":
+        elif self._audio_draining(m):
             log("retry_refused", "warn", memo_id=mid, key=m["key"], reason="withdrawn audio is still being removed")
         elif m["key"] in self.running or m.get("status") == "active":
             log("retry_refused", "warn", memo_id=mid, key=m["key"], reason=f"memo is {m.get('status')} at {m.get('stage')}, not failed")
@@ -1406,6 +1432,8 @@ class Watcher:
         # Single owner of the announced chunks: an audio attempt in flight withdraws them itself when it ends (_audio_attempt,
         # which sees the memo cancelled), so cancel queues nothing then. Idle cancel (no attempt) withdraws here, under the
         # caller's mu, and the tick removes the objects outside it; the memo is busy until that has finished.
+        # The keys are also recorded in the memo (m["withdrawn_audio"]) before the save below, so state.json never forgets
+        # objects it stopped advertising: a crash before the rm finishes re-queues them at start-up.
         if not self._audio_attempts.get(m["key"]):
             gone = self._withdraw_announced(m, self._round_chunk_prefix(m), refresh=False)
             if gone:
@@ -1424,7 +1452,7 @@ class Watcher:
             return
         self.last_rescue = time.time()
         for m in list(self.s.memos.values()):
-            if not rescue_open(m) or self._audio_busy(m):
+            if not rescue_open(m) or m["key"] in self.running or self._audio_draining(m):
                 continue
             if time.time() > rescue_closes_at(m):
                 m["rescue_closed"] = True
@@ -3188,8 +3216,10 @@ class Watcher:
         try:
             yield pending
         finally:
+            withdrawn: set = set()
             with self.mu:
                 last = False
+                claimed: set = set()
                 if mkey is not None:
                     left = self._audio_attempts.get(mkey, 1) - 1
                     last = left <= 0
@@ -3197,21 +3227,35 @@ class Watcher:
                         self._audio_attempts.pop(mkey, None)
                     else:
                         self._audio_attempts[mkey] = left
+                    claimed = self._audio_claimed.setdefault(mkey, set())
                 keep = m is not None and owner is not None and self._reply_current(m, owner)
                 doomed = set() if keep else set(pending)
                 if m is not None and not keep:
+                    voiced = set((m.get("voiced_keys") or {}).values())
                     if self._cancelled(m):
-                        # a cancel that landed while attempts were in flight queued nothing: the last one out takes the whole
-                        # current round, even when its own token names no chunk prefix
+                        # An announced key is deleted only by whoever withdraws it from voiced_keys, in that same mu section
+                        # (below): a pending key that is still advertised is left to its withdrawing owner. A cancel that
+                        # landed while attempts were in flight queued nothing: the last one out takes the whole current
+                        # round, even when its own token names no chunk prefix.
+                        doomed -= voiced
                         prefix = (owner or {}).get("chunk_prefix") or (self._round_chunk_prefix(m) if last else None)
-                        doomed |= self._withdraw_announced(m, prefix)
+                        withdrawn = self._withdraw_announced(m, prefix)
                     else:
-                        kept = doomed & set((m.get("voiced_keys") or {}).values())
+                        kept = doomed & voiced
                         if kept:
                             doomed -= kept
                             log("announced_audio_kept", "info", memo_id=m.get("memo_id"), objects=sorted(kept),
                                 note="round conflict: announced chunks stay playable and keep their cursors")
+                    doomed -= claimed          # a sibling attempt of this round already took it: removed once
+                    doomed |= withdrawn
+                    claimed |= doomed
+                if last:
+                    self._audio_claimed.pop(mkey, None)
             self._discard_audio(doomed)
+            if withdrawn:
+                with self.mu:                  # removed (or tried): state.json may forget them now
+                    self._forget_withdrawn(m, withdrawn)
+                    self.s.save()
 
     def _round_chunk_prefix(self, m: dict) -> str | None:
         """Under mu: the deterministic chunk prefix of the memo's current reply round (None before any round started)."""
@@ -3223,15 +3267,28 @@ class Watcher:
         except (TypeError, ValueError):
             return None
 
-    def _audio_busy(self, m: dict) -> bool:
-        """Under mu. A memo is busy while a worker runs it OR while the objects of chunks an idle cancel withdrew are still
-        being removed: retry/revive must wait, or a new round (same reply_stamp, same deterministic keys) could re-announce
-        a key that the drain's rm then deletes."""
-        return m["key"] in self.running or bool(self._withdrawn_audio.get(m["key"]))
+    def _audio_draining(self, m: dict) -> bool:
+        """Under mu. True while the objects of chunks an idle cancel withdrew are still queued or being removed: retry/revive
+        must wait, or a new round (same reply_stamp, same deterministic keys) could re-announce a key that the drain's rm
+        then deletes. A merely running memo is NOT draining: retry is refused for it, and a cancel applies, as ever."""
+        return bool(self._withdrawn_audio.get(m["key"]))
+
+    def _forget_withdrawn(self, m: dict | None, keys) -> None:
+        """Under mu: these objects have been removed (or the removal was attempted): drop them from the persisted queue."""
+        if m is None:
+            return
+        left = [k for k in (m.get("withdrawn_audio") or []) if k not in keys]
+        if left:
+            m["withdrawn_audio"] = left
+        else:
+            m.pop("withdrawn_audio", None)
 
     def _drain_withdrawn_audio(self) -> None:
         """Outside mu: remove the objects of chunks that an idle memo:cancel withdrew from their cursors (see cancel_memo).
-        A key leaves _withdrawn_audio only after its rm has finished, so the memo stays busy for the whole removal."""
+        A key leaves _withdrawn_audio (and state.json) only after its rm has finished, so the memo stays draining for the
+        whole removal."""
+        if not self._withdrawn_audio:
+            return  # the common case at every tick end: no lock operation at all
         if not self._drain_mu.acquire(blocking=False):
             return
         try:
@@ -3249,6 +3306,11 @@ class Watcher:
                             self._withdrawn_audio[mk] = left
                         else:
                             self._withdrawn_audio.pop(mk, None)
+                        self._forget_withdrawn(self.s.memos.get(mk), keys)
+                    try:
+                        self.s.save()
+                    except Exception as e:  # noqa: BLE001 - the next save carries it
+                        log("withdrawn_audio_save_failed", "warn", error=f"{type(e).__name__}: {e}"[:200])
             WAKE.set()  # a retry deferred behind this drain can go now
         finally:
             self._drain_mu.release()
@@ -3261,6 +3323,8 @@ class Watcher:
         mine = {i: k for i, k in done.items() if prefix and isinstance(k, str) and k.startswith(prefix)}
         if not mine:
             return set()
+        # recorded in the memo before the caller saves: state.json never forgets an object it stopped advertising
+        m["withdrawn_audio"] = sorted(set(m.get("withdrawn_audio") or []) | set(mine.values()))
         for i in mine:
             done.pop(i)
         if done:

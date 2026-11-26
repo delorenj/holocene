@@ -48,6 +48,7 @@ class AssignedVoices(unittest.TestCase):
         self.w.narrating = set()
         self.w._withdrawn_audio = {}
         self.w._audio_attempts = {}
+        self.w._audio_claimed = {}
         self.w._drain_mu = threading.Lock()
         self.w.fact = Mock()
         self.w.status = Mock()

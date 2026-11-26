@@ -1,12 +1,15 @@
 """Publication ownership barriers. Inert fixture bytes only; all synthesis/transport mocked."""
 import copy
+import json
+import os
+import random
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import test_assigned_voices as fixtures
 from test_inbox_watcher import iw
@@ -529,7 +532,7 @@ class PublicationRaces(unittest.TestCase):
             self.w._control_cancel(m, m["memo_id"])
         self.assertEqual(m["status"], iw.CANCELLED)
         self.assertEqual(self.w._withdrawn_audio, {m["key"]: old})
-        self.assertTrue(self.w._audio_busy(m))
+        self.assertTrue(self.w._audio_draining(m))
         with self.w.mu:   # a direct retry is refused while the keys are queued
             self.w._control_retry(m, m["memo_id"])
         self.assertEqual(m["status"], iw.CANCELLED)
@@ -542,7 +545,7 @@ class PublicationRaces(unittest.TestCase):
         def discard(keys):
             # the rm is running, outside mu: the memo is still busy and a same-tick retry is still deferred
             with self.w.mu:
-                seen["busy"] = self.w._audio_busy(m)
+                seen["busy"] = self.w._audio_draining(m)
                 self.w.process_control()
                 seen["file_kept"] = retry_file.exists()
                 seen["status"] = m["status"]
@@ -556,7 +559,7 @@ class PublicationRaces(unittest.TestCase):
                 self.w._drain_withdrawn_audio()
             self.assertEqual(seen, {"busy": True, "file_kept": True, "status": iw.CANCELLED})
             self.assertEqual(self.w._withdrawn_audio, {})
-            self.assertFalse(self.w._audio_busy(m))
+            self.assertFalse(self.w._audio_draining(m))
             self.assertEqual(store.live, set())
             with self.w.mu:   # next tick: the drain is done, the retry runs
                 self.w.process_control()
@@ -569,6 +572,305 @@ class PublicationRaces(unittest.TestCase):
         with patch.object(iw.mc_, "mc", side_effect=store.transport):
             self.w._drain_withdrawn_audio()
         self.assertEqual({k for k in store.live}, {iw.mc_.s3_url(k) for k in old})
+
+    # ---- HOLOC-54 guarantees: never delete while advertised; each object removed once per round; queue survives restarts ----
+
+    def guarded(self, store, m, gate=None):
+        """Transport over the fake store that records every rm of an object a cursor still advertises (store.violations)."""
+        store.violations = []
+        def transport(action, *a, **kw):
+            if action == "rm":
+                with self.w.mu:
+                    advertised = {iw.mc_.s3_url(k) for k in (m.get("voiced_keys") or {}).values()}
+                if a[-1] in advertised:
+                    store.violations.append(a[-1])
+            if gate is not None:
+                gate(action, a[-1])
+            return store.transport(action, *a, **kw)
+        return transport
+
+    def partial_round(self, m, store, parts):
+        """First attempt announces every chunk but the last, whose upload fails (retryable): the partial stays announced."""
+        store.fail_cp = {f"c{len(parts):02d}of{len(parts):02d}"}
+        with self.assertRaises(iw.StageError):
+            self.announce_all(m, store, parts)
+        store.fail_cp = set()
+        store.ops.clear(), store.held.clear()
+
+    def test_probe_p_cancel_during_reupload_of_an_announced_chunk_removes_each_object_once_never_advertised(self):
+        """Probe P: c01 and c02 announced, the retry attempt re-uploads c01 and a cancel lands mid upload. The inner publisher
+        attempt must not delete c01 while the cursor lists it; the outer attempt withdraws and removes it exactly once."""
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        parts = ["First chunk.", "Second chunk.", "Third chunk."]
+        self.partial_round(m, store, parts)
+        announced = set(m["voiced_keys"].values())
+        self.assertEqual(len(announced), 2)
+        entered, release = threading.Event(), threading.Event()
+        def gate(action, key):
+            if action == "cp" and "c01of03" in key:
+                entered.set()
+                self.assertTrue(release.wait(5))
+        stamp = iw.mc_.parse_iso(m["reply_stamp"])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(iw.mc_, "mc", side_effect=self.guarded(store, m, gate)):
+            errors = self.interleave(lambda: self.w._voice_chunks(m, parts, stamp, Path(tmp), time.time()),
+                                     entered, release, lambda: self.w.cancel_memo(m))
+            self.w._drain_withdrawn_audio()
+        self.assertEqual(errors, [])
+        counts = self.rm_counts(store)
+        self.assertEqual({k: counts.get(iw.mc_.s3_url(k)) for k in announced}, {k: 1 for k in announced})
+        self.assertTrue(all(n == 1 for n in counts.values()), f"double removal: {counts}")
+        self.assertEqual(store.violations, [], "an object was removed while a cursor advertised it")
+        self.assertEqual(store.live, set())
+        self.assertFalse(any(store.held))
+        self.assertNotIn("voiced_keys", m)
+        self.assertNotIn("withdrawn_audio", m)
+        self.assertEqual((self.w._withdrawn_audio, self.w._audio_attempts, self.w._audio_claimed), ({}, {}, {}))
+
+    def test_nested_attempt_leaves_an_advertised_key_to_the_withdrawing_owner_and_siblings_remove_unannounced_once(self):
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        self.announce_all(m, store)
+        c01 = sorted(m["voiced_keys"].values())[0]
+        unannounced = "replies/fixture-unannounced-c03of03.opus"
+        store.live.add(iw.mc_.s3_url(unannounced))
+        prefix = iw.chunk_prefix_for(iw.mc_.parse_iso(m["reply_stamp"]), m["agent"], m["memo_id"])
+        store.ops.clear(), store.held.clear()
+        with patch.object(iw.mc_, "mc", side_effect=self.guarded(store, m)):
+            with self.w._audio_attempt(m, {"chunk_prefix": prefix}) as outer:
+                outer.extend([c01, unannounced])
+                with self.w._audio_attempt(m, {}) as inner:   # a publisher attempt whose token names no prefix
+                    inner.extend([c01, unannounced])
+                    self.cancel_idle(m)
+                self.assertEqual(self.rm_counts(store), {iw.mc_.s3_url(unannounced): 1}, "inner removed only the unannounced key")
+                self.assertIn(c01, m["voiced_keys"].values(), "c01 is still advertised: it is the outer owner's to withdraw")
+            self.w._drain_withdrawn_audio()
+        counts = self.rm_counts(store)
+        self.assertEqual(counts[iw.mc_.s3_url(unannounced)], 1)
+        self.assertTrue(all(n == 1 for n in counts.values()), counts)
+        self.assertEqual(store.violations, [])
+        self.assertEqual(store.live, set())
+
+    def test_cancel_during_chunk_upload_removes_the_unannounced_chunk_once_across_sibling_attempts(self):
+        """Probe H3: chunk two is uploaded but not yet announced when the cancel lands; the publisher attempt and the round's
+        attempt both hold it as pending, and only one of them removes it."""
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        entered, release = threading.Event(), threading.Event()
+        def gate(action, key):
+            if action == "cp" and "c02of02" in key:
+                entered.set()
+                self.assertTrue(release.wait(5))
+        stamp = iw.mc_.parse_iso(m["reply_stamp"])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(iw.mc_, "mc", side_effect=self.guarded(store, m, gate)):
+            errors = self.interleave(lambda: self.w._voice_chunks(m, ["First chunk.", "Second chunk."], stamp, Path(tmp), time.time()),
+                                     entered, release, lambda: self.w.cancel_memo(m))
+            self.w._drain_withdrawn_audio()
+        self.assertEqual(errors, [])
+        counts = self.rm_counts(store)
+        self.assertEqual(sorted(k.rsplit("-", 1)[-1] for k in counts), ["c01of02.opus", "c02of02.opus"])
+        self.assertTrue(all(n == 1 for n in counts.values()), f"double removal: {counts}")
+        self.assertEqual(store.violations, [])
+        self.assertEqual(store.live, set())
+        self.assertNotIn("voiced_keys", m)
+
+    def test_h4_seeded_stress_cancel_racing_attempt_start_upload_and_drain_never_double_removes(self):
+        rnd = random.Random(54)
+        parts = ["First chunk.", "Second chunk.", "Third chunk."]
+        for it in range(120):
+            self.w._audio_attempts.clear(), self.w._withdrawn_audio.clear(), self.w._audio_claimed.clear()
+            m = self.ready()
+            store = self.store()
+            self.w.fact_fast.side_effect = lambda *a, **kw: None
+            prefix = iw.chunk_prefix_for(iw.mc_.parse_iso(m["reply_stamp"]), m["agent"], m["memo_id"])
+            if it % 2:
+                self.partial_round(m, store, parts)   # half the runs start with announced chunks (a retry attempt)
+            go = threading.Event()
+            def gate(action, key):
+                time.sleep(rnd.random() * 0.002)
+            def attempt():
+                go.wait(2)
+                time.sleep(rnd.random() * 0.004)
+                try:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        self.w._voice_chunks(m, parts, iw.mc_.parse_iso(m["reply_stamp"]), Path(tmp), time.time())
+                except iw.StageError:
+                    pass
+            def cancel():
+                go.wait(2)
+                time.sleep(rnd.random() * 0.006)
+                with self.w.mu:
+                    self.w.cancel_memo(m)
+                if rnd.random() < 0.5:
+                    self.w._drain_withdrawn_audio()   # a tick end that may fall while the attempt still runs
+            with patch.object(iw.mc_, "mc", side_effect=self.guarded(store, m, gate)):
+                threads = [threading.Thread(target=attempt), threading.Thread(target=cancel)]
+                for t in threads:
+                    t.start()
+                go.set()
+                for t in threads:
+                    t.join(10)
+                self.assertFalse(any(t.is_alive() for t in threads), f"it={it}")
+                self.w._drain_withdrawn_audio()
+            counts = self.rm_counts(store)
+            self.assertEqual({k: n for k, n in counts.items() if n > 1}, {}, f"it={it} double removal")
+            self.assertEqual(store.violations, [], f"it={it} removed while advertised")
+            self.assertEqual({k for k in store.live if prefix in k}, set(), f"it={it} orphan objects of the cancelled round")
+            self.assertFalse([k for k in (m.get("voiced_keys") or {}).values() if k.startswith(prefix)], f"it={it} cursor left")
+            self.assertNotIn("withdrawn_audio", m, f"it={it}")
+            self.assertEqual((self.w._audio_attempts, self.w._withdrawn_audio, self.w._audio_claimed), ({}, {}, {}), f"it={it}")
+            self.assertFalse(any(store.held), f"it={it} object I/O under mu")
+
+    def control_dir(self):
+        cdir = Path(tempfile.mkdtemp(dir=self.root)) / "control"
+        cdir.mkdir()
+        return cdir
+
+    def drop_control(self, cdir, verb, mid, ns):
+        f = cdir / f"{verb}-{mid}"
+        f.write_text("")
+        os.utime(f, ns=(ns, ns))
+        return f
+
+    def running_memo(self):
+        m = self.ready()
+        m.update(status="active", stage="speak")
+        m.setdefault("attempts", {})
+        self.w.running = {m["key"]}
+        return m
+
+    def control_events(self):
+        return [(e, kw.get("reason")) for e, kw in self.logs if e.startswith(("control", "retry", "cancel", "memo_cancel"))]
+
+    def test_probe_r1_cancel_after_a_retry_for_a_running_memo_applies_at_once(self):
+        """A merely running memo is not draining: its retry is refused at once and the cancel behind it is never held."""
+        m = self.running_memo()
+        cdir = self.control_dir()
+        t0 = time.time_ns()
+        retry = self.drop_control(cdir, "retry", m["memo_id"], t0)
+        cancel = self.drop_control(cdir, "cancel", m["memo_id"], t0 + 1000)
+        with patch.object(iw, "STATE_DIR", cdir.parent), self.w.mu:
+            self.w.process_control()
+        self.assertEqual(m["status"], iw.CANCELLED)
+        self.assertFalse(retry.exists() or cancel.exists(), "both control files are taken in the same pass")
+        events = self.control_events()
+        self.assertEqual([e for e, _ in events], ["retry_refused", "memo_cancelled"])
+        self.assertEqual(events[0][1], "memo is active at speak, not failed")
+
+    def test_probe_r2_lone_retry_for_a_running_memo_is_refused_at_once(self):
+        m = self.running_memo()
+        cdir = self.control_dir()
+        retry = self.drop_control(cdir, "retry", m["memo_id"], time.time_ns())
+        with patch.object(iw, "STATE_DIR", cdir.parent), self.w.mu:
+            self.w.process_control()
+        self.assertFalse(retry.exists())
+        self.assertEqual(m["status"], "active")
+        self.assertEqual(self.control_events(), [("retry_refused", "memo is active at speak, not failed")])
+
+    def test_cancel_is_never_held_behind_a_retry_deferred_for_a_draining_memo(self):
+        """Only a retry waits for the drain; a cancel newer than it is taken at once and drops the retry it overtook."""
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        self.announce_all(m, store)
+        m["status"] = "active"
+        m.setdefault("attempts", {})
+        with self.w.mu:
+            self.w._control_cancel(m, m["memo_id"])
+        self.assertTrue(self.w._audio_draining(m))
+        cdir = self.control_dir()
+        t0 = time.time_ns()
+        retry = self.drop_control(cdir, "retry", m["memo_id"], t0)
+        with patch.object(iw, "STATE_DIR", cdir.parent):
+            with self.w.mu:
+                self.w.process_control()
+            self.assertTrue(retry.exists(), "a retry behind the drain is deferred")
+            cancel = self.drop_control(cdir, "cancel", m["memo_id"], t0 + 1000)
+            with self.w.mu:
+                self.w.process_control()
+            self.assertFalse(cancel.exists(), "the cancel was taken at once")
+            self.assertFalse(retry.exists(), "the retry the cancel overtook is dropped")
+            self.assertIn("control_superseded", [e for e, _ in self.control_events()])
+            with patch.object(iw.mc_, "mc", side_effect=store.transport):
+                self.w._drain_withdrawn_audio()
+            with self.w.mu:
+                self.w.process_control()
+        self.assertEqual(m["status"], iw.CANCELLED, "the operator's last word was cancel")
+
+    def test_idle_cancel_persists_the_withdrawn_queue_with_the_cursor_clear_and_a_restart_drains_it(self):
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        self.announce_all(m, store)
+        old = set(m["voiced_keys"].values())
+        saved = []
+        self.w.s.save.side_effect = lambda: saved.append(json.loads(json.dumps(m)))
+        self.cancel_idle(m)
+        # one save carries both halves: cursors gone AND the objects still to remove (state.json never forgets them)
+        self.assertTrue(saved)
+        self.assertNotIn("voiced_keys", saved[-1])
+        self.assertEqual(saved[-1]["withdrawn_audio"], sorted(old))
+        # crash before the rm: a new process loads the saved memo and queues the same objects
+        revived = json.loads(json.dumps(m))
+        self.w._withdrawn_audio = {}
+        self.w.s.memos = {revived["key"]: revived}
+        self.w._load_withdrawn_audio()
+        self.assertEqual(self.w._withdrawn_audio, {revived["key"]: old})
+        self.assertTrue(self.w._audio_draining(revived))
+        store.ops.clear()
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            self.w._drain_withdrawn_audio()
+            self.w._drain_withdrawn_audio()
+        self.assertEqual(self.rm_counts(store), {iw.mc_.s3_url(k): 1 for k in old})
+        self.assertEqual(store.live, set())
+        self.assertNotIn("withdrawn_audio", revived)
+        self.assertEqual(self.w._withdrawn_audio, {})
+
+    def test_attempt_withdrawal_is_persisted_until_its_objects_are_removed(self):
+        m = self.ready()
+        store = self.store()
+        render, entered, release = self.render_gate_for_second_chunk()
+        stamp = iw.mc_.parse_iso(m["reply_stamp"])
+        seen = []
+        def gate(action, key):
+            if action == "rm":
+                with self.w.mu:
+                    seen.append(list(m.get("withdrawn_audio") or []))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.w, "_render_reply_chunk", side_effect=render), \
+             patch.object(iw.mc_, "mc", side_effect=self.guarded(store, m, gate)):
+            errors = self.interleave(lambda: self.w._voice_chunks(m, ["First chunk.", "Second chunk."], stamp, Path(tmp), time.time()),
+                                     entered, release, lambda: self.w.cancel_memo(m))
+        self.assertEqual(errors, [])
+        self.assertTrue(seen and all(len(s_) == 1 for s_ in seen), f"queue at rm time: {seen}")
+        self.assertNotIn("withdrawn_audio", m, "forgotten once the rm has finished")
+        self.assertEqual(store.live, set())
+
+    def test_shutdown_drains_the_withdrawn_queue_once(self):
+        m = self.ready()
+        store = self.store()
+        self.w.fact_fast.side_effect = lambda *a, **kw: None
+        self.announce_all(m, store)
+        old = set(m["voiced_keys"].values())
+        self.cancel_idle(m)
+        self.w.facts = Mock()
+        self.w.pools = {}
+        store.ops.clear(), store.held.clear()
+        with patch.object(iw.mc_, "mc", side_effect=store.transport):
+            iw.Watcher.shutdown(self.w, False)
+        self.assertEqual(self.rm_counts(store), {iw.mc_.s3_url(k): 1 for k in old})
+        self.assertFalse(any(store.held))
+        self.assertEqual(self.w._withdrawn_audio, {})
+        self.assertNotIn("withdrawn_audio", m)
+
+    def test_drain_with_nothing_queued_takes_no_lock(self):
+        self.w._drain_mu = Mock()
+        self.w.mu = MagicMock()
+        self.w._drain_withdrawn_audio()
+        self.assertEqual(self.w._drain_mu.mock_calls, [])
+        self.assertEqual(self.w.mu.mock_calls, [])
 
     def test_chunk_upload_overlaps_next_render_and_stale_removal_failure_is_fail_closed(self):
         m = self.ready()
