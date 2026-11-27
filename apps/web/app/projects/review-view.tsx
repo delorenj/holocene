@@ -38,7 +38,8 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
   const [draft, setDraft] = useState<Draft>();
   const [current, setCurrent] = useState<string>();
   const [unanchored, setUnanchored] = useState<Set<string>>(new Set());
-  const [frameKey, setFrameKey] = useState(0);
+  // The per-load key: each load is a fresh iframe element, so only that load's window can ever be event.source.
+  const [loadKey, setLoadKey] = useState(uuid);
   const frame = useRef<HTMLIFrameElement>(null);
   const ready = useRef(false);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -168,7 +169,7 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
       window.alert(`Not deleted: ${saveOutcome(res.status, res.body).error}`);
     }
   };
-  const reloadFrame = () => { ready.current = false; setUnanchored(new Set()); setFrameKey((k) => k + 1); };
+  const reloadFrame = () => { ready.current = false; setUnanchored(new Set()); setLoadKey(uuid()); };
 
   const rev = data?.revision;
   return <main className="hub-root projects-shell is-review" data-theme={theme}>
@@ -189,7 +190,7 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
       {!data && !failure ? <p role="status">Loading the preserved revision…</p> : null}
       {data && srcdoc ? <div className="review-body">
         <div className="review-stage">
-          <iframe key={frameKey} ref={frame} className="review-frame" title={`Preserved revision of ${rev?.title ?? "walkthrough"}`}
+          <iframe key={loadKey} data-load={loadKey} ref={frame} className="review-frame" title={`Preserved revision of ${rev?.title ?? "walkthrough"}`}
             sandbox={sandboxFor("html")} referrerPolicy="no-referrer" srcDoc={srcdoc} />
         </div>
         <aside className="review-rail" aria-label="Annotations">

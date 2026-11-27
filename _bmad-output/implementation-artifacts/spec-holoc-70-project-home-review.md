@@ -2,7 +2,7 @@
 title: 'HOLOC-70 local slice: project home, preserved review revisions, durable annotations'
 type: 'feature'
 created: '2026-11-26'
-status: 'draft'
+status: 'in-review'
 baseline_revision: '1fffeb1d6b44e63421dc0d4b73c65ce17d4b6062'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -64,7 +64,7 @@ deferred: []
 - `apps/web/app/hub/hub-shell.tsx`, `hub.css` -- page chrome and tokens.
 - `~/.agents/skills/artifacts/scripts/publish.py` -- `--project --name --date --no-index`; prints JSON receipt then URL; verifies every object by SHA-256 read-back.
 - Traefik `google-auth@file` (andrewkroh google-oidc-auth-middleware, `oidc.go:226`) sets `X-Forwarded-User` to the authenticated email on every authenticated request to `holocene-web`.
-- `@plannotator/ui@0.65.0` `components/html-viewer/*` (Apache-2.0) -- bridge script string, sandbox shim, link guard, persisted-anchor helpers; raw `.ts` exports (Next `transpilePackages`).
+- `@plannotator/ui@0.65.0` (Apache-2.0) -- only the explicitly exported `components/html-viewer/bridge-script` (`BRIDGE_SCRIPT`, `ANNOTATION_HIGHLIGHT_CSS`, protocol 2; it embeds its own sandbox shim). Its `useHtmlAnnotation`/`srcdoc`/`hostThreads` modules are not deep-importable (the `components/*` export maps to `.tsx`) and the barrel pulls in the full HtmlViewer UI, so Holocene owns the host side of the protocol. `@plannotator/core@0.25.33` `html-anchor` (`buildPersistedHtmlAnchor`) bounds the persisted anchor. Both ship raw `.ts` (Next `transpilePackages`).
 
 ## Tasks & Acceptance
 
@@ -74,9 +74,9 @@ deferred: []
 - `apps/api/src/reviews.ts` (+test) -- request signature verify; capture (fetch bundle with caps, hash, stage to temp dir, `publish.py`, verify receipt URL is the expected snapshot key, insert); home payload; revision document (fetch snapshot entry, verify hash, `wrapHtml`); annotation CRUD with author from signed header.
 - `apps/api/src/artifacts.ts` -- hide `review-<hex16>` publications from the gallery; share the catalog instance.
 - `apps/api/src/server.ts`, `apps/api/package.json` -- register routes; add tests to the glob.
-- `apps/web/app/api/projects/[...path]/route.ts` + `review-sign.ts` -- edge-user + Origin/content-type checks, body cap, HMAC signing, proxy.
-- `apps/web/app/projects/[projectId]/page.tsx`, `project-home.tsx`, `review-view.tsx`, `review-model.ts` (+test), `plannotator-bridge.ts`, `projects.css` -- home, revision viewer with annotation rail, bridge host adapter.
-- `apps/web/package.json`, `apps/web/next.config.mjs` -- `@plannotator/ui` dependency, `transpilePackages`, test glob.
+- `apps/web/app/api/projects/[...path]/route.ts` + `review-proxy.ts` -- edge-user + Origin/content-type checks, body cap, HMAC signing, proxy.
+- `apps/web/app/projects/[projectId]/page.tsx`, `project-home.tsx`, `review/[revision]/page.tsx`, `review-view.tsx` (bridge host), `review-model.ts` (+test: bridge message schema, restore batch, injection point), `projects.css` -- home, revision viewer with annotation rail, bridge host adapter.
+- `apps/web/package.json`, `apps/web/next.config.mjs` -- `@plannotator/ui` + `@plannotator/core` dependencies, `transpilePackages`, test glob.
 
 **Acceptance Criteria:**
 - Given the live route `/projects/greeninbetween` behind Google auth, when it loads, then it shows the registry identity, GIB HTML publications from the catalog with links to their originals and `/artifacts` deep links, catalog source freshness, and the count of unattributed items.
@@ -91,6 +91,10 @@ deferred: []
 ## Design Notes
 
 Mutation signature: `hex(HMAC_SHA256(HMAC_SHA256(secret, "holocene-reviews/v1"), [method, pathAndQuery, sha256(body), user, timestamp].join("\n")))`, 30 s window. The read-only catalog signature stays as is; review routes never accept it.
+
+Bridge host: the bridge script and highlight CSS are injected into the revision srcdoc right after Holocene's CSP and referrer metas (never Plannotator's `injectIntoHead`, which strips the page CSP). In srcdoc mode the bridge posts with no token, and the page's own scripts share its realm, so a token inside the frame could be forged by the page. The per-load key is therefore the frame identity itself: every load (and every Re-place) mounts a fresh iframe element keyed by a new UUID, and the host accepts a message only when `event.source` is that load's `contentWindow`, `event.origin` is `"null"`, the load has posted `ready` with protocol 2, and the payload passes `readBridge` (prefix, shape, 10 000-character text cap, id caps). Bridge messages only propose a selection; nothing the frame posts is saved without the operator writing and saving a comment.
+
+Saving: a fresh selection becomes a draft with a client UUID; drafts autosave (debounced) through one serialized writer, a saved annotation changes only on Save (optimistic `version`; 409 shows a conflict and the server's current row). A failed save shows "Not saved" and keeps the text.
 
 ## Verification
 
