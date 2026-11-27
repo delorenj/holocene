@@ -57,7 +57,8 @@ export async function proxyReview(request: Request, segments: string[]) {
   const internal = (process.env.HOLOCENE_API_INTERNAL_URL ?? "http://localhost:4000").replace(/\/$/, "");
   try {
     const upstream = await fetch(`${internal}${pathAndQuery}`, {
-      method, cache: "no-store", body: body || undefined,
+      // A capture may publish up to 96 MB (publish.py has a 10-minute ceiling); never hang past it.
+      method, cache: "no-store", body: body || undefined, signal: AbortSignal.timeout(11 * 60 * 1000),
       headers: { ...(body ? { "content-type": "application/json" } : {}), "x-review-user": user, "x-review-timestamp": timestamp, "x-review-signature": signReview(secret, method, pathAndQuery, body, user, timestamp) }
     });
     const headers = new Headers({ "Cache-Control": "private, no-store" });

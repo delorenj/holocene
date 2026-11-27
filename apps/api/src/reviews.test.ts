@@ -184,3 +184,12 @@ test("the API verifies the same fixed signature vector the web proxy signs (apps
   assert.equal(reviewSignature("s3cret", "PATCH", "/api/modules/projects/greeninbetween/revisions/abc/annotations/x?v=1", "{\"version\":1}", "op@example.com", "1795740000000"),
     "4859de2fd5d89e4d2f31ee49e50d66be64fe866a4b5d38bc82fc1301addb14d4");
 });
+
+test("capture accepts the publisher's strict percent-encoding of an entry name with !'()*", async () => {
+  const store = new ReviewStore(":memory:");
+  const base = "https://s3.delo.sh/projects/gib/2026-11-19/walk/";
+  const files = { [`${base}it%27s%20%28v1%29%21.html`]: "<!doctype html><p>x</p>" };
+  const publish = async (_dir: string, project: string, name: string) => `https://s3.delo.sh/projects/${project}/2026-11-26/${name}/it%27s%20%28v1%29%21.html`;
+  const res = await captureRevision(store, "gib", item({ filenames: ["it's (v1)!.html"], originalUrl: `${base}it's%20(v1)!.html`, baseUrl: base }), "op@example.com", origin(files), publish);
+  assert.equal(res.status, 201);
+});

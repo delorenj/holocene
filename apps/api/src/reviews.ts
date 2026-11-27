@@ -15,7 +15,9 @@ import { ReviewStore, type AnnotationStatus, type ManifestEntry, type Revision }
 
 const BASE = "https://s3.delo.sh";
 const exec = promisify(execFile);
-const encodeKey = (key: string) => key.split("/").map(encodeURIComponent).join("/");
+// RFC 3986 strict, matching publish.py's urllib quote(): encodeURIComponent alone leaves !'()* bare.
+const strict = (part: string) => encodeURIComponent(part).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+const encodeKey = (key: string) => key.split("/").map(strict).join("/");
 const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 const HEX64 = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
