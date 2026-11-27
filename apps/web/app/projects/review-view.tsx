@@ -104,6 +104,13 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
         setDraft((x) => x && x.id === d.id ? { ...x, version: current.version, save: { state: "conflict", error: `Changed elsewhere (now: “${current.comment.slice(0, 120)}”). Save again to replace it with your text.` } } : x);
         return;
       }
+      if (res.status === 404 && d.version !== undefined) {
+        // Deleted elsewhere: drop the stale row and marker; the operator's text stays in the box (a Save re-creates it as new).
+        post({ type: `${BRIDGE_PREFIX}remove-mark`, id: d.id });
+        setData((x) => x && { ...x, annotations: x.annotations.filter((a) => a.id !== d.id) });
+        setDraft((x) => x && x.id === d.id ? { ...x, id: uuid(), version: undefined, fresh: true, save: { state: "failed", error: "Deleted elsewhere. Your text is kept; press Save to add it as a new annotation" } } : x);
+        return;
+      }
       setDraft((x) => x && x.id === d.id ? { ...x, save: outcome } : x);
     });
   }, [base, post]);
