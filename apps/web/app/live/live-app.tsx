@@ -14,8 +14,8 @@ import {
 import type { LiveApp as App, LivePayload, OnDeckApp } from "./types";
 
 // The Live hub: every app promoted to production (a registered pjangler project whose .launch.yaml says
-// `mode: live`), with what is true about it right now. Every action here is a link or a read; the money,
-// the issuer and the store are never written from this page.
+// `mode: live`, or `mode: polish` with a valid `live:` block), with what is true about it right now.
+// Every action here is a link or a read; the money, the issuer and the store are never written from this page.
 
 const POLL_MS = 15_000;
 const API_URL = "/api/modules/live/apps";
@@ -254,9 +254,9 @@ function Empty() {
       </div>
       <div className="hub-panel-body">
         <p>An app is promoted to this hub when its repo&apos;s <code className="hub-code">.launch.yaml</code> says <code className="hub-code">mode: live</code> with a valid <code className="hub-code">live:</code> block,
-          and the repo is a registered pjangler project. There is no separate list to edit.</p>
-        <p>The lifecycle is <code className="hub-code">launch</code> (racing to a finish line), then <code className="hub-code">live</code> (people can buy it and are using it).
-          Pre-launch and internal projects stay <code className="hub-code">steady</code>.</p>
+          and the repo is a registered pjangler project. A product being polished in production (<code className="hub-code">mode: polish</code> with that same <code className="hub-code">live:</code> block) stays here too. There is no separate list to edit.</p>
+        <p>The modes are <code className="hub-code">develop</code> (the default), <code className="hub-code">launch</code> (racing to a finish line), <code className="hub-code">polish</code> (around-the-clock
+          exploratory QA on the experience) and <code className="hub-code">live</code> (people can buy it and are using it). <code className="hub-code">steady</code> is the old name for <code className="hub-code">develop</code>.</p>
       </div>
     </section>
   );

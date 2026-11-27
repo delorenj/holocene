@@ -6,6 +6,7 @@ export const PRODUCT_LINKS: NavItem[] = [
 export const PROJECT_LINKS: NavItem[] = [
   { id: "products-live", label: "Live products", href: "/products?stage=live", icon: "live" },
   { id: "products-launch", label: "Launch mode products", href: "/products?stage=launch", icon: "launch" },
+  { id: "products-polish", label: "Polish mode products", href: "/products?stage=polish", icon: "settings" },
   { id: "projects", label: "All projects", href: "/?view=projects", icon: "projects" }
 ];
 export const NAV_GROUPS: Array<{ id: string; label: string; items: NavItem[] }> = [
@@ -33,7 +34,7 @@ export function projectsAncestor(current?: string) { return PROJECT_LINKS.some((
 export function nativeModifiedClick(e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; button: number }) {
   return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
 }
-export function productStage(search: string): "launch" | "live" | undefined {
+export function productStage(search: string): "launch" | "live" | "polish" | undefined {
   const value = new URLSearchParams(search).get("stage");
-  return value === "launch" || value === "live" ? value : undefined;
+  return value === "launch" || value === "live" || value === "polish" ? value : undefined;
 }

@@ -3,7 +3,8 @@
 // shape the page shows. No IO here; live.ts does the reading and calls these.
 //
 // "Promotion to the Live hub" is not a registry. It is a registered pjangler project whose
-// .launch.yaml says `mode: live` with a valid `live:` block (the contract below). Everything
+// .launch.yaml says `mode: live` with a valid `live:` block (the contract below) — or `mode: polish`
+// carrying that same valid block (a product polished while already in production). Everything
 // the page shows is either declared there or read from a source that block points at.
 //
 // Privacy: the Stripe projection keeps counts, amounts and times only. A Checkout Session's
@@ -69,7 +70,7 @@ export type LaunchRead =
   | { kind: "absent" }
   | { kind: "not-live"; mode: string; showcase?: Showcase; showcaseProblems?: string[] }
   | { kind: "live"; decl: LiveDecl }
-  | { kind: "invalid"; mode: "live"; problems: string[] };
+  | { kind: "invalid"; mode: "live" | "polish"; problems: string[] };
 
 /** js-yaml turns an unquoted 2026-11-20 into a Date; the contract treats it as the calendar day it names. */
 export function dayOf(v: unknown): string | undefined {
@@ -120,9 +121,12 @@ const httpsUrl = (v: unknown): string | undefined => {
 };
 
 /**
- * Read one `.launch.yaml`. Anything but `mode: live` is not for this hub (`launch` and `steady` have
- * their own consumers). `mode: live` with a block that breaks the contract is reported as `invalid`
- * with every problem named, so a half-promoted app is visible instead of silently missing.
+ * Read one `.launch.yaml`. Anything but `mode: live` is not for this hub (`develop`, `launch` and
+ * `polish` have their own consumers) — except `mode: polish` that carries a `live:` block: that is
+ * a product being polished while already in production, and it promotes like `live`. A polish
+ * declaration without a `live:` block is not live. A promoting declaration whose block breaks the
+ * contract is reported as `invalid` with every problem named, so a half-promoted app is visible
+ * instead of silently missing. Modes are lowercased; `steady` is the legacy alias of `develop`.
  */
 export function parseLaunchFile(raw: string | undefined): LaunchRead {
   if (raw === undefined) return { kind: "absent" };
@@ -136,8 +140,9 @@ export function parseLaunchFile(raw: string | undefined): LaunchRead {
       : { kind: "not-live", mode: "unparseable" };
   }
   if (!record(doc)) return { kind: "absent" };
-  const mode = (text(doc.mode) ?? "steady").toLowerCase();
-  if (mode !== "live") {
+  const declared = (text(doc.mode) ?? "steady").toLowerCase();
+  const mode = declared === "steady" ? "develop" : declared;
+  if (mode !== "live" && !(mode === "polish" && doc.live !== undefined)) {
     const { showcase, problems } = parseShowcase(doc.showcase);
     return { kind: "not-live", mode, ...(showcase ? { showcase } : {}), ...(problems.length ? { showcaseProblems: problems } : {}) };
   }
@@ -189,7 +194,7 @@ export function parseLaunchFile(raw: string | undefined): LaunchRead {
   const video = publishedVideoUrl(l.video);
   if (l.video !== undefined && !video) problems.push("live.video must be a v.delo.sh or s3.delo.sh share URL");
 
-  if (problems.length) return { kind: "invalid", mode: "live", problems };
+  if (problems.length) return { kind: "invalid", mode: mode as "live" | "polish", problems };
   return {
     kind: "live",
     decl: {

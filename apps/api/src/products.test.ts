@@ -57,6 +57,25 @@ test("every registered launch declaration remains listed without scripts, receip
   assert.equal(d.products.find((x) => x.id === "no-script")?.launch?.state, "unknown");
   assert.ok(!JSON.stringify(d).includes("repoPath"));
 });
+test("polish products are listed without launch receipts; develop and its steady alias stay excluded", async () => {
+  const h = setup(); h.projects([p("shiny"), p("polished-live"), p("broken-live"), p("develop"), p("legacy-steady")]);
+  h.modes["shiny"] = "mode: polish\npolish:\n  wip: 4\n";
+  h.modes["polished-live"] = LIVE.replace("mode: live", "mode: polish");
+  h.modes["broken-live"] = "mode: polish\nlive:\n  name: Half\n";
+  h.modes["develop"] = "mode: develop";
+  h.modes["legacy-steady"] = "mode: steady";
+  h.deps.receipt = async () => { throw Error("polish races no finish line: no receipt is read"); };
+  const d = await h.directory.read();
+  assert.deepEqual(d.products.map((x) => [x.id, x.stage]), [["broken-live", "polish"], ["polished-live", "polish"], ["shiny", "polish"]]);
+  assert.equal(d.products.find((x) => x.id === "polished-live")?.destination?.href, "/live");
+  const shiny = d.products.find((x) => x.id === "shiny");
+  assert.equal(shiny?.destination, undefined);
+  assert.equal(shiny?.launch, undefined, "no launch gate evidence for polish");
+  assert.equal(shiny?.issue, undefined);
+  const broken = d.products.find((x) => x.id === "broken-live");
+  assert.equal(broken?.destination, undefined);
+  assert.match(broken?.issue ?? "", /live declaration is invalid/);
+});
 test("registry outage first read vs last-good snapshot vs healthy empty are distinct, errors never serialize secrets", async () => {
   const h = setup();
   await h.directory.read(); h.advance();

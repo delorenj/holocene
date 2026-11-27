@@ -1,6 +1,6 @@
 import type { ProductsPayload } from "./types";
 
-export const STAGE_LABEL = { launch: "Launch mode products", live: "Live products" } as const;
+export const STAGE_LABEL = { launch: "Launch mode products", polish: "Polish mode products", live: "Live products" } as const;
 
 /** Host and path of a validated receipt URL, without the scheme or a trailing index file. */
 export function receiptPath(href: string) {

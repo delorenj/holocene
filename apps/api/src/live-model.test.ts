@@ -63,12 +63,26 @@ test("a complete live block parses, and an unquoted YAML date stays a calendar d
   assert.deepEqual(read.decl.fulfilment?.outstandingArgv.slice(0, 2), ["uv", "run"]);
 });
 
-test("launch and steady (and no file, and no mode) are not for this hub", () => {
+test("develop, launch and polish without a live block (and no file, and no mode) are not for this hub", () => {
   assert.deepEqual(parseLaunchFile("mode: launch\nfinish_line: x\n"), { kind: "not-live", mode: "launch" });
-  assert.deepEqual(parseLaunchFile("mode: steady\n"), { kind: "not-live", mode: "steady" });
-  assert.deepEqual(parseLaunchFile("finish_line: x\n"), { kind: "not-live", mode: "steady" });
+  assert.deepEqual(parseLaunchFile("mode: develop\n"), { kind: "not-live", mode: "develop" });
+  assert.deepEqual(parseLaunchFile("mode: steady\n"), { kind: "not-live", mode: "develop" }, "steady is the legacy alias of develop");
+  assert.deepEqual(parseLaunchFile("finish_line: x\n"), { kind: "not-live", mode: "develop" });
+  assert.deepEqual(parseLaunchFile("mode: polish\npolish:\n  wip: 4\n"), { kind: "not-live", mode: "polish" }, "polish without a live: block is not live");
   assert.deepEqual(parseLaunchFile(undefined), { kind: "absent" });
   assert.deepEqual(parseLaunchFile("- a\n- b\n"), { kind: "absent" });
+});
+
+test("mode: polish carrying a valid live: block promotes like live; a broken one is invalid as polish", () => {
+  const polished = parseLaunchFile(EARSHOT_LAUNCH.replace("mode: live", "mode: polish\npolish:\n  wip: 4"));
+  assert.equal(polished.kind, "live");
+  if (polished.kind === "live") assert.equal(polished.decl.name, "Earshot");
+  const half = parseLaunchFile("mode: polish\nlive_since: 2026-11-20\nlive:\n  name: Half\n");
+  assert.equal(half.kind, "invalid");
+  if (half.kind === "invalid") {
+    assert.equal(half.mode, "polish");
+    assert.ok(half.problems.some((p) => p.startsWith("live.store_url")));
+  }
 });
 
 test("mode: live without a valid block is invalid with every problem named, never silently dropped", () => {

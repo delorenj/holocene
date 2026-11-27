@@ -94,7 +94,11 @@ export function createProductsDirectory(deps: ProductsDeps) {
         if (!classification.stage) { issue("invalid", classification.issue!); return; }
         const product: Product = { id: p.id, name: p.name, stage: classification.stage, declaration: { commit: decl.commit }, issue: classification.issue };
         if (product.stage === "live") product.destination = { href: "/live", label: "Open Live management" };
-        else {
+        else if (product.stage === "polish") {
+          // Polishing races no finish line: no launch dashboard receipt. A product polished while in
+          // production (a valid live: block) keeps its Live management destination.
+          if (classification.live) product.destination = { href: "/live", label: "Open Live management" };
+        } else {
           product.launch = launchEvidence(undefined, now);
           try {
             const evidence = await deps.receipt(p);

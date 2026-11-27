@@ -34,7 +34,8 @@ import {
   type StorefrontData
 } from "./live-model.js";
 
-// The Live hub: every registered pjangler project whose .launch.yaml says `mode: live`, with
+// The Live hub: every registered pjangler project whose .launch.yaml says `mode: live` — or
+// `mode: polish` with a valid `live:` block (polishing a product already in production) — with
 // what is true about it right now. Fulfilment invokes only an explicitly declared, independently
 // approved read-only issuer snapshot; legacy outstanding declarations are unavailable.
 // No page read issues or delivers keys, sends mail, or writes a ledger.

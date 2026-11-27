@@ -33,14 +33,14 @@ function ProductRow({ product: p, index }: { product: Product; index: number }) 
       {p.destination ? <a className="product-action" href={p.destination.href} {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}>
         <span>{p.destination.label}</span><NavIcon name={external ? "external" : "arrow"} size={16} />
         <span className="hub-sr-only"> for {p.name}{external ? " (new tab)" : ""}</span>
-      </a> : <span className="product-unavailable">Dashboard unavailable</span>}
+      </a> : <span className="product-unavailable">{p.stage === "polish" ? "Not in production; nothing to open" : "Dashboard unavailable"}</span>}
     </div>
   </li>;
 }
 
 export function ProductsApp() {
   const [theme, toggle] = useTheme();
-  const [stage, setStage] = useState<"launch" | "live">();
+  const [stage, setStage] = useState<"launch" | "live" | "polish">();
   const { data, error, reload } = usePoll<ProductsPayload>("/api/modules/products", 15_000);
   useEffect(() => {
     const sync = () => setStage(productStage(window.location.search));
@@ -50,7 +50,7 @@ export function ProductsApp() {
   const lastGood = data?.registry.state === "down" || !!error;
   // With the registry down and no snapshot, zero rows means "unknown", never "none".
   const countsKnown = !!data && !(data.registry.state === "down" && !data.registry.snapshotAt);
-  const count = (s?: "launch" | "live") => countsKnown && data ? data.products.filter((p) => !s || p.stage === s).length : "–";
+  const count = (s?: "launch" | "live" | "polish") => countsKnown && data ? data.products.filter((p) => !s || p.stage === s).length : "–";
   const flagged = data?.products.filter((p) => p.issue).length ?? 0;
   const issues = data ? groupIssues(data.issues) : undefined;
   return <div className="hub-root products-root" data-theme={theme}>
@@ -63,6 +63,7 @@ export function ProductsApp() {
           {data ? <ul className="hub-tally" aria-label="Directory summary">
             {countsKnown ? <>
               <li className="is-strong">{count("launch")} launch mode</li>
+              <li>{count("polish")} polish</li>
               <li>{count("live")} live</li>
               {lastGood ? <li className="is-warn">counts from last good snapshot</li> : null}
             </> : <li className="is-warn">counts unknown · discovery incomplete</li>}
@@ -72,7 +73,7 @@ export function ProductsApp() {
           </ul> : null}
         </div>
         <div className="products-tools">
-          <nav className="products-filter" aria-label="Product stages">{([[undefined, "All products"], ["launch", STAGE_LABEL.launch], ["live", STAGE_LABEL.live]] as const).map(([s, label]) =>
+          <nav className="products-filter" aria-label="Product stages">{([[undefined, "All products"], ["launch", STAGE_LABEL.launch], ["polish", STAGE_LABEL.polish], ["live", STAGE_LABEL.live]] as const).map(([s, label]) =>
             <a key={label} href={s ? `/products?stage=${s}` : "/products"} aria-current={stage === s ? "page" : undefined}>{label}{data ? <span className="products-filter-count" aria-hidden="true">{count(s)}</span> : null}</a>)}</nav>
           <button className="hub-btn is-ghost products-refresh" onClick={reload} type="button"><NavIcon name="refresh" size={16} /><span>Refresh sources</span></button>
         </div>
@@ -85,14 +86,14 @@ export function ProductsApp() {
           {lastGood ? <p className="product-issue">{error ? "Products API unavailable. Showing the last response." : data.registry.detail} {data.registry.snapshotAt ? `Last good PJ snapshot: ${data.registry.snapshotAt} (${data.registry.ageSeconds ?? 0}s old at this read).` : "No successful PJ snapshot is available."}</p>
             : <p className="products-source-note">Declarations and receipts are read-only; links do not attest service health.</p>}
         </div>
-        {(["launch", "live"] as const).filter((s) => !stage || stage === s).map((s) => {
+        {(["launch", "polish", "live"] as const).filter((s) => !stage || stage === s).map((s) => {
           const products = data.products.filter((p) => p.stage === s);
           return <section key={s} aria-labelledby={`products-${s}`} className={`hub-panel products-section is-${s}`}>
             <div className={`hub-panel-head${s === "live" ? " is-quiet" : ""}`}>
-              <NavIcon name={s === "launch" ? "launch" : "live"} />
+              <NavIcon name={s === "launch" ? "launch" : s === "polish" ? "settings" : "live"} />
               <h2 id={`products-${s}`}>{STAGE_LABEL[s]}</h2>
               <span className="hub-panel-count">{countsKnown ? products.length : "–"}<span className="hub-sr-only"> {countsKnown ? (products.length === 1 ? "product" : "products") : "products, count unknown"}</span></span>
-              <span className="hub-panel-meta">{s === "launch" ? "receipt-backed launch dashboards · open in a new tab" : "existing storefront and fulfilment view"}</span>
+              <span className="hub-panel-meta">{s === "launch" ? "receipt-backed launch dashboards · open in a new tab" : s === "polish" ? "exploratory QA on the experience · improvements in flight" : "existing storefront and fulfilment view"}</span>
             </div>
             {products.length ? <>
               <div className="products-columns" aria-hidden="true"><span>Product</span><span>{s === "launch" ? "Publication receipt" : "Destination"}</span><span>Action</span></div>

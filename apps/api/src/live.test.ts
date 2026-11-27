@@ -241,6 +241,22 @@ test("invalid live blocks are listed as skipped with the reasons, not silently d
   assert.ok(p.skipped[0].problems.some((x) => x.includes("live.store_url")));
 });
 
+test("mode: polish carrying a valid live: block is promoted (polishing in production); without one it is not live", async () => {
+  const h = setup({
+    files: {
+      "/repos/earshot/.launch.yaml": LAUNCH().replace("mode: live", "mode: polish\npolish:\n  wip: 4"),
+      "/repos/qa/.launch.yaml": "mode: polish\npolish:\n  focus: [ux]\n",
+      "/repos/half/.launch.yaml": "mode: polish\nlive_since: 2026-11-21\nlive:\n  name: Half\n"
+    },
+    projects: async () => ({ projects: [project("earshot", "/repos/earshot"), project("qa", "/repos/qa"), project("half", "/repos/half"), project("other", "/repos/other")] })
+  });
+  const p = await read(h);
+  assert.deepEqual(p.apps.map((a) => a.id), ["earshot"]);
+  assert.equal(p.apps[0].name, "Earshot");
+  assert.deepEqual(p.onDeck, []);
+  assert.deepEqual(p.skipped.map((x) => [x.id, x.block]), [["half", "live"]], "a polish promotion with a broken live: block is visible, not silently missing");
+});
+
 test("a non-live project with a showcase is on deck with its demo video; a broken showcase is skipped with reasons", async () => {
   const h = setup({
     files: {
@@ -254,7 +270,7 @@ test("a non-live project with a showcase is on deck with its demo video; a broke
   assert.equal(p.onDeck.length, 1);
   const d = p.onDeck[0];
   assert.equal(d.name, "Holocene Auto");
-  assert.equal(d.mode, "steady");
+  assert.equal(d.mode, "develop");
   assert.equal(d.video, "https://v.delo.sh/0184/holocene-auto-agent-pad");
   assert.equal(d.package, "io.automaticai.holocene");
   assert.ok(d.links.board?.startsWith("https://plane.example.io/"));

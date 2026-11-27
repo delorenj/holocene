@@ -1,7 +1,7 @@
 import { load } from "js-yaml";
 import { parseLaunchFile } from "./live-model.js";
 
-export type Stage = "launch" | "live";
+export type Stage = "launch" | "live" | "polish";
 export type LaunchState = { state: "attention" | "unknown" | "stale"; openActions?: number; ownerBlockers?: number; nextStep: string; observedAt?: string; source: "launch dashboard receipt" };
 export type Product = {
   id: string;
@@ -32,13 +32,21 @@ function observation(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function classifyProduct(raw: string): { stage?: Stage; steady?: true; issue?: string } {
+export function classifyProduct(raw: string): { stage?: Stage; steady?: true; live?: true; issue?: string } {
   let doc: unknown;
   try { doc = load(raw); } catch { return { issue: "Committed .launch.yaml is invalid YAML." }; }
-  if (!record(doc) || typeof doc.mode !== "string" || !["launch", "live", "steady"].includes(doc.mode)) return { issue: "Committed .launch.yaml has a missing or unknown mode." };
-  if (doc.mode === "steady") return { steady: true };
-  if (doc.mode === "launch") return { stage: "launch" };
+  // Modes are lowercased; `steady` is the legacy alias of `develop` (both mean: no product stage).
+  const mode = record(doc) && typeof doc.mode === "string" ? doc.mode.trim().toLowerCase() : undefined;
+  if (!mode || !["develop", "launch", "live", "polish", "steady"].includes(mode)) return { issue: "Committed .launch.yaml has a missing or unknown mode." };
+  if (mode === "develop" || mode === "steady") return { steady: true };
+  if (mode === "launch") return { stage: "launch" };
   const live = parseLaunchFile(raw);
+  if (mode === "polish") {
+    // Polishing a product already in production keeps its valid live: block (and its Live hub card);
+    // a polish declaration without one is simply a polish-stage product, never a live-block problem.
+    if (!record(doc) || doc.live === undefined) return { stage: "polish" };
+    return { stage: "polish", ...(live.kind === "live" ? { live: true as const } : { issue: "Committed live declaration is invalid; inspect its live configuration." }) };
+  }
   // Keep the declared classification visible, without leaking raw declaration values or key references.
   return { stage: "live", ...(live.kind !== "live" ? { issue: "Committed live declaration is invalid; inspect its live configuration." } : {}) };
 }

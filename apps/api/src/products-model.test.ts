@@ -3,12 +3,25 @@ import { test } from "node:test";
 import { classifyProduct, launchEvidence, publication } from "./products-model.js";
 
 const receipt = (url = "https://s3.delo.sh/projects/example/2026-11-20/launch-dashboard/index.html") => ({ schema: "launch-dashboard/1", published: { url, at: "2026-11-20T21:48:41Z" }, private: "op://never/serialize" });
-test("explicit committed lifecycle only; malformed and absent modes never imply steady", () => {
+test("explicit committed lifecycle only; malformed and absent modes never imply develop", () => {
   assert.deepEqual(classifyProduct("mode: launch"), { stage: "launch" });
-  assert.deepEqual(classifyProduct("mode: steady"), { steady: true });
-  for (const raw of ["", "mode: unknown", "mode: LIVE", "[]", "mode: ["]) assert.ok(classifyProduct(raw).issue);
+  assert.deepEqual(classifyProduct("mode: develop"), { steady: true });
+  assert.deepEqual(classifyProduct("mode: steady"), { steady: true }, "steady is the legacy alias of develop");
+  assert.deepEqual(classifyProduct("mode: polish"), { stage: "polish" });
+  assert.deepEqual(classifyProduct("mode: Polish"), { stage: "polish" }, "modes are lowercased");
+  for (const raw of ["", "mode: unknown", "[]", "mode: ["]) assert.ok(classifyProduct(raw).issue);
   assert.equal(classifyProduct("mode: live").stage, "live");
   assert.ok(classifyProduct("mode: live").issue);
+  assert.equal(classifyProduct("mode: LIVE").stage, "live", "lowercased");
+  assert.ok(classifyProduct("mode: LIVE").issue, "live without its block is still reported");
+});
+test("polish keeps a valid live block visible; without one it is simply polish, never a live-block problem", () => {
+  const LIVE_BLOCK = "live_since: 2026-11-20\nlive:\n  name: Example\n  tagline: An existing product\n  store_url: https://example.invalid/store\n  platform: android\n  package: io.example.product\n  release: https://example.invalid/latest.json\n  board: TEST\n";
+  assert.deepEqual(classifyProduct(`mode: polish\n${LIVE_BLOCK}`), { stage: "polish", live: true });
+  const broken = classifyProduct("mode: polish\nlive:\n  name: Half\n");
+  assert.equal(broken.stage, "polish");
+  assert.match(broken.issue ?? "", /live declaration is invalid/);
+  assert.equal(broken.live, undefined);
 });
 test("launch evidence counts only known gates and never equates publication with gate observation", () => {
   const now = Date.parse("2026-11-22T23:00:00Z");
