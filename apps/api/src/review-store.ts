@@ -83,7 +83,7 @@ export class ReviewStore {
   }
   close() { this.db.close(); }
 
-  /** Insert-or-get: the revision id is a content hash, so identical bytes are one revision. */
+  /** Insert-or-get by revision id. The id binds (project, artifact, manifest) (HOLOC-71), so identical bytes under one publication are one revision and a twin publication is its own; pre-HOLOC-71 rows keep their bare manifest-hash id. */
   putRevision(rev: Revision): { revision: Revision; created: boolean } {
     const existing = this.revision(rev.revisionId);
     if (existing) return { revision: existing, created: false };
