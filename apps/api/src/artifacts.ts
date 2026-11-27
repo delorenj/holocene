@@ -50,6 +50,9 @@ const HUB = /^index-[0-9a-f]{12,64}\.html$/i;
 
 // Publish.py chooses index.html, then the only HTML, then the first file. A site is one
 // publication; independently usable media/docs inside it retain their own original links.
+/** HOLOC-70 preserved review revisions (`review-<rev16>` under a dated folder): listed by the review store, never the gallery. */
+export const REVIEW_PUBLICATION = /^review-[a-f0-9]{16}$/;
+
 export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]): Artifact[] {
   const groups = new Map<string, { project?: string; name: string; files: ObjectRow[] }>();
   // Published day hubs are navigation for their day, never artifacts of their own.
@@ -69,7 +72,7 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
   const out: Artifact[] = [];
   for (const [prefix, group] of groups) {
     // HOLOC-70 review revisions are hash-addressed copies, listed by the project home, not the gallery.
-    if (bucket === "projects" && /^review-[a-f0-9]{16}$/.test(group.name) && isDay(prefix.split("/")[1] ?? "")) continue;
+    if (bucket === "projects" && REVIEW_PUBLICATION.test(group.name) && isDay(prefix.split("/")[1] ?? "")) continue;
     const files = group.files.sort((a, b) => a.key.localeCompare(b.key));
     const rel = (row: ObjectRow) => row.key.slice(prefix.length + 1);
     const html = files.find((r) => /^index\.html?$/i.test(rel(r))) ?? files.find((r) => /\.html?$/i.test(rel(r)));

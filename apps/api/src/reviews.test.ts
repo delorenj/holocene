@@ -76,6 +76,10 @@ test("capture copies exact bytes into a hash-addressed snapshot; identical bytes
   assert.equal((await captureRevision(store, "gib", item(), "u@x.y", origin({}), publish)).status, 502);
   assert.equal((await captureRevision(store, "gib", item({ filenames: ["index.html", "x"] }), "u@x.y", origin({ ...files, "https://s3.delo.sh/projects/gib/2026-11-19/walk/x": "1" }), async () => "https://evil.test/x")).status, 502);
   assert.equal((await captureRevision(store, "gib", item({ filenames: ["index.html", "../x"] }), "u@x.y", origin(files), publish)).status, 400);
+  // A byte-identical copy published as a different walkthrough is refused loudly, never handed the other walkthrough's revision.
+  const twinFiles = { "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html": files["https://s3.delo.sh/projects/gib/2026-11-19/walk/index.html"], "https://s3.delo.sh/projects/gib/2026-11-20/twin/img/a.png": "PNG" };
+  const twin = item({ id: "projects:gib/2026-11-20/twin/index.html", originalUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html", baseUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/" });
+  assert.equal((await captureRevision(store, "gib", twin, "u@x.y", origin(twinFiles), publish)).status, 409);
 });
 
 test("home: walkthroughs from the project's collection, latest vs reviewed, unattributed counted not assigned", () => {
@@ -174,4 +178,9 @@ test("routes: unsigned refused, author from the signed header, annotation lifecy
   const url = `${base}/annotations`;
   const res = await app.inject({ method: "POST", url, payload: JSON.stringify({ status: "saved", kind: "text", anchor: {}, comment: "evil" }), headers: { "content-type": "application/json", "x-review-user": "op@example.com", "x-review-timestamp": ts, "x-review-signature": reviewSignature("k", "POST", url, "{}", "op@example.com", ts) } });
   assert.equal(res.statusCode, 401);
+});
+
+test("the API verifies the same fixed signature vector the web proxy signs (apps/web review-proxy.test.ts)", () => {
+  assert.equal(reviewSignature("s3cret", "PATCH", "/api/modules/projects/greeninbetween/revisions/abc/annotations/x?v=1", "{\"version\":1}", "op@example.com", "1795740000000"),
+    "4859de2fd5d89e4d2f31ee49e50d66be64fe866a4b5d38bc82fc1301addb14d4");
 });

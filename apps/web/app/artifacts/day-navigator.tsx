@@ -101,7 +101,7 @@ export function DayNavigator({ state, theme, onNavigate, onClose }: { state: Nav
     <header className="artifact-nav-head">
       <button type="button" className="artifact-nav-close" onClick={onClose}>← Gallery</button>
       <div className="artifact-nav-place">
-        <p className="hub-label">{collectionLabel(state.project)} · {nav ? dayKindLabel(nav.dayKinds) : "day"}</p>
+        <p className="hub-label">{collectionLabel(state.project)} · {nav ? dayKindLabel(nav.dayKinds) : "day"}{state.project !== "share" && state.project !== "video" ? <> · <a href={`/projects/${encodeURIComponent(state.project)}`}>project home</a></> : null}</p>
         <h2 id="artifact-nav-title">{dayLabel(state.day)}</h2>
         <p className="artifact-nav-sub">{data ? `${data.total} ${data.total === 1 ? "artifact" : "artifacts"}` : "Loading day…"} · days in {CATALOG_ZONE}</p>
       </div>

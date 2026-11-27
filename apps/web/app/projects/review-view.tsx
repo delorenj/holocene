@@ -89,14 +89,21 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
         if (status === "saved") {
           if (d.fresh) post({ type: `${BRIDGE_PREFIX}cancel-selection` });
           post({ type: `${BRIDGE_PREFIX}find-and-mark`, id: d.id, annotationType: "comment", structural: true, originalText: d.quote, anchor: d.anchor.htmlAnchor, additionalAnchors: d.anchor.htmlAdditionalTargets });
-          setDraft((x) => x && x.id === d.id && x.comment === d.comment ? undefined : x && { ...x, version: saved.version, fresh: false });
+          // Only the draft that was saved closes; a newer selection made while saving keeps its own id and version.
+          setDraft((x) => !x || x.id !== d.id ? x : x.comment === d.comment ? undefined : { ...x, version: saved.version, fresh: false, save: { state: "idle" } });
           setCurrent(d.id);
           return;
         }
         setDraft((x) => x && x.id === d.id ? { ...x, version: saved.version, save: { state: "saved" } } : x);
         return;
       }
-      if (outcome.state === "conflict" && res.body.annotation) putAnnotation(res.body.annotation);
+      const current = res.body.annotation;
+      if (outcome.state === "conflict" && current) {
+        // Adopt the server's version so the next explicit Save overwrites knowingly; the operator's text stays in the box.
+        putAnnotation(current);
+        setDraft((x) => x && x.id === d.id ? { ...x, version: current.version, save: { state: "conflict", error: `Changed elsewhere (now: “${current.comment.slice(0, 120)}”). Save again to replace it with your text.` } } : x);
+        return;
+      }
       setDraft((x) => x && x.id === d.id ? { ...x, save: outcome } : x);
     });
   }, [base, post]);

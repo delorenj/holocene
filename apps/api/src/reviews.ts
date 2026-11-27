@@ -42,7 +42,6 @@ export function verifyReviewRequest(headers: Record<string, unknown>, method: st
 type Catalog = (force?: boolean) => Promise<{ items: Artifact[]; sources: Record<string, { ok: boolean; stale: boolean; fetchedAt?: string }>; retryAfterMs: number }>;
 const isHtml = (url: string) => /\.html?$/i.test(new URL(url).pathname);
 const collectionOf = (item: Artifact) => item.collection ?? item.project ?? item.source;
-export const REVIEW_PUBLICATION = /^review-[a-f0-9]{16}$/;
 
 export type RevisionView = Revision & { saved: number; drafts: number; latest: { state: "current" | "republished" | "missing"; modified?: string } };
 export function homePayload(project: Extract<IdentityResult, { status: 200 }>["project"], snapshot: Awaited<ReturnType<Catalog>>, revisions: Array<Revision & { saved: number; drafts: number }>) {
@@ -99,7 +98,7 @@ export const defaultPublisher: Publisher = async (dir, project, name, entry) => 
   return url;
 };
 
-export type CaptureResult = { status: 200 | 201; revision: Revision } | { status: 400 | 404 | 413 | 502; error: string };
+export type CaptureResult = { status: 200 | 201; revision: Revision } | { status: 400 | 404 | 409 | 413 | 502; error: string };
 /** Copy one publication's exact bytes into a hash-addressed review publication. */
 export async function captureRevision(store: ReviewStore, projectId: string, item: Artifact | undefined, user: string, fetcher: Fetcher = fetch, publish: Publisher = defaultPublisher, now = () => new Date().toISOString()): Promise<CaptureResult> {
   if (!item || item.source !== "projects" || collectionOf(item) !== projectId || !item.primary) return { status: 404, error: "That publication is not in this project's catalog" };
@@ -125,6 +124,8 @@ export async function captureRevision(store: ReviewStore, projectId: string, ite
     manifest.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     const revisionId = manifestHash(manifest);
     const existing = store.revision(revisionId);
+    if (existing && (existing.projectId !== projectId || existing.artifactId !== item.id))
+      return { status: 409, error: `These exact bytes are already preserved as a review of ${existing.projectId} ${existing.artifactId}` };
     if (existing) return { status: 200, revision: existing };
     const name = `review-${revisionId.slice(0, 16)}`;
     let url: string;
