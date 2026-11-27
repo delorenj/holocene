@@ -33,6 +33,7 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
 
     /** Reply playback phases for the page (started | ended | error | deferred), keyed by the page's reply id. */
     var onReplyPhase: ((id: String, phase: String, detail: String) -> Unit)? = null
+    var onSummaryPhase: ((String) -> Unit)? = null
 
     /** Every arbiter decision as compact JSON (the page posts it as a client event). */
     var onDecision: ((String) -> Unit)? = null
@@ -77,6 +78,7 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
         }
         if (u == null || u.id != id) return
         if (u.kind == SpeechKind.REPLY) onReplyPhase?.invoke(id, phase, detail)
+        if (u.kind == SpeechKind.SUMMARY && phase == "error") onSummaryPhase?.invoke("unavailable")
         if (phase == "ended" || phase == "error") arbiter.finished(id, if (phase == "error") "error:$detail" else "")
     }
 
@@ -98,7 +100,7 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
             is SpeechPart.Say -> feedback.say(p.text, own, next)
             is SpeechPart.Tone -> feedback.tone(p.tone, own, next)
             // A clip is always the last part: the player's phase callback ends the utterance.
-            is SpeechPart.Clip -> player.play(u.id, p.bytes, p.ext)
+            is SpeechPart.Clip -> player.play(u.id, p.bytes, p.ext, stopOnFocusLoss = u.kind == SpeechKind.SUMMARY)
         }
     }
 
@@ -147,6 +149,16 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     fun cue(id: String, kind: SpeechKind, parts: List<SpeechPart>, maxWaitMs: Long, group: String? = null, deferrable: Boolean = true, note: String? = null) {
         if (parts.isEmpty()) return
         arbiter.offer(Utterance(id, kind, parts, group = group, maxWaitMs = maxWaitMs, deferrable = deferrable, note = note))
+    }
+
+    /** Short, non-deferrable selected-session summary in the same queue as replies and recording. */
+    fun summary(id: String, bytes: ByteArray, ext: String): Boolean =
+        arbiter.offer(Utterance(id, SpeechKind.SUMMARY, listOf(SpeechPart.Clip(bytes, ext)),
+            maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false))
+
+    fun stopSummary() {
+        arbiter.current?.takeIf { it.kind == SpeechKind.SUMMARY }?.let { arbiter.cancel(it.id) }
+        arbiter.queued.filter { it.kind == SpeechKind.SUMMARY }.forEach { arbiter.cancel(it.id) }
     }
 
     fun reply(id: String, bytes: ByteArray, ext: String) {
@@ -205,6 +217,7 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     }
 
     fun recordingStarted() {
+        stopSummary()
         recordingFocus.acquire() // a no-op after arm(); the page's getUserMedia fallback opens a mic without arming
         arbiter.recordingStarted()
     }

@@ -50,6 +50,7 @@ function sandbox(host: 'car' | 'browser' = 'car') {
       setTimeout: (f: () => void) => { timers.push(f); return timers.length },
       setInterval: (f: () => void) => { interval = f; return 1 },
       clearInterval() {}, clearTimeout() {},
+      HoloceneNative: { interruptSummary: (nonce: string) => { assert.equal(nonce, 'fixture-page'); log.push('summary:interrupt') } },
     },
     useRef: (v: unknown) => ({ current: v }),
     HOST_KIND: host, DEVICE: { id: 'car-1' }, BUCKET_BASE: 'http://fixture.invalid',
@@ -85,6 +86,8 @@ function sandbox(host: 'car' | 'browser' = 'car') {
     finish: (k: string) => log.push(`finish:${k}`), park: (k: string) => log.push(`park:${k}`),
     leaveToPhone: (k: string) => log.push(`phone:${k}`), waitForProxy: (k: string) => log.push(`wait:${k}`),
     dropBarged: () => false, beacon() {}, feedStream() {}, playProgress() {}, forgetPhoneTake() {}, lookAtPhoneTake() {},
+    nativeDigest: () => 'fixture-page', digestNonce: { current: 'fixture-page' },
+    cancelEntry: { current: () => log.push('summary:cancel-entry') },
     nativeSpeech: () => null, nativeChunks: () => null, nativeReply: () => (host === 'car' ? native : null),
     nextUnit: (q: string[]) => (q.length ? { key: q[0], plan: 'file' } : null),
     getBlob: async () => ({ size: 10 }), blobToBase64: async () => 'eA==', replyExt: () => 'ogg',
@@ -119,6 +122,8 @@ test('a call stops the playing reply: back at the head, no strike, no release, i
   s.r<Record<string, number>>('loadFails').current[A] = 1 // the ring's error landed before the call event
   s.r<Record<string, number>>('focusFails').current[A] = 4
   s.call(true)
+  assert.ok(s.log.includes('summary:cancel-entry'), 'call cancels pending deliberate-entry narration')
+  assert.ok(s.log.includes('summary:interrupt'), 'call invalidates native summary delivery')
   assert.equal(s.native.stops, 1, 'muted through the host')
   assert.deepEqual(s.r<string[]>('queue').current, [A, B], 'back at the head of the queue')
   assert.equal(s.r<string>('playingKey').current, '', 'the speaking tile clears (the watchdog is disarmed with it)')
@@ -136,6 +141,8 @@ test('a call stops the playing reply: back at the head, no strike, no release, i
 test('the host\'s error while on a call is a call stop, not a failure', () => {
   const s = sandbox()
   s.call(true)
+  assert.ok(s.log.includes('summary:cancel-entry'), 'call cancels pending deliberate-entry narration')
+  assert.ok(s.log.includes('summary:interrupt'), 'call invalidates native summary delivery')
   s.r<string>('playingKey').current = A
   s.hn(A, 'error', 'focus_lost')
   assert.equal(s.r<Record<string, number>>('loadFails').current[A], undefined)
@@ -153,6 +160,8 @@ test('failures counted just before the call event (the ring came first) are forg
   s.r<string>('playingKey').current = '' // waiting for its retry, so nothing plays when the call event lands
   s.advance(CALL_FAIL_GRACE_MS - 1000)
   s.call(true)
+  assert.ok(s.log.includes('summary:cancel-entry'), 'call cancels pending deliberate-entry narration')
+  assert.ok(s.log.includes('summary:interrupt'), 'call invalidates native summary delivery')
   assert.equal(s.r<Record<string, number>>('loadFails').current[A], undefined, 'the strike was the call\'s')
   // an old failure is the reply's own and stands
   const t = sandbox()
@@ -172,6 +181,8 @@ test('browser: a call pausing play() mid-start (AbortError) is no strike', async
   await s.flush()
   assert.equal(s.r<string>('playingKey').current, A, 'play() is out')
   s.call(true)
+  assert.ok(s.log.includes('summary:cancel-entry'), 'call cancels pending deliberate-entry narration')
+  assert.ok(s.log.includes('summary:interrupt'), 'call invalidates native summary delivery')
   reject(Object.assign(new Error('The play() request was interrupted by a call to pause()'), { name: 'AbortError' }))
   await running
   assert.equal(s.r<Record<string, number>>('loadFails').current[A], undefined)
@@ -252,6 +263,8 @@ test('a call verdict the pad did not take as a call asks again shortly; one it d
 test('an endpoint read that a newer push report overtook is not applied', async () => {
   const s = sandbox()
   s.call(true)
+  assert.ok(s.log.includes('summary:cancel-entry'), 'call cancels pending deliberate-entry narration')
+  assert.ok(s.log.includes('summary:interrupt'), 'call invalidates native summary delivery')
   s.proxy.operator = () => ({ on_call: true, call: 'in_call', since: 1, gate: true }) // what the proxy said when asked
   const open = s.holdOperator()
   s.advance(10)

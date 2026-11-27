@@ -147,6 +147,39 @@ class AgentPadHost(
     private var startToken = 0
     private var announcing = false
     private var driving = false
+    /** Only a debuggable test host may supply temporary fixture credentials; release remains disabled. */
+    var digestClient = PadDigestClient(null, null)
+        set(value) {
+            check(activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+            field = value
+        }
+    private val digestWorker = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.ArrayBlockingQueue(2), java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy())
+    private var digestFocused = false
+    private var digestPageNonce: String = java.util.UUID.randomUUID().toString()
+    private var summaryAgent = ""
+    private val digestBridge = PadDigestBridge(
+        fetch = { path -> digestClient.get(path)?.let { o ->
+            PadDigestPayload(o.optString("agentId"), o.optString("status"), o.optString("sourceSessionId"),
+                o.optString("digestId"), o.optString("sourceAt"), o.optString("text"),
+                if (o.has("audio")) try { Base64.decode(o.optString("audio"), Base64.DEFAULT) } catch (_: Exception) { null } else null)
+        } },
+        worker = { task -> digestWorker.execute(task) }, ui = { task -> activity.runOnUiThread(task) },
+        trusted = { nonce -> nonce == digestPageNonce && visible && web != null && AgentPadPolicy.isPadUrl(web?.url, devUrl) },
+        busy = { state.micLive || state.nativePending || announcing }, stop = { speech.stopSummary() },
+        play = { id, bytes ->
+            speech.onSummaryPhase = { phase -> js("window.__hnSummary&&window.__hnSummary(${org.json.JSONObject.quote(summaryAgent)},${org.json.JSONObject.quote(phase)})") }
+            speech.summary(id, bytes, "ogg")
+        },
+        show = { agent, d ->
+            val result = org.json.JSONObject().put("agentId", agent).put("status", d?.status ?: "unavailable")
+                .put("sourceSessionId", d?.session).put("sourceAt", d?.sourceAt).put("digestId", d?.version).put("text", d?.text)
+            js("window.__hnDigest&&window.__hnDigest(${org.json.JSONObject.quote(agent)},$result)")
+        }, phase = { agent, phase ->
+            summaryAgent = agent
+            js("window.__hnSummary&&window.__hnSummary(${org.json.JSONObject.quote(agent)},${org.json.JSONObject.quote(phase)})")
+        }
+    )
 
     /** Selection / recording / send events from the page, for spoken and audible feedback. */
     var onPadEvent: ((PadEvent) -> Unit)? = null
@@ -217,6 +250,9 @@ class AgentPadHost(
 
     fun teardown() {
         visible = false
+        digestPageNonce = java.util.UUID.randomUUID().toString()
+        digestBridge.interrupt()
+        speech.stopSummary()
         startToken++
         announcing = false
         state.reset()
@@ -254,6 +290,8 @@ class AgentPadHost(
     fun onPause() {
         val view = web ?: return
         visible = false
+        digestBridge.interrupt()
+        speech.stopSummary()
         when (state.pauseAction(recorder.active)) {
             PadState.PauseAction.STOP_NATIVE_NOTE -> { Log.i(TAG, "paused mid-note: stopping and handing the note to the page"); finishNative(); return }
             PadState.PauseAction.STOP_PAGE_NOTE -> { Log.i(TAG, "paused mid-note (page mic): asking the page to stop and send"); js("window.__hnControl&&window.__hnControl({action:'stop',via:'pause'})"); return }
@@ -264,10 +302,14 @@ class AgentPadHost(
         view.onPause()
     }
 
-    fun destroy() = teardown()
+    fun destroy() { teardown(); digestWorker.shutdownNow() }
 
     fun goBack(): Boolean {
         val view = web ?: return false
+        if (digestFocused) {
+            js("window.__hnControl&&window.__hnControl({action:'back',via:'host'})")
+            return true
+        }
         if (!view.canGoBack()) return false
         view.goBack()
         return true
@@ -302,12 +344,17 @@ class AgentPadHost(
 
     /** Tell the page which layout to use and which UX restrictions apply (also re-sent when a page finishes loading). */
     fun setHost(mode: PadMode, ux: HostUx) {
-        hostJson = AgentPadPolicy.hostJson(mode, ux)
+        val next = AgentPadPolicy.hostJson(mode, ux)
+        if (next != hostJson) { digestBridge.interrupt(); speech.stopSummary() }
+        hostJson = next
         driving = mode == PadMode.DRIVING
         pushHost()
     }
 
-    private fun pushHost() { js("window.__hnHost&&window.__hnHost($hostJson)") }
+    private fun pushHost() {
+        if (AgentPadPolicy.isPadUrl(web?.url, devUrl)) js("window.__hnDigestNonce=${org.json.JSONObject.quote(digestPageNonce)}")
+        js("window.__hnHost&&window.__hnHost($hostJson)")
+    }
 
     /** Drive the page's own selection / record controls (steering wheel, rotary). The page stays the source of truth. */
     fun control(action: DriveAction, via: String) {
@@ -341,6 +388,8 @@ class AgentPadHost(
         @JavascriptInterface fun startFor(name: String) {
             activity.runOnUiThread {
                 if (web == null) return@runOnUiThread
+                digestBridge.interrupt()
+                speech.stopSummary()
                 if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                     val token = ++startToken
                     val go = { if (web != null && startToken == token) { announcing = false; startNative() } }
@@ -370,6 +419,8 @@ class AgentPadHost(
         @JavascriptInterface fun playReply(id: String, b64: String, ext: String) {
             val bytes = try { Base64.decode(b64, Base64.DEFAULT) } catch (e: IllegalArgumentException) { null }
             activity.runOnUiThread {
+                speech.stopSummary()
+                digestBridge.interrupt()
                 if (web == null) return@runOnUiThread
                 if (bytes == null || bytes.isEmpty()) js("window.__hnPlayback&&window.__hnPlayback(${org.json.JSONObject.quote(id)},'error','bad_audio')")
                 else speech.reply(id, bytes, ext)
@@ -384,7 +435,7 @@ class AgentPadHost(
         @JavascriptInterface fun playReplyChunk(id: String, index: Int, total: Int, b64: String, ext: String) {
             val bytes = try { Base64.decode(b64, Base64.DEFAULT) } catch (e: IllegalArgumentException) { null }
             if (bytes == null || bytes.isEmpty()) return
-            activity.runOnUiThread { if (web != null) speech.replyChunk(id, index, total, bytes, ReplyFocus.ext(ext)) }
+            activity.runOnUiThread { if (web != null) { speech.stopSummary(); digestBridge.interrupt(); speech.replyChunk(id, index, total, bytes, ReplyFocus.ext(ext)) } }
         }
 
         @JavascriptInterface fun stopReply() {
@@ -423,6 +474,24 @@ class AgentPadHost(
         @JavascriptInterface fun getPref(key: String): String = prefs.get(key)
 
         @JavascriptInterface fun setPref(key: String, value: String): Boolean = prefs.set(key, value)
+
+        /** All private reads use the same origin/generation boundary exercised by PadDigestBridgeTest. */
+        @JavascriptInterface fun selectDigest(agent: String, nonce: String) {
+            activity.runOnUiThread { if (trustedPage(nonce)) { digestFocused = true; digestBridge.select(agent, nonce) } }
+        }
+        @JavascriptInterface fun refreshDigest(agent: String, nonce: String) {
+            activity.runOnUiThread { digestBridge.select(agent, nonce, refresh = true) }
+        }
+        @JavascriptInterface fun interruptSummary(nonce: String) {
+            activity.runOnUiThread { if (trustedPage(nonce)) digestBridge.interrupt() }
+        }
+        @JavascriptInterface fun clearDigest(nonce: String) {
+            activity.runOnUiThread { if (trustedPage(nonce)) { digestFocused = false; digestBridge.clear(nonce) } }
+        }
+        @JavascriptInterface fun playSummary(agent: String, session: String, version: String, nonce: String) {
+            activity.runOnUiThread { digestBridge.summary(agent, session, version, nonce) }
+        }
+        private fun trustedPage(nonce: String): Boolean = nonce == digestPageNonce && visible && web != null && AgentPadPolicy.isPadUrl(web?.url, devUrl)
 
         /** The page reports what happened (selected, recording, sent...) as JSON; the host speaks and plays tones. */
         @JavascriptInterface fun padEvent(json: String) {
@@ -470,6 +539,12 @@ class AgentPadHost(
         }
         addJavascriptInterface(NativeBridge(), "HoloceneNative")
         webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                digestFocused = false
+                digestPageNonce = java.util.UUID.randomUUID().toString()
+                digestBridge.interrupt()
+                speech.stopSummary()
+            }
             override fun onPageFinished(view: WebView, url: String?) { if (view === web) pushHost() }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =

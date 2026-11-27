@@ -13,7 +13,7 @@ export type CollectedEvent = { cursor: number; stream: string; sequence: number;
 export type ActivityRow = {
   cursor: number; id: string; type: string; collectedAt: string; time?: string; cli?: string; actorType?: string;
   actorAgent?: string; producer?: string; correlationId?: string; cwd?: string; pane?: string; session?: string; outcome?: string;
-  invocationId?: string; parentInvocationId?: string;
+  invocationId?: string; parentInvocationId?: string; toolId?: string;
 };
 export type HookReceiptRef = { invocationId: string; cli: string; native: string; status: string; publishStatus?: string };
 export type StoreChange = { cursor: number; kind: "event" | "receipt" | "snapshot"; invocation_id?: string };
@@ -242,7 +242,8 @@ export class EventStore {
         json_extract(envelope,'$.producer') AS producer, json_extract(envelope,'$.correlationid') AS correlation,
         json_extract(envelope,'$.data.working_directory') AS cwd, json_extract(envelope,'$.data.zellij_pane_id') AS pane,
         json_extract(envelope,'$.data.zellij_session_name') AS zsession, json_extract(envelope,'$.data.outcome') AS outcome,
-        json_extract(envelope,'$.data.invocation_id') AS invocation, json_extract(envelope,'$.data.parent_invocation_id') AS parent_invocation
+        json_extract(envelope,'$.data.invocation_id') AS invocation, json_extract(envelope,'$.data.parent_invocation_id') AS parent_invocation,
+        coalesce(json_extract(envelope,'$.data.tool_use_id'), json_extract(envelope,'$.data.tool_call_id')) AS tool_id
       FROM events WHERE cursor>? AND type IN (${placeholders}) ORDER BY cursor DESC LIMIT ?`)
       .all(after, ...types, Math.max(1, Math.min(limit, 60000)))
       .reverse()
@@ -260,6 +261,7 @@ export class EventStore {
         outcome: typeof row.outcome === "string" ? row.outcome : undefined,
         invocationId: typeof row.invocation === "string" ? row.invocation : undefined,
         parentInvocationId: typeof row.parent_invocation === "string" ? row.parent_invocation : undefined,
+        toolId: typeof row.tool_id === "string" ? row.tool_id : undefined,
       }));
   }
 

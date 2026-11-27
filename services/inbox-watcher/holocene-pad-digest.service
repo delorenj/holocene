@@ -1,0 +1,19 @@
+[Unit]
+Description=Holocene private Agent Pad session digest/audio consumer (HOLOC-73 disabled)
+Documentation=file://%h/code/33GOD/holocene/services/inbox-watcher/HOLOC-51-focus.md
+# No install target: this candidate must not be enabled or started by normal deploys.
+ConditionEnvironment=HOLOCENE_PAD_DIGEST_ENABLED=1
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/33GOD/holocene/services/inbox-watcher
+ExecStart=/usr/bin/python3 -u %h/code/33GOD/holocene/services/inbox-watcher/pad_digest.py
+Environment=HOLOCENE_PAD_DIGEST_ENABLED=0
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+# No device secret, public route or opt-in supplied. HOLOC-73 owns all provisioning.
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

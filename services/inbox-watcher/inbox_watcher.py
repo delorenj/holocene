@@ -5324,13 +5324,20 @@ class TtsGate:
         self._seq = 0
 
     @contextlib.contextmanager
-    def hold(self, prio: int):
+    def hold(self, prio: int, timeout: float | None = None):
+        deadline = time.monotonic() + timeout if timeout is not None else None
         with self._cv:
             self._seq += 1
             me = (prio, self._seq)
             heapq.heappush(self._queue, me)
             while self._busy or self._queue[0] != me:
-                self._cv.wait(1.0)
+                remaining = deadline - time.monotonic() if deadline is not None else None
+                if remaining is not None and remaining <= 0:
+                    self._queue.remove(me)
+                    heapq.heapify(self._queue)
+                    self._cv.notify_all()
+                    raise TimeoutError("TTS busy")
+                self._cv.wait(min(1.0, remaining) if remaining is not None else 1.0)
             heapq.heappop(self._queue)
             self._busy = True
         try:
@@ -5445,7 +5452,7 @@ class VoiceNotFound(StageError):
 
 
 def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None = None,
-               prio: int = TtsGate.REPLY) -> tuple[Path, str]:
+               prio: int = TtsGate.REPLY, timeout: float = 120, max_bytes: int | None = None) -> tuple[Path, str]:
     """vox /synthesize-url -> OGG/Opus file. Returns (path, engine that served it). `steps` trades quality for speed
     (diffusion steps; vox defaults to 10): progress updates and fast desk turns use fewer. `prio` orders it in TTS_GATE.
     Raises VoiceNotFound when vox says the voice does not exist (HTTP 500 "voice 'x' not found")."""
@@ -5456,14 +5463,19 @@ def synthesize(text: str, tmp: Path, voice: str | None = None, steps: int | None
                                  data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", **mc_.vox_headers()})
     try:
-        with TTS_GATE.hold(prio):
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                meta = json.loads(resp.read())
-            with urllib.request.urlopen(meta["audio_url"], timeout=60) as resp:
-                blob = resp.read()
+        with TTS_GATE.hold(prio, timeout=timeout if max_bytes else None):
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read(16385) if max_bytes else resp.read()
+                if max_bytes and len(raw) > 16384:
+                    raise ValueError("TTS metadata exceeds limit")
+                meta = json.loads(raw)
+            with urllib.request.urlopen(meta["audio_url"], timeout=min(timeout, 60)) as resp:
+                blob = resp.read(max_bytes + 1) if max_bytes else resp.read()
+                if max_bytes and len(blob) > max_bytes:
+                    raise ValueError("TTS audio exceeds limit")
     except urllib.error.HTTPError as e:
         try:
-            detail = e.read().decode("utf-8", "replace")[:300]
+            detail = (e.read(16385) if max_bytes else e.read()).decode("utf-8", "replace")[:300]
         except Exception:  # noqa: BLE001
             detail = ""
         if re.search(r"voice\s+'[^']*'\s+not found", detail, re.I):

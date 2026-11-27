@@ -381,7 +381,7 @@ async function snapshot(store: EventStore): Promise<Snapshot> {
     const events: ActivityEvent[] = rows.map((r) => ({
       id: r.id, type: r.type, atMs: Date.parse(r.time ?? "") || Date.parse(r.collectedAt), cli: r.cli, actorType: r.actorType,
       actorAgent: r.actorAgent, producer: r.producer, correlationId: r.correlationId, cwd: r.cwd, pane: r.pane, session: r.session,
-      outcome: r.outcome, invocationId: r.invocationId, parentInvocationId: r.parentInvocationId
+      outcome: r.outcome, invocationId: r.invocationId, parentInvocationId: r.parentInvocationId, toolId: r.toolId
     }));
     const activity = foldActivity(events, resolve, nowMs);
     const subagentEvents = new Set([...activity.values()].flatMap((a) => a.subagents.map((c) => c.eventId)));

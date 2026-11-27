@@ -7,12 +7,13 @@
 //
 // Pure: events and a resolver in, per-agent readings out.
 
-import { HELD_WINDOW_MS, activityOf, emptyLatch, foldEvent, readLatch, rankOf, type DeckardState, type Latch, type Reading } from "./deckard-state.js";
+import { HELD_WINDOW_MS, WORKING_WINDOW_MS, activityOf, emptyLatch, foldEvent, readLatch, rankOf, type DeckardState, type Latch, type Reading } from "./deckard-state.js";
 
 export type ActivityEvent = {
   id: string;
   type: string;
   atMs: number;
+  toolId?: string;
   cli?: string;
   actorType?: string;
   actorAgent?: string;
@@ -44,6 +45,8 @@ export type SessionEvidence = {
   lastMs: number;
   lastType?: string;
   subagents: number;
+  /** Latest matching open tool inside this exact profile session; never a name or synthetic timer. */
+  toolOpen?: boolean;
 };
 
 export type OpenSubagent = {
@@ -73,6 +76,7 @@ type Session = {
   cwd?: string;
   pane?: string;
   children: OpenSubagent[];
+  openTools: Map<string, number>;
 };
 
 // A turn can finish while its subagents keep running (a dynamic workflow's `Stop` fires within a
@@ -108,13 +112,18 @@ export function foldActivity(
   for (const [rawKey, list] of raw) {
     const newest = [...list].reverse().find((e) => e.cwd || e.producer?.startsWith("hermes-agent:")) ?? list[list.length - 1];
     for (const owner of resolve(newest)) {
-      const s: Session = { owner, key: rawKey, latch: emptyLatch(), children: [] };
+      const s: Session = { owner, key: rawKey, latch: emptyLatch(), children: [], openTools: new Map() };
       for (const e of list) {
         const activity = activityOf(e.type, e.cli, e.outcome)!;
         s.cli = e.cli ?? s.cli;
         s.cwd = e.cwd ?? s.cwd;
         s.pane = e.pane ?? s.pane;
         s.latch = foldEvent(s.latch, { at: e.atMs, activity, type: e.type });
+        if (e.toolId && owner.basis !== "related") {
+          if (e.type.endsWith("agent.tool.requested") || e.type.endsWith("agent.tool.invoked")) s.openTools.set(e.toolId, e.atMs);
+          else if (e.type.endsWith("agent.tool.completed")) s.openTools.delete(e.toolId);
+        }
+        if (activity === "turn-ended" || activity === "session-ended" || activity === "failed") s.openTools.clear();
         if (e.type.endsWith("agent.invocation.started") && e.invocationId && e.parentInvocationId && e.invocationId !== e.parentInvocationId) {
           s.children.push({
             invocationId: e.invocationId, parentInvocationId: e.parentInvocationId, eventId: e.id, parent: owner.agentId,
@@ -149,7 +158,8 @@ export function foldActivity(
     if (s.owner.basis === "related" && reading.state !== "active") continue;
     const evidence: SessionEvidence = {
       key: s.key, basis: s.owner.basis, cli: s.cli, cwd: s.cwd, pane: s.pane, state: reading.state,
-      sinceMs: reading.sinceMs, lastMs: reading.lastMs, lastType: reading.lastType, subagents: s.children.length
+      sinceMs: reading.sinceMs, lastMs: reading.lastMs, lastType: reading.lastType, subagents: s.children.length,
+      toolOpen: [...s.openTools.values()].some((at) => nowMs >= at && nowMs - at <= WORKING_WINDOW_MS) && reading.state === "active"
     };
     const prior = byAgent.get(s.owner.agentId);
     const merged: AgentActivity = prior ?? { reading: { state: "idle", lastMs: 0 }, sessions: [], subagents: [] };

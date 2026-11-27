@@ -8,7 +8,7 @@
 // reported as "no project record" rather than guessed.
 
 import type { AgentActivity, OpenSubagent } from "./agent-activity.js";
-import type { DeckardState } from "./deckard-state.js";
+import { WORKING_WINDOW_MS, type DeckardState } from "./deckard-state.js";
 
 // The signal vocabulary is Deckard's (docs/visual-language.md): you = amber (hitl), broken = red (error),
 // working = green pulse (active), cleared = solid green check (done), quiet = dark (idle). `stuck` is the
@@ -123,6 +123,8 @@ export type HubAgent = {
   lastActiveAt?: string;
   /** Observed activity only; unlike lastActiveAt, provisioning never supplies this value. */
   lastWorkAt: string | null;
+  /** Fresh canonical state for the narrow Pad view; absence is never an idle claim. */
+  workState?: "working" | "tool" | "waiting" | "idle" | "failed" | "unknown";
   active: boolean;
   gateway: "active" | "inactive" | "unknown";
   project?: ProjectLink;
@@ -348,7 +350,8 @@ export function buildPadActivity(at: number, model: AgentsModel, routableIds: Se
       ...(s.down !== undefined ? { down: s.down } : {})
     })),
     agents: model.agents.filter((a) => routableIds.has(a.id)).map((a) => ({
-      id: a.id, signal: a.signal, lastWorkAt: a.lastWorkAt
+      id: a.id, signal: a.signal, lastWorkAt: a.lastWorkAt,
+      state: a.workState ?? "unknown"
     }))
   };
 }
@@ -421,6 +424,7 @@ export function buildAgents(input: AgentInputs): AgentsModel {
     const gateway = input.gateways.get(r.gatewayUnit ?? `hermes-${r.agentId}-gateway.service`) ?? "unknown";
     const kids = contractorsByParent.get(r.agentId) ?? [];
     const act = input.activity?.get(r.agentId);
+    const toolOpen = act?.sessions.some((s) => s.basis === "profile" && s.toolOpen) ?? false;
     const facts = asmFacts(asm, nowMs);
 
     // Deckard's reconciliation: an open human block outranks everything, then failure, then work, then a
@@ -470,6 +474,10 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       heldSeconds: heldFrom(heldFrom0 ?? (declared === "idle" ? asm?.sinceMs : undefined), nowMs),
       lastActiveAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : r.provisionedAt,
       lastWorkAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : null,
+      workState: facts.hitl ? "waiting" : !act || act.reading.lastMs > nowMs ? "unknown" :
+        act.reading.state === "error" ? "failed" : act.reading.state === "active" ? toolOpen ? "tool" : "working" :
+        act.reading.state === "done" || (nowMs - act.reading.lastMs <= WORKING_WINDOW_MS &&
+          /agent\.session\.(started|ended)$/.test(act.reading.lastType ?? "")) ? "idle" : "unknown",
       active: declared !== "idle" && declared !== "done",
       gateway,
       project: link,

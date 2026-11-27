@@ -35,7 +35,7 @@ test("pad projection allowlists only routable activity and safe source freshness
     generatedAt: new Date(now).toISOString(),
     sources: [{ name: "events", ageSeconds: 1, maxSeconds: 120 }, { name: "asm", down: true },
       { name: "agents registry", ageSeconds: 30 }, { name: "pjangler", ageSeconds: 0 }],
-    agents: [{ id: "routable", signal: model.agents[0].signal, lastWorkAt: model.agents[0].lastWorkAt }]
+    agents: [{ id: "routable", signal: model.agents[0].signal, lastWorkAt: model.agents[0].lastWorkAt, state: "working" }]
   });
   assert.doesNotMatch(JSON.stringify(result), /private|evidence|cwd|ticket|project|contractors|invocation|detail|value|reportsTo|gateway|lastActiveAt/);
   assert.deepEqual(buildPadActivity(now, model, new Set(), sources).agents, [], "unknown routability fails closed");

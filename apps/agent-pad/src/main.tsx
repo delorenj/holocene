@@ -461,6 +461,21 @@ function App() {
   // The remembered agent id: localStorage, else IndexedDB (read below), restored as a selection only.
   const savedAgent = useRef(savedAgentId(lsGet(LS_AGENT)))
   const [selected, setSelected] = useState<Agent | null>(() => agents.find((a) => a.id === savedAgent.current) || null)
+  const [focused, setFocused] = useState(false) // a restored selection stays silent and on the grid
+  const [digest, setDigest] = useState<{ status: string; text?: string; sourceAt?: string; sourceSessionId?: string; digestId?: string } | null>(null)
+  const [summaryStatus, setSummaryStatus] = useState('')
+  const enteredSummary = useRef<Set<string>>(new Set())
+  const focusEpoch = useRef(0)
+  const digestNonce = useRef<string | null>(null)
+  const focusRef = useRef(false)
+  focusRef.current = focused
+  const cancelEntry = useRef<() => void>(() => {})
+  const nativeDigest = () => {
+    const bridge = (window as any).HoloceneNative
+    const nonce = (window as any).__hnDigestNonce
+    if (!bridge?.selectDigest || typeof nonce !== 'string') return null
+    return digestNonce.current = nonce
+  }
   const [selectionScroll, setSelectionScroll] = useState(0)
   const [visibleTileIds, setVisibleTileIds] = useState<string[]>([])
   const tilesRef = useRef<HTMLDivElement | null>(null)
@@ -1294,6 +1309,8 @@ function App() {
   // The call began: mute. A reply is stopped and requeued at the head; a progress or hold-cue clip is cut and dropped
   // (in the host: its memo-final drop, the only cut it has for one clip; in the page: its queue and the audio element).
   const muteForCall = () => {
+    cancelEntry.current()
+    nativeDigest() && (window as any).HoloceneNative?.interruptSummary?.(digestNonce.current)
     progressQ.current = []
     const n = nativeSpeech()
     for (const memo of progressToCut(progressHanded.current, Date.now())) {
@@ -1688,6 +1705,8 @@ function App() {
     // One start at a time: a second tap while the mic is opening would cut the "Recording for X" prompt and say it
     // again, and leave the first start waiting for an answer that goes to the second (the wheel path already refuses).
     if (arming.current || recordingRef.current) return
+    cancelEntry.current()
+    nativeDigest() && (window as any).HoloceneNative?.interruptSummary?.(digestNonce.current)
     const agent = selected
     interruptReply()
     stopEmitted.current = false
@@ -1897,6 +1916,35 @@ function App() {
     // The memo goes to the agent snapshotted at record start: a tap while the mic is opening or open must not
     // change what the screen and the host say.
     if (recordingRef.current || arming.current) return
+    const epoch = ++focusEpoch.current
+    setFocused(true)
+    setDigest(null)
+    setSummaryStatus('')
+    let entryPending = true
+    cancelEntry.current = () => { entryPending = false }
+    ;(window as any).__hnSummary = (id: string, value: string) => {
+      if (focusEpoch.current === epoch && id === a.id) {
+        if (value === 'unavailable') setSummaryStatus('Summary voice unavailable')
+        else if (value === 'loading') setSummaryStatus('')
+      }
+    }
+    ;(window as any).__hnDigest = (id: string, value: any) => {
+      if (focusEpoch.current !== epoch || id !== a.id || recordingRef.current || arming.current) return
+      const now = Date.now() + rosterMeta.clockOffset
+      const valid = value?.agentId === a.id && value?.status === 'available' && typeof value.text === 'string' &&
+        typeof value.sourceSessionId === 'string' && typeof value.digestId === 'string' &&
+        typeof value.sourceAt === 'string' && now - Date.parse(value.sourceAt) >= -5000 && now - Date.parse(value.sourceAt) < 7200000
+      const next = valid ? { status: 'available', text: value.text, sourceAt: value.sourceAt,
+        sourceSessionId: value.sourceSessionId, digestId: value.digestId } : { status: value?.status === 'stale' ? 'stale' : 'unavailable' }
+      setDigest(next)
+      const narrate = entryPending
+      entryPending = false // a later refresh, even of a newer session, never narrates
+      if (narrate && valid && !enteredSummary.current.has(`${id}:${value.sourceSessionId}:${value.digestId}`)) {
+        enteredSummary.current.add(`${id}:${value.sourceSessionId}:${value.digestId}`)
+        if (!onCallNow() && document.visibilityState === 'visible') nativeDigest() && (window as any).HoloceneNative?.playSummary?.(id, value.sourceSessionId, value.digestId, digestNonce.current)
+      }
+    }
+    nativeDigest() && (window as any).HoloceneNative?.selectDigest?.(a.id, digestNonce.current)
     setSelected(a)
     setSelectionScroll((n) => n + 1)
     savedAgent.current = a.id
@@ -1904,12 +1952,25 @@ function App() {
     void agentDbSet(a.id)
     if (phase !== 'idle') setPhase('idle')
     emitHost({ t: 'selected', id: a.id, name: a.name })
-  }, [phase])
+  }, [phase, rosterMeta.clockOffset])
+
+  const backToGrid = () => {
+    if (recordingRef.current || arming.current) return
+    focusEpoch.current++
+    nativeDigest() && (window as any).HoloceneNative?.clearDigest?.(digestNonce.current)
+    cancelEntry.current()
+    delete (window as any).__hnDigest
+    delete (window as any).__hnSummary
+    setSummaryStatus('')
+    setFocused(false)
+    setDigest(null)
+  }
 
   // Wheel / rotary / media-key control. Switching agent while recording is refused: the target is snapshotted at
   // record start, and a spoken name that does not match the memo would be worse than no switch.
   controlRef.current = (c) => {
     const a = c.action
+    if (c.action === 'back') { backToGrid(); return }
     if (a === 'select_next' || a === 'select_prev') {
       if (recordingRef.current || arming.current) { emitHost({ t: 'refused', reason: 'recording' }); return }
       const next = step(agentsRef.current, selectedRef.current?.id, a === 'select_next' ? 1 : -1)
@@ -1929,8 +1990,19 @@ function App() {
   useEffect(() => {
     const w = window as any
     w.__hnControl = (c: { action?: string; via?: string }) => controlRef.current(c)
-    w.__hnHost = (h: unknown) => setHost(normHost(h))
-    return () => { delete w.__hnControl; delete w.__hnHost }
+    w.__hnHost = (h: unknown) => {
+      cancelEntry.current()
+      nativeDigest() && w.HoloceneNative?.interruptSummary?.(digestNonce.current)
+      setHost(normHost(h))
+    }
+    const hidden = () => {
+      if (document.visibilityState !== 'visible') {
+        cancelEntry.current()
+        nativeDigest() && w.HoloceneNative?.interruptSummary?.(digestNonce.current)
+      }
+    }
+    document.addEventListener('visibilitychange', hidden)
+    return () => { document.removeEventListener('visibilitychange', hidden); delete w.__hnControl; delete w.__hnHost }
   }, [])
 
   // ---- roster: refreshed on start, every 2 minutes and on return to the foreground. A new order is applied only
@@ -2031,7 +2103,14 @@ function App() {
     void load()
     const wait = window.setTimeout(() => setRosterReady(true), ROSTER_WAIT_MS)
     const t = window.setInterval(load, ROSTER_POLL_MS)
-    const clock = window.setInterval(() => setClock(Date.now()), ROSTER_CLOCK_MS)
+    const clock = window.setInterval(() => {
+      setClock(Date.now())
+      const id = selectedRef.current?.id
+      if (focusRef.current && id && !recordingRef.current && !arming.current) {
+        cancelEntry.current()
+        nativeDigest() && (window as any).HoloceneNative?.refreshDigest?.(id, digestNonce.current)
+      }
+    }, ROSTER_CLOCK_MS)
     const onVis = () => { if (document.visibilityState === 'visible') void load() }
     document.addEventListener('visibilitychange', onVis)
     return () => { alive = false; window.clearTimeout(wait); window.clearInterval(t); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVis) }
@@ -2101,6 +2180,18 @@ function App() {
   const stale = rosterStaleness(rosterMeta, clock + rosterMeta.clockOffset)
   const rejectedText = `${rejectedCount} recording${rejectedCount > 1 ? 's' : ''} not accepted by the server, kept on this device`
 
+  const focusStatus = !activity ? 'Work state unknown' : (() => {
+    const state = activity.get(selected?.id || '')?.state
+    return state === 'tool' ? 'Using tool' : state === 'working' ? 'Thinking' : state === 'waiting' ? 'Waiting for you' :
+      state === 'idle' ? 'Idle' : state === 'failed' ? 'Failed' : 'Work state unknown'
+  })()
+  const digestAge = digest?.sourceAt ? Math.max(0, Math.floor((clock + rosterMeta.clockOffset - Date.parse(digest.sourceAt)) / 60000)) : null
+  const digestFresh = digest?.status === 'available' && digestAge !== null && digestAge < 120
+  const replaySummary = () => {
+    if (selected && digestFresh && digest?.sourceSessionId && digest.digestId && !recording && phase !== 'arming' && !onCallNow() && document.visibilityState === 'visible') {
+      nativeDigest() && (window as any).HoloceneNative?.playSummary?.(selected.id, digest.sourceSessionId, digest.digestId, digestNonce.current)
+    }
+  }
   return (
     <div className={`pad${host.driving ? ' drive' : ''}${host.noVideo || host.driving ? ' still' : ''}${host.noText ? ' no-text' : ''}`}>
       <style>{CSS}</style>
@@ -2109,6 +2200,19 @@ function App() {
           🔊 Tap to enable sound
         </button>
       )}
+      {focused && selected ? <section className="focus" aria-label={`${selected.name} focus`}>
+        <div className="focus-top">
+          <div className="focus-head" style={{ ['--c' as string]: selected.color }}><Swatch a={selected} /><strong>{label(selected.name)}</strong></div>
+          <button className="back" onClick={backToGrid} disabled={recording || phase === 'arming'}>← All agents</button>
+        </div>
+        <div className="focus-state" role="status">{label(focusStatus)}</div>
+        {!host.noText && <div className="digest" role="status">
+          {digestFresh ? <><p>{digest?.text}</p><small>Source {digestAge === 0 ? 'just now' : `${digestAge} min ago`}</small></> :
+            <p>{digest?.status === 'stale' || digest?.status === 'available' ? 'Session summary stale' : 'Session summary unavailable'}</p>}
+        </div>}
+        {summaryStatus && !host.noText && <div role="status">{summaryStatus}</div>}
+        <button className="replay" onClick={replaySummary} disabled={!digestFresh || recording || phase === 'arming' || !(window as any).HoloceneNative?.playSummary}>Replay summary</button>
+      </section> : <>
       <div className="fleet-status" role="status">
         {label(activity ? `${busyCount} thinking${hiddenBusy ? ` · ${hiddenBusy} off-screen` : ''}` : 'Thinking status unknown')}
       </div>
@@ -2135,7 +2239,7 @@ function App() {
             </button>
           )
         })}
-      </div>
+      </div></>}
       {recording && meterOn && !host.noVideo && !host.driving && (
         <div className={`meterwrap${waited && !heard ? ' dead' : ''}`}>
           <div
@@ -2208,6 +2312,17 @@ function App() {
 const CSS = `
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 .pad { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:clamp(10px,2vw,20px); gap:clamp(10px,2vw,18px); overflow:auto; }
+.focus { flex:1 1 auto; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:clamp(8px,2vh,18px); min-height:0; }
+.focus-top { display:flex; align-items:center; justify-content:space-between; width:100%; gap:12px; }
+.focus-head { display:flex; align-items:center; gap:16px; font-size:clamp(24px,3.4vw,40px); }
+.focus-head .swatch { display:inline-flex; align-items:center; justify-content:center; width:clamp(56px,10vh,92px); height:clamp(56px,10vh,92px); border-radius:50%; overflow:hidden; background:var(--c); color:#fff; font-weight:800; }
+.focus-head img { width:100%; height:100%; object-fit:cover; }
+.focus-state { color:#cfe0ff; font-size:clamp(21px,2.6vw,30px); font-weight:700; }
+.digest { font-size:clamp(18px,2vw,26px); line-height:1.3; color:#e6e6e6; max-width:75ch; overflow:auto; }
+.digest p { margin:0 0 6px; }
+.digest small { color:#b8c2d6; }
+.back,.replay { min-height:64px; padding:8px 18px; border-radius:12px; border:2px solid #8ab4ff; background:#141a24; color:#e6e6e6; font-size:clamp(20px,2vw,26px); cursor:pointer; }
+.back:disabled,.replay:disabled { opacity:.55; cursor:not-allowed; }
 .unlock { min-height:64px; padding:0 24px; border-radius:16px; border:3px solid #4f8cff; background:#141a24; color:#4f8cff; font-weight:700; font-size:clamp(18px,2.2vw,26px); cursor:pointer; }
 .tiles { display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:max-content; align-content:start; gap:clamp(8px,1.4vw,16px); flex:1 1 auto; min-height:0; max-height:400px; overflow-y:auto; overflow-anchor:none; overscroll-behavior:contain; padding:12px; }
 @media (min-width:600px) { .tiles { grid-template-columns:repeat(3,1fr); } }

@@ -46,6 +46,7 @@ enum class SpeechKind(val rank: Int, val wire: String) {
     // A cue answers something the driver just did (cancelled, not sent, the agent name on the wheel): it goes before
     // narration the driver did not ask for, never before (or over) a reply.
     CUE(35, "cue"),
+    SUMMARY(25, "summary"),
     ECHO(30, "echo"),
     PROGRESS(20, "progress"),
     ACK(10, "ack"),

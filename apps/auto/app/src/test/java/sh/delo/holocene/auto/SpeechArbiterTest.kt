@@ -920,6 +920,24 @@ class SpeechArbiterTest {
         assertNull(a.noteSent())
     }
 
+    @Test fun selectedSummarySharesOwnerWithReplyAndRecordingAndHasNoMemoIdentity() {
+        val s = Utterance("summary:1", SpeechKind.SUMMARY, clip(), maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false)
+        assertTrue(a.offer(s))
+        assertEquals("summary:1", audible)
+        assertNull(a.current?.memoId)
+        a.cancel(s.id) // switch/back/call/host all use the same cancel path
+        val r = reply(memo1)
+        a.offer(r)
+        drain()
+        assertEquals(r.id, audible)
+        a.arm(null) {}
+        assertNull(audible)
+        assertFalse(a.offer(s.copy(id = "summary:late")))
+        a.recordingStarted()
+        assertFalse(a.offer(s.copy(id = "summary:mic")))
+        assertTrue(decisions.filter { it.kind == "summary" }.all { it.memoId == null })
+    }
+
     @Test fun aNotesTokenIsSpentByItsSentAndTwoNotesAreAnsweredInOrder() {
         assertEquals("note:1", a.noteStopped())
         assertEquals("note:2", a.noteStopped())

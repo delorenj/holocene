@@ -8,7 +8,7 @@ export const ROSTER_URL = '/roster/roster.json'
 export const ACTIVITY_URL = '/api/pad/activity'
 export const ACTIVITY_POLL_MS = 3000
 export const ACTIVITY_TTL_MS = 8000
-export type Activity = { working: boolean; lastWorkAt: number | null }
+export type Activity = { working: boolean; lastWorkAt: number | null; state: 'working' | 'tool' | 'waiting' | 'idle' | 'failed' | 'unknown' }
 export type ActivitySnapshot = { rows: Map<string, Activity>; receivedAt: number; validFor: number }
 
 /** Canonical read projection only. Any required source outage makes thinking unknown, not idle. */
@@ -31,10 +31,12 @@ export function readActivity(raw: unknown, dateHeader: string | null, deviceNow:
   }
   if (validFor <= 0) return null
   const rows = new Map<string, Activity>()
+  // Legacy signal remains the grid's canonical HOLOC-29 ranking; focused state fails closed independently.
   for (const a of o.agents) {
     if (!a || typeof a.id !== 'string') continue
     const stamp = typeof a.lastWorkAt === 'string' ? Date.parse(a.lastWorkAt) : NaN
-    rows.set(a.id, { working: a.signal === 'working', lastWorkAt: Number.isFinite(stamp) && stamp <= serverNow + 1000 ? stamp : null })
+    const state = ['working', 'tool', 'waiting', 'idle', 'failed'].includes(a.state) ? a.state as Activity['state'] : 'unknown'
+    rows.set(a.id, { working: a.signal === 'working', state, lastWorkAt: Number.isFinite(stamp) && stamp <= serverNow + 1000 ? stamp : null })
   }
   // deviceNow is deliberately not used as event time: head-unit clocks can be wrong by hours.
   void deviceNow

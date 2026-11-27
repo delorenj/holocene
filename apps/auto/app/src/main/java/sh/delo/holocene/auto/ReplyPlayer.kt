@@ -16,9 +16,9 @@ object ReplyFocus {
      * A reply asks for a transient may-duck focus, so a navigation prompt just ducks it (the system does that for
      * us: [Act.NONE]), a phone call pauses it until it ends, and another app taking focus for good ends it.
      */
-    fun onChange(change: Int, pausedByFocus: Boolean): Act = when (change) {
+    fun onChange(change: Int, pausedByFocus: Boolean, stopOnLoss: Boolean = false): Act = when (change) {
         AudioManager.AUDIOFOCUS_LOSS -> Act.STOP
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> Act.PAUSE
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (stopOnLoss) Act.STOP else Act.PAUSE
         AudioManager.AUDIOFOCUS_GAIN -> if (pausedByFocus) Act.RESUME else Act.NONE
         else -> Act.NONE // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: the platform lowers our volume itself
     }
@@ -59,6 +59,7 @@ class ReplyPlayer(context: Context) {
     private var file: File? = null
     private var focus: AudioFocusRequest? = null
     private var pausedByFocus = false
+    private var stopOnLoss = false
 
     /** (id, phase = started | ended | error, detail); main thread. Never fired for a reply that [stop] ended. */
     var onPhase: ((String, String, String) -> Unit)? = null
@@ -74,8 +75,9 @@ class ReplyPlayer(context: Context) {
      * [keepFocus]: the next chunk of the same reply. The transient focus the previous chunk held is kept (if it still
      * holds it), so the radio is not un-ducked and ducked again between two sentences.
      */
-    fun play(id: String, bytes: ByteArray, ext: String, keepFocus: Boolean = false) {
+    fun play(id: String, bytes: ByteArray, ext: String, keepFocus: Boolean = false, stopOnFocusLoss: Boolean = false) {
         release(keepFocus = keepFocus)
+        stopOnLoss = stopOnFocusLoss
         tracker.begin(id)
         val f = try {
             File.createTempFile("reply-", "." + ReplyFocus.ext(ext), app.cacheDir).also { it.writeBytes(bytes) }
@@ -119,7 +121,7 @@ class ReplyPlayer(context: Context) {
     private fun onFocus(change: Int) {
         val id = tracker.current ?: return
         Log.i(TAG, "reply focus change=$change")
-        when (ReplyFocus.onChange(change, pausedByFocus)) {
+        when (ReplyFocus.onChange(change, pausedByFocus, stopOnLoss)) {
             ReplyFocus.Act.PAUSE -> { pausedByFocus = true; try { player?.pause() } catch (_: RuntimeException) {} }
             ReplyFocus.Act.RESUME -> { pausedByFocus = false; try { player?.start() } catch (_: RuntimeException) {} }
             ReplyFocus.Act.STOP -> finish(id, "error", "focus_lost")

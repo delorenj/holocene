@@ -173,8 +173,8 @@ test("provisioning alone never becomes work recency; existing lastActiveAt fallb
   assert.equal(model.agents[0].lastWorkAt, null);
   assert.equal(model.agents[1].lastWorkAt, workedAt);
   assert.deepEqual(buildPadActivity(now, model, new Set(["new", "worker"]), []).agents, [
-    { id: "new", signal: "unknown", lastWorkAt: null },
-    { id: "worker", signal: "unknown", lastWorkAt: workedAt }
+    { id: "new", signal: "unknown", lastWorkAt: null, state: "unknown" },
+    { id: "worker", signal: "unknown", lastWorkAt: workedAt, state: "unknown" }
   ]);
 });
 
