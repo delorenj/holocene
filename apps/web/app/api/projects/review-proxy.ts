@@ -9,7 +9,7 @@ export const BODY_LIMIT = 64 * 1024;
 const USER = /^[^\s@<>"]{1,128}@[^\s@<>"]{1,125}$/;
 const SEGMENT = /^[A-Za-z0-9._~%-]{1,300}$/;
 const ROUTE = [/^[^/]+\/home$/, /^[^/]+\/revisions$/, /^[^/]+\/revisions\/[a-f0-9]{64}$/, /^[^/]+\/revisions\/[a-f0-9]{64}\/document$/,
-  /^[^/]+\/revisions\/[a-f0-9]{64}\/annotations$/, /^[^/]+\/revisions\/[a-f0-9]{64}\/annotations\/[0-9a-f-]{36}$/];
+  /^[^/]+\/revisions\/[a-f0-9]{64}\/annotations$/, /^[^/]+\/revisions\/[a-f0-9]{64}\/annotations\/[0-9a-f-]{36}$/, /^[^/]+\/revisions\/[a-f0-9]{64}\/feedback$/];
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export function signReview(secret: string, method: string, pathAndQuery: string, body: string, user: string, timestamp: string) {

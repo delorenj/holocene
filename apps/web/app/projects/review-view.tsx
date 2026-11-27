@@ -10,7 +10,7 @@ import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { CATALOG_ZONE, sandboxFor } from "../artifacts/navigator-model";
 import {
   anchorLabel, apiBase, BRIDGE_PREFIX, BRIDGE_VERSION, identityMessage, injectBridge, numbering, projectHref, readBridge,
-  restoreMessages, saveOutcome, shortHash, type Annotation, type Project, type RevisionView, type SaveState
+  restoreMessages, saveOutcome, sendTarget, shortHash, submissionLabel, type Annotation, type Project, type RevisionView, type SaveState, type Submission
 } from "./review-model";
 
 type Mode = "drag" | "pinpoint" | "interact";
@@ -22,13 +22,54 @@ const when = (iso?: string) => iso ? new Date(iso).toLocaleString(undefined, { t
 const uuid = (): string => typeof crypto.randomUUID === "function" ? crypto.randomUUID()
   : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16));
 
-async function call(url: string, method: string, body?: unknown): Promise<{ status: number; body: { error?: string; annotation?: Annotation } }> {
+async function call(url: string, method: string, body?: unknown): Promise<{ status: number; body: { error?: string; annotation?: Annotation; submission?: Submission; submissions?: Submission[] } }> {
   try {
     const res = await fetch(url, { method, cache: "no-store", headers: body === undefined ? undefined : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: res.status, body: res.status === 204 ? {} : await res.json().catch(() => ({})) };
   } catch {
     return { status: 0, body: {} };
   }
+}
+
+/**
+ * The explicit Send: freezes this revision's saved annotations for the project's one PM. The submission id is
+ * minted once per attempt and reused on retry, so a double click or a lost answer never makes two submissions.
+ */
+function SendFeedback({ base, project, saved, drafts }: { base: string; project: Project; saved: number; drafts: number }) {
+  const [list, setList] = useState<Submission[]>();
+  const [note, setNote] = useState("");
+  const [attempt, setAttempt] = useState(uuid);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { void call(`${base}/feedback`, "GET").then((r) => setList(r.body.submissions ?? [])); }, [base]);
+  const target = sendTarget(project);
+  const send = async () => {
+    setBusy(true); setError("");
+    const res = await call(`${base}/feedback`, "POST", { submissionId: attempt, note });
+    setBusy(false);
+    const sub = res.body.submission;
+    if (res.status >= 200 && res.status < 300 && sub) {
+      setList((l) => [sub, ...(l ?? []).filter((x) => x.submissionId !== sub.submissionId)]);
+      setNote(""); setAttempt(uuid());
+    } else setError(res.body.error ?? (res.status === 0 ? "Network error; press Send again to retry the same submission" : `HTTP ${res.status}`));
+  };
+  return <section className="review-send" aria-labelledby="review-send-title">
+    <p className="hub-label" id="review-send-title">Send feedback</p>
+    {"blocked" in target ? <p className="project-meta">Send is unavailable: {target.blocked}.</p> : <>
+      <p className="project-meta">Sends {saved} saved {saved === 1 ? "annotation" : "annotations"} to <code>{target.recipient}</code>, frozen as they are now.{drafts ? ` ${drafts} ${drafts === 1 ? "draft is" : "drafts are"} not included.` : ""}</p>
+      <label className="hub-label" htmlFor="review-note">Note (optional)</label>
+      <textarea id="review-note" value={note} maxLength={4000} onChange={(e) => { setNote(e.target.value); setAttempt(uuid()); }} />
+      <div className="review-item-actions"><button type="button" disabled={busy || !saved} onClick={() => void send()}>{busy ? "Sending…" : "Send feedback"}</button></div>
+      {error ? <p className="review-save is-failed" role="alert">Not sent: {error}</p> : null}
+    </>}
+    {list?.length ? <ol className="review-list" aria-label="Sent feedback">
+      {list.map((s) => <li key={s.submissionId} className="review-item">
+        <div className="review-item-meta"><span className={`hub-tag ${s.state === "published" || s.state === "answered" ? "is-cleared" : "is-stuck"}`}>{submissionLabel(s)}</span><span>{when(s.createdAt)}</span><span>{s.annotations.length} {s.annotations.length === 1 ? "annotation" : "annotations"}</span><span>to {s.recipient}</span></div>
+        {s.note ? <p>{s.note}</p> : null}
+        <p className="project-meta">{s.stateDetail}</p>
+      </li>)}
+    </ol> : null}
+  </section>;
 }
 
 export function ReviewView({ projectId, revision }: { projectId: string; revision: string }) {
@@ -255,6 +296,7 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
             })}
           </ol>
           {!data.annotations.length ? <p className="project-meta">No annotations on this revision yet.</p> : null}
+          <SendFeedback base={base} project={data.project} saved={numbers.size} drafts={data.annotations.length - numbers.size} />
         </aside>
       </div> : null}
     </div>

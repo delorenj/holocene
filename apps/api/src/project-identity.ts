@@ -3,7 +3,8 @@
 // encoded once, canonical lowercase PJangler identity. No aliases: the repo name and board key are
 // different identities. Every failure is named, never guessed into another project.
 
-export type RegistryProject = { id: string; name: string; repoPath: string; board?: string; status?: string };
+/** `pmAgents`: the registry's agents with role "pm", in key order; feedback goes to exactly one. */
+export type RegistryProject = { id: string; name: string; repoPath: string; board?: string; status?: string; pmAgents: string[] };
 export type IdentityResult =
   | { status: 200; project: RegistryProject }
   | { status: 400 | 404 | 409 | 503; error: string };
@@ -40,7 +41,9 @@ export function resolveProject(segment: string, registry: unknown): IdentityResu
     const declared = text(snap.project_id) ?? text(snap.project_slug) ?? key;
     if (declared.toLowerCase() !== parsed.id) continue;
     const tp = record(snap.ticket_provider) ? snap.ticket_provider : {};
-    matches.push({ id: parsed.id, name: text(snap.project_name) ?? text(snap.name) ?? declared, repoPath: text(snap.repo_path) ?? "", board: text(tp.identifier), status: text(snap.status) });
+    const agents = record(snap.agents) ? snap.agents : {};
+    const pmAgents = Object.entries(agents).filter(([, a]) => record(a) && a.role === "pm").map(([name]) => name).sort();
+    matches.push({ id: parsed.id, name: text(snap.project_name) ?? text(snap.name) ?? declared, repoPath: text(snap.repo_path) ?? "", board: text(tp.identifier), status: text(snap.status), pmAgents });
   }
   if (!matches.length) return { status: 404, error: `No PJangler project has the id ${parsed.id}` };
   if (matches.length > 1) return { status: 409, error: `${matches.length} registry entries claim the id ${parsed.id}; the identity is conflicting` };

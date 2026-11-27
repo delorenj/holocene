@@ -7,7 +7,7 @@ export type RevisionView = {
   snapshotUrl: string; entrySha256: string; createdAt: string; createdBy: string; saved: number; drafts: number;
   latest: { state: "current" | "republished" | "missing"; modified?: string };
 };
-export type Project = { id: string; name: string; repoPath: string; board?: string; status?: string };
+export type Project = { id: string; name: string; repoPath: string; board?: string; status?: string; pmAgents?: string[] };
 export type HomePayload = { project: Project; walkthroughs: Walkthrough[]; otherArtifacts: number; revisions: RevisionView[]; unattributed: { share: number; video: number }; sources: Record<string, { ok: boolean; stale: boolean; fetchedAt?: string }>; complete: boolean };
 export type Annotation = { id: string; revisionId: string; author: string; status: "draft" | "saved"; kind: "text" | "element"; anchor: Record<string, unknown>; comment: string; createdAt: string; updatedAt: string; version: number };
 
@@ -115,4 +115,25 @@ export function injectBridge(srcdoc: string, css: string, script: string): strin
   const marker = `<meta name="referrer" content="no-referrer">`;
   const at = srcdoc.indexOf(marker);
   return at < 0 ? tag + srcdoc : srcdoc.slice(0, at + marker.length) + tag + srcdoc.slice(at + marker.length);
+}
+
+// ---------------------------------------------------------------- feedback submissions (the explicit Send)
+
+export type SubmissionState = "saved" | "queued" | "published" | "uncertain" | "answered" | "failed";
+export type Submission = {
+  submissionId: string; projectId: string; revisionId: string; author: string; recipient: string; note: string;
+  annotations: Pick<Annotation, "id" | "version" | "comment" | "anchor">[]; digest: string; correlationId: string;
+  state: SubmissionState; stateDetail: string; createdAt: string; updatedAt: string;
+};
+
+/** Plain words for each state; "saved" never claims delivery. */
+export function submissionLabel(s: Pick<Submission, "state">): string {
+  return { saved: "Saved, not sent", queued: "Queued for delivery", published: "Delivered to the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
+}
+
+/** Who Send would reach, or why it cannot: exactly one registry PM. */
+export function sendTarget(project: Pick<Project, "id" | "pmAgents">): { recipient: string } | { blocked: string } {
+  const pms = project.pmAgents ?? [];
+  if (pms.length === 1) return { recipient: pms[0] };
+  return { blocked: pms.length ? `${project.id} lists ${pms.length} PM agents; feedback needs exactly one` : `${project.id} has no PM agent in the registry` };
 }

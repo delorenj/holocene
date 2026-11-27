@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome } from "./review-model";
+import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome, sendTarget, submissionLabel } from "./review-model";
 
 test("the home URL is one canonical segment encoded once", () => {
   assert.equal(projectHref("greeninbetween"), "/projects/greeninbetween");
@@ -67,4 +67,12 @@ test("the bridge lands after the CSP and referrer metas", async () => {
   const out = injectBridge(doc, "CSS", "JS");
   assert.ok(out.indexOf("Content-Security-Policy") < out.indexOf("<script data-holocene-review>JS</script>"));
   assert.ok(out.indexOf("JS</script>") < out.indexOf("<p>page</p>"));
+});
+
+test("Send reaches exactly one registry PM, and a saved submission never claims delivery", () => {
+  assert.deepEqual(sendTarget({ id: "gib", pmAgents: ["gib-pm"] }), { recipient: "gib-pm" });
+  assert.ok("blocked" in sendTarget({ id: "gib" }));
+  assert.ok("blocked" in sendTarget({ id: "gib", pmAgents: ["a", "b"] }));
+  assert.equal(submissionLabel({ state: "saved" }), "Saved, not sent");
+  assert.equal(submissionLabel({ state: "published" }), "Delivered to the PM");
 });

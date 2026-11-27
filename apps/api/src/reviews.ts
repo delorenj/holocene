@@ -8,7 +8,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Artifact } from "./artifacts.js";
 import { HTML_LIMIT, wrapHtml } from "./artifact-documents.js";
 import { lookupProject, type IdentityResult } from "./project-identity.js";
-import { ReviewStore, type AnnotationStatus, type ManifestEntry, type Revision } from "./review-store.js";
+import { ReviewStore, type Annotation, type AnnotationStatus, type FrozenAnnotation, type ManifestEntry, type Revision } from "./review-store.js";
+import type { RegistryProject } from "./project-identity.js";
 
 // HOLOC-70 local slice: the project home, preserved review revisions and durable annotations.
 // No feedback is sent from here (BB-67 owns delivery); nothing in this module publishes events.
@@ -172,6 +173,32 @@ export function parseNewAnnotation(body: unknown): { id?: string; status: Annota
   return { id: id as string | undefined, status: status as AnnotationStatus, kind, anchor, comment };
 }
 
+// ---------------------------------------------------------------- feedback submissions (HOLOC-70 AC4, Holocene side)
+
+/** Until Bloodbank accepts the feedback command contract (BB-67), a submission is saved and nothing is published. */
+export const AWAITING_CONTRACT = "Saved and frozen. Delivery waits on Bloodbank accepting the review feedback contract (BB-67); nothing has been published.";
+const NOTE_LIMIT = 4000;
+
+export function parseSubmission(body: unknown): { submissionId: string; note: string } | undefined {
+  if (!record(body)) return;
+  const { submissionId, note } = body;
+  if (typeof submissionId !== "string" || !UUID.test(submissionId)) return;
+  if (note !== undefined && (typeof note !== "string" || note.length > NOTE_LIMIT)) return;
+  return { submissionId, note: typeof note === "string" ? note.trim() : "" };
+}
+
+/** The one recipient: the project's sole registry agent with role "pm". None or several is a refusal, never a guess. */
+export function feedbackRecipient(project: Pick<RegistryProject, "id" | "pmAgents">): { recipient: string } | { error: string } {
+  if (project.pmAgents.length === 1) return { recipient: project.pmAgents[0] };
+  return { error: project.pmAgents.length ? `The registry lists ${project.pmAgents.length} PM agents for ${project.id} (${project.pmAgents.join(", ")}); feedback needs exactly one recipient` : `The registry lists no PM agent for ${project.id}, so feedback has no recipient` };
+}
+
+/** Saved annotations only (drafts never ship), frozen with their versions; the digest binds the submission to exactly this content. */
+export function freezeFeedback(annotations: Annotation[], note: string): { annotations: FrozenAnnotation[]; digest: string } {
+  const frozen = annotations.filter((a) => a.status === "saved").map(({ id, version, author, kind, anchor, comment, updatedAt }) => ({ id, version, author, kind, anchor, comment, updatedAt }));
+  return { annotations: frozen, digest: sha256(JSON.stringify({ note, annotations: frozen.map((a) => [a.id, a.version]) })) };
+}
+
 // ---------------------------------------------------------------- routes
 
 declare module "fastify" { interface FastifyRequest { rawBody?: string } }
@@ -259,6 +286,30 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
       if (result === "forbidden") return reply.code(403).send({ error: "Only the author can delete this annotation" });
       if (result === "conflict") return reply.code(409).send({ error: "This annotation changed since you loaded it", annotation: store.annotation(prior.id) });
       return reply.code(204).send();
+    });
+    scope.get<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
+      const ok = await guard(req, reply); if (!ok) return;
+      return { submissions: store.submissions(ok.rev!.revisionId) };
+    });
+    // The explicit Send. It freezes the revision's saved feedback, its recipient and its identity; the row is the outbox.
+    scope.post<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
+      const ok = await guard(req, reply); if (!ok) return;
+      const input = parseSubmission(req.body);
+      if (!input) return reply.code(400).send({ error: "Invalid submission" });
+      const prior = store.submission(input.submissionId);
+      if (prior) {
+        if (prior.author !== ok.user || prior.revisionId !== ok.rev!.revisionId || prior.note !== input.note) return reply.code(409).send({ error: "That submission id is already used for other feedback" });
+        return reply.code(200).send({ submission: prior });
+      }
+      const to = feedbackRecipient(ok.project);
+      if ("error" in to) return reply.code(409).send({ error: to.error });
+      const frozen = freezeFeedback(store.annotations(ok.rev!.revisionId), input.note);
+      if (!frozen.annotations.length) return reply.code(400).send({ error: "Nothing to send: this revision has no saved annotation" });
+      try {
+        const put = store.createSubmission({ submissionId: input.submissionId, projectId: ok.project.id, revisionId: ok.rev!.revisionId, artifactId: ok.rev!.artifactId,
+          author: ok.user, recipient: to.recipient, note: input.note, annotations: frozen.annotations, digest: frozen.digest, stateDetail: AWAITING_CONTRACT });
+        return reply.code(put.created ? 201 : 200).send({ submission: put.submission });
+      } catch { return reply.code(409).send({ error: "That submission id is already used for other feedback" }); }
     });
   });
 }

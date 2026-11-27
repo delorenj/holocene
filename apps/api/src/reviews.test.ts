@@ -8,9 +8,9 @@ import Fastify from "fastify";
 import { normalizeMinio, type Artifact } from "./artifacts.js";
 import { parseProjectSegment, resolveProject, lookupProject } from "./project-identity.js";
 import { ReviewStore } from "./review-store.js";
-import { captureRevision, homePayload, manifestHash, parseNewAnnotation, registerReviewRoutes, reviewSignature, revisionDocument, verifyReviewRequest } from "./reviews.js";
+import { AWAITING_CONTRACT, captureRevision, feedbackRecipient, freezeFeedback, homePayload, manifestHash, parseNewAnnotation, registerReviewRoutes, reviewSignature, revisionDocument, verifyReviewRequest } from "./reviews.js";
 
-const registry = { projects: { greeninbetween: { project_id: "greeninbetween", project_name: "Green In Between", repo_path: "/home/x/code/green-in-between" }, holocene: { repo_path: "/h" } } };
+const registry = { projects: { greeninbetween: { project_id: "greeninbetween", project_name: "Green In Between", repo_path: "/home/x/code/green-in-between", agents: { "green-in-between-pm": { role: "pm" }, helper: { role: "dev" } } }, holocene: { repo_path: "/h" } } };
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 test("identity: one canonical segment, named failures, no aliases, duplicates conflict", async () => {
@@ -88,13 +88,13 @@ test("home: walkthroughs from the project's collection, latest vs reviewed, unat
   store.putRevision(rev);
   const sources = { projects: { ok: true, stale: false, fetchedAt: "t" }, share: { ok: true, stale: false }, r2: { ok: false, stale: true } };
   const items = [item({ date: "2026-11-25T00:00:00.000Z" }), item({ id: "projects:gib/2026-11-19/walk/img/a.png", primary: false, originalUrl: "https://s3.delo.sh/projects/gib/2026-11-19/walk/img/a.png", category: "images" }), item({ id: "share:x", source: "share", collection: "share", project: undefined }), item({ id: "r2:y", source: "r2", collection: "video", project: undefined }), item({ id: "projects:other/z/index.html", collection: "other", project: "other" })];
-  const home = homePayload({ id: "gib", name: "GIB", repoPath: "/r" }, { items, sources, retryAfterMs: 0 }, store.revisions("gib"));
+  const home = homePayload({ id: "gib", name: "GIB", repoPath: "/r", pmAgents: [] }, { items, sources, retryAfterMs: 0 }, store.revisions("gib"));
   assert.deepEqual(home.walkthroughs.map((w) => w.id), [item().id]);
   assert.equal(home.otherArtifacts, 1);
   assert.deepEqual(home.unattributed, { share: 1, video: 1 });
   assert.equal(home.revisions[0].latest.state, "republished");
   assert.equal(home.complete, false);
-  assert.equal(homePayload({ id: "gib", name: "GIB", repoPath: "/r" }, { items: [], sources, retryAfterMs: 0 }, store.revisions("gib")).revisions[0].latest.state, "missing");
+  assert.equal(homePayload({ id: "gib", name: "GIB", repoPath: "/r", pmAgents: [] }, { items: [], sources, retryAfterMs: 0 }, store.revisions("gib")).revisions[0].latest.state, "missing");
 });
 
 test("annotations and drafts survive a store restart; anchors never change; stale versions and other authors are refused", () => {
@@ -192,4 +192,66 @@ test("capture accepts the publisher's strict percent-encoding of an entry name w
   const publish = async (_dir: string, project: string, name: string) => `https://s3.delo.sh/projects/${project}/2026-11-26/${name}/it%27s%20%28v1%29%21.html`;
   const res = await captureRevision(store, "gib", item({ filenames: ["it's (v1)!.html"], originalUrl: `${base}it's%20(v1)!.html`, baseUrl: base }), "op@example.com", origin(files), publish);
   assert.equal(res.status, 201);
+});
+
+test("feedback: one PM recipient or a refusal; only saved annotations freeze; the digest binds the content", () => {
+  assert.deepEqual(feedbackRecipient({ id: "gib", pmAgents: ["gib-pm"] }), { recipient: "gib-pm" });
+  assert.ok("error" in feedbackRecipient({ id: "gib", pmAgents: [] }));
+  assert.ok("error" in feedbackRecipient({ id: "gib", pmAgents: ["a", "b"] }));
+  assert.deepEqual(resolveProject("greeninbetween", registry).status === 200 && (resolveProject("greeninbetween", registry) as { project: { pmAgents: string[] } }).project.pmAgents, ["green-in-between-pm"]);
+  const a = (id: string, status: "draft" | "saved", version = 1) => ({ id, revisionId: "r", projectId: "gib", artifactId: "a", author: "op@example.com", status, kind: "text" as const, anchor: { quote: id }, comment: `c-${id}`, createdAt: "t", updatedAt: "t", version });
+  const one = freezeFeedback([a("1", "saved"), a("2", "draft")], "");
+  assert.deepEqual(one.annotations.map((x) => x.id), ["1"]);
+  assert.notEqual(one.digest, freezeFeedback([a("1", "saved", 2)], "").digest, "an edited annotation is different content");
+  assert.notEqual(one.digest, freezeFeedback([a("1", "saved")], "note").digest);
+});
+
+test("feedback over HTTP: frozen, idempotent, durable across restart, refused without saved annotations; nothing published", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "holoc-feedback-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "reviews.sqlite3");
+  const rev = "f".repeat(64);
+  const boot = async () => {
+    const store = new ReviewStore(file);
+    if (!store.revision(rev)) store.putRevision({ revisionId: rev, projectId: "greeninbetween", artifactId: "a", title: "t", entry: "index.html", sourceUrl: "u", snapshotBaseUrl: "s/", snapshotUrl: "https://s3.delo.sh/s/index.html", entrySha256: sha("<p>ok</p>"), manifest: [], createdAt: "now", createdBy: "op@example.com" });
+    const app = Fastify();
+    await registerReviewRoutes(app, async () => ({ items: [], sources: {}, retryAfterMs: 0 }), { store, registry: async () => registry, secret: () => "k", fetcher: origin({}) });
+    const call = (method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, user = "op@example.com") => {
+      const payload = body === undefined ? "" : JSON.stringify(body);
+      const ts = String(Date.now());
+      return app.inject({ method, url, payload: payload || undefined, headers: { ...(payload ? { "content-type": "application/json" } : {}), "x-review-user": user, "x-review-timestamp": ts, "x-review-signature": reviewSignature("k", method, url, payload, user, ts) } });
+    };
+    return { app, call };
+  };
+  const base = `/api/modules/projects/greeninbetween/revisions/${rev}`;
+  const first = await boot();
+  const id = "0b8e7f52-6a0c-4d0e-9f7e-3a1b2c4d5e6f";
+  assert.equal((await first.call("POST", `${base}/feedback`, { submissionId: id })).statusCode, 400, "no saved annotation, nothing to send");
+  const ann = (await first.call("POST", `${base}/annotations`, { status: "saved", kind: "text", anchor: { quote: "ok" }, comment: "Fix this" })).json().annotation;
+  await first.call("POST", `${base}/annotations`, { status: "draft", kind: "text", anchor: { quote: "d" }, comment: "unsent draft" });
+  assert.equal((await first.call("POST", `${base}/feedback`, { submissionId: "nope" })).statusCode, 400);
+  const sent = await first.call("POST", `${base}/feedback`, { submissionId: id, note: " Please look " });
+  assert.equal(sent.statusCode, 201);
+  const sub = sent.json().submission;
+  assert.equal(sub.recipient, "green-in-between-pm");
+  assert.equal(sub.state, "saved");
+  assert.equal(sub.stateDetail, AWAITING_CONTRACT);
+  assert.equal(sub.note, "Please look");
+  assert.deepEqual(sub.annotations.map((x: { comment: string }) => x.comment), ["Fix this"], "drafts never ship");
+  const again = await first.call("POST", `${base}/feedback`, { submissionId: id, note: "Please look" });
+  assert.equal(again.statusCode, 200, "a double click returns the same submission");
+  assert.equal(again.json().submission.correlationId, sub.correlationId, "a retry reuses the frozen identity");
+  assert.equal((await first.call("POST", `${base}/feedback`, { submissionId: id, note: "other" })).statusCode, 409);
+  assert.equal((await first.call("POST", `${base}/feedback`, { submissionId: id, note: "Please look" }, "eve@example.com")).statusCode, 409);
+  // Later edits and deletes never change what was sent.
+  await first.call("PATCH", `${base}/annotations/${ann.id}`, { version: 1, comment: "changed later" });
+  await first.call("DELETE", `${base}/annotations/${ann.id}?version=2`);
+  await first.app.close();
+  const second = await boot();
+  t.after(() => second.app.close());
+  const list = (await second.call("GET", `${base}/feedback`)).json().submissions;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].annotations[0].comment, "Fix this");
+  assert.equal(list[0].correlationId, sub.correlationId);
+  assert.equal(list[0].digest, sub.digest);
 });
