@@ -2,13 +2,27 @@
 title: 'HOLOC-70 local slice: project home, preserved review revisions, durable annotations'
 type: 'feature'
 created: '2026-11-26'
-status: 'in-review'
+status: 'done'
 baseline_revision: '1fffeb1d6b44e63421dc0d4b73c65ce17d4b6062'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context: []
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A byte-identical copy published as a second walkthrough cannot get its own review revision; capture now answers 409.
+    evidence: |-
+      The revision id is the manifest hash alone (spec), so identical bytes collide across artifacts or projects. The patch makes the collision loud (409 naming the owner) instead of returning the other walkthrough's revision, which the guard would then 404. A per-project/per-artifact revision identity needs a spec change.
+    location: >-
+      apps/api/src/reviews.ts captureRevision
+    severity: medium
+  - summary: >-
+      The first headless run after a deploy left the composer open after Save and stored no row; two later runs and the post-restart run passed.
+    evidence: |-
+      Unreproduced. Settle by running /tmp/holoc70-e2e/e2e.mjs annotate immediately after a fresh `mise run deploy` and capturing the composer status text and the proxy/API responses for the Save.
+    location: >-
+      apps/web/app/projects/review-view.tsx persist
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -88,6 +102,40 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-11-26 — Review pass
+- verdicts: 30 findings — high 0, medium 5, low 12, false 9, maybe-false 4
+- findings:
+  - `[medium]` `[patch]` Blind: revision id not project/artifact scoped; identical bytes return another walkthrough's revision — captureRevision now 409s when the existing revision belongs to another project or artifact; test added (twin walkthrough). Separate per-walkthrough identity deferred.
+  - `[false]` `[reject]` Blind: guard reads the project from `split("/")[4]` — every review route is registered under the fixed `/api/modules/projects/:project` prefix, so position 4 is always that segment; a mismatched shape never reaches the guard.
+  - `[low]` `[reject]` Blind: publish succeeded but post-check failed orphans a hidden snapshot — needs a receipt/URL mismatch from publish.py (verified flags and output format match); rollback adds delete machinery for a path not met in use.
+  - `[medium]` `[patch]` Blind: a 409 conflict re-sends the stale version forever — on conflict the composer now adopts the server row's version, shows its current text and lets an explicit Save replace it; autosave stays off while in conflict.
+  - `[low]` `[reject]` Blind: X-Forwarded-User trusted without an edge marker — holocene-web publishes no host port (`docker port` empty); it is reachable only through Traefik google-auth; single-operator homelab policy.
+  - `[low]` `[reject]` Blind: Telegram token is the HMAC root — reuses the existing artifact-read secret; both sides read the same env and restart together; domain-separated key.
+  - `[low]` `[reject]` Blind: per-request registry lookup without a cache — registry is local (127.0.0.1:8764); a down registry answering 503 is the spec's identity contract; a cache adds staleness to identity.
+  - `[low]` `[reject]` Blind: drafts visible to every viewer — single operator; drafts are labelled and unnumbered.
+  - `[false]` `[reject]` Blind: capture uses the cached catalog, so a fresh publication 404s — the Start review button exists only for items in that same cached catalog instance (home and capture share `liveArtifactCatalog`).
+  - `[low]` `[reject]` Blind: idempotent create returns the prior row when a retried body differs — needs a network failure after the server committed; draft autosave then PATCHes the difference; rare.
+  - `[false]` `[reject]` Blind: injectBridge fallback lands before the CSP — unreachable: the document endpoint always renders through wrapHtml, which always emits the referrer marker.
+  - `[medium]` `[patch]` Blind: web-edge helpers have no tests — grouped with the verification-gap mutation finding; `review-proxy.test.ts` added and registered.
+  - `[maybe-false]` `[reject]` Blind: a malformed catalog URL 500s the home — catalog URLs are built from bucket keys; would need a row normalizeMinio never produces; if true, low.
+  - `[low]` `[patch]` Blind: nothing links into the project home — the Artifacts day navigator now links its collection to `/projects/<collection>`.
+  - `[low]` `[reject]` Blind: no back-pressure on concurrent captures — the button disables while capturing and insert-or-get dedupes; duplicate work only.
+  - `[medium]` `[patch]` Edge: revision collision across projects/artifacts — same root cause as the first Blind row; same 409 patch.
+  - `[low]` `[reject]` Edge: a user publication named `review-<hex16>` vanishes from the gallery — publisher-generated name shape; not met in use; requiring a store lookup couples the catalog to the review DB.
+  - `[low]` `[patch]` Edge: an entry name with `!'()*` always 502s — encodeKey now percent-encodes those like publish.py's `quote()`; test added.
+  - `[low]` `[patch]` Edge: the proxy's upstream fetch has no timeout — 11-minute AbortSignal (publish.py's ceiling is 10).
+  - `[low]` `[reject]` Edge: proxy bypass with a forged X-Forwarded-User — same as the Blind row: no direct route to the container.
+  - `[low]` `[reject]` Edge: orphaned snapshot after a failed receipt check — same as the Blind row.
+  - `[medium]` `[patch]` Verification gap: web signReview and API reviewSignature are never tested against each other — one fixed vector asserted in both suites (`review-proxy.test.ts`, `reviews.test.ts`).
+  - `[medium]` `[patch]` Verification gap: mutationAllowed (the CSRF guard) has no test — origin/scheme/null-origin/content-type/DELETE/forwarded-host cases added.
+  - `[low]` `[patch]` VG other: REVIEW_PUBLICATION exported but unused and duplicated inline — moved to artifacts.ts and used by normalizeMinio.
+  - `[false]` `[reject]` VG other: putRevision check-then-insert races — DatabaseSync is synchronous and putRevision has no await between the read and the INSERT, so two captures in one process cannot both insert.
+  - `[maybe-false]` `[reject]` VG other: no test covers defaultPublisher's receipt parsing — verified against current publish.py output; live capture on 2026-11-26 published and verified `review-b3ccc0c636237792`; a future format change is speculative.
+  - `[false]` `[reject]` Intent: live surface (edge, real storage, browser reload) has no evidence — headless Chromium against the deployed holocene-web: home, capture into MinIO, annotate, reload, `systemctl --user restart holocene-api.service`, reload: 3 saved + 2 drafts intact; public route 307s to Google auth.
+  - `[maybe-false]` `[reject]` Intent: the bridge origin/source gate in review-view.tsx is untested — live check posted a forged bridge selection from the top window and no composer opened; a unit test needs a DOM; if broken, low.
+  - `[low]` `[reject]` Intent: the last <900 ms of typing before a reload is not durable — inherent to debounced autosave; Save is explicit and immediate.
+  - `[maybe-false]` `[reject]` Intent: page routes untested beyond href builders — exercised live (200 home, 400/404 identity, review render); if a regression, low.
+
 ## Design Notes
 
 Mutation signature: `hex(HMAC_SHA256(HMAC_SHA256(secret, "holocene-reviews/v1"), [method, pathAndQuery, sha256(body), user, timestamp].join("\n")))`, 30 s window. The read-only catalog signature stays as is; review routes never accept it.
@@ -102,3 +150,32 @@ Saving: a fresh selection becomes a draft with a client UUID; drafts autosave (d
 - `pnpm --filter @holocene/api typecheck && pnpm --filter @holocene/api test` -- expected: exit 0
 - `pnpm --filter @holocene/web typecheck && pnpm --filter @holocene/web test` -- expected: exit 0
 - `mise run deploy` then headless Chromium against the web container: home renders, capture GIB walkthrough, annotate, reload, `systemctl --user restart holocene-api.service`, reload: annotation present; 390px no overflow.
+
+## Auto Run Result
+
+**Summary:** The HOLOC-70 local slice is live. `/projects/<canonical id>` resolves identity from the PJangler registry (400/404/409/503), lists the project's HTML walkthroughs from the shared artifact catalog with freshness and unattributed counts, preserves exact bytes as hash-addressed `review-<rev16>` publications, and serves a review view: the preserved copy in a sandboxed srcdoc frame (no `allow-same-origin`) hosting Plannotator's bridge protocol 2, with durable drafts and saved annotations in `node:sqlite`. Every review call goes through a signed web→API hop bound to method, path, body and the edge author. Send (AC4–5, BB-67), `pj dashboard` (AC6, PJAN-234) and the live loop (AC8) are not touched.
+
+Note: the parent session implemented the change directly rather than through a fresh implementation subagent (the work predated this run's step-03 handoff); review layers ran context-free on the staged diff.
+
+**Files:**
+- `apps/api/src/project-identity.ts` — canonical segment parsing and registry resolution.
+- `apps/api/src/review-store.ts` — revisions and annotations tables, optimistic versions, restart-durable.
+- `apps/api/src/reviews.ts` — signature verify, capture/publish, home payload, verified revision document, annotation routes (+`viewer`).
+- `apps/api/src/reviews.test.ts` — identity, capture, tamper, durability, signature vector, routes.
+- `apps/api/src/artifacts.ts`, `server.ts`, `package.json` — hide review publications, shared catalog, route registration, test glob.
+- `apps/web/app/api/projects/review-proxy.ts`, `[...path]/route.ts`, `review-proxy.test.ts` — signed proxy, same-origin mutation gate, tests.
+- `apps/web/app/projects/*` — project home, review view (bridge host), pure model (+tests), styles, pages.
+- `apps/web/app/artifacts/day-navigator.tsx` — link to the collection's project home.
+- `apps/web/package.json`, `next.config.mjs`, `pnpm-lock.yaml` — `@plannotator/ui` 0.65.0, `@plannotator/core` 0.25.33, `transpilePackages`.
+
+**Review breakdown:** 30 findings. Patched 10 rows (8 entries): medium ×4 entries (revision collision, conflict recovery, signature vector, mutation-gate tests), low ×4 (strict key encoding, proxy timeout, project home link, dead export). Deferred 2 (twin publications get 409 not their own revision; an unreproduced first-run composer stall). Rejected 18 as recorded above.
+
+**Follow-up review recommended: true** — first pass patched 4 medium entries. Named unverified risk: the conflict-recovery path in `review-view.tsx` (adopt server version, explicit overwrite) is exercised by no test or live run, and the first post-deploy headless run once left the composer open with no stored row.
+
+**Verification:**
+- `pnpm --filter @holocene/api typecheck && test` — pass (380/380).
+- `pnpm --filter @holocene/web typecheck && test` — pass (112/112).
+- `mise run deploy` — API healthy, web healthy.
+- Live (headless Chromium → holocene-web container, edge headers supplied): home 200 with 11 GIB walkthroughs; `green-in-between` 404, `Green%20In` 400, `a%252Fb` 400; capture of `launch-dashboard` → revision `b3ccc0c63623…` published and verified; text annotation with draft autosave then Save; second draft; reload and `systemctl --user restart holocene-api.service`: 3 saved (#1–#3) + 2 drafts intact, 0 unanchored; forged top-window bridge message ignored; 390px scrollWidth = clientWidth on home and review; no console errors. Test annotations deleted afterwards (DELETE 204 ×5). `https://holocene.delo.sh/projects/greeninbetween` → 307 to Google auth.
+
+**Residual risks:** the POOL-186 page is a historical seed per the GIB PM, so the true product walkthrough is not yet named; unresolved-anchor display was not exercised live; element pinpoint annotations were not exercised live.
