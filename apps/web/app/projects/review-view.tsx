@@ -18,7 +18,9 @@ type Draft = { id: string; quote: string; kind: "text" | "element"; anchor: Reco
 type Loaded = { project: Project; revision: RevisionView; annotations: Annotation[]; viewer?: string };
 
 const when = (iso?: string) => iso ? new Date(iso).toLocaleString(undefined, { timeZone: CATALOG_ZONE, dateStyle: "medium", timeStyle: "short" }) : "";
-const uuid = () => crypto.randomUUID();
+// randomUUID exists only in secure contexts; getRandomValues works everywhere (RFC 4122 v4 either way).
+const uuid = (): string => typeof crypto.randomUUID === "function" ? crypto.randomUUID()
+  : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16));
 
 async function call(url: string, method: string, body?: unknown): Promise<{ status: number; body: { error?: string; annotation?: Annotation } }> {
   try {
