@@ -13,9 +13,43 @@ class PadDigestBridgeTest {
     private var allowed = true
     private val v = "a".repeat(64)
     private var time = java.time.Instant.parse("2026-11-27T12:00:00Z").toEpochMilli()
-    private var result = PadDigestPayload("alpha", "available", "s1", v, "2026-11-27T12:00:00Z", "Built it. Checked it.", byteArrayOf(1))
+    private var result = PadDigestPayload("alpha", "available", "s1", v, "2026-11-27T12:00:00Z", "Built it. Checked it.", byteArrayOf(1), time + 7_200_000L)
     private val bridge = PadDigestBridge({ result }, { tasks.add(it) }, { it() }, { allowed && it == "nonce" }, { busy },
-        { stops++ }, { id, _ -> plays.add(id); true }, { _, d -> shown.add(d) }, { _, p -> phases.add(p) }, now = { time })
+        { stops++ }, { id, _, _ -> plays.add(id); true }, { _, d -> shown.add(d) }, { _, p -> phases.add(p) }, now = { time })
+    @Test fun summaryExpiryIsRecheckedBehindCueThroughRealBridgeAndArbiter() {
+        val base = java.time.Instant.parse("2026-11-27T12:00:00Z").toEpochMilli()
+        for (projectionEarlier in listOf(false, true)) {
+            var wall = base
+            var mono = 0L
+            val played = ArrayList<SpeechKind>()
+            val decisions = ArrayList<SpeechDecision>()
+            val arbiter = SpeechArbiter({ mono }, object : SpeechArbiter.Output {
+                override fun play(u: Utterance) { played.add(u.kind) }
+                override fun halt(u: Utterance, reason: String) {}
+                override fun decision(d: SpeechDecision) { decisions.add(d) }
+            }, { wall })
+            val sourceAt = if (projectionEarlier) base else base - 7_199_000L
+            val record = PadDigestPayload("alpha", "available", "s1", v,
+                java.time.Instant.ofEpochMilli(sourceAt).toString(), "Fixture work. Checked fixtures.", byteArrayOf(1), base + 1000L)
+            val tasks = ArrayList<() -> Unit>()
+            val bridge = PadDigestBridge({ record }, { tasks.add(it) }, { it() }, { it == "n" }, { false }, {},
+                { id, bytes, expiry -> arbiter.offer(Utterance(id, SpeechKind.SUMMARY, listOf(SpeechPart.Clip(bytes, "ogg")),
+                    maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false, expiresAt = expiry)) },
+                { _, _ -> }, { _, _ -> }, { wall })
+            arbiter.offer(Utterance("name", SpeechKind.CUE, listOf(SpeechPart.Say("Fixture Alpha"))))
+            bridge.select("alpha", "n"); tasks.removeAt(0)()
+            bridge.summary("alpha", "s1", v, "n"); tasks.removeAt(0)()
+            assertEquals(1, arbiter.queued.size)
+            wall += 2000; mono += 2000
+            arbiter.finished("name")
+            assertNull(arbiter.current)
+            assertEquals(listOf(SpeechKind.CUE), played)
+            assertTrue(decisions.any { it.kind == "summary" && it.action == "drop" && it.reason == "expired" })
+            assertTrue(arbiter.offer(Utterance("reply", SpeechKind.REPLY, listOf(SpeechPart.Clip(byteArrayOf(1), "ogg")))))
+            assertEquals(SpeechKind.REPLY, arbiter.current?.kind)
+        }
+    }
+
     private fun run() { tasks.removeAt(0)() }
     private fun select() { bridge.select("alpha", "nonce"); run() }
 

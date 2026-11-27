@@ -921,7 +921,7 @@ class SpeechArbiterTest {
     }
 
     @Test fun selectedSummarySharesOwnerWithReplyAndRecordingAndHasNoMemoIdentity() {
-        val s = Utterance("summary:1", SpeechKind.SUMMARY, clip(), maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false)
+        val s = Utterance("summary:1", SpeechKind.SUMMARY, clip(), maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false, expiresAt = Long.MAX_VALUE)
         assertTrue(a.offer(s))
         assertEquals("summary:1", audible)
         assertNull(a.current?.memoId)

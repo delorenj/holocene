@@ -23,6 +23,9 @@ object ReplyFocus {
         else -> Act.NONE // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: the platform lowers our volume itself
     }
 
+    /** Replies have no deadline; summaries must remain fresh when the prepared player actually starts. */
+    fun fresh(expiresAt: Long?, now: Long): Boolean = expiresAt == null || now < expiresAt
+
     /** Extension for the temp file, from what the page sent; anything odd becomes "bin" (the player sniffs content). */
     fun ext(raw: String): String = raw.lowercase().filter { it in 'a'..'z' || it in '0'..'9' }.take(5).ifEmpty { "bin" }
 }
@@ -75,7 +78,8 @@ class ReplyPlayer(context: Context) {
      * [keepFocus]: the next chunk of the same reply. The transient focus the previous chunk held is kept (if it still
      * holds it), so the radio is not un-ducked and ducked again between two sentences.
      */
-    fun play(id: String, bytes: ByteArray, ext: String, keepFocus: Boolean = false, stopOnFocusLoss: Boolean = false) {
+    fun play(id: String, bytes: ByteArray, ext: String, keepFocus: Boolean = false, stopOnFocusLoss: Boolean = false,
+             expiresAt: Long? = null) {
         release(keepFocus = keepFocus)
         stopOnLoss = stopOnFocusLoss
         tracker.begin(id)
@@ -106,6 +110,10 @@ class ReplyPlayer(context: Context) {
             p.setDataSource(f.path)
             p.setOnPreparedListener {
                 if (!tracker.owns(id)) return@setOnPreparedListener
+                if (!ReplyFocus.fresh(expiresAt, System.currentTimeMillis())) {
+                    fail(id, "summary_expired")
+                    return@setOnPreparedListener
+                }
                 it.start()
                 onPhase?.invoke(id, "started", "")
             }

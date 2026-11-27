@@ -75,6 +75,8 @@ data class Utterance(
     val chunks: Int = 0,
     /** The note (from [SpeechArbiter.noteStopped]) this ack answers: it starts before what the recording held back. */
     val note: String? = null,
+    /** Absolute UTC source/projection deadline; mandatory for summaries, unused for replies. */
+    val expiresAt: Long? = null,
 )
 
 data class SpeechDecision(
@@ -89,7 +91,8 @@ data class SpeechDecision(
     val mic: String,
 )
 
-class SpeechArbiter(private val now: () -> Long, private val out: Output) {
+class SpeechArbiter(private val now: () -> Long, private val out: Output,
+                    private val wallNow: () -> Long = { System.currentTimeMillis() }) {
     interface Output {
         fun play(u: Utterance)
         /** Play chunk [index] (1-based) of the chunked reply [u]; report its end through [chunkEnded]. */
@@ -557,7 +560,8 @@ class SpeechArbiter(private val now: () -> Long, private val out: Output) {
     private fun pump() {
         if (current != null || mic != Mic.IDLE) return
         val t = now()
-        val expired = queue.filter { t - it.at > it.maxWaitMs }
+        val expired = queue.filter { t - it.at > it.maxWaitMs ||
+            (it.u.kind == SpeechKind.SUMMARY && (it.u.expiresAt == null || wallNow() >= it.u.expiresAt)) }
         for (e in expired) { queue.remove(e); log("drop", e.u, "expired") }
         if (queue.isEmpty()) return
         // A sound that was just cut off is still coming out of the speakers: nothing starts over its tail.

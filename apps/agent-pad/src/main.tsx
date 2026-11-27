@@ -1937,9 +1937,9 @@ function App() {
       const next = valid ? { status: 'available', text: value.text, sourceAt: value.sourceAt,
         sourceSessionId: value.sourceSessionId, digestId: value.digestId } : { status: value?.status === 'stale' ? 'stale' : 'unavailable' }
       setDigest(next)
-      const narrate = entryPending
-      entryPending = false // a later refresh, even of a newer session, never narrates
-      if (narrate && valid && !enteredSummary.current.has(`${id}:${value.sourceSessionId}:${value.digestId}`)) {
+      const narrate = entryPending && valid
+      if (valid) entryPending = false // transient misses preserve deliberate entry; an available digest consumes it once
+      if (narrate && !enteredSummary.current.has(`${id}:${value.sourceSessionId}:${value.digestId}`)) {
         enteredSummary.current.add(`${id}:${value.sourceSessionId}:${value.digestId}`)
         if (!onCallNow() && document.visibilityState === 'visible') nativeDigest() && (window as any).HoloceneNative?.playSummary?.(id, value.sourceSessionId, value.digestId, digestNonce.current)
       }
@@ -2107,7 +2107,6 @@ function App() {
       setClock(Date.now())
       const id = selectedRef.current?.id
       if (focusRef.current && id && !recordingRef.current && !arming.current) {
-        cancelEntry.current()
         nativeDigest() && (window as any).HoloceneNative?.refreshDigest?.(id, digestNonce.current)
       }
     }, ROSTER_CLOCK_MS)
@@ -2205,7 +2204,7 @@ function App() {
           <div className="focus-head" style={{ ['--c' as string]: selected.color }}><Swatch a={selected} /><strong>{label(selected.name)}</strong></div>
           <button className="back" onClick={backToGrid} disabled={recording || phase === 'arming'}>← All agents</button>
         </div>
-        <div className="focus-state" role="status">{label(focusStatus)}</div>
+        {!host.noText && <div className="focus-state" role="status">{label(focusStatus)}</div>}
         {!host.noText && <div className="digest" role="status">
           {digestFresh ? <><p>{digest?.text}</p><small>Source {digestAge === 0 ? 'just now' : `${digestAge} min ago`}</small></> :
             <p>{digest?.status === 'stale' || digest?.status === 'available' ? 'Session summary stale' : 'Session summary unavailable'}</p>}

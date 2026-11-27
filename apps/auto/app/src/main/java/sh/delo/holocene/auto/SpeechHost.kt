@@ -100,7 +100,8 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
             is SpeechPart.Say -> feedback.say(p.text, own, next)
             is SpeechPart.Tone -> feedback.tone(p.tone, own, next)
             // A clip is always the last part: the player's phase callback ends the utterance.
-            is SpeechPart.Clip -> player.play(u.id, p.bytes, p.ext, stopOnFocusLoss = u.kind == SpeechKind.SUMMARY)
+            is SpeechPart.Clip -> player.play(u.id, p.bytes, p.ext, stopOnFocusLoss = u.kind == SpeechKind.SUMMARY,
+                expiresAt = if (u.kind == SpeechKind.SUMMARY) u.expiresAt else null)
         }
     }
 
@@ -152,9 +153,9 @@ class SpeechHost(context: Context) : SpeechArbiter.Output {
     }
 
     /** Short, non-deferrable selected-session summary in the same queue as replies and recording. */
-    fun summary(id: String, bytes: ByteArray, ext: String): Boolean =
+    fun summary(id: String, bytes: ByteArray, ext: String, expiresAt: Long): Boolean =
         arbiter.offer(Utterance(id, SpeechKind.SUMMARY, listOf(SpeechPart.Clip(bytes, ext)),
-            maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false))
+            maxWaitMs = SpeechArbiter.SELECT_WAIT_MS, deferrable = false, expiresAt = expiresAt))
 
     fun stopSummary() {
         arbiter.current?.takeIf { it.kind == SpeechKind.SUMMARY }?.let { arbiter.cancel(it.id) }

@@ -474,9 +474,10 @@ export function buildAgents(input: AgentInputs): AgentsModel {
       heldSeconds: heldFrom(heldFrom0 ?? (declared === "idle" ? asm?.sinceMs : undefined), nowMs),
       lastActiveAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : r.provisionedAt,
       lastWorkAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : null,
-      workState: facts.hitl ? "waiting" : !act || act.reading.lastMs > nowMs ? "unknown" :
-        act.reading.state === "error" ? "failed" : act.reading.state === "active" ? toolOpen ? "tool" : "working" :
-        act.reading.state === "done" || (nowMs - act.reading.lastMs <= WORKING_WINDOW_MS &&
+      workState: declared === "hitl" ? "waiting" : declared === "active" ?
+        act?.reading.state === "active" && toolOpen ? "tool" : "working" :
+        !act || act.reading.lastMs > nowMs ? "unknown" :
+        declared === "error" ? "failed" : declared === "done" || (nowMs - act.reading.lastMs <= WORKING_WINDOW_MS &&
           /agent\.session\.(started|ended)$/.test(act.reading.lastType ?? "")) ? "idle" : "unknown",
       active: declared !== "idle" && declared !== "done",
       gateway,

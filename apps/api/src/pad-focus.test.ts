@@ -55,6 +55,30 @@ test("focused work states use canonical evidence; no event, expired work and exp
   assert.equal(state([], t + 501, asm)[0].state, "unknown");
 });
 
+test("focused state reconciles completed/missing turns with currently active workers without inventing tool use", () => {
+  const scope = { unit: "fixture-worker.scope", active: true, description: "hermes worker --profile alpha", activeSince: new Date(t - 1000).toISOString() };
+  const build = (events: ActivityEvent[], active = true, now = t + 100, asm = new Map<string, AsmRow>()) => {
+    const model = buildAgents({ nowMs: now, registry, projects: [], gateways: new Map(), asm, invocations: [],
+      scopes: [{ ...scope, active }], tickets: new Map(), activity: foldActivity(events, resolve, now) });
+    return { canonical: model.agents[0], pad: buildPadActivity(now, model, new Set(["alpha"]), []).agents[0] };
+  };
+  const completed = event("conversation.turn.completed");
+  for (const events of [[], [completed]]) {
+    const { canonical, pad } = build(events);
+    assert.equal(canonical.state, "delegating");
+    assert.equal(pad.signal, "working");
+    assert.equal(pad.state, "working");
+  }
+  assert.equal(build([completed], false).pad.state, "idle");
+  assert.equal(build([completed], false, t + DONE_WINDOW_MS + 1).pad.state, "unknown");
+  const open = event("agent.tool.requested", -1, { toolId: "tool-1" });
+  assert.equal(build([open, completed]).pad.state, "working", "completed tools stay closed while a separate worker runs");
+  assert.equal(build([open], true, t + WORKING_WINDOW_MS + 1).pad.state, "working", "live worker is not fresh tool evidence");
+  assert.equal(build([event("agent.invocation.failed")]).pad.state, "failed");
+  const asm = new Map([["hermes:a:alpha", { scope: "hermes:a:alpha", state: "awaiting_human", blockedUntilMs: t + 500 }]]);
+  assert.equal(build([completed], true, t + 100, asm).pad.state, "waiting");
+});
+
 test("Using tool requires an exact open lifecycle; other sessions, peers and nameless starts do not impersonate it", () => {
   const open = event("agent.tool.requested", 1, { toolId: "tool-1" });
   assert.equal(state([open])[0].state, "tool");

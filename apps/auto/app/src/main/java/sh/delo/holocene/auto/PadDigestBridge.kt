@@ -3,7 +3,7 @@ package sh.delo.holocene.auto
 /** Narrow native protocol. Source thread/evidence and credentials never cross into the page. */
 data class PadDigestPayload(
     val agent: String, val status: String, val session: String = "", val version: String = "",
-    val sourceAt: String = "", val text: String = "", val audio: ByteArray? = null,
+    val sourceAt: String = "", val text: String = "", val audio: ByteArray? = null, val expiresAt: Long = 0,
 )
 
 /** The production bridge's asynchronous admission boundary, independent of Android for race tests. */
@@ -14,7 +14,7 @@ class PadDigestBridge(
     private val trusted: (String) -> Boolean,
     private val busy: () -> Boolean,
     private val stop: () -> Unit,
-    private val play: (String, ByteArray) -> Boolean,
+    private val play: (String, ByteArray, Long) -> Boolean,
     private val show: (String, PadDigestPayload?) -> Unit,
     private val phase: (String, String) -> Unit,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -24,7 +24,8 @@ class PadDigestBridge(
     private var token = 0L
     private fun fresh(value: PadDigestPayload): Boolean = try {
         val age = now() - java.time.Instant.parse(value.sourceAt).toEpochMilli()
-        age in -5000L until 7_200_000L
+        age in -5000L until 7_200_000L && value.expiresAt > now() &&
+            value.expiresAt <= java.time.Instant.parse(value.sourceAt).toEpochMilli() + 7_200_000L
     } catch (_: Exception) { false }
 
     fun select(agent: String, nonce: String, refresh: Boolean = false) {
@@ -64,8 +65,11 @@ class PadDigestBridge(
             val answer = fetch("/v1/pad-summary?$q")
             ui {
                 if (!trusted(nonce) || !selection.current(agent, null, requested) || busy() || digest !== bound || !fresh(bound)) return@ui
-                val bytes = answer?.takeIf { it.status == "available" && it.agent == agent && it.session == session && it.version == version }?.audio
-                val started = bytes != null && bytes.isNotEmpty() && bytes.size <= 2 * 1024 * 1024 && play("summary:$requested", bytes)
+                val value = answer?.takeIf { it.status == "available" && it.agent == agent && it.session == session && it.version == version }
+                val bytes = value?.audio
+                val expiry = minOf(bound.expiresAt, value?.expiresAt ?: 0)
+                val started = bytes != null && bytes.isNotEmpty() && bytes.size <= 2 * 1024 * 1024 && expiry > now() &&
+                    play("summary:$requested", bytes, expiry)
                 phase(agent, if (started) "playing" else "unavailable")
             }
         }

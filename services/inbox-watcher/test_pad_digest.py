@@ -1,3 +1,4 @@
+import http.client
 import io
 import tempfile
 import json
@@ -7,7 +8,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,6 +80,24 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual((audio['status'], audio['sourceSessionId'], audio['digestId']),
                          ('available', 'sess-1', body['digestId']))
         self.assertEqual(audio['audio'], 'b2dnLWRhdGE=')
+
+    def test_only_origin_relative_targets_without_fragments_reach_source(self):
+        for path in (self.base + '#unrecognized', 'http://fixture.invalid' + self.base, '//fixture.invalid' + self.base):
+            with self.subTest(path=path):
+                self.assertEqual(self.consumer.read(path, self.auth), (400, {'error': 'invalid_request'}))
+        self.assertFalse(self.calls)
+        server = p.server(self.consumer, 0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=2)
+        try:
+            conn.request('GET', self.base + '#unrecognized', headers={'Authorization': self.auth})
+            response = conn.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertEqual(json.load(response), {'error': 'invalid_request'})
+        finally:
+            conn.close()
+        self.assertFalse(self.calls)
 
     def test_exact_session_binding_and_staleness(self):
         code, a = self.consumer.read(self.base, self.auth)
@@ -167,10 +186,123 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual(seen[-1][1], self.auth)
         with self.assertRaises(ValueError):
             p.read_json(base + '/large', TOKEN)
-        with self.assertRaises(urllib.error.HTTPError) as exc:
+        with self.assertRaises(ValueError):
             p.read_json(base + '/redirect', TOKEN)
-        exc.exception.close()
         self.assertFalse(any(path == '/must-not-follow' for path, _ in seen))
+
+    def test_timezone_aware_source_and_projection_ages(self):
+        now = time.time()
+        iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
+        source = {**digest(), **{k: iso(now) for k in ('sourceAt', 'generatedAt', 'asOf')}}
+        self.assertEqual(p.project(source, 'alpha-pm', now=now)['status'], 'available')
+        for field in ('sourceAt', 'generatedAt', 'asOf'):
+            with self.subTest(field=field):
+                self.assertEqual(p.project({**source, field: iso(now - 7201)}, 'alpha-pm', now=now)['status'], 'stale')
+                with self.assertRaises(ValueError):
+                    p.project({**source, field: iso(now + 6)}, 'alpha-pm', now=now)
+                with self.assertRaises(ValueError):
+                    p.project({**source, field: iso(now).replace('+00:00', '')}, 'alpha-pm', now=now)
+        offset = datetime.fromtimestamp(now, timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30))).isoformat()
+        self.assertAlmostEqual(p.stamp(offset), now, places=5)
+
+    def test_actual_jev_producer_to_authenticated_consumer_http(self):
+        import importlib.util
+        source = Path.home() / '.agents/tools/jev-clairic/bin/jev_session_digest.py'
+        self.assertTrue(source.is_file(), 'Jev contract integration requires the authoritative producer')
+        spec = importlib.util.spec_from_file_location('holoc51_fixture_jev', source)
+        assert spec is not None and spec.loader is not None
+        jev = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(jev)
+        now = datetime.now(timezone.utc)
+        with tempfile.TemporaryDirectory(prefix='pad-jev-integration-') as tmp:
+            root = Path(tmp)
+            registry, state = root / 'registry.yaml', root / jev.STATE_NAME
+            registry.write_text('agents:\n  alpha-pm:\n    type: hermes\n    profile_name: alpha-pm\n')
+            completed = dict(id='source-1', type=jev.COMPLETED, time=now.isoformat(), producer='hermes-agent:alpha-pm',
+                             correlationid='session-1', data={'thread_id': 'thread-1', 'reply_text': 'Not exported.'})
+            annotated = dict(id='annotation-1', type=jev.ANNOTATED, time=now.isoformat(), producer='turn-enricher',
+                             correlationid='session-1', data={'thread_id': 'thread-1', 'target_event_id': 'source-1',
+                             'action': 'Checked fixture integration', 'artifacts': [], 'blocker': 'none'})
+            jev.project([annotated], [completed], state, registry, now)
+            upstream = jev.serve(state, registry, {'fixture': TOKEN}, port=0)
+            threading.Thread(target=upstream.serve_forever, daemon=True).start()
+            try:
+                endpoint = f'http://127.0.0.1:{upstream.server_port}'
+                record = p.read_json(endpoint + '/v1/agent-session-digest?agentId=alpha-pm', TOKEN)
+                self.assertTrue(record['sourceAt'].endswith('+00:00'))
+                consumer = p.Consumer({'fixture': TOKEN}, Desk(), lambda *a: b'fixture-audio', jev_url=endpoint,
+                                      route=lambda _: {'ok': True})
+                downstream = p.server(consumer, 0)
+                threading.Thread(target=downstream.serve_forever, daemon=True).start()
+                try:
+                    url = f'http://127.0.0.1:{downstream.server_port}/v1/pad-digest?agentId=alpha-pm'
+                    with urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': self.auth})) as response:
+                        body = json.load(response)
+                    self.assertEqual((body['status'], body['sourceSessionId'], body['text']),
+                                     ('available', 'session-1', record['text']))
+                    self.assertGreater(body['expiresAt'], time.time() * 1000)
+                    with self.assertRaises(urllib.error.HTTPError) as denial:
+                        urllib.request.urlopen(url)
+                    self.assertEqual(denial.exception.code, 401)
+                    denial.exception.close()
+                finally:
+                    downstream.shutdown(); downstream.server_close()
+            finally:
+                upstream.shutdown(); upstream.server_close()
+
+    def test_final_voice_resolution_cannot_outlive_projection(self):
+        now = time.time()
+        clock = [now]
+        iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
+        self.source = {**digest(), 'sourceAt': iso(now), 'generatedAt': iso(now - 7199), 'asOf': iso(now - 7199)}
+        calls = []
+        class FinalVoice:
+            def voice_choice(self, *a, **kw):
+                calls.append(1)
+                if len(calls) == 2:
+                    clock[0] += 2
+                return dict(effective_voice='fixture', source='profile')
+        self.consumer.desk = FinalVoice()
+        self.consumer.clock = lambda: clock[0]
+        version = p.project(self.source, 'alpha-pm', now=now)['digestId']
+        assert isinstance(version, str)
+        result = self.consumer.read('/v1/pad-summary?agentId=alpha-pm&sourceSessionId=sess-1&digestId=' + version, self.auth)
+        self.assertEqual(result, (409, {'error': 'digest_changed'}))
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(self.consumer.slots.acquire(blocking=False))
+        self.consumer.slots.release()
+
+    def test_real_source_total_deadline_covers_dripping_headers_and_body_and_releases_slots(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        class Slow(BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    if self.path.startswith('/headers'):
+                        self.wfile.write(b'HTTP/1.1 200 OK\r\nX-Fixture: '); self.wfile.flush()
+                    else:
+                        self.send_response(200); self.end_headers()
+                    for _ in range(15):
+                        self.wfile.write(b' '); self.wfile.flush(); time.sleep(.05)
+                    self.wfile.write(b'\r\n\r\n{}' if self.path.startswith('/headers') else b'{}')
+                except OSError:
+                    pass
+            def log_message(self, format, *args): pass
+        upstream = ThreadingHTTPServer(('127.0.0.1', 0), Slow)
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+        self.addCleanup(upstream.server_close); self.addCleanup(upstream.shutdown)
+        endpoint = f'http://127.0.0.1:{upstream.server_port}'
+        for path in ('/headers', '/body'):
+            start = time.monotonic()
+            with self.assertRaises((TimeoutError, ValueError, OSError, http.client.HTTPException)):
+                p.read_json(endpoint + path, TOKEN, timeout=.2)
+            self.assertLess(time.monotonic() - start, .6)
+        consumer = p.Consumer({'fixture': TOKEN}, Desk(), lambda *a: b'',
+                              fetch=lambda *a: p.read_json(endpoint + '/body', TOKEN, timeout=.2), route=lambda _: {'ok': True})
+        for _ in range(3):
+            self.assertEqual(consumer.read(self.base, self.auth), (503, {'error': 'unavailable'}))
+        self.assertTrue(consumer.slots.acquire(blocking=False)); consumer.slots.release()
+        consumer.fetch = lambda *a: digest()
+        self.assertEqual(consumer.read(self.base, self.auth)[0], 200)
 
     def test_authoritative_profile_assignment_and_emergency_fallback(self):
         from test_converse import cv

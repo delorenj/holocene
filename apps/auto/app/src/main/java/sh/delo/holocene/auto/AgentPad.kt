@@ -162,14 +162,15 @@ class AgentPadHost(
         fetch = { path -> digestClient.get(path)?.let { o ->
             PadDigestPayload(o.optString("agentId"), o.optString("status"), o.optString("sourceSessionId"),
                 o.optString("digestId"), o.optString("sourceAt"), o.optString("text"),
-                if (o.has("audio")) try { Base64.decode(o.optString("audio"), Base64.DEFAULT) } catch (_: Exception) { null } else null)
+                if (o.has("audio")) try { Base64.decode(o.optString("audio"), Base64.DEFAULT) } catch (_: Exception) { null } else null,
+                o.optLong("expiresAt", 0))
         } },
         worker = { task -> digestWorker.execute(task) }, ui = { task -> activity.runOnUiThread(task) },
         trusted = { nonce -> nonce == digestPageNonce && visible && web != null && AgentPadPolicy.isPadUrl(web?.url, devUrl) },
         busy = { state.micLive || state.nativePending || announcing }, stop = { speech.stopSummary() },
-        play = { id, bytes ->
+        play = { id, bytes, expiry ->
             speech.onSummaryPhase = { phase -> js("window.__hnSummary&&window.__hnSummary(${org.json.JSONObject.quote(summaryAgent)},${org.json.JSONObject.quote(phase)})") }
-            speech.summary(id, bytes, "ogg")
+            speech.summary(id, bytes, "ogg", expiry)
         },
         show = { agent, d ->
             val result = org.json.JSONObject().put("agentId", agent).put("status", d?.status ?: "unavailable")

@@ -7,6 +7,34 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PadDigestClientTest {
+    @Test fun slowDripHeadersAndBodyCannotRenewTheFiveSecondDeadline() {
+        for (headers in listOf(false, true)) {
+            val server = ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"))
+            val worker = Thread {
+                try {
+                    server.accept().use { socket ->
+                        val input = socket.getInputStream().bufferedReader()
+                        while (true) { val line = input.readLine() ?: break; if (line.isEmpty()) break }
+                        val out = socket.getOutputStream()
+                        out.write((if (headers) "HTTP/1.1 200 OK\r\nX-Fixture: " else
+                            "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n").toByteArray())
+                        out.flush()
+                        repeat(14) { out.write(' '.code); out.flush(); Thread.sleep(500) }
+                        out.write((if (headers) "\r\n\r\n{}" else "{}").toByteArray()); out.flush()
+                    }
+                } catch (_: java.io.IOException) {} // the deadline closes the fixture socket
+            }
+            worker.isDaemon = true
+            worker.start()
+            try {
+                val start = System.nanoTime()
+                val client = PadDigestClient("http://127.0.0.1:${server.localPort}", "fixture-" + "x".repeat(40))
+                assertNull(client.read("/v1/pad-digest?agentId=alpha"))
+                val elapsed = (System.nanoTime() - start) / 1_000_000
+                assertTrue("$headers elapsed=$elapsed", elapsed in 4500..6000)
+            } finally { server.close(); worker.join(2000) }
+        }
+    }
     @Test fun realNativeTransportHasBearerBoundsAndDoesNotFollowRedirects() {
         val token = "fixture-only-" + "x".repeat(40)
         val seen = Collections.synchronizedList(ArrayList<Pair<String, String?>>())

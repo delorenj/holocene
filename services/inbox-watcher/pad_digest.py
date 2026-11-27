@@ -4,6 +4,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
+import socket
 import json
 import os
 import re
@@ -11,7 +13,6 @@ import tempfile
 import threading
 import time
 import urllib.parse
-import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,24 +26,63 @@ MAX_AUDIO = 2 * 1024 * 1024
 FIELDS = ("agentId", "sourceSessionId", "sourceThreadId", "sourceEventIds", "sourceAt", "generatedAt", "asOf", "status")
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
-def read_json(url, bearer):
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {bearer}"})
-    with urllib.request.build_opener(NoRedirect).open(req, timeout=5) as res:
-        body = res.read(MAX_JSON + 1)
-        if res.status != 200 or len(body) > MAX_JSON:
-            raise ValueError("unavailable")
-        return json.loads(body)
+def read_json(url, bearer, timeout: float = 5):
+    """One monotonic budget for connect, headers and body; a dripping peer cannot renew it."""
+    target = urllib.parse.urlsplit(url)
+    if target.scheme != "http" or target.hostname != "127.0.0.1" or target.username or target.fragment:
+        raise ValueError("source origin")
+    deadline = time.monotonic() + timeout
+    conn = http.client.HTTPConnection(target.hostname, target.port, timeout=timeout)
+    alarm = None
+    interrupt = None
+    try:
+        conn.connect()
+        # Keep a handle while HTTP/1.0 response ownership moves from the connection to its file.
+        interrupt = conn.sock.dup()
+        def expire():
+            try:
+                interrupt.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        # One request-local cancellation, not a recurring clock or background fetch worker.
+        alarm = threading.Timer(max(0, deadline - time.monotonic()), expire)
+        alarm.daemon = True
+        alarm.start()
+        conn.request("GET", urllib.parse.urlunsplit(("", "", target.path, target.query, "")),
+                     headers={"Authorization": f"Bearer {bearer}"})
+        with conn.getresponse() as res:
+            body = bytearray()
+            while len(body) <= MAX_JSON:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("source deadline")
+                chunk = res.read1(MAX_JSON + 1 - len(body))
+                if not chunk:
+                    break
+                body.extend(chunk)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("source deadline")
+            if res.status != 200 or len(body) > MAX_JSON:
+                raise ValueError("unavailable")
+            value = json.loads(body)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("source deadline")
+            return value
+    finally:
+        if alarm:
+            alarm.cancel()
+        conn.close()
+        if interrupt:
+            interrupt.close()
 
 
 def stamp(raw):
-    if not isinstance(raw, str) or not raw.endswith("Z"):
+    if not isinstance(raw, str):
         raise ValueError("timestamp")
-    return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    value = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("timezone required")
+    return value.timestamp()
 
 
 def project(raw, agent, session=None, now=None):
@@ -64,12 +104,13 @@ def project(raw, agent, session=None, now=None):
     ages = [now - stamp(raw.get(k)) for k in ("sourceAt", "generatedAt", "asOf")]
     if any(age < -5 for age in ages):
         raise ValueError("future")
-    if any(age > TTL for age in ages):
+    if any(age >= TTL for age in ages):
         return {**out, "status": "stale"}
     text = raw.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > 1200 or any(ord(c) < 32 and c not in "\n\t" for c in text):
         raise ValueError("text")
     out["text"] = text.strip()
+    out["expiresAt"] = int(min(stamp(raw[k]) + TTL for k in ("sourceAt", "generatedAt", "asOf")) * 1000)
     identity = {k: out[k] for k in ("agentId", "sourceSessionId", "sourceThreadId", "sourceEventIds", "sourceAt", "text")}
     out["digestId"] = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return out
@@ -94,7 +135,7 @@ class Consumer:
         url = urllib.parse.urlsplit(path)
         q = urllib.parse.parse_qs(url.query, keep_blank_values=True)
         summary = url.path == "/v1/pad-summary"
-        if url.path not in ("/v1/pad-digest", "/v1/pad-summary") or set(q) - {"agentId", "sourceSessionId", "digestId"} or any(len(v) != 1 for v in q.values()):
+        if url.scheme or url.netloc or url.fragment or url.path not in ("/v1/pad-digest", "/v1/pad-summary") or set(q) - {"agentId", "sourceSessionId", "digestId"} or any(len(v) != 1 for v in q.values()):
             return 400, {"error": "invalid_request"}
         agent, session, version = (q.get(k, [None])[0] for k in ("agentId", "sourceSessionId", "digestId"))
         if not ID.fullmatch(agent or "") or (session is not None and not SESSION.fullmatch(session)) or (summary and (not session or not re.fullmatch(r"[0-9a-f]{64}", version or ""))) or (not summary and version is not None):
@@ -123,13 +164,18 @@ class Consumer:
                 if not audio or len(audio) > MAX_AUDIO:
                     raise ValueError("audio")
             # Render latency must not turn a once-fresh digest into eligible speech.
-            if project(self.fetch(f"{self.jev_url}/v1/agent-session-digest?{query}", header[7:]), agent, session, self.clock()).get("digestId") != version:
+            refreshed = self.fetch(f"{self.jev_url}/v1/agent-session-digest?{query}", header[7:])
+            if project(refreshed, agent, session, self.clock()).get("digestId") != version:
                 return 409, {"error": "digest_changed"}
             after = self.desk.voice_choice(agent, os.environ.get("MEMO_VOX_VOICE", "rick"), check_catalog=True)
             if after.get("effective_voice") != voice or after.get("source") != choice.get("source"):
                 return 409, {"error": "voice_changed"}
+            encoded = base64.b64encode(audio).decode()
+            final = project(refreshed, agent, session, self.clock())
+            if final.get("digestId") != version or self.clock() * 1000 >= final["expiresAt"]:
+                return 409, {"error": "digest_changed"}
             return 200, {"agentId": agent, "sourceSessionId": session, "digestId": version, "status": "available",
-                         "voice": voice, "voiceSource": choice["source"], "ext": "ogg", "audio": base64.b64encode(audio).decode()}
+                         "expiresAt": final["expiresAt"], "voice": voice, "voiceSource": choice["source"], "ext": "ogg", "audio": encoded}
         except Exception:
             return 503, {"error": "unavailable"}
         finally:
