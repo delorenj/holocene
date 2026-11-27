@@ -73,12 +73,18 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
   const sync = useCallback((list: Annotation[]) => post({ type: `${BRIDGE_PREFIX}sync-annotations`, annotations: [...numbering(list)].map(([id, number]) => ({ id, number })) }), [post]);
   useEffect(() => { if (data) sync(data.annotations); }, [data, sync]);
 
+  // The queued writer reads the draft from this ref, so every write inside it lands there at once
+  // (not on the next render): a Save queued behind an autosave sees the autosave's version and id.
+  const updateDraft = useCallback((fn: (x: Draft | undefined) => Draft | undefined) => {
+    latest.current = { ...latest.current, draft: fn(latest.current.draft) };
+    setDraft(fn); // still an updater, so a keystroke queued meanwhile is not lost (fn is pure)
+  }, []);
   // One writer at a time: autosave and Save never race each other's version numbers.
   const persist = useCallback((status: "draft" | "saved") => {
     queue.current = queue.current.then(async () => {
       const d = latest.current.draft;
       if (!d || (status === "draft" && !d.comment.trim())) return;
-      setDraft((x) => x && x.id === d.id ? { ...x, save: { state: "saving" } } : x);
+      updateDraft((x) => x && x.id === d.id ? { ...x, save: { state: "saving" } } : x);
       const res = d.version === undefined
         ? await call(`${base}/annotations`, "POST", { id: d.id, status, kind: d.kind, anchor: d.anchor, comment: d.comment })
         : await call(`${base}/annotations/${d.id}`, "PATCH", status === "saved" ? { version: d.version, comment: d.comment, status } : { version: d.version, comment: d.comment });
@@ -90,30 +96,31 @@ export function ReviewView({ projectId, revision }: { projectId: string; revisio
           if (d.fresh) post({ type: `${BRIDGE_PREFIX}cancel-selection` });
           post({ type: `${BRIDGE_PREFIX}find-and-mark`, id: d.id, annotationType: "comment", structural: true, originalText: d.quote, anchor: d.anchor.htmlAnchor, additionalAnchors: d.anchor.htmlAdditionalTargets });
           // Only the draft that was saved closes; a newer selection made while saving keeps its own id and version.
-          setDraft((x) => !x || x.id !== d.id ? x : x.comment === d.comment ? undefined : { ...x, version: saved.version, fresh: false, save: { state: "idle" } });
+          updateDraft((x) => !x || x.id !== d.id ? x : x.comment === d.comment ? undefined : { ...x, version: saved.version, fresh: false, save: { state: "idle" } });
           setCurrent(d.id);
           return;
         }
-        setDraft((x) => x && x.id === d.id ? { ...x, version: saved.version, save: { state: "saved" } } : x);
+        updateDraft((x) => x && x.id === d.id ? { ...x, version: saved.version, save: { state: "saved" } } : x);
         return;
       }
       const current = res.body.annotation;
       if (outcome.state === "conflict" && current) {
         // Adopt the server's version so the next explicit Save overwrites knowingly; the operator's text stays in the box.
         putAnnotation(current);
-        setDraft((x) => x && x.id === d.id ? { ...x, version: current.version, save: { state: "conflict", error: `Changed elsewhere (now: “${current.comment.slice(0, 120)}”). Save again to replace it with your text.` } } : x);
+        updateDraft((x) => x && x.id === d.id ? { ...x, version: current.version, save: { state: "conflict", error: `Changed elsewhere (now: “${current.comment.slice(0, 120)}”). Save again to replace it with your text.` } } : x);
         return;
       }
       if (res.status === 404 && d.version !== undefined) {
         // Deleted elsewhere: drop the stale row and marker; the operator's text stays in the box (a Save re-creates it as new).
         post({ type: `${BRIDGE_PREFIX}remove-mark`, id: d.id });
         setData((x) => x && { ...x, annotations: x.annotations.filter((a) => a.id !== d.id) });
-        setDraft((x) => x && x.id === d.id ? { ...x, id: uuid(), version: undefined, fresh: true, save: { state: "failed", error: "Deleted elsewhere. Your text is kept; press Save to add it as a new annotation" } } : x);
+        const reborn = uuid(); // outside the updater: React may run an updater more than once
+        updateDraft((x) => x && x.id === d.id ? { ...x, id: reborn, version: undefined, fresh: true, save: { state: "failed", error: "Deleted elsewhere. Your text is kept; press Save to add it as a new annotation" } } : x);
         return;
       }
-      setDraft((x) => x && x.id === d.id ? { ...x, save: outcome } : x);
+      updateDraft((x) => x && x.id === d.id ? { ...x, save: outcome } : x);
     });
-  }, [base, post]);
+  }, [base, post, updateDraft]);
 
   // Drafts persist as you type (debounced), so a reload or API restart keeps the words.
   useEffect(() => {
