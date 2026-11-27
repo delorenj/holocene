@@ -5,7 +5,7 @@ created: '2026-11-26'
 status: 'done'
 baseline_revision: '1fffeb1d6b44e63421dc0d4b73c65ce17d4b6062'
 review_loop_iteration: 0
-followup_review_recommended: true
+followup_review_recommended: false
 context: []
 warnings: ['oversized']
 deferred:
@@ -136,6 +136,15 @@ deferred:
   - `[low]` `[reject]` Intent: the last <900 ms of typing before a reload is not durable — inherent to debounced autosave; Save is explicit and immediate.
   - `[maybe-false]` `[reject]` Intent: page routes untested beyond href builders — exercised live (200 home, 400/404 identity, review render); if a regression, low.
 
+### 2026-11-26 — Review pass (follow-up, live: conflict-overwrite and page-element annotations)
+- verdicts: 4 findings — high 0, medium 1, low 2, false 0, maybe-false 1
+- findings:
+  - `[maybe-false]` `[reject]` Inline SVG pinpoint not exercised — no GIB walkthrough contains inline `<svg>`; the bridge's SVG branch is Plannotator's code; if broken, low.
+  - `[low]` `[reject]` Pin badge sits at the click point (mid-word on a heading) — by design: the marker follows the stored selected point; cosmetic.
+  - `[low]` `[patch]` After a remote delete, B's failed Save left the deleted row and marker in B's rail until reload — the 404 branch now removes the row and marker and keeps the text as a new draft with a fresh id; verified live (stale row gone, one saved row v2 after Save).
+  - `[medium]` `[patch]` Found while verifying that patch: queued writes read the draft from a ref that updated only on render, and the reborn id was minted inside a state updater, so a Save right after an autosave produced two rows (a stray draft plus the saved one) — `updateDraft` now updates the ref synchronously with pure updaters and the id is minted outside; re-run live: one row, then the full annotate → reload → API restart → reload run passed (saved + draft intact, 0 unanchored).
+- live coverage that passed (independent reviewer, two browser contexts): conflict shows the server text and keeps B's text; autosave never touches a saved annotation or a conflicted draft; second explicit Save overwrites (v3, still saved); Cancel during conflict keeps the server text; delete-in-A then Save-in-B shows "Not saved" with text kept; pinpoint on heading, image, link (ctrl-click) and `main` container stored as `kind=element` with `htmlAnchor`; all 4 markers restored after reload and after `systemctl --user restart holocene-api.service`, 0 unresolved; Interact opens no composer; switching back to Select text works. All test annotations deleted; the reviewer left the captured "Pool-hall posters v3" revision `e3756303…` in place.
+
 ## Design Notes
 
 Mutation signature: `hex(HMAC_SHA256(HMAC_SHA256(secret, "holocene-reviews/v1"), [method, pathAndQuery, sha256(body), user, timestamp].join("\n")))`, 30 s window. The read-only catalog signature stays as is; review routes never accept it.
@@ -179,3 +188,5 @@ Note: the parent session implemented the change directly rather than through a f
 - Live (headless Chromium → holocene-web container, edge headers supplied): home 200 with 11 GIB walkthroughs; `green-in-between` 404, `Green%20In` 400, `a%252Fb` 400; capture of `launch-dashboard` → revision `b3ccc0c63623…` published and verified; text annotation with draft autosave then Save; second draft; reload and `systemctl --user restart holocene-api.service`: 3 saved (#1–#3) + 2 drafts intact, 0 unanchored; forged top-window bridge message ignored; 390px scrollWidth = clientWidth on home and review; no console errors. Test annotations deleted afterwards (DELETE 204 ×5). `https://holocene.delo.sh/projects/greeninbetween` → 307 to Google auth.
 
 **Residual risks:** the POOL-186 page is a historical seed per the GIB PM, so the true product walkthrough is not yet named; unresolved-anchor display was not exercised live; element pinpoint annotations were not exercised live.
+
+**Follow-up pass (2026-11-26):** conflict-overwrite and page-element annotations verified live by an independent reviewer; 2 patches (stale rail row after a remote delete; queued writes reading a stale draft ref). `followup_review_recommended` is now false: this follow-up pass patched no high. The deferred first-run composer stall may share the stale-ref root cause just fixed (a Save queued behind an autosave read a version that had not rendered yet); it stays deferred until a fresh post-deploy run reproduces or clears it.
