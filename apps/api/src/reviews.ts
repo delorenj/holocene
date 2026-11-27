@@ -89,6 +89,12 @@ async function readBytes(res: Response, cap: number): Promise<Uint8Array | undef
 }
 
 export const manifestHash = (manifest: ManifestEntry[]) => sha256([...manifest].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0).map((m) => `${m.path}\u0000${m.sha256}\n`).join(""));
+/**
+ * A revision is these bytes as a review of one publication: the id binds project, artifact and manifest, so two
+ * catalog publications with byte-identical files (a twin at another path or day) are two reviews, never a collision.
+ * Revisions preserved before HOLOC-71 keep their bare manifest-hash id; `captureRevision` still finds them.
+ */
+export const revisionKey = (projectId: string, artifactId: string, manifest: ManifestEntry[]) => sha256(`holocene-review/2\u0000${projectId}\u0000${artifactId}\u0000${manifestHash(manifest)}`);
 const safeRel = (rel: string) => rel.length <= 1024 && !rel.split("/").some((p) => !p || p === "." || p === ".." || /[\x00-\x1f\\]/.test(p));
 
 export const defaultPublisher: Publisher = async (dir, project, name, entry) => {
@@ -101,7 +107,7 @@ export const defaultPublisher: Publisher = async (dir, project, name, entry) => 
   return url;
 };
 
-export type CaptureResult = { status: 200 | 201; revision: Revision } | { status: 400 | 404 | 409 | 413 | 502; error: string };
+export type CaptureResult = { status: 200 | 201; revision: Revision } | { status: 400 | 404 | 413 | 502; error: string };
 /** Copy one publication's exact bytes into a hash-addressed review publication. */
 export async function captureRevision(store: ReviewStore, projectId: string, item: Artifact | undefined, user: string, fetcher: Fetcher = fetch, publish: Publisher = defaultPublisher, now = () => new Date().toISOString()): Promise<CaptureResult> {
   if (!item || item.source !== "projects" || collectionOf(item) !== projectId || !item.primary) return { status: 404, error: "That publication is not in this project's catalog" };
@@ -125,11 +131,10 @@ export async function captureRevision(store: ReviewStore, projectId: string, ite
       await writeFile(join(dir, rel), bytes);
     }
     manifest.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-    const revisionId = manifestHash(manifest);
-    const existing = store.revision(revisionId);
-    if (existing && (existing.projectId !== projectId || existing.artifactId !== item.id))
-      return { status: 409, error: `These exact bytes are already preserved as a review of ${existing.projectId} ${existing.artifactId}` };
+    const bound = (r: Revision | undefined) => r && r.projectId === projectId && r.artifactId === item.id ? r : undefined;
+    const existing = bound(store.revision(manifestHash(manifest))) ?? bound(store.revision(revisionKey(projectId, item.id, manifest)));
     if (existing) return { status: 200, revision: existing };
+    const revisionId = revisionKey(projectId, item.id, manifest);
     const name = `review-${revisionId.slice(0, 16)}`;
     let url: string;
     try { url = await publish(dir, projectId, name, entry); }

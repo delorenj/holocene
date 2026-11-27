@@ -8,7 +8,7 @@ import Fastify from "fastify";
 import { normalizeMinio, type Artifact } from "./artifacts.js";
 import { parseProjectSegment, resolveProject, lookupProject } from "./project-identity.js";
 import { ReviewStore } from "./review-store.js";
-import { AWAITING_CONTRACT, captureRevision, feedbackRecipient, freezeFeedback, homePayload, manifestHash, parseNewAnnotation, registerReviewRoutes, reviewSignature, revisionDocument, verifyReviewRequest } from "./reviews.js";
+import { AWAITING_CONTRACT, captureRevision, feedbackRecipient, freezeFeedback, homePayload, manifestHash, revisionKey, parseNewAnnotation, registerReviewRoutes, reviewSignature, revisionDocument, verifyReviewRequest } from "./reviews.js";
 
 const registry = { projects: { greeninbetween: { project_id: "greeninbetween", project_name: "Green In Between", repo_path: "/home/x/code/green-in-between", agents: { "green-in-between-pm": { role: "pm" }, helper: { role: "dev" } } }, holocene: { repo_path: "/h" } } };
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -55,7 +55,7 @@ test("capture copies exact bytes into a hash-addressed snapshot; identical bytes
   assert.equal(first.status, 201);
   assert.ok("revision" in first);
   const rev = first.revision;
-  assert.equal(rev.revisionId, manifestHash([{ path: "img/a.png", sha256: sha("PNG"), size: 3 }, { path: "index.html", sha256: sha(files["https://s3.delo.sh/projects/gib/2026-11-19/walk/index.html"]), size: 26 }]));
+  assert.equal(rev.revisionId, revisionKey("gib", item().id, [{ path: "img/a.png", sha256: sha("PNG"), size: 3 }, { path: "index.html", sha256: sha(files["https://s3.delo.sh/projects/gib/2026-11-19/walk/index.html"]), size: 26 }]));
   assert.equal(rev.snapshotUrl, `https://s3.delo.sh/projects/gib/2026-11-26/review-${rev.revisionId.slice(0, 16)}/index.html`);
   const again = await captureRevision(store, "gib", item(), "op@example.com", origin(files), publish);
   assert.equal(again.status, 200);
@@ -76,10 +76,37 @@ test("capture copies exact bytes into a hash-addressed snapshot; identical bytes
   assert.equal((await captureRevision(store, "gib", item(), "u@x.y", origin({}), publish)).status, 502);
   assert.equal((await captureRevision(store, "gib", item({ filenames: ["index.html", "x"] }), "u@x.y", origin({ ...files, "https://s3.delo.sh/projects/gib/2026-11-19/walk/x": "1" }), async () => "https://evil.test/x")).status, 502);
   assert.equal((await captureRevision(store, "gib", item({ filenames: ["index.html", "../x"] }), "u@x.y", origin(files), publish)).status, 400);
-  // A byte-identical copy published as a different walkthrough is refused loudly, never handed the other walkthrough's revision.
+  // HOLOC-71: a byte-identical copy published as a different walkthrough is its own review, never the other's revision.
   const twinFiles = { "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html": files["https://s3.delo.sh/projects/gib/2026-11-19/walk/index.html"], "https://s3.delo.sh/projects/gib/2026-11-20/twin/img/a.png": "PNG" };
   const twin = item({ id: "projects:gib/2026-11-20/twin/index.html", originalUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html", baseUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/" });
-  assert.equal((await captureRevision(store, "gib", twin, "u@x.y", origin(twinFiles), publish)).status, 409);
+  const t1 = await captureRevision(store, "gib", twin, "u@x.y", origin(twinFiles), publish);
+  assert.equal(t1.status, 201);
+  assert.ok("revision" in t1 && "revision" in second);
+  assert.notEqual(t1.revision.revisionId, second.revision.revisionId, "same bytes, different walkthrough, different revision");
+  assert.equal(t1.revision.artifactId, twin.id);
+  assert.notEqual(t1.revision.snapshotUrl, second.revision.snapshotUrl);
+  const t2 = await captureRevision(store, "gib", twin, "u@x.y", origin(twinFiles), publish);
+  assert.ok("revision" in t2 && t2.status === 200 && t2.revision.revisionId === t1.revision.revisionId);
+  const back = await captureRevision(store, "gib", item(), "u@x.y", origin(files), publish);
+  assert.ok("revision" in back && back.status === 200 && back.revision.revisionId === second.revision.revisionId, "the original still finds its own revision");
+});
+
+test("HOLOC-71: a revision preserved under the bare manifest hash keeps its id; a twin of it gets its own", async () => {
+  const store = new ReviewStore(":memory:");
+  const html = "<!doctype html><h1>legacy</h1>";
+  const files: Record<string, string> = { "https://s3.delo.sh/projects/gib/2026-11-19/walk/index.html": html, "https://s3.delo.sh/projects/gib/2026-11-19/walk/img/a.png": "PNG" };
+  const manifest = [{ path: "img/a.png", sha256: sha("PNG"), size: 3 }, { path: "index.html", sha256: sha(html), size: html.length }];
+  const legacy = manifestHash(manifest);
+  store.putRevision({ revisionId: legacy, projectId: "gib", artifactId: item().id, title: "walk", entry: "index.html", sourceUrl: item().originalUrl, snapshotBaseUrl: "s/", snapshotUrl: `https://s3.delo.sh/projects/gib/2026-11-26/review-${legacy.slice(0, 16)}/index.html`, entrySha256: sha(html), manifest, createdAt: "t", createdBy: "op@example.com" });
+  const published: string[] = [];
+  const publish = async (_dir: string, project: string, name: string, entry: string) => { published.push(name); return `https://s3.delo.sh/projects/${project}/2026-11-27/${name}/${entry}`; };
+  const again = await captureRevision(store, "gib", item(), "op@example.com", origin(files), publish);
+  assert.ok("revision" in again && again.status === 200 && again.revision.revisionId === legacy);
+  assert.equal(published.length, 0, "a legacy revision is found, never republished");
+  const twin = item({ id: "projects:gib/2026-11-20/twin/index.html", originalUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html", baseUrl: "https://s3.delo.sh/projects/gib/2026-11-20/twin/" });
+  const t = await captureRevision(store, "gib", twin, "op@example.com", origin({ "https://s3.delo.sh/projects/gib/2026-11-20/twin/index.html": html, "https://s3.delo.sh/projects/gib/2026-11-20/twin/img/a.png": "PNG" }), publish);
+  assert.ok("revision" in t && t.status === 201 && t.revision.revisionId === revisionKey("gib", twin.id, manifest));
+  assert.equal(store.revision(legacy)!.artifactId, item().id, "the legacy revision is untouched");
 });
 
 test("home: walkthroughs from the project's collection, latest vs reviewed, unattributed counted not assigned", () => {
