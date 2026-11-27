@@ -68,6 +68,8 @@ export function normalizeMinio(bucket: "projects" | "share", rows: ObjectRow[]):
   }
   const out: Artifact[] = [];
   for (const [prefix, group] of groups) {
+    // HOLOC-70 review revisions are hash-addressed copies, listed by the project home, not the gallery.
+    if (bucket === "projects" && /^review-[a-f0-9]{16}$/.test(group.name) && isDay(prefix.split("/")[1] ?? "")) continue;
     const files = group.files.sort((a, b) => a.key.localeCompare(b.key));
     const rel = (row: ObjectRow) => row.key.slice(prefix.length + 1);
     const html = files.find((r) => /^index\.html?$/i.test(rel(r))) ?? files.find((r) => /\.html?$/i.test(rel(r)));
@@ -469,7 +471,10 @@ const attachment = (name: string) => {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 };
 
-export function registerArtifactRoutes(app: FastifyInstance, catalog = createArtifactCatalog({ projects: () => listMinio("projects"), share: () => listMinio("share"), r2: listR2 }), fetcher: Fetcher = fetch) {
+/** The live catalog: one instance shared by the gallery routes and the project home (HOLOC-70). */
+export const liveArtifactCatalog = () => createArtifactCatalog({ projects: () => listMinio("projects"), share: () => listMinio("share"), r2: listR2 });
+
+export function registerArtifactRoutes(app: FastifyInstance, catalog = liveArtifactCatalog(), fetcher: Fetcher = fetch) {
   const signed = (req: { headers: Record<string, unknown> }) => authorizeArtifacts(req.headers["x-artifacts-signature"] as string | undefined, req.headers["x-artifacts-timestamp"] as string | undefined, process.env.TELEGRAM_HQ_BOT_TOKEN);
   const lookup = async (q: Record<string, string>) => {
     if (typeof q.id !== "string" || !q.id || q.id.length > 2048 || (q.file !== undefined && (typeof q.file !== "string" || q.file.length > 1024))) return;

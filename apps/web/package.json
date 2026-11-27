@@ -9,7 +9,7 @@
     "lint": "echo 'lint:todo'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next dist",
-    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\" \"app/hub/navigation-model.test.ts\" \"app/hub/inspector-model.test.ts\" \"app/products/products-model.test.ts\" \"app/artifacts/featured.test.ts\" \"app/artifacts/navigator-model.test.ts\"",
+    "test": "node --import tsx --test \"app/candybar/*.test.ts\" \"app/genesis/*.test.ts\" \"app/live/*.test.ts\" \"app/hub/navigation-model.test.ts\" \"app/hub/inspector-model.test.ts\" \"app/products/products-model.test.ts\" \"app/artifacts/featured.test.ts\" \"app/artifacts/navigator-model.test.ts\" \"app/projects/review-model.test.ts\"",
     "test:products-browser": "node --test app/products/products.browser.mjs",
     "test:artifacts-browser": "node --test app/artifacts/artifacts.browser.mjs"
   },
@@ -17,6 +17,8 @@
     "@holocene/module-sdk": "workspace:*",
     "@holocene/modules-hermes-fleet": "workspace:*",
     "@holocene/org-model": "workspace:*",
+    "@plannotator/core": "0.25.33",
+    "@plannotator/ui": "0.65.0",
     "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-hover-card": "^1.1.16",
     "@radix-ui/react-toggle-group": "^1.1.12",

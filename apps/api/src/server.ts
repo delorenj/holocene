@@ -2,7 +2,8 @@ import { config } from "dotenv";
 config({ path: new URL("../../../.env", import.meta.url) });
 
 import Fastify from "fastify";
-import { registerArtifactRoutes } from "./artifacts.js";
+import { liveArtifactCatalog, registerArtifactRoutes } from "./artifacts.js";
+import { registerReviewRoutes } from "./reviews.js";
 import { registerHookHubRoutes } from "./hook-hub.js";
 import { registerVoiceRoutes } from "./voice-routes.js";
 import { registerGenesisRoutes } from "./genesis-routes.js";
@@ -62,7 +63,9 @@ registerAgentVoiceRoutes(app);
 registerProductsRoutes(app, createProductsDirectory(defaultProductsDeps(getRegisteredProjects)));
 registerLiveRoutes(app, createLiveHub(defaultLiveDeps({ projects: getRegisteredProjects, tickets: () => getRecentTickets(eventCollector.store) })));
 registerAvatarRoutes(app);
-registerArtifactRoutes(app);
+const artifactCatalog = liveArtifactCatalog();
+registerArtifactRoutes(app, artifactCatalog);
+await registerReviewRoutes(app, artifactCatalog);
 registerPadActivityRoute(app, () => getPadActivity(eventCollector.store));
 eventCollector.start();
 // Without retention the store grew ~0.9 GiB/day; prune hourly (HOLOCENE_RETENTION_* to tune, =off to disable).

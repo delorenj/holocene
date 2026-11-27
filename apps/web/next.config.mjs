@@ -13,6 +13,8 @@ const nextConfig = {
   // Next would 308 /harvest/review/<id>/ to the slashless form before any rewrite runs; the worker's page and its
   // form actions are served under the slash form, so keep the slash and let the rewrites below match both.
   skipTrailingSlashRedirect: true,
+  // HOLOC-70: Plannotator ships raw TypeScript; Holocene imports only its bridge script and anchor builder.
+  transpilePackages: ["@plannotator/ui", "@plannotator/core"],
   experimental: {
     typedRoutes: true
   },
