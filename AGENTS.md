@@ -4,11 +4,26 @@
 
 Holocene collects Bloodbank events and renders them through filters and read
 projections. Bloodbank owns event distribution; Holocene is a sink for events
-and publishes exactly one command type, `bloodbank.audio.harvest.start`, on an
-operator click (the Transcripts tab's Harvest button, `POST
-/api/modules/transcripts/:id/harvest`, through `bb-emit`). It never publishes
-domain events. The pilot-owned harvest worker (`px harvest worker`) consumes
-that command and answers with `bloodbank.audio.harvest.*` events, which the
+and publishes exactly two command types, both only on an explicit operator
+click and both through `bb-emit`:
+
+1. `bloodbank.audio.harvest.start` — the Transcripts tab's Harvest button
+   (`POST /api/modules/transcripts/:id/harvest`).
+2. `bloodbank.review.feedback.send` — the project walkthrough review's
+   explicit **Send feedback** action (`POST
+   /api/modules/projects/:project/revisions/:revision/feedback`). This is the
+   HOLOC-70 exception agreed with BB-67: Holocene owns the durable review,
+   immutable submission and outbox, and this one command producer; Bloodbank
+   owns contract acceptance, gateway execution and final-answer publication.
+   The Send handler freezes the canonical project id, the preserved revision
+   and the exact command/routing identity before publication and reuses that
+   identity across retries. Viewing, saving, closing and background refresh
+   publish nothing.
+
+It never publishes domain events, and no other command producer may be added
+without a further amendment here. The pilot-owned harvest worker (`px harvest
+worker`) consumes the harvest command and answers with
+`bloodbank.audio.harvest.*` events, which the
 Transcripts tab reads back from the shared collection as each row's
 `harvest_job`; its review form is served through the `/harvest/review/*`
 rewrite in `apps/web/next.config.mjs` (`HARVEST_WORKER_URL`). The Hooks screen is a view of the shared event
