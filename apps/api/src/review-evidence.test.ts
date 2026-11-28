@@ -98,15 +98,16 @@ test("Candystore: list by correlation id from the Send time, then each raw envel
   const asked: string[] = [];
   const fetcher = (async (url: string) => {
     asked.push(url);
-    if (url.includes("/events?")) return new Response(JSON.stringify({ events: [{ id: "e1" }, { id: "e2" }] }));
+    if (url.includes("/events?")) return new Response(JSON.stringify({ events: [{ id: "e1", type: "bloodbank.agent.invocation.queued" }, { id: "e2", type: "bloodbank.conversation.message.appended" },
+      { id: "noise", type: "bloodbank.repo.task.updated" }, { id: "done", type: "bloodbank.agent.invocation.completed" }, { id: "old", type: "bloodbank.agent.invocation.started" }] }));
     const id = url.split("/events/")[1].split("/")[0];
     return new Response(JSON.stringify({ id, type: "bloodbank.agent.invocation.queued", causationid: "c" }));
   }) as typeof fetch;
-  const got = await candystoreFacts("http://cs", fetcher)("corr-1", "2026-11-28T00:00:00Z");
+  const got = await candystoreFacts("http://cs", fetcher)("corr-1", "2026-11-28T00:00:00Z", new Set(["old"]));
   assert.ok(got.ok);
   assert.deepEqual(got.ok && got.facts.map((f) => f.id), ["e1", "e2"]);
   assert.equal(asked[0], "http://cs/events?correlationid=corr-1&from=2026-11-28T00%3A00%3A00Z&limit=200");
-  assert.deepEqual(asked.slice(1), ["http://cs/events/e1/raw", "http://cs/events/e2/raw"]);
+  assert.deepEqual(asked.slice(1).sort(), ["http://cs/events/e1/raw", "http://cs/events/e2/raw"], "types the join always ignores, and judged facts, are never fetched");
   const bad = await candystoreFacts("http://cs", (async () => new Response("no", { status: 503 })) as unknown as typeof fetch)("c", "t");
   assert.ok(!bad.ok);
 });
@@ -145,4 +146,19 @@ test("HTTP: reading the review projects facts and returns the answer, never the 
   assert.equal(row.evidence.answer.body, "Done.");
   assert.equal(row.evidence.seen, undefined);
   assert.equal(row.retryable, false);
+});
+
+test("HTTP: a stalled Candystore or join never holds the review page past its budget", async (t) => {
+  const { store } = published();
+  const app = Fastify();
+  t.after(() => app.close());
+  const stalled: FactSource = () => new Promise(() => undefined);
+  await registerReviewRoutes(app, async () => ({ items: [], sources: {}, retryAfterMs: 0 }), { store, registry: async () => ({ projects: { greeninbetween: { project_id: "greeninbetween", project_name: "GIB", repo_path: "/r", agents: { "green-in-between-pm": { role: "pm" } } } } }), secret: () => "k",
+    delivery: { mode: "live" }, evidence: { facts: stalled, judge: judging({}) } });
+  const url = `/api/modules/projects/greeninbetween/revisions/${REV}/feedback`; const ts = String(Date.now());
+  const started = Date.now();
+  const res = await app.inject({ method: "GET", url, headers: { "x-review-user": "op@example.com", "x-review-timestamp": ts, "x-review-signature": reviewSignature("k", "GET", url, "", "op@example.com", ts) } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(Date.now() - started < 4000, "answered within the read budget");
+  assert.equal(res.json().submissions[0].state, "published");
 });

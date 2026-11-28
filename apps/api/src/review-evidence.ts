@@ -9,7 +9,7 @@ import type { Evidence, EvidenceStage, ReviewStore, Submission } from "./review-
 
 /** One raw CloudEvent envelope as Candystore stores it (`/events/<id>/raw`). */
 export type Fact = { id: string; type: string; time?: string; data?: Record<string, unknown>; [k: string]: unknown };
-export type FactSource = (correlationId: string, since: string) => Promise<{ ok: true; facts: Fact[] } | { ok: false; detail: string }>;
+export type FactSource = (correlationId: string, since: string, skip?: ReadonlySet<string>) => Promise<{ ok: true; facts: Fact[] } | { ok: false; detail: string }>;
 export type Judgement = { ok: true; state: EvidenceStage | null; errorCode?: string } | { ok: false; detail: string };
 export type EvidenceJudge = (row: ReturnType<typeof wireRow>, fact: Fact, profile: string) => Promise<Judgement>;
 
@@ -21,26 +21,31 @@ export const projectable = (s: Pick<Submission, "state" | "commandId">) =>
   !!s.commandId && (s.state === "published" || s.state === "queued" || s.state === "uncertain");
 
 const MAX_FACTS = 200;
+/**
+ * The only fact types Bloodbank's join can ever map (evidence_state returns null for every other type, completion
+ * included). Filtering on the listed type is not a copy of the join, only a refusal to fetch what it always ignores.
+ */
+export const JUDGEABLE = new Set(["bloodbank.agent.invocation.queued", "bloodbank.agent.invocation.started", "bloodbank.agent.invocation.failed", "bloodbank.conversation.message.appended"]);
 
 /** Candystore by correlation id, then each fact's raw envelope: the join needs every envelope field. */
 export function candystoreFacts(base = candystoreBaseUrl(), fetcher: typeof fetch = fetch, timeoutMs = 5000): FactSource {
-  return async (correlationId, since) => {
+  return async (correlationId, since, skip) => {
     try {
       const url = `${base}/events?correlationid=${encodeURIComponent(correlationId)}&from=${encodeURIComponent(since)}&limit=${MAX_FACTS}`;
       const res = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) return { ok: false, detail: `Candystore answered HTTP ${res.status}` };
-      const body = await res.json() as { events?: Array<{ id?: unknown }>; rows?: Array<{ id?: unknown }> };
-      const ids = (body.events ?? body.rows ?? []).map((e) => e.id).filter((id): id is string => typeof id === "string");
-      const facts: Fact[] = [];
-      for (const id of ids) {
+      const body = await res.json() as { events?: Array<{ id?: unknown; type?: unknown }>; rows?: Array<{ id?: unknown; type?: unknown }> };
+      // Only new facts of a judgeable type: judged facts are immutable, so they are never fetched again.
+      const ids = (body.events ?? body.rows ?? []).filter((e) => typeof e.id === "string" && JUDGEABLE.has(String(e.type)) && !skip?.has(e.id))
+        .map((e) => String(e.id));
+      const raws = await Promise.all(ids.map(async (id) => {
         const raw = await fetcher(`${base}/events/${encodeURIComponent(id)}/raw`, { signal: AbortSignal.timeout(timeoutMs) });
-        if (!raw.ok) return { ok: false, detail: `Candystore raw fact ${id} answered HTTP ${raw.status}` };
-        const fact = await raw.json() as Fact;
-        if (fact && typeof fact.id === "string" && typeof fact.type === "string") facts.push(fact);
-      }
-      return { ok: true, facts };
+        if (!raw.ok) throw Error(`Candystore raw fact ${id} answered HTTP ${raw.status}`);
+        return await raw.json() as Fact;
+      }));
+      return { ok: true, facts: raws.filter((f) => f && typeof f.id === "string" && typeof f.type === "string") };
     } catch (e) {
-      return { ok: false, detail: `Candystore is unreachable (${e instanceof Error ? e.name : "error"})` };
+      return { ok: false, detail: e instanceof Error && e.message.startsWith("Candystore") ? e.message : `Candystore is unreachable (${e instanceof Error ? e.name : "error"})` };
     }
   };
 }
@@ -68,7 +73,7 @@ const DETAIL: Record<EvidenceStage, (s: Submission, e: Evidence) => string> = {
   queued: (s) => `Bloodbank's gateway queued it for ${s.recipient}. No answer yet.`,
   running: (s) => `${s.recipient} is working on it. No answer yet.`,
   answered: (s) => `Answered by ${s.recipient}.`,
-  failed: (s, e) => `Not answered: the gateway closed it as failed (${e.errorCode ?? "no reason given"}). Send it again only after you decide what to change.`,
+  failed: (s, e) => `Delivered, but not answered: the gateway closed it as failed (${e.errorCode ?? "no reason given"}). Send it again only after you decide what to change.`,
   uncertain: (s, e) => `Execution uncertain (${e.errorCode ?? "unknown"}): the gateway cannot tell whether ${s.recipient} ran. Reconcile it by hand; it is never re-sent automatically.`
 };
 /** The outbox state each stage shows; running is still queued in the outbox. */
@@ -80,9 +85,9 @@ const STATE = { queued: "queued", running: "queued", answered: "answered", faile
  */
 export async function projectSubmission(store: ReviewStore, sub: Submission, facts: FactSource, judge: EvidenceJudge): Promise<Submission> {
   if (!projectable(sub)) return sub;
-  const got = await facts(sub.correlationId, sub.createdAt);
-  if (!got.ok) return sub;
   const prior = sub.evidence ?? { seen: [] };
+  const got = await facts(sub.correlationId, sub.createdAt, new Set(prior.seen));
+  if (!got.ok) return sub;
   const seen = new Set(prior.seen);
   let best: Evidence = { ...prior, seen: [...prior.seen] };
   const row = wireRow(sub);

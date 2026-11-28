@@ -139,6 +139,7 @@ export function submissionLabel(s: Pick<Submission, "state" | "commandId" | "evi
   if (s.state === "saved" && s.commandId) return "Validated, not sent";
   if (s.evidence?.stage === "running") return "Running";
   if (s.state === "uncertain" && s.evidence?.stage === "uncertain") return "Execution uncertain";
+  if (s.state === "failed" && s.evidence?.stage === "failed") return "Delivered, not answered";
   return { saved: "Saved, not sent", queued: "Queued for the PM", published: "Sent, awaiting the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
 }
 

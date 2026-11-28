@@ -309,7 +309,10 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
     scope.get<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
       const ok = await guard(req, reply); if (!ok) return;
       const m = mode();
-      const subs = await Promise.all(store.submissions(ok.rev!.revisionId).map(project));
+      // Reading never waits long on Bloodbank: past the budget the stored row is shown and the projection finishes
+      // on its own (its result is stored, so the next read shows it).
+      const budget = (s: import("./review-store.js").Submission) => Promise.race([project(s), new Promise<typeof s>((r) => setTimeout(() => r(store.submission(s.submissionId) ?? s), 2500).unref())]);
+      const subs = await Promise.all(store.submissions(ok.rev!.revisionId).map(budget));
       return { delivery: m, submissions: subs.map((s) => submissionView(s, m)) };
     });
     // The explicit Send. It freezes the revision's saved feedback, its recipient and its identity; the row is the outbox.

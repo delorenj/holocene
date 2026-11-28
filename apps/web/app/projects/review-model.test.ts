@@ -80,6 +80,7 @@ test("Send reaches exactly one registry PM, and a saved submission never claims 
   assert.equal(submissionLabel({ state: "queued", evidence: { stage: "queued" } }), "Queued for the PM");
   assert.equal(submissionLabel({ state: "uncertain", evidence: { stage: "uncertain", errorCode: "processing_outcome_unknown" } }), "Execution uncertain");
   assert.equal(submissionLabel({ state: "uncertain" }), "Delivery uncertain");
+  assert.equal(submissionLabel({ state: "failed", evidence: { stage: "failed", errorCode: "timeout" } }), "Delivered, not answered", "a gateway failure is not a delivery failure");
   assert.ok(canRetry({ retryable: true }));
   assert.ok(!canRetry({}), "no server answer: no control");
   assert.ok(!canRetry({ retryable: false }));
