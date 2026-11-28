@@ -186,7 +186,8 @@ export class ReviewStore {
   recordDelivery(id: string, d: Delivery, now = new Date().toISOString()): Submission | undefined {
     const prior = this.submission(id);
     if (!prior) return;
-    if (SETTLED.includes(prior.state) && !SETTLED.includes(d.state)) return prior;
+    // Monotone: a settled row moves only from published to its answer (answered or failed).
+    if (SETTLED.includes(prior.state) && !(prior.state === "published" && (d.state === "answered" || d.state === "failed"))) return prior;
     if (prior.commandId && d.commandId && prior.commandId !== d.commandId) throw Error("A submission's command id never changes");
     this.db.prepare(`UPDATE submissions SET state=?, state_detail=?, command_id=COALESCE(command_id, ?), receipt=COALESCE(?, receipt),
       attempts=attempts + ?, updated_at=? WHERE submission_id=?`).run(d.state, d.stateDetail, d.commandId ?? null,

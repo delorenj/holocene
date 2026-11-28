@@ -75,7 +75,27 @@ test("live: validate, publish, record the receipt; an unconfirmed publish is unc
   assert.equal((await deliverSubmission(store, p, "live", none.emit)).state, "published");
   assert.equal(none.calls.length, 0);
   assert.equal(store.recordDelivery(s.submissionId, { state: "uncertain", stateDetail: "late" })!.state, "published");
-  assert.throws(() => store.recordDelivery(s.submissionId, { state: "published", stateDetail: "x", commandId: "other" }), /never changes/);
+  assert.equal(store.recordDelivery(s.submissionId, { state: "published", stateDetail: "again", receipt: { stream: "X", seq: 9, duplicate: false } })!.receipt!.seq, 42, "a settled receipt is never replaced");
+  assert.throws(() => store.recordDelivery(s.submissionId, { state: "answered", stateDetail: "x", commandId: "other" }), /never changes/);
+  assert.equal(store.recordDelivery(s.submissionId, { state: "answered", stateDetail: "PM answered" })!.state, "answered");
+});
+
+test("an uncertain row keeps its meaning: check mode leaves it alone, and a later refusal never says it was not stored", async () => {
+  const store = seeded();
+  const s = sub(store);
+  const u = await deliverSubmission(store, s, "live", scripted({ ok: true, commandId: "cmd-1" }, { ok: false, kind: "unconfirmed", detail: "timed out" }).emit);
+  const idle = scripted();
+  const same = await deliverSubmission(store, u, "check", idle.emit);
+  assert.equal(idle.calls.length, 0, "check mode never touches an unconfirmed publish");
+  assert.equal(same.state, "uncertain");
+  const refused = await deliverSubmission(store, u, "live", scripted({ ok: false, kind: "unavailable", detail: "adapter gone" }).emit);
+  assert.equal(refused.state, "uncertain");
+  assert.match(refused.stateDetail, /may already be stored as command cmd-1/);
+  const live = await deliverSubmission(store, refused, "live", scripted({ ok: true, commandId: "cmd-1" }, { ok: false, kind: "refused", detail: "ContractViolation" }).emit);
+  assert.equal(live.state, "uncertain", "a live refusal publishes nothing, but the earlier attempt still may have");
+  const fresh = await deliverSubmission(store, sub(store, "33333333-3333-4333-8333-333333333333"), "live", scripted({ ok: true, commandId: "cmd-3" }, { ok: false, kind: "refused", detail: "ContractViolation" }).emit);
+  assert.equal(fresh.state, "saved", "a first publish that is refused was never stored");
+  assert.match(fresh.stateDetail, /^Not sent/);
 });
 
 test("delivery columns are added to a store created before delivery existed", () => {
@@ -116,6 +136,11 @@ test("bb-emit: argv and stdin only; stderr separates a refusal, a missing adapte
   const slow = await bbEmitFeedback(fake("slow", "sleep 5"), 200)(row, false);
   assert.equal(slow.ok === false && slow.kind, "unconfirmed", "a timeout may already have been accepted");
   assert.equal((await bbEmitFeedback(join(dir, "missing"))(row, true) as { kind: string }).kind, "unavailable");
+  const noValidator = await bbEmitFeedback(fake("novalidator", `echo "bb-emit: feedback validation failed (RuntimeError); keep the frozen row" >&2; exit 1`))(row, true);
+  assert.equal(noValidator.ok === false && noValidator.kind, "unavailable", "a missing validator is infrastructure, not a refusal");
+  const big = { ...row, note: "x".repeat(4_000_000) } as typeof row;
+  const early = await bbEmitFeedback(fake("early", `echo "bb-emit: error: unrecognized arguments: --feedback-submission" >&2; exit 2`))(big, true);
+  assert.equal(early.ok === false && early.kind, "unavailable", "an exit before stdin is read is an answer, not an EPIPE crash");
 });
 
 test("HTTP: Send saves first, then delivers; a double click during delivery never publishes twice", async (t) => {
@@ -138,7 +163,7 @@ test("HTTP: Send saves first, then delivers; a double click during delivery neve
   await new Promise((r) => setTimeout(r, 50));
   const second = await call("POST", `${base}/feedback`, { submissionId: id });
   assert.equal(second.statusCode, 202, "a second click while delivering returns the row, no second publish");
-  assert.equal(store.submission(id)!.state, "saved", "the row is saved before any publish");
+  assert.equal(store.submission(id)!.state, "uncertain", "marked before the publish starts: a crash now never reads as not sent");
   release();
   const done = await first;
   assert.equal(done.statusCode, 201);
