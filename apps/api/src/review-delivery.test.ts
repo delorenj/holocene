@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import Fastify from "fastify";
-import { bbEmitFeedback, deliverSubmission, deliveryMode, wireRow, type EmitOutcome, type FeedbackEmitter } from "./review-delivery.js";
+import { bbEmitFeedback, deliverSubmission, deliveryMode, redeliverable, retryOffered, wireRow, type EmitOutcome, type FeedbackEmitter } from "./review-delivery.js";
 import { ReviewStore } from "./review-store.js";
 import { registerReviewRoutes, reviewSignature } from "./reviews.js";
 
@@ -169,4 +169,39 @@ test("HTTP: Send saves first, then delivers; a double click during delivery neve
   assert.equal(done.statusCode, 201);
   assert.equal(done.json().submission.state, "published");
   assert.deepEqual(calls, [true, false]);
+});
+
+test("HOLOC-75: Retry is offered exactly where a Send would act, per mode", async () => {
+  const rows = { saved: { state: "saved" as const }, validated: { state: "saved" as const, commandId: "c" }, uncertain: { state: "uncertain" as const, commandId: "c" },
+    published: { state: "published" as const, commandId: "c" }, answered: { state: "answered" as const }, failed: { state: "failed" as const } };
+  const offered = (mode: "off" | "check" | "live") => Object.entries(rows).filter(([, r]) => retryOffered(r, mode)).map(([k]) => k);
+  assert.deepEqual(offered("off"), []);
+  assert.deepEqual(offered("check"), ["saved"], "check: only a row that never validated; an unconfirmed publish waits for live");
+  assert.deepEqual(offered("live"), ["saved", "validated", "uncertain"]);
+  // Offered implies the server will act: never a control that does nothing.
+  for (const mode of ["off", "check", "live"] as const) for (const r of Object.values(rows)) if (retryOffered(r, mode)) assert.ok(redeliverable(r, mode));
+  // And the rule the rail reads is the rule delivery runs by: an unoffered uncertain row in check mode is untouched.
+  const store = seeded();
+  const u = await deliverSubmission(store, sub(store), "live", scripted({ ok: true, commandId: "c" }, { ok: false, kind: "unconfirmed", detail: "t" }).emit);
+  const idle = scripted();
+  await deliverSubmission(store, u, "check", idle.emit);
+  assert.equal(idle.calls.length, 0);
+});
+
+test("HOLOC-75: the feedback routes report the delivery mode and each row's retryable", async (t) => {
+  const store = seeded();
+  const s = sub(store);
+  store.recordDelivery(s.submissionId, { state: "uncertain", stateDetail: "x", commandId: "c", attempted: true });
+  const app = Fastify();
+  t.after(() => app.close());
+  await registerReviewRoutes(app, async () => ({ items: [], sources: {}, retryAfterMs: 0 }), { store, registry: async () => registry, secret: () => "k", delivery: { mode: "check", emit: scripted().emit } });
+  const url = `/api/modules/projects/greeninbetween/revisions/${REV}/feedback`; const ts = String(Date.now());
+  const get = await app.inject({ method: "GET", url, headers: { "x-review-user": "op@example.com", "x-review-timestamp": ts, "x-review-signature": reviewSignature("k", "GET", url, "", "op@example.com", ts) } });
+  assert.equal(get.json().delivery, "check");
+  assert.equal(get.json().submissions[0].retryable, false, "an unconfirmed publish cannot be retried in check mode");
+  const body = JSON.stringify({ submissionId: s.submissionId, note: "n" });
+  const post = await app.inject({ method: "POST", url, payload: body, headers: { "content-type": "application/json", "x-review-user": "op@example.com", "x-review-timestamp": ts, "x-review-signature": reviewSignature("k", "POST", url, body, "op@example.com", ts) } });
+  assert.equal(post.statusCode, 200);
+  assert.equal(post.json().submission.state, "uncertain");
+  assert.equal(post.json().submission.retryable, false);
 });

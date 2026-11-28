@@ -10,7 +10,7 @@ import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { CATALOG_ZONE, sandboxFor } from "../artifacts/navigator-model";
 import {
   anchorLabel, apiBase, BRIDGE_PREFIX, BRIDGE_VERSION, identityMessage, injectBridge, numbering, projectHref, readBridge,
-  restoreMessages, saveOutcome, canRetry, sendTarget, shortHash, submissionLabel, type Annotation, type Project, type RevisionView, type SaveState, type Submission
+  restoreMessages, saveOutcome, canRetry, retryHint, sendTarget, shortHash, submissionLabel, type Annotation, type Project, type RevisionView, type SaveState, type Submission, type DeliveryMode
 } from "./review-model";
 
 type Mode = "drag" | "pinpoint" | "interact";
@@ -22,7 +22,7 @@ const when = (iso?: string) => iso ? new Date(iso).toLocaleString(undefined, { t
 const uuid = (): string => typeof crypto.randomUUID === "function" ? crypto.randomUUID()
   : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16));
 
-async function call(url: string, method: string, body?: unknown): Promise<{ status: number; body: { error?: string; annotation?: Annotation; submission?: Submission; submissions?: Submission[] } }> {
+async function call(url: string, method: string, body?: unknown): Promise<{ status: number; body: { error?: string; annotation?: Annotation; submission?: Submission; submissions?: Submission[]; delivery?: DeliveryMode } }> {
   try {
     const res = await fetch(url, { method, cache: "no-store", headers: body === undefined ? undefined : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: res.status, body: res.status === 204 ? {} : await res.json().catch(() => ({})) };
@@ -41,16 +41,17 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
   const [attempt, setAttempt] = useState(uuid);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { void call(`${base}/feedback`, "GET").then((r) => setList(r.body.submissions ?? [])); }, [base]);
+  const [delivery, setDelivery] = useState<DeliveryMode>();
+  useEffect(() => { void call(`${base}/feedback`, "GET").then((r) => { setList(r.body.submissions ?? []); setDelivery(r.body.delivery); }); }, [base]);
   const target = sendTarget(project);
   const [retrying, setRetrying] = useState("");
-  const keep = (sub: Submission) => setList((l) => [sub, ...(l ?? []).filter((x) => x.submissionId !== sub.submissionId)]);
+  const keep = (sub: Submission, mode?: DeliveryMode) => { if (mode) setDelivery(mode); setList((l) => [sub, ...(l ?? []).filter((x) => x.submissionId !== sub.submissionId)]); };
   // Retry re-sends the same frozen submission; 202 means another click is already delivering it.
   const retry = async (s: Submission) => {
     setRetrying(s.submissionId); setError("");
     const res = await call(`${base}/feedback`, "POST", { submissionId: s.submissionId, note: s.note });
     setRetrying("");
-    if (res.body.submission) keep(res.body.submission);
+    if (res.body.submission) keep(res.body.submission, res.body.delivery);
     if (res.status === 202) setError("Delivery of this submission is already in progress.");
     else if (res.status < 200 || res.status >= 300) setError(`Retry failed: ${res.body.error ?? (res.status === 0 ? "Network error; Retry again sends the same submission" : `HTTP ${res.status}`)}`);
   };
@@ -60,7 +61,7 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
     setBusy(false);
     const sub = res.body.submission;
     if (res.status >= 200 && res.status < 300 && sub) {
-      keep(sub);
+      keep(sub, res.body.delivery);
       setNote(""); setAttempt(uuid());
     } else setError(`Not sent: ${res.body.error ?? (res.status === 0 ? "Network error; press Send again to retry the same submission" : `HTTP ${res.status}`)}`);
   };
@@ -78,7 +79,8 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
         <div className="review-item-meta"><span className={`hub-tag ${s.state === "published" || s.state === "answered" ? "is-cleared" : "is-stuck"}`}>{submissionLabel(s)}</span><span>{when(s.createdAt)}</span><span>{s.annotations.length} {s.annotations.length === 1 ? "annotation" : "annotations"}</span><span>to {s.recipient}</span></div>
         {s.note ? <p>{s.note}</p> : null}
         <p className="project-meta">{s.stateDetail}</p>
-        {canRetry(s) ? <div className="review-item-actions"><button type="button" disabled={retrying === s.submissionId} onClick={() => void retry(s)}>{retrying === s.submissionId ? "Retrying…" : "Retry delivery"}</button></div> : null}
+        {canRetry(s) ? <div className="review-item-actions"><button type="button" disabled={retrying === s.submissionId} onClick={() => void retry(s)}>{retrying === s.submissionId ? "Retrying…" : "Retry delivery"}</button></div>
+          : retryHint(s, delivery) ? <p className="project-meta">{retryHint(s, delivery)}</p> : null}
       </li>)}
     </ol> : null}
   </section>;

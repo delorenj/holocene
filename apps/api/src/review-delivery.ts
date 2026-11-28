@@ -60,6 +60,18 @@ export function bbEmitFeedback(executable = process.env.BB_EMIT_EXECUTABLE ?? DE
   });
 }
 
+/** Whether a Send of this row would do anything under the mode: the one rule deliverSubmission and Retry share. */
+export const redeliverable = (s: Pick<Submission, "state">, mode: DeliveryMode) =>
+  mode !== "off" && (s.state === "saved" || (s.state === "uncertain" && mode === "live"));
+/**
+ * Whether the rail offers Retry: only where a Send would change something. A row already validated in check mode
+ * would only be validated again, so it is not offered until delivery is live.
+ */
+export const retryOffered = (s: Pick<Submission, "state" | "commandId">, mode: DeliveryMode) =>
+  redeliverable(s, mode) && !(mode === "check" && s.state === "saved" && !!s.commandId);
+/** A submission as the rail reads it: the row plus whether Retry would act now. */
+export const submissionView = (s: Submission, mode: DeliveryMode) => ({ ...s, retryable: retryOffered(s, mode) });
+
 const short = (id?: string) => id ? id.slice(0, 8) : "";
 
 /**
@@ -71,7 +83,7 @@ const short = (id?: string) => id ? id.slice(0, 8) : "";
  * Never called except from the operator's Send (or its explicit retry).
  */
 export async function deliverSubmission(store: ReviewStore, sub: Submission, mode: DeliveryMode, emit: FeedbackEmitter): Promise<Submission> {
-  if (mode === "off" || !(sub.state === "saved" || (sub.state === "uncertain" && mode === "live"))) return sub;
+  if (!redeliverable(sub, mode)) return sub;
   const record = (d: Parameters<ReviewStore["recordDelivery"]>[1]) => store.recordDelivery(sub.submissionId, d) ?? sub;
   // What an earlier unconfirmed publish means survives every later failure that publishes nothing.
   const earlier = sub.state === "uncertain" ? ` An earlier attempt may already be stored as command ${short(sub.commandId)}.` : "";

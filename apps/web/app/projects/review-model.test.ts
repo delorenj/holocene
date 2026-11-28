@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome, sendTarget, submissionLabel, canRetry } from "./review-model";
+import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome, sendTarget, submissionLabel, canRetry, retryHint } from "./review-model";
 
 test("the home URL is one canonical segment encoded once", () => {
   assert.equal(projectHref("greeninbetween"), "/projects/greeninbetween");
@@ -76,8 +76,12 @@ test("Send reaches exactly one registry PM, and a saved submission never claims 
   assert.equal(submissionLabel({ state: "saved" }), "Saved, not sent");
   assert.equal(submissionLabel({ state: "published" }), "Sent, awaiting the PM", "a publish is not an answer");
   assert.equal(submissionLabel({ state: "saved", commandId: "c" }), "Validated, not sent");
-  assert.ok(canRetry({ state: "uncertain", commandId: "c" }));
-  assert.ok(canRetry({ state: "saved" }), "never validated: delivery can be tried again");
-  assert.ok(!canRetry({ state: "saved", commandId: "c" }), "validated in check mode: nothing more a retry can do");
-  for (const state of ["published", "answered", "failed"] as const) assert.ok(!canRetry({ state }), `${state} is settled`);
+  assert.ok(canRetry({ retryable: true }));
+  assert.ok(!canRetry({}), "no server answer: no control");
+  assert.ok(!canRetry({ retryable: false }));
+  assert.match(retryHint({ state: "uncertain", retryable: false }, "check")!, /waits until delivery is live/);
+  assert.match(retryHint({ state: "saved", retryable: false }, "off")!, /turned off/);
+  assert.equal(retryHint({ state: "uncertain", retryable: true }, "live"), undefined, "a working Retry needs no excuse");
+  assert.equal(retryHint({ state: "saved", retryable: false }, "check"), undefined, "a validated row says so in its detail");
+  assert.equal(retryHint({ state: "published", retryable: false }, "check"), undefined);
 });

@@ -125,8 +125,12 @@ export type Submission = {
   annotations: Pick<Annotation, "id" | "version" | "comment" | "anchor">[]; digest: string; correlationId: string;
   state: SubmissionState; stateDetail: string; createdAt: string; updatedAt: string;
   /** Bloodbank's deterministic command id, once its contract has validated the row. */
-  commandId?: string; receipt?: { stream: string; seq: number; duplicate: boolean }; attempts?: number;
+  commandId?: string | null; receipt?: { stream: string; seq: number; duplicate: boolean } | null; attempts?: number;
+  /** The server's answer to "would Retry act now?" under its delivery mode (HOLOC-75); never derived here. */
+  retryable?: boolean;
 };
+/** The API's delivery mode: off saves only, check validates and publishes nothing, live publishes. */
+export type DeliveryMode = "off" | "check" | "live";
 
 /** Plain words for each state; "saved" never claims delivery. */
 export function submissionLabel(s: Pick<Submission, "state" | "commandId">): string {
@@ -135,10 +139,18 @@ export function submissionLabel(s: Pick<Submission, "state" | "commandId">): str
 }
 
 /**
- * Retry is offered only where delivery did not finish: an unconfirmed publish, or a saved row that never validated.
- * A retry sends the same submission id, so Bloodbank derives the same command; it can never make a second one.
+ * Retry is offered only where the server says a Send would act now (HOLOC-75): the API applies the same rule it
+ * delivers by, so the rail never shows a control that does nothing. A retry sends the same submission id, so
+ * Bloodbank derives the same command; it can never make a second one.
  */
-export const canRetry = (s: Pick<Submission, "state" | "commandId">) => s.state === "uncertain" || (s.state === "saved" && !s.commandId);
+export const canRetry = (s: Pick<Submission, "retryable">) => s.retryable === true;
+
+/** Why an unfinished row has no Retry, in plain words; undefined where nothing needs saying. */
+export function retryHint(s: Pick<Submission, "state" | "retryable">, mode?: DeliveryMode): string | undefined {
+  if (s.retryable || !(s.state === "uncertain" || s.state === "saved")) return;
+  if (mode === "off") return "Delivery is turned off, so Retry is unavailable.";
+  if (s.state === "uncertain") return "Retry waits until delivery is live (BB-67). This earlier attempt may already be stored, so nothing is re-sent before then.";
+}
 
 /** Who Send would reach, or why it cannot: exactly one registry PM. */
 export function sendTarget(project: Pick<Project, "id" | "pmAgents">): { recipient: string } | { blocked: string } {

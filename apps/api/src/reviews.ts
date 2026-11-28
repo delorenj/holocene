@@ -10,7 +10,7 @@ import { HTML_LIMIT, wrapHtml } from "./artifact-documents.js";
 import { lookupProject, type IdentityResult } from "./project-identity.js";
 import { ReviewStore, type Annotation, type AnnotationStatus, type FrozenAnnotation, type ManifestEntry, type Revision } from "./review-store.js";
 import type { RegistryProject } from "./project-identity.js";
-import { bbEmitFeedback, deliverSubmission, deliveryMode, type DeliveryMode, type FeedbackEmitter } from "./review-delivery.js";
+import { bbEmitFeedback, deliverSubmission, deliveryMode, submissionView, type DeliveryMode, type FeedbackEmitter } from "./review-delivery.js";
 
 // HOLOC-70 local slice: the project home, preserved review revisions and durable annotations.
 // No feedback is sent from here (BB-67 owns delivery); nothing in this module publishes events.
@@ -298,7 +298,8 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
     });
     scope.get<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
       const ok = await guard(req, reply); if (!ok) return;
-      return { submissions: store.submissions(ok.rev!.revisionId) };
+      const m = mode();
+      return { delivery: m, submissions: store.submissions(ok.rev!.revisionId).map((s) => submissionView(s, m)) };
     });
     // The explicit Send. It freezes the revision's saved feedback, its recipient and its identity; the row is the outbox.
     scope.post<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
@@ -309,9 +310,10 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
       if (prior) {
         if (prior.author !== ok.user || prior.revisionId !== ok.rev!.revisionId || prior.note !== input.note) return reply.code(409).send({ error: "That submission id is already used for other feedback" });
         // The same Send again (a double click, a lost answer, or Retry on an unconfirmed delivery): same row, same command.
-        if (delivering.has(prior.submissionId)) return reply.code(202).send({ submission: prior });
+        const m = mode();
+        if (delivering.has(prior.submissionId)) return reply.code(202).send({ delivery: m, submission: { ...submissionView(prior, m), retryable: false } });
         delivering.add(prior.submissionId);
-        try { return reply.code(200).send({ submission: await deliverSubmission(store, prior, mode(), emit) }); }
+        try { return reply.code(200).send({ delivery: m, submission: submissionView(await deliverSubmission(store, prior, m, emit), m) }); }
         finally { delivering.delete(prior.submissionId); }
       }
       const to = feedbackRecipient(ok.project);
@@ -324,9 +326,10 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
           author: ok.user, recipient: to.recipient, note: input.note, annotations: frozen.annotations, digest: frozen.digest, stateDetail: AWAITING_CONTRACT });
       } catch { return reply.code(409).send({ error: "That submission id is already used for other feedback" }); }
       // Saved first, then delivered: a failed or unconfirmed delivery never loses the frozen row.
-      if (delivering.has(put.submission.submissionId)) return reply.code(202).send({ submission: put.submission });
+      const m = mode();
+      if (delivering.has(put.submission.submissionId)) return reply.code(202).send({ delivery: m, submission: { ...submissionView(put.submission, m), retryable: false } });
       delivering.add(put.submission.submissionId);
-      try { return reply.code(put.created ? 201 : 200).send({ submission: await deliverSubmission(store, put.submission, mode(), emit) }); }
+      try { return reply.code(put.created ? 201 : 200).send({ delivery: m, submission: submissionView(await deliverSubmission(store, put.submission, m, emit), m) }); }
       finally { delivering.delete(put.submission.submissionId); }
     });
   });
