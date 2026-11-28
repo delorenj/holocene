@@ -66,10 +66,11 @@ test("events reach the view, and a reconnect resumes after the last id with back
   assert.equal(sources.length, 3, "no reconnect after close");
 });
 
-test("an unreadable frame is skipped without breaking the stream", () => {
+test("an unreadable frame is skipped without breaking the stream", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const sources: FakeSource[] = [];
   const events: unknown[] = [];
-  subscribeSchedule({
+  const close = subscribeSchedule({
     ...WINDOW,
     createSource: (url) => (sources.push(new FakeSource(url)), sources.at(-1)! as unknown as EventSource),
     onEvent: (_n, d) => events.push(d),
@@ -78,13 +79,14 @@ test("an unreadable frame is skipped without breaking the stream", () => {
   sources[0].dispatchEvent(new MessageEvent("current.advanced", { data: "{not json" }));
   sources[0].emit("current.advanced", { cut: "x" });
   assert.deepEqual(events, [{ cut: "x" }]);
+  close(); // no live silence timer outlives the test
 });
 
 test("a line that goes silent is replaced; pings keep it alive", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const sources: FakeSource[] = [];
   const statuses: string[] = [];
-  subscribeSchedule({
+  const close = subscribeSchedule({
     ...WINDOW,
     createSource: (url) => (sources.push(new FakeSource(url)), sources.at(-1)! as unknown as EventSource),
     onEvent: () => undefined,
@@ -101,4 +103,5 @@ test("a line that goes silent is replaced; pings keep it alive", (t) => {
   assert.match(statuses.at(-1) ?? "", /went silent/);
   t.mock.timers.tick(1_000);
   assert.equal(sources.length, 2);
+  close();
 });

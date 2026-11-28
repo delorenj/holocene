@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import Fastify from "fastify";
 import { getRegisteredProjects } from "./hub.js";
@@ -153,7 +154,7 @@ test("malformed registry identity makes the actual GET down without replacing da
 });
 
 test("actual GET isolates non-string committed YAML modes from a valid neighbor", async () => {
-  const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-mode-route-"));
+  const root = await mkdtemp(join(tmpdir(), "holoc57-mode-route-"));
   const original = globalThis.fetch;
   const repo = join(root, "invalid"); const neighbor = join(root, "neighbor");
   const gitAt = (path: string, ...args: string[]) => execFileSync("git", ["-C", path, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
@@ -185,7 +186,7 @@ test("actual GET isolates non-string committed YAML modes from a valid neighbor"
 });
 
 test("replacement refs cannot alter the committed declaration or its GET provenance", async () => {
-  const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-replacement-"));
+  const root = await mkdtemp(join(tmpdir(), "holoc57-replacement-"));
   const original = globalThis.fetch;
   const repo = join(root, "repo"); await mkdir(repo);
   const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
@@ -212,7 +213,7 @@ test("replacement refs cannot alter the committed declaration or its GET provena
   } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
 });
 test("real Git reads committed declaration not dirty disk; receipt reads stay bounded and inside registered repo", async () => {
-  const root = await mkdtemp(join(process.env.TMPDIR!, "holoc57-source-"));
+  const root = await mkdtemp(join(tmpdir(), "holoc57-source-"));
   const repo = join(root, "repo"); await mkdir(repo);
   const project = { ...p("example"), repoPath: repo, agents: [{ id: "pm", role: "pm", roleDir: "roles/pm" }] };
   const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
