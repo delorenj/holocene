@@ -61,16 +61,21 @@ export function bbEmitFeedback(executable = process.env.BB_EMIT_EXECUTABLE ?? DE
 }
 
 /** Whether a Send of this row would do anything under the mode: the one rule deliverSubmission and Retry share. */
-export const redeliverable = (s: Pick<Submission, "state">, mode: DeliveryMode) =>
-  mode !== "off" && (s.state === "saved" || (s.state === "uncertain" && mode === "live"));
+export const redeliverable = (s: Pick<Submission, "state" | "evidence">, mode: DeliveryMode) =>
+  // Once the gateway left a fact (an execution-uncertain or failed closure included), only the owner decides what next.
+  mode !== "off" && !s.evidence?.stage && (s.state === "saved" || (s.state === "uncertain" && mode === "live"));
 /**
  * Whether the rail offers Retry: only where a Send would change something. A row already validated in check mode
  * would only be validated again, so it is not offered until delivery is live.
  */
-export const retryOffered = (s: Pick<Submission, "state" | "commandId">, mode: DeliveryMode) =>
+export const retryOffered = (s: Pick<Submission, "state" | "commandId" | "evidence">, mode: DeliveryMode) =>
   redeliverable(s, mode) && !(mode === "check" && s.state === "saved" && !!s.commandId);
 /** A submission as the rail reads it: the row plus whether Retry would act now. */
-export const submissionView = (s: Submission, mode: DeliveryMode) => ({ ...s, retryable: retryOffered(s, mode) });
+export const submissionView = (s: Submission, mode: DeliveryMode) => {
+  const { evidence, ...row } = s;
+  // The judged-fact ledger stays server-side; the rail gets the stage, its reason and the answer.
+  return { ...row, retryable: retryOffered(s, mode), evidence: evidence?.stage ? { stage: evidence.stage, errorCode: evidence.errorCode, answer: evidence.answer } : undefined };
+};
 
 const short = (id?: string) => id ? id.slice(0, 8) : "";
 

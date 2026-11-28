@@ -79,6 +79,8 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
         <div className="review-item-meta"><span className={`hub-tag ${s.state === "published" || s.state === "answered" ? "is-cleared" : "is-stuck"}`}>{submissionLabel(s)}</span><span>{when(s.createdAt)}</span><span>{s.annotations.length} {s.annotations.length === 1 ? "annotation" : "annotations"}</span><span>to {s.recipient}</span></div>
         {s.note ? <p>{s.note}</p> : null}
         <p className="project-meta">{s.stateDetail}</p>
+        {s.evidence?.answer ? <blockquote className="review-answer" aria-label={`Answer from ${s.recipient}`} style={{ whiteSpace: "pre-wrap", margin: "0.5rem 0", paddingLeft: "0.75rem", borderLeft: "3px solid currentColor" }}>
+          <p className="hub-label">Answer from {s.recipient}{s.evidence.answer.time ? ` · ${when(s.evidence.answer.time)}` : ""}</p>{s.evidence.answer.body}</blockquote> : null}
         {canRetry(s) ? <div className="review-item-actions"><button type="button" disabled={retrying === s.submissionId} onClick={() => void retry(s)}>{retrying === s.submissionId ? "Retrying…" : "Retry delivery"}</button></div>
           : retryHint(s, delivery) ? <p className="project-meta">{retryHint(s, delivery)}</p> : null}
       </li>)}

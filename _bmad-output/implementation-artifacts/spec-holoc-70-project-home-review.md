@@ -203,3 +203,11 @@ Note: the parent session implemented the change directly rather than through a f
 - `off`: save only.
 
 Settled states (`published`, `answered`, `failed`) never move back, and a submission's command id never changes. An in-process lock answers a second click during delivery with 202 and publishes nothing. Stderr tells a refusal ("feedback validation failed") from an adapter that is not installed and from "publication UNCONFIRMED"; exit codes cannot. The rail labels a validated row "Validated, not sent" and a published one "Sent, awaiting the PM", and shows Retry delivery only on rows that are not settled. Switching to `live` is a config change, made once Bloodbank installs the adapter build of `bb-emit` and enables the feedback durable (BB-67). Two pieces are still to come: `answered`, which waits on the Candystore final-answer projection, and the read side.
+
+**Answer read side, Holocene half (HOLOC-76, 2026-11-28):** `review-evidence.ts` covers submissions Bloodbank has accepted: published, queued, or uncertain with a command id.
+- **Reading facts.** Facts come from Candystore: `/events?correlationid=<correlationId>&from=<createdAt>`, then `/events/<id>/raw` for each.
+- **Judging facts.** Only Bloodbank's own join judges them (BB-70 proposes `bb-emit --feedback-evidence`, with `{row, event, profile}` on stdin). Holocene keeps no copy of `evidence_state`.
+- **The projection.** It is monotone: answered (4) > failed = execution-uncertain (3) > running (2, display only) > queued (1). Judged fact ids are stored and never judged twice. An unavailable source or join changes nothing. Any gateway fact ends delivery: `recordDelivery` stops applying, and Retry is never offered after a failed or execution-uncertain closure.
+- **The answer.** Its fact id, native ids and body are kept in the review store. The body is shown in the same review.
+- **When it runs.** It runs only on GET /feedback, when the operator reads the review. There is no clock and no publish.
+- **Until BB-70 lands.** The judge reports "no evidence join yet" and every row stays as it is.

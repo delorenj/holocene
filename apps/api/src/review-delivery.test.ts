@@ -77,7 +77,7 @@ test("live: validate, publish, record the receipt; an unconfirmed publish is unc
   assert.equal(store.recordDelivery(s.submissionId, { state: "uncertain", stateDetail: "late" })!.state, "published");
   assert.equal(store.recordDelivery(s.submissionId, { state: "published", stateDetail: "again", receipt: { stream: "X", seq: 9, duplicate: false } })!.receipt!.seq, 42, "a settled receipt is never replaced");
   assert.throws(() => store.recordDelivery(s.submissionId, { state: "answered", stateDetail: "x", commandId: "other" }), /never changes/);
-  assert.equal(store.recordDelivery(s.submissionId, { state: "answered", stateDetail: "PM answered" })!.state, "answered");
+  assert.equal(store.recordDelivery(s.submissionId, { state: "answered", stateDetail: "PM answered" })!.state, "published", "answers come only from evidence (HOLOC-76)");
 });
 
 test("an uncertain row keeps its meaning: check mode leaves it alone, and a later refusal never says it was not stored", async () => {

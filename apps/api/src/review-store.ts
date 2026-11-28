@@ -36,10 +36,22 @@ export type Submission = {
   /** The JetStream PubAck of the last publish: stored in the stream, execution still unproven. */
   receipt?: { stream: string; seq: number; duplicate: boolean };
   attempts: number;
+  /** HOLOC-76: what Bloodbank's durable facts say happened after acceptance (a monotone projection). */
+  evidence?: Evidence;
 };
+/** Stages proven by gateway facts; running is display-only (the outbox still says queued). */
+export type EvidenceStage = "queued" | "running" | "answered" | "failed" | "uncertain";
+export type Evidence = {
+  /** Fact ids already judged (immutable facts are judged once). */
+  seen: string[];
+  stage?: EvidenceStage; factId?: string; errorCode?: string;
+  /** The PM's final answer: kept privately in the review store and shown only in this review. */
+  answer?: { factId: string; time?: string; body: string; nativeSessionId: string; nativeTurnId: string };
+};
+const EVIDENCE_RANK: Record<EvidenceStage, number> = { queued: 1, running: 2, uncertain: 3, failed: 3, answered: 4 };
 export type Delivery = { state: SubmissionState; stateDetail: string; commandId?: string; receipt?: Submission["receipt"]; attempted?: boolean };
 /** States a delivery update may never move back from: a late retry outcome cannot undo a receipt or an answer. */
-const SETTLED: SubmissionState[] = ["published", "answered", "failed"];
+const SETTLED: SubmissionState[] = ["published", "queued", "answered", "failed"];
 
 export const defaultReviewDbPath = () => process.env.HOLOCENE_REVIEW_DB
   ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local/state"), "holocene/reviews.sqlite3");
@@ -58,7 +70,8 @@ const submissionOf = (r: Row): Submission => ({
   createdAt: String(r.created_at), updatedAt: String(r.updated_at),
   commandId: r.command_id ? String(r.command_id) : undefined,
   receipt: r.receipt ? JSON.parse(String(r.receipt)) as Submission["receipt"] : undefined,
-  attempts: Number(r.attempts ?? 0)
+  attempts: Number(r.attempts ?? 0),
+  evidence: r.evidence ? JSON.parse(String(r.evidence)) as Evidence : undefined
 });
 const annotationOf = (r: Row): Annotation => ({
   id: String(r.id), projectId: String(r.project_id), revisionId: String(r.revision_id), artifactId: String(r.artifact_id),
@@ -93,7 +106,7 @@ export class ReviewStore {
       CREATE INDEX IF NOT EXISTS submissions_revision ON submissions(revision_id, created_at);`);
     // HOLOC-70 delivery columns, added in place so rows saved before delivery existed keep their identity.
     const cols = new Set(this.db.prepare("PRAGMA table_info(submissions)").all().map((c) => String((c as Row).name)));
-    for (const [name, decl] of [["command_id", "TEXT"], ["receipt", "TEXT"], ["attempts", "INTEGER NOT NULL DEFAULT 0"]] as const)
+    for (const [name, decl] of [["command_id", "TEXT"], ["receipt", "TEXT"], ["attempts", "INTEGER NOT NULL DEFAULT 0"], ["evidence", "TEXT"]] as const)
       if (!cols.has(name)) this.db.exec(`ALTER TABLE submissions ADD COLUMN ${name} ${decl}`);
   }
   close() { this.db.close(); }
@@ -186,12 +199,30 @@ export class ReviewStore {
   recordDelivery(id: string, d: Delivery, now = new Date().toISOString()): Submission | undefined {
     const prior = this.submission(id);
     if (!prior) return;
-    // Monotone: a settled row moves only from published to its answer (answered or failed).
-    if (SETTLED.includes(prior.state) && !(prior.state === "published" && (d.state === "answered" || d.state === "failed"))) return prior;
     if (prior.commandId && d.commandId && prior.commandId !== d.commandId) throw Error("A submission's command id never changes");
+    // Monotone: once Bloodbank stored the command, or its gateway left any fact, delivery outcomes no longer apply;
+    // what happens next is the evidence projection's (recordEvidence).
+    if (SETTLED.includes(prior.state) || prior.evidence?.stage) return prior;
     this.db.prepare(`UPDATE submissions SET state=?, state_detail=?, command_id=COALESCE(command_id, ?), receipt=COALESCE(?, receipt),
       attempts=attempts + ?, updated_at=? WHERE submission_id=?`).run(d.state, d.stateDetail, d.commandId ?? null,
       d.receipt ? JSON.stringify(d.receipt) : null, d.attempted ? 1 : 0, now, id);
+    return this.submission(id);
+  }
+
+  /**
+   * Record the evidence projection (HOLOC-76). Judged fact ids always accumulate; the stage, and the outbox state it
+   * implies, move only to a higher rank, so a late queued or started fact never regresses an answer or a failure.
+   */
+  recordEvidence(id: string, e: Evidence, show?: { state: SubmissionState; stateDetail: string }, now = new Date().toISOString()): Submission | undefined {
+    const prior = this.submission(id);
+    if (!prior) return;
+    const before = prior.evidence;
+    const seen = [...new Set([...(before?.seen ?? []), ...e.seen])];
+    const advances = !!e.stage && (!before?.stage || EVIDENCE_RANK[e.stage] > EVIDENCE_RANK[before.stage]);
+    const next: Evidence = advances ? { ...e, seen } : { ...(before ?? {}), seen };
+    if (advances && show) this.db.prepare("UPDATE submissions SET evidence=?, state=?, state_detail=?, updated_at=? WHERE submission_id=?")
+      .run(JSON.stringify(next), show.state, show.stateDetail, now, id);
+    else this.db.prepare("UPDATE submissions SET evidence=? WHERE submission_id=?").run(JSON.stringify(next), id);
     return this.submission(id);
   }
 }

@@ -76,6 +76,10 @@ test("Send reaches exactly one registry PM, and a saved submission never claims 
   assert.equal(submissionLabel({ state: "saved" }), "Saved, not sent");
   assert.equal(submissionLabel({ state: "published" }), "Sent, awaiting the PM", "a publish is not an answer");
   assert.equal(submissionLabel({ state: "saved", commandId: "c" }), "Validated, not sent");
+  assert.equal(submissionLabel({ state: "queued", evidence: { stage: "running" } }), "Running", "running is shown from its fact, the outbox still says queued");
+  assert.equal(submissionLabel({ state: "queued", evidence: { stage: "queued" } }), "Queued for the PM");
+  assert.equal(submissionLabel({ state: "uncertain", evidence: { stage: "uncertain", errorCode: "processing_outcome_unknown" } }), "Execution uncertain");
+  assert.equal(submissionLabel({ state: "uncertain" }), "Delivery uncertain");
   assert.ok(canRetry({ retryable: true }));
   assert.ok(!canRetry({}), "no server answer: no control");
   assert.ok(!canRetry({ retryable: false }));
@@ -84,4 +88,5 @@ test("Send reaches exactly one registry PM, and a saved submission never claims 
   assert.equal(retryHint({ state: "uncertain", retryable: true }, "live"), undefined, "a working Retry needs no excuse");
   assert.equal(retryHint({ state: "saved", retryable: false }, "check"), undefined, "a validated row says so in its detail");
   assert.equal(retryHint({ state: "published", retryable: false }, "check"), undefined);
+  assert.equal(retryHint({ state: "uncertain", retryable: false, evidence: { stage: "uncertain" } }, "check"), undefined, "a gateway closure is not waiting for live delivery");
 });

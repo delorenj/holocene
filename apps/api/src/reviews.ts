@@ -10,6 +10,7 @@ import { HTML_LIMIT, wrapHtml } from "./artifact-documents.js";
 import { lookupProject, type IdentityResult } from "./project-identity.js";
 import { ReviewStore, type Annotation, type AnnotationStatus, type FrozenAnnotation, type ManifestEntry, type Revision } from "./review-store.js";
 import type { RegistryProject } from "./project-identity.js";
+import { bbEmitEvidence, candystoreFacts, projectable, projectSubmission, type EvidenceJudge, type FactSource } from "./review-evidence.js";
 import { bbEmitFeedback, deliverSubmission, deliveryMode, submissionView, type DeliveryMode, type FeedbackEmitter } from "./review-delivery.js";
 
 // HOLOC-70 local slice: the project home, preserved review revisions and durable annotations.
@@ -209,13 +210,22 @@ export function freezeFeedback(annotations: Annotation[], note: string): { annot
 
 declare module "fastify" { interface FastifyRequest { rawBody?: string } }
 
-export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, deps: { store?: ReviewStore; fetcher?: Fetcher; publish?: Publisher; registry?: () => Promise<unknown>; secret?: () => string | undefined; delivery?: { mode?: DeliveryMode; emit?: FeedbackEmitter } } = {}) {
+export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, deps: { store?: ReviewStore; fetcher?: Fetcher; publish?: Publisher; registry?: () => Promise<unknown>; secret?: () => string | undefined; delivery?: { mode?: DeliveryMode; emit?: FeedbackEmitter }; evidence?: { facts?: FactSource; judge?: EvidenceJudge } } = {}) {
   const store = deps.store ?? new ReviewStore();
   const fetcher = deps.fetcher ?? fetch;
   const secret = deps.secret ?? (() => process.env.TELEGRAM_HQ_BOT_TOKEN);
   const mode = () => deps.delivery?.mode ?? deliveryMode();
   const emit = deps.delivery?.emit ?? bbEmitFeedback();
   const delivering = new Set<string>(); // one delivery per submission at a time: a double click never publishes twice
+  const facts = deps.evidence?.facts ?? candystoreFacts();
+  const judge = deps.evidence?.judge ?? bbEmitEvidence();
+  const projecting = new Set<string>(); // one projection per submission at a time
+  // HOLOC-76: reading the review folds any new gateway facts in. Read-only toward Bloodbank; no clock, no publish.
+  const project = async (s: import("./review-store.js").Submission) => {
+    if (!projectable(s) || projecting.has(s.submissionId) || delivering.has(s.submissionId)) return s;
+    projecting.add(s.submissionId);
+    try { return await projectSubmission(store, s, facts, judge); } catch { return s; } finally { projecting.delete(s.submissionId); }
+  };
   return app.register(async (scope) => {
     // The signature covers the exact body bytes, so keep them; JSON is parsed from that same string.
     scope.addContentTypeParser("application/json", { parseAs: "string", bodyLimit: 64 * 1024 }, (req, body, done) => {
@@ -299,7 +309,8 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
     scope.get<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {
       const ok = await guard(req, reply); if (!ok) return;
       const m = mode();
-      return { delivery: m, submissions: store.submissions(ok.rev!.revisionId).map((s) => submissionView(s, m)) };
+      const subs = await Promise.all(store.submissions(ok.rev!.revisionId).map(project));
+      return { delivery: m, submissions: subs.map((s) => submissionView(s, m)) };
     });
     // The explicit Send. It freezes the revision's saved feedback, its recipient and its identity; the row is the outbox.
     scope.post<P>("/api/modules/projects/:project/revisions/:revision/feedback", async (req, reply) => {

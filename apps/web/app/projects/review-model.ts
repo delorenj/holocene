@@ -128,14 +128,18 @@ export type Submission = {
   commandId?: string | null; receipt?: { stream: string; seq: number; duplicate: boolean } | null; attempts?: number;
   /** The server's answer to "would Retry act now?" under its delivery mode (HOLOC-75); never derived here. */
   retryable?: boolean;
+  /** HOLOC-76: what Bloodbank's gateway facts proved after acceptance; running is display-only. */
+  evidence?: { stage: "queued" | "running" | "answered" | "failed" | "uncertain"; errorCode?: string; answer?: { factId: string; time?: string; body: string } };
 };
 /** The API's delivery mode: off saves only, check validates and publishes nothing, live publishes. */
 export type DeliveryMode = "off" | "check" | "live";
 
 /** Plain words for each state; "saved" never claims delivery. */
-export function submissionLabel(s: Pick<Submission, "state" | "commandId">): string {
+export function submissionLabel(s: Pick<Submission, "state" | "commandId" | "evidence">): string {
   if (s.state === "saved" && s.commandId) return "Validated, not sent";
-  return { saved: "Saved, not sent", queued: "Queued for delivery", published: "Sent, awaiting the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
+  if (s.evidence?.stage === "running") return "Running";
+  if (s.state === "uncertain" && s.evidence?.stage === "uncertain") return "Execution uncertain";
+  return { saved: "Saved, not sent", queued: "Queued for the PM", published: "Sent, awaiting the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
 }
 
 /**
@@ -146,8 +150,9 @@ export function submissionLabel(s: Pick<Submission, "state" | "commandId">): str
 export const canRetry = (s: Pick<Submission, "retryable">) => s.retryable === true;
 
 /** Why an unfinished row has no Retry, in plain words; undefined where nothing needs saying. */
-export function retryHint(s: Pick<Submission, "state" | "retryable">, mode?: DeliveryMode): string | undefined {
-  if (s.retryable || !(s.state === "uncertain" || s.state === "saved")) return;
+export function retryHint(s: Pick<Submission, "state" | "retryable" | "evidence">, mode?: DeliveryMode): string | undefined {
+  // A gateway closure explains itself in the row's detail: the owner decides, there is no Retry to wait for.
+  if (s.retryable || s.evidence?.stage || !(s.state === "uncertain" || s.state === "saved")) return;
   if (mode === "off") return "Delivery is turned off, so Retry is unavailable.";
   if (s.state === "uncertain") return "Retry waits until delivery is live (BB-67). This earlier attempt may already be stored, so nothing is re-sent before then.";
 }
