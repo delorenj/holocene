@@ -124,12 +124,21 @@ export type Submission = {
   submissionId: string; projectId: string; revisionId: string; author: string; recipient: string; note: string;
   annotations: Pick<Annotation, "id" | "version" | "comment" | "anchor">[]; digest: string; correlationId: string;
   state: SubmissionState; stateDetail: string; createdAt: string; updatedAt: string;
+  /** Bloodbank's deterministic command id, once its contract has validated the row. */
+  commandId?: string; receipt?: { stream: string; seq: number; duplicate: boolean }; attempts?: number;
 };
 
 /** Plain words for each state; "saved" never claims delivery. */
-export function submissionLabel(s: Pick<Submission, "state">): string {
-  return { saved: "Saved, not sent", queued: "Queued for delivery", published: "Delivered to the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
+export function submissionLabel(s: Pick<Submission, "state" | "commandId">): string {
+  if (s.state === "saved" && s.commandId) return "Validated, not sent";
+  return { saved: "Saved, not sent", queued: "Queued for delivery", published: "Sent, awaiting the PM", uncertain: "Delivery uncertain", answered: "Answered", failed: "Delivery failed" }[s.state] ?? s.state;
 }
+
+/**
+ * Retry is offered only where delivery did not finish: an unconfirmed publish, or a saved row that never validated.
+ * A retry sends the same submission id, so Bloodbank derives the same command; it can never make a second one.
+ */
+export const canRetry = (s: Pick<Submission, "state" | "commandId">) => s.state === "uncertain" || (s.state === "saved" && !s.commandId);
 
 /** Who Send would reach, or why it cannot: exactly one registry PM. */
 export function sendTarget(project: Pick<Project, "id" | "pmAgents">): { recipient: string } | { blocked: string } {

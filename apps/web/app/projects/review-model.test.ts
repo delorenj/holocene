@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome, sendTarget, submissionLabel } from "./review-model";
+import { anchorLabel, galleryLink, identityMessage, latestLabel, projectHref, reviewHref, saveOutcome, sendTarget, submissionLabel, canRetry } from "./review-model";
 
 test("the home URL is one canonical segment encoded once", () => {
   assert.equal(projectHref("greeninbetween"), "/projects/greeninbetween");
@@ -74,5 +74,10 @@ test("Send reaches exactly one registry PM, and a saved submission never claims 
   assert.ok("blocked" in sendTarget({ id: "gib" }));
   assert.ok("blocked" in sendTarget({ id: "gib", pmAgents: ["a", "b"] }));
   assert.equal(submissionLabel({ state: "saved" }), "Saved, not sent");
-  assert.equal(submissionLabel({ state: "published" }), "Delivered to the PM");
+  assert.equal(submissionLabel({ state: "published" }), "Sent, awaiting the PM", "a publish is not an answer");
+  assert.equal(submissionLabel({ state: "saved", commandId: "c" }), "Validated, not sent");
+  assert.ok(canRetry({ state: "uncertain", commandId: "c" }));
+  assert.ok(canRetry({ state: "saved" }), "never validated: delivery can be tried again");
+  assert.ok(!canRetry({ state: "saved", commandId: "c" }), "validated in check mode: nothing more a retry can do");
+  for (const state of ["published", "answered", "failed"] as const) assert.ok(!canRetry({ state }), `${state} is settled`);
 });

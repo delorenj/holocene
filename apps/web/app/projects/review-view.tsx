@@ -10,7 +10,7 @@ import { Brand, ThemeToggle, useTheme } from "../hub/hub-app";
 import { CATALOG_ZONE, sandboxFor } from "../artifacts/navigator-model";
 import {
   anchorLabel, apiBase, BRIDGE_PREFIX, BRIDGE_VERSION, identityMessage, injectBridge, numbering, projectHref, readBridge,
-  restoreMessages, saveOutcome, sendTarget, shortHash, submissionLabel, type Annotation, type Project, type RevisionView, type SaveState, type Submission
+  restoreMessages, saveOutcome, canRetry, sendTarget, shortHash, submissionLabel, type Annotation, type Project, type RevisionView, type SaveState, type Submission
 } from "./review-model";
 
 type Mode = "drag" | "pinpoint" | "interact";
@@ -43,15 +43,26 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
   const [error, setError] = useState("");
   useEffect(() => { void call(`${base}/feedback`, "GET").then((r) => setList(r.body.submissions ?? [])); }, [base]);
   const target = sendTarget(project);
+  const [retrying, setRetrying] = useState("");
+  const keep = (sub: Submission) => setList((l) => [sub, ...(l ?? []).filter((x) => x.submissionId !== sub.submissionId)]);
+  // Retry re-sends the same frozen submission; 202 means another click is already delivering it.
+  const retry = async (s: Submission) => {
+    setRetrying(s.submissionId); setError("");
+    const res = await call(`${base}/feedback`, "POST", { submissionId: s.submissionId, note: s.note });
+    setRetrying("");
+    if (res.body.submission) keep(res.body.submission);
+    if (res.status === 202) setError("Delivery of this submission is already in progress.");
+    else if (res.status < 200 || res.status >= 300) setError(`Retry failed: ${res.body.error ?? (res.status === 0 ? "Network error; Retry again sends the same submission" : `HTTP ${res.status}`)}`);
+  };
   const send = async () => {
     setBusy(true); setError("");
     const res = await call(`${base}/feedback`, "POST", { submissionId: attempt, note });
     setBusy(false);
     const sub = res.body.submission;
     if (res.status >= 200 && res.status < 300 && sub) {
-      setList((l) => [sub, ...(l ?? []).filter((x) => x.submissionId !== sub.submissionId)]);
+      keep(sub);
       setNote(""); setAttempt(uuid());
-    } else setError(res.body.error ?? (res.status === 0 ? "Network error; press Send again to retry the same submission" : `HTTP ${res.status}`));
+    } else setError(`Not sent: ${res.body.error ?? (res.status === 0 ? "Network error; press Send again to retry the same submission" : `HTTP ${res.status}`)}`);
   };
   return <section className="review-send" aria-labelledby="review-send-title">
     <p className="hub-label" id="review-send-title">Send feedback</p>
@@ -60,13 +71,14 @@ function SendFeedback({ base, project, saved, drafts }: { base: string; project:
       <label className="hub-label" htmlFor="review-note">Note (optional)</label>
       <textarea id="review-note" value={note} maxLength={4000} onChange={(e) => { setNote(e.target.value); setAttempt(uuid()); }} />
       <div className="review-item-actions"><button type="button" disabled={busy || !saved} onClick={() => void send()}>{busy ? "Sending…" : "Send feedback"}</button></div>
-      {error ? <p className="review-save is-failed" role="alert">Not sent: {error}</p> : null}
+      {error ? <p className="review-save is-failed" role="alert">{error}</p> : null}
     </>}
     {list?.length ? <ol className="review-list" aria-label="Sent feedback">
       {list.map((s) => <li key={s.submissionId} className="review-item">
         <div className="review-item-meta"><span className={`hub-tag ${s.state === "published" || s.state === "answered" ? "is-cleared" : "is-stuck"}`}>{submissionLabel(s)}</span><span>{when(s.createdAt)}</span><span>{s.annotations.length} {s.annotations.length === 1 ? "annotation" : "annotations"}</span><span>to {s.recipient}</span></div>
         {s.note ? <p>{s.note}</p> : null}
         <p className="project-meta">{s.stateDetail}</p>
+        {canRetry(s) ? <div className="review-item-actions"><button type="button" disabled={retrying === s.submissionId} onClick={() => void retry(s)}>{retrying === s.submissionId ? "Retrying…" : "Retry delivery"}</button></div> : null}
       </li>)}
     </ol> : null}
   </section>;

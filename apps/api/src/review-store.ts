@@ -31,7 +31,15 @@ export type Submission = {
   submissionId: string; projectId: string; revisionId: string; artifactId: string; author: string; recipient: string;
   note: string; annotations: FrozenAnnotation[]; digest: string; correlationId: string;
   state: SubmissionState; stateDetail: string; createdAt: string; updatedAt: string;
+  /** Bloodbank's derived command id (from bb-emit), once the row has been validated against its contract. */
+  commandId?: string;
+  /** The JetStream PubAck of the last publish: stored in the stream, execution still unproven. */
+  receipt?: { stream: string; seq: number; duplicate: boolean };
+  attempts: number;
 };
+export type Delivery = { state: SubmissionState; stateDetail: string; commandId?: string; receipt?: Submission["receipt"]; attempted?: boolean };
+/** States a delivery update may never move back from: a late retry outcome cannot undo a receipt or an answer. */
+const SETTLED: SubmissionState[] = ["published", "answered", "failed"];
 
 export const defaultReviewDbPath = () => process.env.HOLOCENE_REVIEW_DB
   ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local/state"), "holocene/reviews.sqlite3");
@@ -47,7 +55,10 @@ const submissionOf = (r: Row): Submission => ({
   submissionId: String(r.submission_id), projectId: String(r.project_id), revisionId: String(r.revision_id), artifactId: String(r.artifact_id),
   author: String(r.author), recipient: String(r.recipient), note: String(r.note), annotations: JSON.parse(String(r.annotations)) as FrozenAnnotation[],
   digest: String(r.digest), correlationId: String(r.correlation_id), state: String(r.state) as SubmissionState, stateDetail: String(r.state_detail),
-  createdAt: String(r.created_at), updatedAt: String(r.updated_at)
+  createdAt: String(r.created_at), updatedAt: String(r.updated_at),
+  commandId: r.command_id ? String(r.command_id) : undefined,
+  receipt: r.receipt ? JSON.parse(String(r.receipt)) as Submission["receipt"] : undefined,
+  attempts: Number(r.attempts ?? 0)
 });
 const annotationOf = (r: Row): Annotation => ({
   id: String(r.id), projectId: String(r.project_id), revisionId: String(r.revision_id), artifactId: String(r.artifact_id),
@@ -80,6 +91,10 @@ export class ReviewStore {
         state TEXT NOT NULL CHECK(state IN ('saved','queued','published','uncertain','answered','failed')), state_detail TEXT NOT NULL,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS submissions_revision ON submissions(revision_id, created_at);`);
+    // HOLOC-70 delivery columns, added in place so rows saved before delivery existed keep their identity.
+    const cols = new Set(this.db.prepare("PRAGMA table_info(submissions)").all().map((c) => String((c as Row).name)));
+    for (const [name, decl] of [["command_id", "TEXT"], ["receipt", "TEXT"], ["attempts", "INTEGER NOT NULL DEFAULT 0"]] as const)
+      if (!cols.has(name)) this.db.exec(`ALTER TABLE submissions ADD COLUMN ${name} ${decl}`);
   }
   close() { this.db.close(); }
 
@@ -151,15 +166,31 @@ export class ReviewStore {
    * Create-or-get by the client's submission id: a double click or a retry after a lost answer returns
    * the same frozen submission. Reusing an id for other content, another author or revision is refused.
    */
-  createSubmission(input: Omit<Submission, "createdAt" | "updatedAt" | "correlationId" | "state" | "stateDetail"> & { stateDetail: string }, now = new Date().toISOString()): { submission: Submission; created: boolean } {
+  createSubmission(input: Omit<Submission, "createdAt" | "updatedAt" | "correlationId" | "state" | "stateDetail" | "commandId" | "receipt" | "attempts"> & { stateDetail: string }, now = new Date().toISOString()): { submission: Submission; created: boolean } {
     const prior = this.submission(input.submissionId);
     if (prior) {
       if (prior.author !== input.author || prior.revisionId !== input.revisionId || prior.digest !== input.digest || prior.note !== input.note) throw Error("Submission id already used for other feedback");
       return { submission: prior, created: false };
     }
-    this.db.prepare("INSERT INTO submissions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
+    this.db.prepare(`INSERT INTO submissions (submission_id, project_id, revision_id, artifact_id, author, recipient, note, annotations,
+      digest, correlation_id, state, state_detail, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       input.submissionId, input.projectId, input.revisionId, input.artifactId, input.author, input.recipient, input.note,
       JSON.stringify(input.annotations), input.digest, randomUUID(), "saved", input.stateDetail, now, now);
     return { submission: this.submission(input.submissionId)!, created: true };
+  }
+
+  /**
+   * Record a delivery outcome. The frozen content is never touched. A settled state (a stream receipt, an answer, a
+   * terminal failure) is never moved back by a late or retried outcome; a command id, once known, never changes.
+   */
+  recordDelivery(id: string, d: Delivery, now = new Date().toISOString()): Submission | undefined {
+    const prior = this.submission(id);
+    if (!prior) return;
+    if (SETTLED.includes(prior.state) && !SETTLED.includes(d.state)) return prior;
+    if (prior.commandId && d.commandId && prior.commandId !== d.commandId) throw Error("A submission's command id never changes");
+    this.db.prepare(`UPDATE submissions SET state=?, state_detail=?, command_id=COALESCE(command_id, ?), receipt=COALESCE(?, receipt),
+      attempts=attempts + ?, updated_at=? WHERE submission_id=?`).run(d.state, d.stateDetail, d.commandId ?? null,
+      d.receipt ? JSON.stringify(d.receipt) : null, d.attempted ? 1 : 0, now, id);
+    return this.submission(id);
   }
 }

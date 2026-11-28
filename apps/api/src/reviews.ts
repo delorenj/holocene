@@ -10,6 +10,7 @@ import { HTML_LIMIT, wrapHtml } from "./artifact-documents.js";
 import { lookupProject, type IdentityResult } from "./project-identity.js";
 import { ReviewStore, type Annotation, type AnnotationStatus, type FrozenAnnotation, type ManifestEntry, type Revision } from "./review-store.js";
 import type { RegistryProject } from "./project-identity.js";
+import { bbEmitFeedback, deliverSubmission, deliveryMode, type DeliveryMode, type FeedbackEmitter } from "./review-delivery.js";
 
 // HOLOC-70 local slice: the project home, preserved review revisions and durable annotations.
 // No feedback is sent from here (BB-67 owns delivery); nothing in this module publishes events.
@@ -181,7 +182,7 @@ export function parseNewAnnotation(body: unknown): { id?: string; status: Annota
 // ---------------------------------------------------------------- feedback submissions (HOLOC-70 AC4, Holocene side)
 
 /** Until Bloodbank accepts the feedback command contract (BB-67), a submission is saved and nothing is published. */
-export const AWAITING_CONTRACT = "Saved and frozen. Delivery waits on Bloodbank accepting the review feedback contract (BB-67); nothing has been published.";
+export const AWAITING_CONTRACT = "Saved and frozen. Delivery is off; nothing has been published.";
 const NOTE_LIMIT = 4000;
 
 export function parseSubmission(body: unknown): { submissionId: string; note: string } | undefined {
@@ -208,10 +209,13 @@ export function freezeFeedback(annotations: Annotation[], note: string): { annot
 
 declare module "fastify" { interface FastifyRequest { rawBody?: string } }
 
-export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, deps: { store?: ReviewStore; fetcher?: Fetcher; publish?: Publisher; registry?: () => Promise<unknown>; secret?: () => string | undefined } = {}) {
+export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, deps: { store?: ReviewStore; fetcher?: Fetcher; publish?: Publisher; registry?: () => Promise<unknown>; secret?: () => string | undefined; delivery?: { mode?: DeliveryMode; emit?: FeedbackEmitter } } = {}) {
   const store = deps.store ?? new ReviewStore();
   const fetcher = deps.fetcher ?? fetch;
   const secret = deps.secret ?? (() => process.env.TELEGRAM_HQ_BOT_TOKEN);
+  const mode = () => deps.delivery?.mode ?? deliveryMode();
+  const emit = deps.delivery?.emit ?? bbEmitFeedback();
+  const delivering = new Set<string>(); // one delivery per submission at a time: a double click never publishes twice
   return app.register(async (scope) => {
     // The signature covers the exact body bytes, so keep them; JSON is parsed from that same string.
     scope.addContentTypeParser("application/json", { parseAs: "string", bodyLimit: 64 * 1024 }, (req, body, done) => {
@@ -304,17 +308,26 @@ export function registerReviewRoutes(app: FastifyInstance, catalog: Catalog, dep
       const prior = store.submission(input.submissionId);
       if (prior) {
         if (prior.author !== ok.user || prior.revisionId !== ok.rev!.revisionId || prior.note !== input.note) return reply.code(409).send({ error: "That submission id is already used for other feedback" });
-        return reply.code(200).send({ submission: prior });
+        // The same Send again (a double click, a lost answer, or Retry on an unconfirmed delivery): same row, same command.
+        if (delivering.has(prior.submissionId)) return reply.code(202).send({ submission: prior });
+        delivering.add(prior.submissionId);
+        try { return reply.code(200).send({ submission: await deliverSubmission(store, prior, mode(), emit) }); }
+        finally { delivering.delete(prior.submissionId); }
       }
       const to = feedbackRecipient(ok.project);
       if ("error" in to) return reply.code(409).send({ error: to.error });
       const frozen = freezeFeedback(store.annotations(ok.rev!.revisionId), input.note);
       if (!frozen.annotations.length) return reply.code(400).send({ error: "Nothing to send: this revision has no saved annotation" });
+      let put: { submission: import("./review-store.js").Submission; created: boolean };
       try {
-        const put = store.createSubmission({ submissionId: input.submissionId, projectId: ok.project.id, revisionId: ok.rev!.revisionId, artifactId: ok.rev!.artifactId,
+        put = store.createSubmission({ submissionId: input.submissionId, projectId: ok.project.id, revisionId: ok.rev!.revisionId, artifactId: ok.rev!.artifactId,
           author: ok.user, recipient: to.recipient, note: input.note, annotations: frozen.annotations, digest: frozen.digest, stateDetail: AWAITING_CONTRACT });
-        return reply.code(put.created ? 201 : 200).send({ submission: put.submission });
       } catch { return reply.code(409).send({ error: "That submission id is already used for other feedback" }); }
+      // Saved first, then delivered: a failed or unconfirmed delivery never loses the frozen row.
+      if (delivering.has(put.submission.submissionId)) return reply.code(202).send({ submission: put.submission });
+      delivering.add(put.submission.submissionId);
+      try { return reply.code(put.created ? 201 : 200).send({ submission: await deliverSubmission(store, put.submission, mode(), emit) }); }
+      finally { delivering.delete(put.submission.submissionId); }
     });
   });
 }

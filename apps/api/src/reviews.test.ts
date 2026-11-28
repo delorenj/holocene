@@ -242,7 +242,7 @@ test("feedback over HTTP: frozen, idempotent, durable across restart, refused wi
     const store = new ReviewStore(file);
     if (!store.revision(rev)) store.putRevision({ revisionId: rev, projectId: "greeninbetween", artifactId: "a", title: "t", entry: "index.html", sourceUrl: "u", snapshotBaseUrl: "s/", snapshotUrl: "https://s3.delo.sh/s/index.html", entrySha256: sha("<p>ok</p>"), manifest: [], createdAt: "now", createdBy: "op@example.com" });
     const app = Fastify();
-    await registerReviewRoutes(app, async () => ({ items: [], sources: {}, retryAfterMs: 0 }), { store, registry: async () => registry, secret: () => "k", fetcher: origin({}) });
+    await registerReviewRoutes(app, async () => ({ items: [], sources: {}, retryAfterMs: 0 }), { store, registry: async () => registry, secret: () => "k", fetcher: origin({}), delivery: { mode: "off" } });
     const call = (method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, user = "op@example.com") => {
       const payload = body === undefined ? "" : JSON.stringify(body);
       const ts = String(Date.now());
